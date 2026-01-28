@@ -1,0 +1,33 @@
+{
+  "project_name": "Test_001_Full26_1Step",
+  "environment": {
+    "koomeshmodifier_path": "/opt/KooMeshModifier/run.sh",
+    "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
+    "apptainer_sif": "/opt/apptainers/KooSimulation313.sif",
+    "apptainer_bind": "/data:/data,/shared:/shared",
+    "lsdyna_apptainer_sif": "/opt/apptainers/LSDynaBasic_ifort2022_impilatest_mpp_s.sif",
+    "lsdyna_apptainer_bind": "/data:/data,/shared:/shared"
+  },
+  "scenarios": [
+    {
+      "scenario_name": "Full_26_Directions_Single_Drop",
+      "template": "/data/templates/MinimumModel.k",
+      "angle_source": {
+        "source_type": "cuboid_geometry",
+        "cuboid_geometry": {
+          "include_faces": true,
+          "include_edges": true,
+          "include_corners": true
+        }
+      },
+      "cumulative": {
+        "num_steps": 1,
+        "mode_sequence": ["DROP"],
+        "base_angle_index": 0,
+        "angle_mixing": {
+          "strategy": "same_angle"
+        }
+      }
+    }
+  ]
+}

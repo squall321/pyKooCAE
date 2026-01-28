@@ -1,0 +1,35 @@
+[
+  {
+    "id": "scenario_001",
+    "name": "6회 열-낙하 복합 신뢰성 테스트",
+    "analysisType": "mixedCumulative",
+    "fileName": "MinimumModel.k",
+    "params": {
+      "projectName": "GalaxyS25",
+      "doeCount": 3,
+      "steps": [
+        {"mode": "THERM", "condition": "HOT85", "params": {"target_temp_C": 85, "hold_time_s": 1800}},
+        {"mode": "THERM", "condition": "COLD-40", "params": {"target_temp_C": -40, "hold_time_s": 1800}},
+        {"mode": "DROP", "condition": "F1", "params": {"height_mm": 1500, "surface": "steelPlate"}},
+        {"mode": "THERM", "condition": "CYC03", "params": {"cycles": 3, "temp_high": 85, "temp_low": -40}},
+        {"mode": "DROP", "condition": "E5", "params": {"height_mm": 1500, "surface": "steelPlate"}},
+        {"mode": "DROP", "condition": "C2", "params": {"height_mm": 1500, "surface": "steelPlate"}}
+      ]
+    }
+  },
+  {
+    "id": "scenario_002",
+    "name": "3회 HW보증 누적낙하 (DROP only)",
+    "analysisType": "mixedCumulative",
+    "fileName": "MinimumModel.k",
+    "params": {
+      "projectName": "GalaxyS25",
+      "doeCount": 5,
+      "steps": [
+        {"mode": "DROP", "condition": "F1", "params": {"height_mm": 1500}},
+        {"mode": "DROP", "condition": "E3", "params": {"height_mm": 1500}},
+        {"mode": "DROP", "condition": "C2", "params": {"height_mm": 1500}}
+      ]
+    }
+  }
+]

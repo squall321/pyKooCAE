@@ -1,0 +1,456 @@
+"""
+Cumulative Scenario Designer (Stage 1: Designer)
+
+사용자 JSON 설정 → runner_config.json 생성
+
+입력: 사용자 JSON 설정 파일
+출력: runner_config.json (Executor가 읽는 실행 설정)
+
+처리 과정:
+    1. 각도 소스 파싱 (AngleSourceParser)
+    2. Tolerance/DOE 적용 (ToleranceDOEGenerator)
+    3. 각도 믹싱 전략 적용 (AngleMixingStrategy)
+    4. 템플릿 자동 선택 (TemplateManager)
+    5. runner_config.json 생성
+
+Author: koo.park
+Email: koo.park@samsung.com
+Group: CAE
+"""
+
+import os
+import sys
+import json
+from typing import Dict, Any, List, Optional
+from pathlib import Path
+from dataclasses import dataclass, asdict
+
+# Runner 모듈 임포트
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from CaseTxtParser import DropAngle
+from AngleSourceParser import (
+    AngleSourceConfig, AngleSourceType,
+    CuboidGeometryConfig, FibonacciLatticeConfig,
+    PitchingSweepConfig, RollingSweepConfig, CaseTxtFileConfig,
+    parse_angle_source
+)
+from ToleranceDOEGenerator import (
+    ToleranceConfig, ToleranceRange, DOEType,
+    apply_tolerance_doe
+)
+from AngleMixingStrategy import (
+    CumulativeAngleConfig, MixingStrategy,
+    generate_cumulative_angle_sequence
+)
+from TemplateManager import (
+    SimulationMode, TemplateType,
+    select_template_for_scenario
+)
+
+
+@dataclass
+class StepConfig:
+    """Step 설정 (runner_config.json용)"""
+    step_number: int
+    template: str
+    mode: str
+    angle_name: str
+    angle_roll: float
+    angle_pitch: float
+    angle_yaw: float
+    input_file: str
+    output_dir: str
+    dynain_source: Optional[str] = None
+    doe_index: int = 0
+
+
+@dataclass
+class ScenarioConfig:
+    """시나리오 설정 (runner_config.json용)"""
+    scenario_id: str
+    scenario_name: str
+    total_steps: int
+    steps: List[StepConfig]
+
+
+@dataclass
+class RunnerConfig:
+    """Runner 설정 (runner_config.json)"""
+    project_name: str
+    base_dir: str
+    scenarios: List[ScenarioConfig]
+    environment: Dict[str, Any]
+
+
+class CumulativeDesigner:
+    """누적 시뮬레이션 Designer"""
+
+    def __init__(self, user_config: Dict[str, Any]):
+        """
+        Parameters:
+            user_config: 사용자 JSON 설정
+        """
+        self.user_config = user_config
+        self.project_name = user_config.get("project_name", "CumulativeProject")
+        self.base_dir = user_config.get("base_dir", os.getcwd())
+
+    def parse_user_config(self) -> RunnerConfig:
+        """
+        사용자 JSON → runner_config.json 변환
+
+        Returns:
+            RunnerConfig 객체
+        """
+        # 환경 설정
+        environment = self.user_config.get("environment", {})
+
+        # 실행 파일 경로 기본값 설정 (사용자가 override 가능)
+        if "koomeshmodifier_path" not in environment:
+            environment["koomeshmodifier_path"] = "/opt/KooMeshModifier/run.sh"
+        if "lsdyna_path" not in environment:
+            environment["lsdyna_path"] = "/opt/lsdyna/bin/ls-dyna"
+
+        # 시나리오 설정
+        scenarios_config = self.user_config.get("scenarios", [])
+        scenarios = []
+
+        for scenario_cfg in scenarios_config:
+            scenario = self._process_scenario(scenario_cfg)
+            scenarios.append(scenario)
+
+        return RunnerConfig(
+            project_name=self.project_name,
+            base_dir=self.base_dir,
+            scenarios=scenarios,
+            environment=environment
+        )
+
+    def _process_scenario(self, scenario_cfg: Dict[str, Any]) -> ScenarioConfig:
+        """
+        개별 시나리오 처리
+
+        Parameters:
+            scenario_cfg: 시나리오 설정
+
+        Returns:
+            ScenarioConfig
+        """
+        scenario_name = scenario_cfg.get("scenario_name", "UnnamedScenario")
+
+        # Step 1: 각도 소스 파싱
+        angle_source_cfg = scenario_cfg.get("angle_source", {})
+        base_angles = self._parse_angle_source(angle_source_cfg)
+
+        # Step 2: Tolerance/DOE 적용
+        tolerance_cfg = scenario_cfg.get("tolerance", None)
+        if tolerance_cfg:
+            tolerance_config = self._parse_tolerance_config(tolerance_cfg)
+            doe_angles = apply_tolerance_doe(base_angles, tolerance_config)
+        else:
+            # Tolerance 없으면 원본 그대로 (doe_index=0 추가)
+            doe_angles = [(name, roll, pitch, yaw, 0) for name, roll, pitch, yaw in base_angles]
+
+        # Step 3: 누적 모드 및 스텝 수
+        cumulative_cfg = scenario_cfg.get("cumulative", {})
+        num_steps = cumulative_cfg.get("num_steps", 1)
+        mode_sequence = self._parse_mode_sequence(cumulative_cfg, num_steps)
+
+        # Step 4: 각도 믹싱 전략
+        mixing_cfg = cumulative_cfg.get("angle_mixing", {})
+        base_angle_index = cumulative_cfg.get("base_angle_index", 0)
+        mixing_config = self._parse_mixing_config(mixing_cfg)
+
+        # Step 5: 템플릿 자동 선택
+        templates = select_template_for_scenario(mode_sequence)
+
+        # Step 6: 각 DOE마다 Step 시퀀스 생성
+        steps = []
+
+        # DOE 각도 그룹화 (base 각도별로)
+        doe_by_base = {}
+        for name, roll, pitch, yaw, doe_idx in doe_angles:
+            # Base 이름 추출 (DOE 접미사 제거)
+            base_name = name.split('_DOE')[0] if '_DOE' in name else name
+
+            if base_name not in doe_by_base:
+                doe_by_base[base_name] = []
+            doe_by_base[base_name].append((name, roll, pitch, yaw, doe_idx))
+
+        # 각 DOE에 대해 누적 Step 시퀀스 생성
+        for base_name in sorted(doe_by_base.keys()):
+            doe_list = doe_by_base[base_name]
+
+            for doe_name, doe_roll, doe_pitch, doe_yaw, doe_idx in doe_list:
+                # 이 DOE를 base로 하는 각도 리스트 (mixing 전략 적용용)
+                # cyclic, random 등을 위해 같은 base 그룹의 모든 DOE 사용
+                base_angles_for_mixing = [(n, r, p, y) for n, r, p, y, _ in doe_list]
+
+                # 현재 DOE의 인덱스 찾기
+                current_base_idx = 0
+                for idx, (n, r, p, y, _) in enumerate(doe_list):
+                    if n == doe_name and abs(r - doe_roll) < 0.01 and abs(p - doe_pitch) < 0.01:
+                        current_base_idx = idx
+                        break
+
+                # 각도 믹싱 전략 적용하여 Step별 각도 생성
+                angle_sequence = generate_cumulative_angle_sequence(
+                    base_angles_for_mixing, num_steps, mixing_config, current_base_idx
+                )
+
+                # 이 DOE의 Step 설정 생성
+                for i in range(num_steps):
+                    step_number = i + 1
+                    template = templates[i]
+                    mode = mode_sequence[i]
+                    angle_name, angle_roll, angle_pitch, angle_yaw = angle_sequence[i]
+
+                    step_cfg = StepConfig(
+                        step_number=step_number,
+                        template=template.value,
+                        mode=mode.value,
+                        angle_name=angle_name,
+                        angle_roll=angle_roll,
+                        angle_pitch=angle_pitch,
+                        angle_yaw=angle_yaw,
+                        input_file=f"Step{step_number:03d}.k",
+                        output_dir=f"Step{step_number:03d}",
+                        dynain_source=f"Step{step_number-1:03d}/dynain" if step_number > 1 else None,
+                        doe_index=doe_idx
+                    )
+                    steps.append(step_cfg)
+
+        # 시나리오 ID 생성
+        scenario_id = f"{scenario_name}_S{num_steps:03d}"
+
+        return ScenarioConfig(
+            scenario_id=scenario_id,
+            scenario_name=scenario_name,
+            total_steps=num_steps,
+            steps=steps
+        )
+
+    def _parse_angle_source(self, angle_source_cfg: Dict[str, Any]) -> List[tuple]:
+        """각도 소스 파싱"""
+        source_type_str = angle_source_cfg.get("source_type", "cuboid_geometry")
+        source_type = AngleSourceType(source_type_str)
+
+        if source_type == AngleSourceType.CUBOID_GEOMETRY:
+            cuboid_cfg = angle_source_cfg.get("cuboid_geometry", {})
+            config = AngleSourceConfig(
+                source_type=source_type,
+                cuboid_geometry=CuboidGeometryConfig(
+                    include_faces=cuboid_cfg.get("include_faces", True),
+                    include_edges=cuboid_cfg.get("include_edges", True),
+                    include_corners=cuboid_cfg.get("include_corners", True)
+                )
+            )
+
+        elif source_type == AngleSourceType.FIBONACCI_LATTICE:
+            fib_cfg = angle_source_cfg.get("fibonacci_lattice", {})
+            config = AngleSourceConfig(
+                source_type=source_type,
+                fibonacci_lattice=FibonacciLatticeConfig(
+                    num_points=fib_cfg.get("num_points", 26)
+                )
+            )
+
+        elif source_type == AngleSourceType.PITCHING_SWEEP:
+            pitch_cfg = angle_source_cfg.get("pitching_sweep", {})
+            config = AngleSourceConfig(
+                source_type=source_type,
+                pitching_sweep=PitchingSweepConfig(
+                    pitch_min=pitch_cfg.get("pitch_min", -90.0),
+                    pitch_max=pitch_cfg.get("pitch_max", 90.0),
+                    pitch_step=pitch_cfg.get("pitch_step", 10.0),
+                    roll_fixed=pitch_cfg.get("roll_fixed", 0.0),
+                    yaw_fixed=pitch_cfg.get("yaw_fixed", 0.0)
+                )
+            )
+
+        elif source_type == AngleSourceType.ROLLING_SWEEP:
+            roll_cfg = angle_source_cfg.get("rolling_sweep", {})
+            config = AngleSourceConfig(
+                source_type=source_type,
+                rolling_sweep=RollingSweepConfig(
+                    roll_min=roll_cfg.get("roll_min", -180.0),
+                    roll_max=roll_cfg.get("roll_max", 170.0),
+                    roll_step=roll_cfg.get("roll_step", 10.0),
+                    pitch_fixed=roll_cfg.get("pitch_fixed", 0.0),
+                    yaw_fixed=roll_cfg.get("yaw_fixed", 0.0)
+                )
+            )
+
+        elif source_type == AngleSourceType.CASE_TXT_FILE:
+            case_cfg = angle_source_cfg.get("case_txt_file", {})
+            config = AngleSourceConfig(
+                source_type=source_type,
+                case_txt_file=CaseTxtFileConfig(
+                    file_path=case_cfg.get("file_path"),
+                    selected_indices=case_cfg.get("selected_indices")
+                )
+            )
+
+        else:
+            raise ValueError(f"지원하지 않는 각도 소스 타입: {source_type}")
+
+        return parse_angle_source(config)
+
+    def _parse_tolerance_config(self, tolerance_cfg: Dict[str, Any]) -> ToleranceConfig:
+        """Tolerance 설정 파싱"""
+        roll_cfg = tolerance_cfg.get("roll")
+        pitch_cfg = tolerance_cfg.get("pitch")
+        yaw_cfg = tolerance_cfg.get("yaw")
+
+        roll_range = None
+        pitch_range = None
+        yaw_range = None
+
+        if roll_cfg:
+            if "tolerance" in roll_cfg:
+                roll_range = ToleranceRange.from_tolerance(roll_cfg["tolerance"])
+            else:
+                roll_range = ToleranceRange(roll_cfg["min"], roll_cfg["max"])
+
+        if pitch_cfg:
+            if "tolerance" in pitch_cfg:
+                pitch_range = ToleranceRange.from_tolerance(pitch_cfg["tolerance"])
+            else:
+                pitch_range = ToleranceRange(pitch_cfg["min"], pitch_cfg["max"])
+
+        if yaw_cfg:
+            if "tolerance" in yaw_cfg:
+                yaw_range = ToleranceRange.from_tolerance(yaw_cfg["tolerance"])
+            else:
+                yaw_range = ToleranceRange(yaw_cfg["min"], yaw_cfg["max"])
+
+        doe_type_str = tolerance_cfg.get("doe_type", "lhs")
+        doe_type = DOEType(doe_type_str)
+
+        return ToleranceConfig(
+            roll=roll_range,
+            pitch=pitch_range,
+            yaw=yaw_range,
+            doe_type=doe_type,
+            doe_count=tolerance_cfg.get("doe_count", 10)
+        )
+
+    def _parse_mode_sequence(self, cumulative_cfg: Dict[str, Any], num_steps: int) -> List[SimulationMode]:
+        """모드 시퀀스 파싱"""
+        mode_sequence_cfg = cumulative_cfg.get("mode_sequence", ["DROP"] * num_steps)
+
+        mode_sequence = []
+        for mode_str in mode_sequence_cfg:
+            mode = SimulationMode(mode_str.upper())
+            mode_sequence.append(mode)
+
+        # 길이 확인
+        if len(mode_sequence) < num_steps:
+            # 부족하면 마지막 모드로 채우기
+            last_mode = mode_sequence[-1] if mode_sequence else SimulationMode.DROP
+            mode_sequence.extend([last_mode] * (num_steps - len(mode_sequence)))
+
+        return mode_sequence[:num_steps]
+
+    def _parse_mixing_config(self, mixing_cfg: Dict[str, Any]) -> CumulativeAngleConfig:
+        """각도 믹싱 설정 파싱"""
+        strategy_str = mixing_cfg.get("strategy", "same_angle")
+        strategy = MixingStrategy(strategy_str)
+
+        custom_mapping = mixing_cfg.get("custom_mapping")
+        if custom_mapping:
+            # JSON의 키를 int로 변환
+            custom_mapping = {int(k): v for k, v in custom_mapping.items()}
+
+        return CumulativeAngleConfig(
+            mixing_strategy=strategy,
+            cyclic_offset=mixing_cfg.get("cyclic_offset", 1),
+            random_seed=mixing_cfg.get("random_seed"),
+            custom_mapping=custom_mapping
+        )
+
+    def save_runner_config(self, runner_config: RunnerConfig, output_path: str):
+        """runner_config.json 저장"""
+        # RunnerConfig → dict 변환
+        data = {
+            "project_name": runner_config.project_name,
+            "base_dir": runner_config.base_dir,
+            "environment": runner_config.environment,
+            "scenarios": []
+        }
+
+        for scenario in runner_config.scenarios:
+            scenario_data = {
+                "scenario_id": scenario.scenario_id,
+                "scenario_name": scenario.scenario_name,
+                "total_steps": scenario.total_steps,
+                "steps": []
+            }
+
+            for step in scenario.steps:
+                step_data = {
+                    "step_number": step.step_number,
+                    "template": step.template,
+                    "mode": step.mode,
+                    "angle": {
+                        "name": step.angle_name,
+                        "roll": step.angle_roll,
+                        "pitch": step.angle_pitch,
+                        "yaw": step.angle_yaw
+                    },
+                    "input_file": step.input_file,
+                    "output_dir": step.output_dir,
+                    "dynain_source": step.dynain_source,
+                    "doe_index": step.doe_index
+                }
+                scenario_data["steps"].append(step_data)
+
+            data["scenarios"].append(scenario_data)
+
+        # JSON 저장
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+        print(f"✅ runner_config.json 생성 완료: {output_path}")
+
+
+def main():
+    """메인 함수"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Cumulative Scenario Designer")
+    parser.add_argument("input_json", help="사용자 JSON 설정 파일")
+    parser.add_argument("-o", "--output", default="runner_config.json", help="출력 runner_config.json 경로")
+    args = parser.parse_args()
+
+    # 사용자 JSON 읽기
+    with open(args.input_json, 'r', encoding='utf-8') as f:
+        user_config = json.load(f)
+
+    # Designer 실행
+    designer = CumulativeDesigner(user_config)
+    runner_config = designer.parse_user_config()
+
+    # runner_config.json 저장
+    designer.save_runner_config(runner_config, args.output)
+
+    # 요약 출력
+    print(f"\n{'='*80}")
+    print(f"📋 시나리오 요약")
+    print(f"{'='*80}")
+    print(f"프로젝트: {runner_config.project_name}")
+    print(f"총 시나리오 수: {len(runner_config.scenarios)}")
+
+    for scenario in runner_config.scenarios:
+        print(f"\n시나리오: {scenario.scenario_name} ({scenario.scenario_id})")
+        print(f"  총 Step 수: {scenario.total_steps}")
+        print(f"  Step 세부:")
+        for step in scenario.steps:
+            print(f"    Step {step.step_number}: {step.template:<25} {step.mode:<10} {step.angle_name:<20} "
+                  f"Roll={step.angle_roll:>7.2f} Pitch={step.angle_pitch:>7.2f}")
+
+    print(f"{'='*80}\n")
+
+
+if __name__ == "__main__":
+    main()

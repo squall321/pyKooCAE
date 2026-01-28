@@ -1,0 +1,34 @@
+*Inputfile
+MinimumModel.k
+*RunDirectoryMode,True,Data/Results,Data/Metadata
+*Info,Smartphone,FullAngle_Pitching_10deg
+*Description,Full Angle Drop - Pitching direction only 10deg spacing (Roll=0 fixed) 19 cases
+*Creator,koo.park,koo.park@samsung.com,CAE,HE
+*Mode
+DROP_ATTITUDE,1
+**DropAttitude,1
+$ ============================================================================
+$ Pitching Direction Only - 10 degree spacing
+$ Roll = 0 (fixed), Pitch = -90 to 90 (10deg step)
+$ Total cases: 19
+$ ============================================================================
+$ P-090,P-080,P-070,P-060,P-050,P-040,P-030,P-020,P-010,P+000,P+010,P+020,P+030,P+040,P+050,P+060,P+070,P+080,P+090
+EulerRolling,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+EulerPitching,-90,-80,-70,-60,-50,-40,-30,-20,-10,0,10,20,30,40,50,60,70,80,90
+EulerYawing,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+Height,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500
+InitialVelocityX,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+InitialVelocityY,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+InitialVelocityZ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+InitialAngularVelocityX,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+InitialAngularVelocityY,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+InitialAngularVelocityZ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+OffsetDistance,0.1
+Density,7850
+YoungsModulus,200000000000
+PoissonRatio,0.3
+tFinal,0.005
+dt,0.000001
+DropSurface,Plane,300,300,20,30,30,2
+**EndDropAttitude
+*End

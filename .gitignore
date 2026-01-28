@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+venv312/
+venv313/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.build/
+*.egg-info/
+occProject/
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/

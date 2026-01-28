@@ -1,0 +1,20 @@
+{
+  "project_name": "Initial_Velocity_Test",
+  "scenarios": [{
+    "scenario_name": "Moving_Drop",
+    "angle_source": {
+      "source_type": "case_txt_file",
+      "case_txt_file": {
+        "file_path": "Examples/HWWarrantyDropTest/CustomScenarios/custom_initial_velocity.txt"
+      }
+    },
+    "cumulative": {
+      "num_steps": 2,
+      "mode_sequence": ["DROP", "DROP"],
+      "base_angle_index": 0,
+      "angle_mixing": {
+        "strategy": "same_angle"
+      }
+    }
+  }]
+}

@@ -1,0 +1,22 @@
+*Inputfile
+model.k
+
+*Info,TestModel,v1.0
+*Description,FEM to IGA conversion test - MODE 22
+
+*Mode
+FEM_TO_IGA,22
+
+**FEMtoIGA,22
+# Test 1: Minimal options (디폴트 사용)
+*IGA,5,100,iga_part_5.k
+
+# Test 2: Custom element size
+*IGA,7,101,iga_part_7.k,0.4,0.4,0.3
+
+# Test 3: All options specified
+*IGA,10,102,iga_part_10.k,0.5,0.5,0.4,1.2,1
+
+**EndFEMtoIGA
+
+*End

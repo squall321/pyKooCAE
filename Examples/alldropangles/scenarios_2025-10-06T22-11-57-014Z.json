@@ -1,0 +1,43 @@
+[
+  {
+    "id": "scn_1759788630909_0",
+    "name": "전각도 1차 낙하 시뮬레이션",
+    "analysisType": "fullAngle",
+    "params": {
+      "faTotal": 100,
+      "includeFace6": true,
+      "includeEdge12": true,
+      "includeCorner8": true,
+      "angleSource": "lhs",
+      "heightMode": "const",
+      "heightConst": 1,
+      "heightMin": 0.5,
+      "heightMax": 1.5,
+      "surface": "steelPlate",
+      "tolerance": {
+        "mode": "disabled"
+      }
+    }
+  },
+  {
+    "id": "scn_1759788672969_1",
+    "name": "전각도 2차 낙하 시뮬레이션",
+    "analysisType": "fullAngle",
+    "params": {
+      "faTotal": 100,
+      "includeFace6": true,
+      "includeEdge12": true,
+      "includeCorner8": true,
+      "angleSource": "usePrevResult",
+      "heightMode": "const",
+      "heightConst": 1,
+      "heightMin": 0.5,
+      "heightMax": 1.5,
+      "surface": "steelPlate",
+      "tolerance": {
+        "mode": "disabled"
+      },
+      "angleSourceId": "scn_1759788630909_0"
+    }
+  }
+]

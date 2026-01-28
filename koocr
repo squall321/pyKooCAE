@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""
+KooChainRun (koocr) - Sequential CAE Analysis Workflow Manager
+
+A CLI tool for managing multi-step chained CAE simulations with automatic
+Slurm job submission and dependency management.
+
+Author: Koo Engineering
+Version: 1.0.0
+"""
+
+import sys
+import os
+import argparse
+from pathlib import Path
+
+# Add pyKooCAE to Python path
+SCRIPT_DIR = Path(__file__).parent.resolve()
+sys.path.insert(0, str(SCRIPT_DIR))
+
+
+def main():
+    """Main entry point for KooChainRun CLI"""
+    parser = argparse.ArgumentParser(
+        prog='koocr',
+        description='KooChainRun - Sequential CAE Analysis Workflow Manager',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Prepare configuration from scenario
+  koocr prepare scenario.json
+
+  # Submit jobs to Slurm
+  koocr submit runner_config.json --nodes 10 --jobs-per-node 4 --ncpu-per-job 16
+
+  # Check execution status
+  koocr status
+
+  # Collect results
+  koocr collect runner_config.json results/
+
+For more information, visit: https://github.com/kooengineering/pyKooCAE
+        """
+    )
+
+    parser.add_argument('--version', action='version', version='KooChainRun 1.0.0')
+
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+
+    # ========================================================================
+    # koocr prepare: scenario.json → runner_config.json
+    # ========================================================================
+    prepare_parser = subparsers.add_parser(
+        'prepare',
+        help='Generate runner configuration from scenario',
+        description='Convert user-friendly scenario.json to detailed runner_config.json'
+    )
+    prepare_parser.add_argument(
+        'scenario',
+        help='Path to scenario.json file'
+    )
+    prepare_parser.add_argument(
+        '-o', '--output',
+        help='Output runner_config.json path (default: same directory as scenario)',
+        default=None
+    )
+
+    # ========================================================================
+    # koocr submit: Submit jobs to Slurm
+    # ========================================================================
+    submit_parser = subparsers.add_parser(
+        'submit',
+        help='Submit jobs to Slurm cluster',
+        description='Create directories, generate metadata, and submit Slurm array jobs'
+    )
+    submit_parser.add_argument(
+        'config',
+        help='Path to runner_config.json file'
+    )
+    submit_parser.add_argument(
+        '--nodes',
+        type=int,
+        default=2,
+        help='Number of nodes to use (default: 2)'
+    )
+    submit_parser.add_argument(
+        '--jobs-per-node',
+        type=int,
+        default=4,
+        help='Number of concurrent jobs per node (default: 4)'
+    )
+    submit_parser.add_argument(
+        '--ncpu-per-job',
+        type=int,
+        default=16,
+        help='Number of CPUs per job (default: 16)'
+    )
+    submit_parser.add_argument(
+        '--data-root',
+        default='/data',
+        help='Root directory for execution (default: /data)'
+    )
+
+    # ========================================================================
+    # koocr status: Check execution status
+    # ========================================================================
+    status_parser = subparsers.add_parser(
+        'status',
+        help='Check execution status',
+        description='Monitor progress of running simulations'
+    )
+    status_parser.add_argument(
+        'config',
+        nargs='?',
+        help='Path to runner_config.json file (optional)'
+    )
+    status_parser.add_argument(
+        '--watch',
+        action='store_true',
+        help='Continuously monitor status (update every 60s)'
+    )
+
+    # ========================================================================
+    # koocr collect: Collect results
+    # ========================================================================
+    collect_parser = subparsers.add_parser(
+        'collect',
+        help='Collect simulation results',
+        description='Gather completed results from execution directory'
+    )
+    collect_parser.add_argument(
+        'config',
+        help='Path to runner_config.json file'
+    )
+    collect_parser.add_argument(
+        'output_dir',
+        nargs='?',
+        default='./results',
+        help='Output directory for collected results (default: ./results)'
+    )
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Execute command
+    if args.command == 'prepare':
+        cmd_prepare(args)
+    elif args.command == 'submit':
+        cmd_submit(args)
+    elif args.command == 'status':
+        cmd_status(args)
+    elif args.command == 'collect':
+        cmd_collect(args)
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+
+def cmd_prepare(args):
+    """Execute prepare command"""
+    import json
+    from Runner.CumulativeDesigner import CumulativeDesigner
+
+    scenario_path = Path(args.scenario).resolve()
+
+    if not scenario_path.exists():
+        print(f"❌ Error: Scenario file not found: {scenario_path}")
+        sys.exit(1)
+
+    # Determine output path
+    if args.output:
+        output_path = Path(args.output).resolve()
+    else:
+        output_path = scenario_path.parent / "runner_config.json"
+
+    print("=" * 80)
+    print("KooChainRun - Prepare Configuration")
+    print("=" * 80)
+    print(f"Scenario: {scenario_path}")
+    print(f"Output:   {output_path}")
+    print()
+
+    try:
+        # Load scenario JSON
+        with open(scenario_path, 'r', encoding='utf-8') as f:
+            user_config = json.load(f)
+
+        # Create designer and parse config
+        designer = CumulativeDesigner(user_config)
+        runner_config = designer.parse_user_config()
+
+        # Save runner_config.json
+        designer.save_runner_config(runner_config, str(output_path))
+
+        print(f"✅ Successfully generated: {output_path}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+def cmd_submit(args):
+    """Execute submit command"""
+    from Runner.LargeScaleDOEManager import LargeScaleDOEManager
+
+    config_path = Path(args.config).resolve()
+
+    if not config_path.exists():
+        print(f"❌ Error: Config file not found: {config_path}")
+        sys.exit(1)
+
+    print("=" * 80)
+    print("KooChainRun - Submit Jobs")
+    print("=" * 80)
+    print(f"Config:         {config_path}")
+    print(f"Nodes:          {args.nodes}")
+    print(f"Jobs per node:  {args.jobs_per_node}")
+    print(f"CPUs per job:   {args.ncpu_per_job}")
+    print(f"Total parallel: {args.nodes * args.jobs_per_node}")
+    print()
+
+    try:
+        manager = LargeScaleDOEManager(
+            runner_config_path=str(config_path),
+            data_root=args.data_root,
+            nodes=args.nodes,
+            jobs_per_node=args.jobs_per_node,
+            ncpu_per_job=args.ncpu_per_job
+        )
+        manager.run()
+        print()
+        print("=" * 80)
+        print("✅ Jobs submitted successfully")
+        print("=" * 80)
+        print()
+        print("Next steps:")
+        print(f"  Check status:    koocr status {config_path}")
+        print(f"  Collect results: koocr collect {config_path}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+def cmd_status(args):
+    """Execute status command"""
+    print("=" * 80)
+    print("KooChainRun - Execution Status")
+    print("=" * 80)
+    print()
+
+    # Check Slurm queue
+    print("📊 Slurm Queue Status:")
+    print("-" * 80)
+    os.system("squeue -u $USER")
+    print()
+
+    if args.config:
+        config_path = Path(args.config).resolve()
+        if config_path.exists():
+            # TODO: Parse runner_config.json and show detailed progress
+            print(f"Config: {config_path}")
+            print("(Detailed progress monitoring coming soon)")
+        else:
+            print(f"⚠️  Warning: Config file not found: {config_path}")
+
+    print()
+    print("Commands:")
+    print("  squeue -u $USER              # Check Slurm jobs")
+    print("  scancel <job_id>             # Cancel a job")
+    print("  find RUNDIR -name '*.lock'   # Count completed cases")
+
+
+def cmd_collect(args):
+    """Execute collect command"""
+    from Runner.LargeScaleDOEManager import LargeScaleDOEManager
+
+    config_path = Path(args.config).resolve()
+    output_dir = Path(args.output_dir).resolve()
+
+    if not config_path.exists():
+        print(f"❌ Error: Config file not found: {config_path}")
+        sys.exit(1)
+
+    print("=" * 80)
+    print("KooChainRun - Collect Results")
+    print("=" * 80)
+    print(f"Config:     {config_path}")
+    print(f"Output dir: {output_dir}")
+    print()
+
+    try:
+        manager = LargeScaleDOEManager(
+            runner_config_path=str(config_path),
+            data_root=args.data_root if hasattr(args, 'data_root') else '/data'
+        )
+
+        # TODO: Implement result collection
+        print("⚠️  Result collection not yet implemented")
+        print("Manual collection:")
+        print(f"  cp -r RUNDIR/runid_*/ {output_dir}/")
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

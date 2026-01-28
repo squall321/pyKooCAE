@@ -1,0 +1,72 @@
+[
+  {
+    "id": "scn_1759400685055_0",
+    "name": "새 시나리오",
+    "analysisType": "fullAngle",
+    "params": {
+      "faTotal": 100,
+      "includeFace6": true,
+      "includeEdge12": true,
+      "includeCorner8": true,
+      "angleSource": "lhs",
+      "heightMode": "const",
+      "heightConst": 1,
+      "heightMin": 0.5,
+      "heightMax": 1.5,
+      "surface": "steelPlate",
+      "tolerance": {
+        "mode": "enabled",
+        "faceTolerance": 5,
+        "edgeTolerance": 5,
+        "cornerTolerance": 5
+      }
+    }
+  },
+  {
+    "id": "scn_1759400685313_1",
+    "name": "새 시나리오",
+    "analysisType": "fullAngleCumulative",
+    "params": {
+      "cumRepeatCount": 3,
+      "cumDOECount": 5,
+      "cumDirectionsGrid": [
+        [
+          "F1",
+          "E1",
+          "C1"
+        ],
+        [
+          "E1",
+          "C1",
+          "F1"
+        ],
+        [
+          "C1",
+          "F1",
+          "E1"
+        ],
+        [
+          "F2",
+          "E1",
+          "C1"
+        ],
+        [
+          "E2",
+          "C1",
+          "F1"
+        ]
+      ],
+      "heightMode": "const",
+      "heightConst": 1,
+      "heightMin": 0.5,
+      "heightMax": 1.5,
+      "surface": "steelPlate",
+      "tolerance": {
+        "mode": "enabled",
+        "faceTolerance": 5,
+        "edgeTolerance": 5,
+        "cornerTolerance": 5
+      }
+    }
+  }
+]

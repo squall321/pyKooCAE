@@ -1,0 +1,12 @@
+*Inputfile
+MinimumModel_001_DA_EX_108.401_EY_-42.364_EZ_-31.743_H_1500.000_VX_0.000_VY_0.000_VZ_0.000_WX_0.000_WY_0.000_WZ_0.000.k
+*Mode
+DYNAIN_TO_INITIAL,1
+**DynainToInitial,1
+*DynainPath,dynain
+*IncludeStress,True
+*RemoveDynamicRelaxation,True
+*MovetoOriginAutomatic,True
+*RemovePartbyID,23
+**EndDynainToInitial
+*End

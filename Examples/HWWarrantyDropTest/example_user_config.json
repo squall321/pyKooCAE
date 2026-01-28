@@ -1,0 +1,117 @@
+{
+  "project_name": "HWWarranty_CumulativeDrop",
+  "base_dir": "/home/koopark/serviceApptainers/appt313/opt/pyKooCAE/Examples/HWWarrantyDropTest",
+
+  "environment": {
+    "lsdyna_path": "/opt/lsdyna/lsdyna",
+    "ncpu": 32,
+    "memory": "2000m",
+    "mpi_enabled": false,
+    "timeout": 7200
+  },
+
+  "scenarios": [
+    {
+      "scenario_name": "Cuboid_3Steps_SameAngle",
+      "angle_source": {
+        "source_type": "cuboid_geometry",
+        "cuboid_geometry": {
+          "include_faces": true,
+          "include_edges": true,
+          "include_corners": true
+        }
+      },
+      "cumulative": {
+        "num_steps": 3,
+        "mode_sequence": ["DROP", "DROP", "DROP"],
+        "base_angle_index": 0,
+        "angle_mixing": {
+          "strategy": "same_angle"
+        }
+      }
+    },
+
+    {
+      "scenario_name": "Fibonacci_5Steps_Cyclic",
+      "angle_source": {
+        "source_type": "fibonacci_lattice",
+        "fibonacci_lattice": {
+          "num_points": 26
+        }
+      },
+      "cumulative": {
+        "num_steps": 5,
+        "mode_sequence": ["DROP", "DROP", "DROP", "DROP", "DROP"],
+        "base_angle_index": 0,
+        "angle_mixing": {
+          "strategy": "cyclic",
+          "cyclic_offset": 1
+        }
+      }
+    },
+
+    {
+      "scenario_name": "CaseTxt_4Steps_Opposite",
+      "angle_source": {
+        "source_type": "case_txt_file",
+        "case_txt_file": {
+          "file_path": "/home/koopark/serviceApptainers/appt313/opt/pyKooCAE/Examples/HWWarrantyDropTest/FullAngleDrop/26case_6F12E8C_cuboid.txt"
+        }
+      },
+      "cumulative": {
+        "num_steps": 4,
+        "mode_sequence": ["DROP", "DROP", "DROP", "DROP"],
+        "base_angle_index": 0,
+        "angle_mixing": {
+          "strategy": "opposite"
+        }
+      }
+    },
+
+    {
+      "scenario_name": "Thermal_To_Drop",
+      "angle_source": {
+        "source_type": "cuboid_geometry",
+        "cuboid_geometry": {
+          "include_faces": true,
+          "include_edges": false,
+          "include_corners": false
+        }
+      },
+      "cumulative": {
+        "num_steps": 3,
+        "mode_sequence": ["THERM", "THERM", "DROP"],
+        "base_angle_index": 0,
+        "angle_mixing": {
+          "strategy": "same_angle"
+        }
+      }
+    },
+
+    {
+      "scenario_name": "Fibonacci_WithTolerance_LHS",
+      "angle_source": {
+        "source_type": "fibonacci_lattice",
+        "fibonacci_lattice": {
+          "num_points": 10
+        }
+      },
+      "tolerance": {
+        "roll": {"tolerance": 2.0},
+        "pitch": {"tolerance": 2.0},
+        "yaw": {"tolerance": 1.0},
+        "doe_type": "lhs",
+        "doe_count": 5
+      },
+      "cumulative": {
+        "num_steps": 3,
+        "mode_sequence": ["DROP", "DROP", "DROP"],
+        "base_angle_index": 0,
+        "angle_mixing": {
+          "strategy": "cyclic",
+          "cyclic_offset": 1
+        }
+      }
+    }
+  ]
+}

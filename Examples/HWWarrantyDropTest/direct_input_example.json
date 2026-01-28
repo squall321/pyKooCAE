@@ -1,0 +1,42 @@
+{
+  "project_name": "DirectInput_Project",
+  "job_name": "CustomMesh_LSDyna_Test",
+  "num_steps": 3,
+  "input_files": [
+    "/path/to/input_step1.k",
+    "/path/to/input_step2.k",
+    "/path/to/input_step3.k"
+  ],
+  "use_koomesh": true,
+  "use_lsdyna": true,
+  "koomesh_params": {
+    "template": "DROP_FIRST",
+    "result_dir": "./"
+  },
+  "lsdyna_params": {
+    "memory": 60000
+  },
+  "step_resources": {
+    "1": {
+      "nnodes": 2,
+      "ncpus_per_node": 32,
+      "memory_per_node": "64G",
+      "walltime": "02:00:00",
+      "partition": "normal"
+    },
+    "2": {
+      "nnodes": 4,
+      "ncpus_per_node": 32,
+      "memory_per_node": "128G",
+      "walltime": "04:00:00",
+      "partition": "large"
+    },
+    "3": {
+      "nnodes": 4,
+      "ncpus_per_node": 32,
+      "memory_per_node": "128G",
+      "walltime": "06:00:00",
+      "partition": "large"
+    }
+  }
+}

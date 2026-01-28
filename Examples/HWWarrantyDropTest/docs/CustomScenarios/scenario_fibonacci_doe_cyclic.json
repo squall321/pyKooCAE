@@ -1,0 +1,27 @@
+{
+  "project_name": "Test_Workflow",
+  "scenarios": [{
+    "scenario_name": "Fibonacci_10_DOE5_Cyclic",
+    "angle_source": {
+      "source_type": "fibonacci_lattice",
+      "fibonacci_lattice": {
+        "num_points": 10
+      }
+    },
+    "tolerance": {
+      "roll": {"tolerance": 1.0},
+      "pitch": {"tolerance": 1.0},
+      "doe_type": "lhs",
+      "doe_count": 5
+    },
+    "cumulative": {
+      "num_steps": 3,
+      "mode_sequence": ["DROP", "DROP", "DROP"],
+      "base_angle_index": 0,
+      "angle_mixing": {
+        "strategy": "cyclic",
+        "cyclic_offset": 1
+      }
+    }
+  }]
+}

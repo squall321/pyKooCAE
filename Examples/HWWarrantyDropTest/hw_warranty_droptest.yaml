@@ -1,0 +1,251 @@
+template:
+  id: hw-warranty-droptest
+  name: "HW Warranty Drop Test (KooChainRun)"
+  description: |
+    Hardware warranty drop test simulation using KooChainRun.
+    Supports cumulative/sequential CAE analysis with:
+    - Multiple drop directions (26-direction cuboid geometry)
+    - Multi-step sequential drops with damage accumulation
+    - Parallel execution via Slurm array jobs
+    - Automated mesh rotation (KooMeshModifier) + LS-DYNA analysis
+  category: simulation
+  version: 1.0.0
+  author: "Koo Engineering"
+  tags:
+    - lsdyna
+    - drop-test
+    - warranty
+    - koochain
+    - cumulative
+
+slurm:
+  partition: compute
+  nodes: 2
+  ntasks: 1
+  cpus_per_task: 16
+  mem: 64G
+  time: "24:00:00"
+
+apptainer:
+  image_name: "KooSimulation313.sif"
+  image_path: "/opt/apptainers"
+  mode: fixed
+  bind:
+    - /data:/data
+    - /shared:/shared
+  environment:
+    - OMP_NUM_THREADS=1
+  options:
+    - --cleanenv
+
+files:
+  input_schema:
+    required:
+      - file_key: scenario_json
+        name: "Scenario JSON File"
+        description: "KooChainRun scenario configuration (scenario.json)"
+        validation:
+          extensions: [.json]
+          max_size: "10MB"
+        default_location: "/shared/droptest/scenarios"
+
+      - file_key: template_k
+        name: "Base Model K File"
+        description: "LS-DYNA base model template (.k file)"
+        validation:
+          extensions: [.k, .key, .dyn]
+          max_size: "2GB"
+        default_location: "/data/templates"
+
+script:
+  pre_exec: |
+    #!/bin/bash
+    set -e
+
+    echo "=========================================="
+    echo "HW Warranty Drop Test - KooChainRun"
+    echo "=========================================="
+    echo "Job started at: $(date)"
+    echo "Node: $SLURM_NODELIST"
+    echo "Job ID: $SLURM_JOB_ID"
+    echo "=========================================="
+    echo ""
+
+    # Create working directory
+    WORK_DIR="/data/HWWarrantyDropTest_${SLURM_JOB_ID}"
+    mkdir -p "$WORK_DIR"
+    cd "$WORK_DIR"
+
+    echo "Working directory: $WORK_DIR"
+
+    # Copy scenario JSON to working directory
+    cp {scenario_json} ./scenario.json
+
+    # Copy template K file to accessible location
+    TEMPLATE_DIR="$WORK_DIR/templates"
+    mkdir -p "$TEMPLATE_DIR"
+    cp {template_k} "$TEMPLATE_DIR/base_model.k"
+
+    # Update scenario.json with correct template path
+    TEMPLATE_PATH="$TEMPLATE_DIR/base_model.k"
+
+    # Update template path in scenario.json
+    python3 <<EOF
+    import json
+    with open('scenario.json', 'r') as f:
+        config = json.load(f)
+
+    # Update template path in all scenarios
+    for scenario in config.get('scenarios', []):
+        scenario['template'] = "$TEMPLATE_PATH"
+
+    with open('scenario.json', 'w') as f:
+        json.dump(config, f, indent=2)
+
+    print(f"✓ Template path updated: {scenario['template']}")
+    EOF
+
+    echo ""
+    echo "✓ Pre-execution setup completed"
+    echo ""
+
+  main_exec: |
+    #!/bin/bash
+    set -e
+
+    cd "$WORK_DIR"
+
+    echo "=========================================="
+    echo "Step 1: Preparing runner configuration"
+    echo "=========================================="
+
+    # Run koocr prepare inside Apptainer
+    apptainer exec \
+      --bind /data:/data,/shared:/shared \
+      /opt/apptainers/KooSimulation313.sif \
+      /opt/KooChainRun/koocr prepare scenario.json -o runner_config.json
+
+    if [ ! -f runner_config.json ]; then
+        echo "❌ ERROR: runner_config.json creation failed"
+        exit 1
+    fi
+
+    echo "✓ runner_config.json created"
+    echo ""
+
+    echo "=========================================="
+    echo "Step 2: Submitting KooChainRun jobs"
+    echo "=========================================="
+
+    # Read user-provided resource configuration or use defaults
+    NODES=${KOOCR_NODES:-2}
+    JOBS_PER_NODE=${KOOCR_JOBS_PER_NODE:-4}
+    NCPU_PER_JOB=${KOOCR_NCPU_PER_JOB:-16}
+
+    echo "Resource configuration:"
+    echo "  Nodes: $NODES"
+    echo "  Jobs per node: $JOBS_PER_NODE"
+    echo "  CPUs per job: $NCPU_PER_JOB"
+    echo "  Concurrent jobs: $((NODES * JOBS_PER_NODE))"
+    echo ""
+
+    # Submit jobs via koocr
+    apptainer exec \
+      --bind /data:/data,/shared:/shared \
+      /opt/apptainers/KooSimulation313.sif \
+      /opt/KooChainRun/koocr submit runner_config.json \
+        --nodes "$NODES" \
+        --jobs-per-node "$JOBS_PER_NODE" \
+        --ncpu-per-job "$NCPU_PER_JOB"
+
+    echo ""
+    echo "✓ KooChainRun jobs submitted"
+    echo ""
+
+    echo "=========================================="
+    echo "Step 3: Monitoring job progress"
+    echo "=========================================="
+    echo ""
+    echo "Check status with:"
+    echo "  koocr status"
+    echo ""
+    echo "Or manually check:"
+    echo "  squeue -u \$USER"
+    echo "  find $WORK_DIR -name '*.lock' | wc -l"
+    echo ""
+
+  post_exec: |
+    #!/bin/bash
+
+    cd "$WORK_DIR"
+
+    echo "=========================================="
+    echo "Post-processing and cleanup"
+    echo "=========================================="
+    echo ""
+
+    # Wait for all sub-jobs to complete (if any are still running)
+    echo "Waiting for all analysis jobs to complete..."
+
+    # Check for completion markers
+    EXPECTED_LOCKS=$(find . -type d -name "runid_*" | wc -l)
+    COMPLETED_LOCKS=$(find . -name "*.lock" 2>/dev/null | wc -l)
+
+    echo "Expected cases: $EXPECTED_LOCKS"
+    echo "Completed cases: $COMPLETED_LOCKS"
+    echo ""
+
+    if [ "$COMPLETED_LOCKS" -eq "$EXPECTED_LOCKS" ]; then
+        echo "✓ All cases completed successfully"
+    else
+        echo "⚠ Warning: Some cases may not have completed"
+        echo "  Please check individual case directories"
+    fi
+    echo ""
+
+    # Collect results
+    echo "Collecting results..."
+    RESULTS_DIR="$WORK_DIR/results"
+    mkdir -p "$RESULTS_DIR"
+
+    apptainer exec \
+      --bind /data:/data,/shared:/shared \
+      /opt/apptainers/KooSimulation313.sif \
+      /opt/KooChainRun/koocr collect runner_config.json "$RESULTS_DIR" || true
+
+    echo ""
+
+    # Generate summary
+    SUMMARY_FILE="$WORK_DIR/job_summary.txt"
+    cat > "$SUMMARY_FILE" <<EOF
+HW Warranty Drop Test - Job Summary
+=====================================
+Job ID: $SLURM_JOB_ID
+Working Directory: $WORK_DIR
+Start Time: $(date)
+
+Scenario Configuration:
+$(cat scenario.json | head -20)
+
+Execution Status:
+- Expected cases: $EXPECTED_LOCKS
+- Completed cases: $COMPLETED_LOCKS
+
+Results Location: $RESULTS_DIR
+
+=====================================
+EOF
+
+    echo "✓ Summary saved to: $SUMMARY_FILE"
+    echo ""
+    echo "=========================================="
+    echo "Job completed at: $(date)"
+    echo "=========================================="
+    echo ""
+    echo "Results location:"
+    echo "  $WORK_DIR"
+    echo ""
+    echo "To access results:"
+    echo "  cd $WORK_DIR"
+    echo "  ls -lh results/"
+    echo ""

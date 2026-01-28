@@ -1,0 +1,34 @@
+*Inputfile
+MinimumModel.k
+*RunDirectoryMode,True,Data/Results,Data/Metadata
+*Info,Smartphone,FullAngle_26case_Cuboid
+*Description,Full Angle Drop - 26 cases (6 Face + 12 Edge + 8 Corner) Cuboid Geometry ~40deg spacing
+*Creator,koo.park,koo.park@samsung.com,CAE,HE
+*Mode
+DROP_ATTITUDE,1
+**DropAttitude,1
+$ ============================================================================
+$ Full Angle Drop - 26 cases (6 Face + 12 Edge + 8 Corner) Cuboid Geometry ~40deg spacing
+$ Total cases: 26
+$ ============================================================================
+
+$ F1_Back,F2_Front,F3_Right,F4_Left,F5_Top,F6_Bottom,E01_Back_Right,E02_Back_Left,E03_Back_Top,E04_Back_Bottom,E05_Front_Right,E06_Front_Left,E07_Front_Top,E08_Front_Bottom,E09_Right_Top,E10_Right_Bottom,E11_Left_Top,E12_Left_Bottom,C1_Back_Right_Top,C2_Back_Right_Bottom,C3_Back_Left_Top,C4_Back_Left_Bottom,C5_Front_Right_Top,C6_Front_Right_Bottom,C7_Front_Left_Top,C8_Front_Left_Bottom
+EulerRolling,0,180,0,0,90,-90,0,0,45,-45,180,180,135,-135,90,-90,90,-90,45,-45,45,-45,135,-135,135,-135
+EulerPitching,0,0,-90,90,0,0,-45,45,0,0,45,-45,0,0,-45,-45,45,45,-45,-45,45,45,45,45,-45,-45
+EulerYawing,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+Height,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500
+InitialVelocityX,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+InitialVelocityY,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+InitialVelocityZ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+InitialAngularVelocityX,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+InitialAngularVelocityY,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+InitialAngularVelocityZ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+OffsetDistance,0.1
+Density,7850
+YoungsModulus,200000000000
+PoissonRatio,0.3
+tFinal,0.005
+dt,0.000001
+DropSurface,Plane,300,300,20,30,30,2
+**EndDropAttitude
+*End

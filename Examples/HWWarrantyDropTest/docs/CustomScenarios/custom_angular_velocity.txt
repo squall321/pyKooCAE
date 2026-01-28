@@ -1,0 +1,15 @@
+*Inputfile
+MinimumModel.k
+*Mode
+DROP_ATTITUDE,1
+**DropAttitude,1
+$ Static,Spinning_X_100,Spinning_Y_100,Spinning_Z_100,Spinning_XYZ_50
+EulerRolling,0,0,0,0,0
+EulerPitching,-90,-90,-90,-90,-90
+EulerYawing,0,0,0,0,0
+Height,1500,1500,1500,1500,1500
+InitialAngularVelocityX,0,100,0,0,50
+InitialAngularVelocityY,0,0,100,0,50
+InitialAngularVelocityZ,0,0,0,100,50
+**EndDropAttitude
+*End

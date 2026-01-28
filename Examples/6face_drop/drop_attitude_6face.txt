@@ -1,0 +1,46 @@
+*Inputfile
+MinimumModel.k
+*RunDirectoryMode,True,Data/Results,Data/Metadata
+*Info,Smartphone,6FaceDrop
+*Description,6-Face drop simulation for smartphone. Coordinate: Origin at bottom center, +Z facing display, +X right, +Y up
+*Creator,koo.park,koo.park@samsung.com,CAE,HE
+*Mode
+DROP_ATTITUDE,1
+**DropAttitude,1
+$ ============================================================================
+$ 6-Face Drop Euler Angles (degrees)
+$ ============================================================================
+$ Smartphone coordinate system:
+$   - Origin: Bottom center of the phone
+$   - +Z axis: Display direction (front face)
+$   - +X axis: Right side
+$   - +Y axis: Top direction
+$
+$ Face definitions:
+$   F1 (Back)    : Phone falls with back facing down    -> Roll=0,   Pitch=0,   Yaw=0
+$   F2 (Front)   : Phone falls with display facing down -> Roll=180, Pitch=0,   Yaw=0
+$   F3 (Right)   : Phone falls with right side down     -> Roll=0,   Pitch=-90, Yaw=0
+$   F4 (Left)    : Phone falls with left side down      -> Roll=0,   Pitch=90,  Yaw=0
+$   F5 (Top)     : Phone falls with top facing down     -> Roll=90,  Pitch=0,   Yaw=0
+$   F6 (Bottom)  : Phone falls with bottom facing down  -> Roll=-90, Pitch=0,   Yaw=0
+$ ============================================================================
+$              F1(Back), F2(Front), F3(Right), F4(Left), F5(Top), F6(Bottom)
+EulerRolling,        0,      180,         0,        0,      90,       -90
+EulerPitching,       0,        0,       -90,       90,       0,         0
+EulerYawing,         0,        0,         0,        0,       0,         0
+Height,           1500,     1500,      1500,     1500,    1500,      1500
+InitialVelocityX,    0,        0,         0,        0,       0,         0
+InitialVelocityY,    0,        0,         0,        0,       0,         0
+InitialVelocityZ,    0,        0,         0,        0,       0,         0
+InitialAngularVelocityX,0,     0,         0,        0,       0,         0
+InitialAngularVelocityY,0,     0,         0,        0,       0,         0
+InitialAngularVelocityZ,0,     0,         0,        0,       0,         0
+OffsetDistance,0.1
+Density,2700
+YoungsModulus,70000000000
+PoissonRatio,0.3
+tFinal,0.001
+dt,0.000001
+DropSurface,Plane,300,300,20,30,30,2
+**EndDropAttitude
+*End

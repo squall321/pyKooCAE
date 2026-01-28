@@ -1,0 +1,37 @@
+[
+  {
+    "id": "scn_1759349099361_0",
+    "name": "새 시나리오",
+    "analysisType": "fullAngle",
+    "params": {
+      "faTotal": 100,
+      "includeFace6": true,
+      "includeEdge12": true,
+      "includeCorner8": true,
+      "angleSource": "lhs",
+      "heightMode": "const",
+      "heightConst": 1,
+      "heightMin": 0.5,
+      "heightMax": 1.5,
+      "surface": "steelPlate"
+    }
+  },
+  {
+    "id": "scn_1759349099790_1",
+    "name": "새 시나리오",
+    "analysisType": "fullAngle",
+    "params": {
+      "faTotal": 100,
+      "includeFace6": true,
+      "includeEdge12": true,
+      "includeCorner8": true,
+      "angleSource": "usePrevResult",
+      "heightMode": "const",
+      "heightConst": 1,
+      "heightMin": 0.5,
+      "heightMax": 1.5,
+      "surface": "steelPlate",
+      "angleSourceId": "scn_1759349099361_0"
+    }
+  }
+]

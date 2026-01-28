@@ -1,0 +1,12 @@
+*InputFile
+MinimumModel.k
+*RunDirectoryMode,True,Data/Results,Data/Metadata
+*Info,M1,DV1
+*Description,This test is for all angle drop simulation
+*Creator,koo.park,koo.park@samsung.com,CAE,HE
+*Mode
+SIMULATION_AUTOMATION,1
+**SimulationAutomation,1
+JsonFile,scenarios_2025-10-06T22-11-57-014Z.json
+**EndSimulationAutomation
+*End

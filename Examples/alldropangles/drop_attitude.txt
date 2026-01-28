@@ -1,0 +1,27 @@
+*Inputfile
+MinimumModel.k
+*RunDirectoryMode,True,Data/Results,Data/Metadata
+*Info,M1,DV1
+*Description,This test is for all angle drop simulation
+*Creator,koo.park,koo.park@samsung.com,CAE,HE
+*Mode
+DROP_ATTITUDE,1
+**DropAttitude,1
+EulerRolling,108.40071741034467,-96.70843214185096,-76.59377879667808,-125.61536660977404,-56.374472229421784
+EulerPitching,-42.36402149151405,89.103109042852,118.03981116648316,-55.28417846337655,-31.482711446670237
+EulerYawing,-31.743116623073632,-24.386690831421987,-95.7845750744738,35.8382994586413,-137.50294620672634
+Height,1500,1500,1500,1500,1500
+InitialVelocityX,0,0,0,0,0
+InitialVelocityY,0,0,0,0,0
+InitialVelocityZ,0,0,0,0,0
+InitialAngularVelocityX,0,0,0,0,0
+InitialAngularVelocityY,0,0,0,0,0
+InitialAngularVelocityZ,0,0,0,0,0
+OffsetDistance,0.1
+Density,2700
+YoungsModulus,70000000000
+PoissonRatio,0.3
+tFinal,0.001
+dt,0.000001
+**EndDropAttitude
+*End
