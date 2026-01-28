@@ -1,0 +1,120 @@
+<?xml version='1.0' encoding='utf8'?>
+<X3D xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" profile="Immersive" version="3.3" xsi:noNamespaceSchemaLocation="http://www.web3d.org/specifications/x3d-3.3.xsd">
+<head>
+    <meta name="generator" content="pythonocc-7.7.0 X3D exporter (www.pythonocc.org)" />
+    <meta name="creator" content="pythonocc-7.7.0 generator" />
+    <meta name="identifier" content="http://www.pythonocc.org" />
+    <meta name="description" content="pythonocc-7.7.0 x3dom based shape rendering" />
+</head>
+<Scene>
+<Switch whichChoice="0" id="swBRP"><Transform scale="1 1 1"><Shape DEF="shape3" onclick="select(this);"><Appearance>
+<Material id="color" diffuseColor="0.101961 0.203922 0.427451" shininess="0.9" specularColor="0.2 0.2 0.2" transparency="0">
+</Material>
+</Appearance>
+<TriangleSet solid="false">
+<Coordinate point="-210 80 110 -210 300 -110 -210 80 -110 -210 80 110 -210 300 110 -210 300 -110 -210 80 110 -210 80 -110 -140 80 -110 -140 80 110 -210 80 110 -140 80 -110 -210 300 110 -210 80 110 -140 80 110 -140 300 110 -210 300 110 -140 80 110 -210 300 110 -140 300 -110 -210 300 -110 -140 300 110 -140 300 -110 -210 300 110 -210 300 -110 -140 80 -110 -210 80 -110 -140 300 -110 -140 80 -110 -210 300 -110 -140 290 100 -140 300 -110 -140 300 110 -140 290 100 -140 290 -100 -140 300 -110 -140 90 -100 -140 80 -110 -140 300 -110 -140 90 -100 -140 300 -110 -140 290 -100 -140 80 110 -140 90 100 -140 290 100 -140 80 110 -140 290 100 -140 300 110 -140 80 110 -140 80 -110 -140 90 -100 -140 80 110 -140 90 -100 -140 90 100 -200 290 -100 -200 90 -100 -140 90 -100 -140 290 -100 -200 290 -100 -140 90 -100 -200 290 100 -200 290 -100 -140 290 -100 -140 290 100 -200 290 100 -140 290 -100 -200 290 100 -140 90 100 -200 90 100 -140 290 100 -140 90 100 -200 290 100 -200 90 100 -140 90 -100 -200 90 -100 -140 90 100 -140 90 -100 -200 90 100 -200 90 100 -200 90 -100 -200 290 -100 -200 90 100 -200 290 -100 -200 290 100 " />
+<Normal vector="-1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 " />
+</TriangleSet>
+</Shape></Transform></Switch>
+<Switch whichChoice="0" id="swBRP">
+	<Group>
+		<Transform scale="1 1 1"><Shape DEF="edg0">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-210 80 -110 -210 80 110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg1">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-210 80 110 -210 300 110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg2">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-210 300 -110 -210 300 110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg3">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-210 80 -110 -210 300 -110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg4">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-210 80 -110 -140 80 -110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg5">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-140 80 -110 -140 80 110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg6">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-210 80 110 -140 80 110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg7">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-210 300 110 -140 300 110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg8">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-140 80 110 -140 300 110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg9">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-210 300 -110 -140 300 -110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg10">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-140 300 -110 -140 300 110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg11">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-140 80 -110 -140 300 -110 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg12">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-140 290 -100 -140 90 -100 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg13">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-140 290 -100 -140 290 100 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg14">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-140 290 100 -140 90 100 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg15">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-140 90 -100 -140 90 100 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg16">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-200 290 -100 -140 290 -100 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg17">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-200 90 -100 -140 90 -100 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg18">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-200 90 -100 -200 290 -100 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg19">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-200 290 100 -140 290 100 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg20">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-200 290 -100 -200 290 100 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg21">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-200 90 100 -140 90 100 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg22">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-200 90 100 -200 290 100 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg23">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="-200 90 -100 -200 90 100 " /></LineSet>
+		</Shape></Transform>
+	</Group>
+</Switch>
+</Scene>
+</X3D>

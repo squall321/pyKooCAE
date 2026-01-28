@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+{% block title %}
+PCB Generator
+{% endblock %}
+
+{% block page_content %}
+    {% for message in get_flashed_messages() %}
+        <div class = "alert alert-warning">
+            <button type="button" class="close" data-dismiss="alert">&times;</button>        
+        {{ message }}
+        </div>
+    {% endfor %}
+
+    <form class="form" method='POST' role="form">
+        {{form.hidden_tag()}}
+        {{wtf.form_errors(form,hiddens="only")}}
+        <div class="form-row">
+            <iframe src={{form.visualURL}} width="1280" height="720" title="Webgui" allowtransparency=yes scrolling=yes id="myPCBView">
+
+            </iframe>
+        </div>
+        <div class="form-row">
+            <div class="col-md-4">
+                {{wtf.form_field(form.submit_generate)}}
+            </div>
+            <div class="col-md-4">
+                {{wtf.form_field(form.submit_initialize)}}
+            </div>
+            <div class="col-md-4">
+                {{wtf.form_field(form.select_typicalTypeofPCB)}}
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="col-md-6">
+                {{wtf.form_field(form.name)}}
+            </div>
+        </div>
+    </form> 
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    const iframe = document.getElementById('myPCBView');
+    if(!iframe.src){
+        iframe.style.display = "none";
+    }
+</script>
+
+{% endblock %}

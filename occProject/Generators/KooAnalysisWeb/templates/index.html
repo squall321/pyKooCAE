@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}
+Koo Analysis Web
+{% endblock %}
+
+{% block page_content %}
+    <h1>
+        Hello, 
+        {% if name %}
+        {{name}}
+        {% else %}
+        Stranger
+        {% endif %}
+        !
+    </h1>
+{% endblock %}

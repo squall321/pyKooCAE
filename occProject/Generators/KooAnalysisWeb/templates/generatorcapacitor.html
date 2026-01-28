@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+{% block title %}
+Capacitor Generator 
+{% endblock %}
+
+{% block page_content %}
+    {% for message in get_flashed_messages() %}
+        <div class = "alert alert-warning">
+            <button type="button" class="close" data-dismiss="alert">&times;</button>
+            {{ message }}
+        </div>
+    {% endfor %}
+
+    <form class="form" method='POST' role="form">
+        {{form.hidden_tag()}}
+        {{wtf.form_errors(form,hiddens="only")}}
+        <div class="form-row">
+            <iframe src={{form.visualURL}} width="1280" height="720" title="Webgui" allowtransparency=yes scrolling=yes id="myCapacitorView">
+
+            </iframe>
+        </div>
+        <div class="form-row">
+            <div class="col-md-4">
+                {{wtf.form_field(form.submit_generate)}}
+            </div>
+            <div class="col-md-4">
+                {{wtf.form_field(form.submit_initialize)}}
+            </div>
+            <div class="col-md-4">
+                {{wtf.form_field(form.select_typicalSizeCap)}}
+                <input type="submit" value="Submit">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="col-md-6">
+                {{wtf.form_field(form.name)}}
+            </div>            
+        </div>
+        <div class="form-row">
+            <div class="col-md-3">
+                {{wtf.form_field(form.leftPadWidth,value=lpwValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.leftPadHeight,value=lphValue)}}                
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.rightPadWidth,value=rpwValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.rightPadHeight,value=rphValue)}}
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="col-md-6">
+                {{wtf.form_field(form.padIntervalWidth,value=piwValue)}}
+            </div>
+            <div class="col-md-6">
+                {{wtf.form_field(form.padThickness,value=ptValue)}}
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="col-md-4">
+                {{wtf.form_field(form.ceramicBodyWidth,value=cbwValue)}}
+            </div>
+            <div class="col-md-4">
+                {{wtf.form_field(form.ceramicBodyHeight,value=cbhValue)}}
+            </div>
+            <div class="col-md-4">
+                {{wtf.form_field(form.ceramicBodyThickness,value=cbtValue)}}
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="col-md-3">
+                {{wtf.form_field(form.leftTerminationWidth,value=ltwValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.leftTerminationThickness,value=lttValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.rightTerminationWidth,value=rtwValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.rightTerminationThickness,value=rttValue)}}
+            </div>            
+        </div>
+        <div class="form-row">
+            <div class="col-md-3">
+                {{wtf.form_field(form.leftBarrierWidth,value=lbwValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.leftBarrierThickness,value=lbtValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.rightBarrierWidth,value=rbwValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.rightBarrierThickness,value=rbtValue)}}
+            </div>            
+        </div>
+        <div class="form-row">
+            <div class="col-md-3">
+                {{wtf.form_field(form.leftFinishWidth,value=lfwValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.leftFinishThickness,value=lftValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.rightFinishWidth,value=rfwValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.rightFinishThickness,value=rftValue)}}
+            </div>            
+        </div>
+        <div class="form-row">
+            <div class="col-md-3">
+                {{wtf.form_field(form.leftSolderThickness,value=lstValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.leftSolderVolume,value=lsvValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.rightSolderThickness,value=rstValue)}}
+            </div>
+            <div class="col-md-3">
+                {{wtf.form_field(form.rightSolderVolume,value=rsvValue)}}
+            </div>
+        </div>
+    </form>
+
+
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    const iframe = document.getElementById('myCapacitorView');
+    if(!iframe.src){
+        iframe.style.display = "none";
+    }
+</script>
+
+{% endblock %}

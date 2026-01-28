@@ -1,0 +1,168 @@
+<?xml version='1.0' encoding='utf8'?>
+<X3D xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" profile="Immersive" version="3.3" xsi:noNamespaceSchemaLocation="http://www.web3d.org/specifications/x3d-3.3.xsd">
+<head>
+    <meta name="generator" content="pythonocc-7.7.0 X3D exporter (www.pythonocc.org)" />
+    <meta name="creator" content="pythonocc-7.7.0 generator" />
+    <meta name="identifier" content="http://www.pythonocc.org" />
+    <meta name="description" content="pythonocc-7.7.0 x3dom based shape rendering" />
+</head>
+<Scene>
+<Switch whichChoice="0" id="swBRP"><Transform scale="1 1 1"><Shape DEF="shape6" onclick="select(this);"><Appearance>
+<Material id="color" diffuseColor="0.960784 0.407843 0.0470588" shininess="0.9" specularColor="0.2 0.2 0.2" transparency="0">
+</Material>
+</Appearance>
+<TriangleSet solid="false">
+<Coordinate point="1310 4090 2000 1310 4110 2020 1310 4110 -2020 1310 4090 2000 1310 4110 -2020 1310 4090 -2000 1310 90 -2000 1310 4110 -2020 1310 70 -2020 1310 90 -2000 1310 4090 -2000 1310 4110 -2020 1310 70 2020 1310 4090 2000 1310 90 2000 1310 70 2020 1310 4110 2020 1310 4090 2000 1310 70 2020 1310 90 -2000 1310 70 -2020 1310 70 2020 1310 90 2000 1310 90 -2000 1310 70 2020 1310 70 -2020 1820 70 -2020 1820 70 2020 1310 70 2020 1820 70 -2020 1310 4110 2020 1310 70 2020 1820 70 2020 1820 4110 2020 1310 4110 2020 1820 70 2020 1310 4110 -2020 1820 70 -2020 1310 70 -2020 1820 4110 -2020 1820 70 -2020 1310 4110 -2020 1310 4110 2020 1820 4110 -2020 1310 4110 -2020 1820 4110 2020 1820 4110 -2020 1310 4110 2020 1340 4090 -2000 1310 4090 -2000 1310 90 -2000 1340 4090 -2000 1310 90 -2000 1340 90 -2000 1340 4090 2000 1310 4090 -2000 1340 4090 -2000 1340 4090 2000 1310 4090 2000 1310 4090 -2000 1340 4090 2000 1310 90 2000 1310 4090 2000 1340 4090 2000 1340 90 2000 1310 90 2000 1340 90 2000 1340 90 -2000 1310 90 -2000 1340 90 2000 1310 90 -2000 1310 90 2000 1820 4110 2020 1820 70 -2020 1820 4110 -2020 1820 70 2020 1820 70 -2020 1820 4110 2020 1340 90 -2000 1340 80 -2010 1340 4100 -2010 1340 90 -2000 1340 4100 -2010 1340 4090 -2000 1340 4100 2010 1340 4090 2000 1340 4090 -2000 1340 4100 2010 1340 4090 -2000 1340 4100 -2010 1340 80 2010 1340 90 2000 1340 4090 2000 1340 80 2010 1340 4090 2000 1340 4100 2010 1340 80 2010 1340 80 -2010 1340 90 -2000 1340 80 2010 1340 90 -2000 1340 90 2000 1810 80 2010 1810 80 -2010 1340 80 -2010 1810 80 2010 1340 80 -2010 1340 80 2010 1810 4100 2010 1340 80 2010 1340 4100 2010 1810 4100 2010 1810 80 2010 1340 80 2010 1810 4100 -2010 1340 4100 -2010 1340 80 -2010 1810 4100 -2010 1340 80 -2010 1810 80 -2010 1810 4100 2010 1340 4100 -2010 1810 4100 -2010 1810 4100 2010 1340 4100 2010 1340 4100 -2010 1810 80 2010 1810 4100 -2010 1810 80 -2010 1810 80 2010 1810 4100 2010 1810 4100 -2010 " />
+<Normal vector="-1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 -1 0 0 " />
+</TriangleSet>
+</Shape></Transform></Switch>
+<Switch whichChoice="0" id="swBRP">
+	<Group>
+		<Transform scale="1 1 1"><Shape DEF="edg0">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 70 -2020 1310 70 2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg1">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 70 2020 1310 4110 2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg2">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 70 -2020 1310 4110 -2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg3">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 4110 -2020 1310 4110 2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg4">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 4090 -2000 1310 90 -2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg5">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 4090 -2000 1310 4090 2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg6">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 4090 2000 1310 90 2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg7">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 90 -2000 1310 90 2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg8">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 70 -2020 1820 70 -2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg9">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1820 70 -2020 1820 70 2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg10">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 70 2020 1820 70 2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg11">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 4110 2020 1820 4110 2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg12">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1820 70 2020 1820 4110 2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg13">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 4110 -2020 1820 4110 -2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg14">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1820 70 -2020 1820 4110 -2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg15">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1820 4110 -2020 1820 4110 2020 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg16">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 4090 -2000 1340 4090 -2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg17">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 90 -2000 1340 4090 -2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg18">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 90 -2000 1340 90 -2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg19">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 4090 2000 1340 4090 -2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg20">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 4090 2000 1340 4090 2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg21">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 90 2000 1340 4090 2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg22">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1310 90 2000 1340 90 2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg23">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 90 2000 1340 90 -2000 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg24">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 80 -2010 1340 80 2010 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg25">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 80 2010 1340 4100 2010 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg26">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 80 -2010 1340 4100 -2010 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg27">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 4100 -2010 1340 4100 2010 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg28">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 80 -2010 1810 80 -2010 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg29">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1810 80 -2010 1810 80 2010 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg30">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 80 2010 1810 80 2010 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg31">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 4100 2010 1810 4100 2010 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg32">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1810 80 2010 1810 4100 2010 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg33">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1340 4100 -2010 1810 4100 -2010 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg34">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1810 80 -2010 1810 4100 -2010 " /></LineSet>
+		</Shape></Transform>
+		<Transform scale="1 1 1"><Shape DEF="edg35">
+			<Appearance><Material emissiveColor="0 0 0" /></Appearance>
+			<LineSet vertexCount="2"><Coordinate point="1810 4100 -2010 1810 4100 2010 " /></LineSet>
+		</Shape></Transform>
+	</Group>
+</Switch>
+</Scene>
+</X3D>

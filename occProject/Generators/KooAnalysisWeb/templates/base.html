@@ -1,0 +1,68 @@
+{% extends "bootstrap/base.html" %}
+
+{% block title %} Koo Analysis Web {% endblock %}
+{% block navbar %}
+    <div class="navbar navbar-expand-lg navbar-inverse" role="navigation">
+        <div class="container">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle"
+                data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand" href="/">KAWeb</a>
+            </div>
+            <div class="navbar-collapse collapse">
+                <ul class="nav navbar-nav">
+                    <li><a href="/">Home</a></li>
+                </ul>
+                <ul class="nav navbar-nav">
+                    <li>
+                        {% if name %}
+                        <a href="/logout">
+                            logout
+                        </a>
+                        {% else %}
+                        <a href="/login">
+                            login
+                        </a>
+                        {% endif %}
+                    </li>
+                </ul> 
+                <ul class ="nav navbar-nav">
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="ModellingNavbarScrollingDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                            Modelling
+                        </a>
+                        <div class="dropdown-menu" aria-labelledby="ModellingNavbarScrollingDropdown">
+                            <a class="dropdown-item" href="/capacitor">Capacitor</a>
+                            <div class="dropdown-divider"></div>
+                            <a class="dropdown-item" href="#">BGA</a>
+                            <div class="dropdown-divider"></div>
+                            <a class="dropdown-item" href="/pcb">PCB</a>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    {% block page_content %} {% endblock %}
+    <p> the local date and time is {{moment(current_time).format('LLL')}}. </p>
+    <p> That was {{moment(current_time).fromNow(refresh=True)}} </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{super()}}
+{{moment.include_moment()}}
+{% endblock %}
+
+
+
+

@@ -37,12 +37,16 @@ build/
 *.build/
 *.dist/
 *.egg-info/
+**/dist (copy)/
 
 # Large archives
 *.zip
 *.tar.gz
 *.tar.xz
 *.tar.bz2
+
+# Large binaries
+*.exe
 
 # Logs
 *.log

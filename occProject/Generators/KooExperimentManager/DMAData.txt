@@ -1,0 +1,54 @@
+{
+    "Data": {
+        "0": {
+            "Freq": 0.001,
+            "Temp": 25,
+            "Storage": 1000000.0,
+            "Loss": 10000.0
+        },
+        "1": {
+            "Freq": 0.01,
+            "Temp": 25,
+            "Storage": 100000.0,
+            "Loss": 1000.0
+        },
+        "2": {
+            "Freq": 0.1,
+            "Temp": 25,
+            "Storage": 10000.0,
+            "Loss": 100.0
+        },
+        "3": {
+            "Freq": 1.0,
+            "Temp": 25,
+            "Storage": 1000.0,
+            "Loss": 10.0
+        },
+        "4": {
+            "Freq": 10.0,
+            "Temp": 25,
+            "Storage": 100.0,
+            "Loss": 1.0
+        },
+        "5": {
+            "Freq": 100.0,
+            "Temp": 25,
+            "Storage": 10.0,
+            "Loss": 0.1
+        },
+        "6": {
+            "Freq": 1000.0,
+            "Temp": 25,
+            "Storage": 1.0,
+            "Loss": 0.01
+        }
+    },
+    "Variables": {
+        "Density": 7800,
+        "Nu": 0.3,
+        "Fmin": 1,
+        "Fmax": 1000,
+        "Ftarget": 100,
+        "Mode": "SimpleViscoelastic"
+    }
+}

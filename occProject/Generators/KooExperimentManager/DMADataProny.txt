@@ -1,0 +1,42 @@
+{
+  "Variables": {
+    "Mode": "GeneralViscoelastic",
+    "Frequencies": [1.0, 10.0, 100.0],
+    "NTerms": 2,
+    "Nu": 0.3,
+    "Density": 1000.0,
+    "BulkModulus": 780.0,
+    "TREF": 25.0,
+    "A": 10.0,
+    "B": 1000.0,
+    "NTerms": 4
+  },
+  "Data": {
+   "Shear": {
+    "0":  { "Freq": 1.0,    "Storage": 10.0,  "Loss": 1.0,   "Temp": 25 },
+    "1":  { "Freq": 2.0,    "Storage": 10.5,  "Loss": 1.2,   "Temp": 25 },
+    "2":  { "Freq": 5.0,    "Storage": 11.0,  "Loss": 1.5,   "Temp": 25 },
+    "3":  { "Freq": 10.0,   "Storage": 12.0,  "Loss": 2.0,   "Temp": 25 },
+    "4":  { "Freq": 20.0,   "Storage": 13.0,  "Loss": 2.5,   "Temp": 25 },
+    "5":  { "Freq": 50.0,   "Storage": 14.0,  "Loss": 2.7,   "Temp": 25 },
+    "6":  { "Freq": 100.0,  "Storage": 15.0,  "Loss": 3.0,   "Temp": 25 },
+    "7":  { "Freq": 200.0,  "Storage": 16.0,  "Loss": 3.5,   "Temp": 25 },
+    "8":  { "Freq": 500.0,  "Storage": 17.0,  "Loss": 4.0,   "Temp": 25 },
+    "9":  { "Freq": 1000.0, "Storage": 18.0,  "Loss": 4.5,   "Temp": 25 }
+    },
+
+    "Bulk": {
+    "0":  { "Freq": 1.0,    "Storage": 800.0,   "Loss": 10.0,   "Temp": 25 },
+    "1":  { "Freq": 2.0,    "Storage": 810.0,   "Loss": 12.0,   "Temp": 25 },
+    "2":  { "Freq": 5.0,    "Storage": 830.0,   "Loss": 14.0,   "Temp": 25 },
+    "3":  { "Freq": 10.0,   "Storage": 850.0,   "Loss": 16.0,   "Temp": 25 },
+    "4":  { "Freq": 20.0,   "Storage": 870.0,   "Loss": 18.0,   "Temp": 25 },
+    "5":  { "Freq": 50.0,   "Storage": 900.0,   "Loss": 21.0,   "Temp": 25 },
+    "6":  { "Freq": 100.0,  "Storage": 930.0,   "Loss": 24.0,   "Temp": 25 },
+    "7":  { "Freq": 200.0,  "Storage": 960.0,   "Loss": 27.0,   "Temp": 25 },
+    "8":  { "Freq": 500.0,  "Storage": 990.0,   "Loss": 30.0,   "Temp": 25 },
+    "9":  { "Freq": 1000.0, "Storage": 1020.0,  "Loss": 34.0,   "Temp": 25 }
+    }
+
+  }
+}

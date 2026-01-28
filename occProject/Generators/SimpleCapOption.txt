@@ -1,0 +1,10 @@
+*PACKAGE
+#Name, Update, FileName, Type, XLength, yLength, zLength
+Cap1,Y,Cap1.stp,SIMPLECAP,400,200,200
+Cap2,Y,Cap2.stp,SIMPLECAP,600,300,300
+Cap3,Y,Cap3.stp,SIMPLECAP,1800,600,600
+Cap4
+*COMPONENT,1
+PCB,0.0,1000.0,
+
+*EndS

@@ -1,0 +1,1 @@
+python -m nuitka .\KooAutomatedModeller.py --standalone --enable-plugin=pyqt5 --msvc=latest --show-progress   

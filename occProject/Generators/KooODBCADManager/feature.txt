@@ -1,0 +1,21 @@
+#
+#Num features
+#
+F 1
+
+#
+#Units
+#
+U MM
+
+#
+#Layer features
+#
+S P 0 
+OB 0.0 0.0 I
+OS 50.0 0.0
+OS 50.0 50.0
+OS 0.0 50.0
+OS 0.0 0.0
+OE
+SE
