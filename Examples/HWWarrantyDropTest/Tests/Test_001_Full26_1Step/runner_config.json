@@ -1,0 +1,411 @@
+{
+  "project_name": "Test_001_Full26_1Step",
+  "base_dir": "/home/koopark/serviceApptainers/appt313/opt/pyKooCAE",
+  "environment": {
+    "koomeshmodifier_path": "/opt/KooMeshModifier/run.sh",
+    "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
+    "apptainer_sif": "/opt/apptainers/KooSimulation313.sif",
+    "apptainer_bind": "/data:/data,/shared:/shared",
+    "lsdyna_apptainer_sif": "/opt/apptainers/LSDynaBasic_ifort2022_impilatest_mpp_s.sif",
+    "lsdyna_apptainer_bind": "/data:/data,/shared:/shared"
+  },
+  "scenarios": [
+    {
+      "scenario_id": "Full_26_Directions_Single_Drop_S001",
+      "scenario_name": "Full_26_Directions_Single_Drop",
+      "total_steps": 1,
+      "steps": [
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "C1_Back_Right_Top",
+            "roll": 45.0,
+            "pitch": -45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 18
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "C2_Back_Right_Bottom",
+            "roll": -45.0,
+            "pitch": -45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 19
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "C3_Back_Left_Top",
+            "roll": 45.0,
+            "pitch": 45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 20
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "C4_Back_Left_Bottom",
+            "roll": -45.0,
+            "pitch": 45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 21
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "C5_Front_Right_Top",
+            "roll": 135.0,
+            "pitch": 45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 22
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "C6_Front_Right_Bottom",
+            "roll": -135.0,
+            "pitch": 45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 23
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "C7_Front_Left_Top",
+            "roll": 135.0,
+            "pitch": -45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 24
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "C8_Front_Left_Bottom",
+            "roll": -135.0,
+            "pitch": -45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 25
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E01_Back_Right",
+            "roll": 0.0,
+            "pitch": -45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 6
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E02_Back_Left",
+            "roll": 0.0,
+            "pitch": 45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 7
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E03_Back_Top",
+            "roll": 45.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 8
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E04_Back_Bottom",
+            "roll": -45.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 9
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E05_Front_Right",
+            "roll": 180.0,
+            "pitch": 45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 10
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E06_Front_Left",
+            "roll": 180.0,
+            "pitch": -45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 11
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E07_Front_Top",
+            "roll": 135.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 12
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E08_Front_Bottom",
+            "roll": -135.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 13
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E09_Right_Top",
+            "roll": 90.0,
+            "pitch": -45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 14
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E10_Right_Bottom",
+            "roll": -90.0,
+            "pitch": -45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 15
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E11_Left_Top",
+            "roll": 90.0,
+            "pitch": 45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 16
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "E12_Left_Bottom",
+            "roll": -90.0,
+            "pitch": 45.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 17
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F1_Back",
+            "roll": 0.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 0
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F2_Front",
+            "roll": 180.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 1
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F3_Right",
+            "roll": 0.0,
+            "pitch": -90.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 2
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F4_Left",
+            "roll": 0.0,
+            "pitch": 90.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 3
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F5_Top",
+            "roll": 90.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 4
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F6_Bottom",
+            "roll": -90.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 5
+        }
+      ]
+    }
+  ]
+}

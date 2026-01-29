@@ -1,5 +1,5 @@
 {
-  "project_name": "Test_001_Full26_1Step",
+  "project_name": "Test_004_Pitching_Sweep",
   "environment": {
     "koomeshmodifier_path": "/opt/KooMeshModifier/run.sh",
     "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
@@ -10,14 +10,16 @@
   },
   "scenarios": [
     {
-      "scenario_name": "Full_26_Directions_Single_Drop",
+      "scenario_name": "Pitching_Sweep_40deg_1deg_Step",
       "template": "MinimumModel.k",
       "angle_source": {
-        "source_type": "cuboid_geometry",
-        "cuboid_geometry": {
-          "include_faces": true,
-          "include_edges": true,
-          "include_corners": true
+        "source_type": "pitching_sweep",
+        "pitching_sweep": {
+          "pitch_start": -40,
+          "pitch_end": 40,
+          "pitch_step": 1,
+          "roll": 0,
+          "yaw": 0
         }
       },
       "cumulative": {

@@ -60,13 +60,19 @@ python occProject/Generators/KooMeshModifier.py iga_convert.txt
 # - iga_part_10.k       (IGA 키워드 9개 블록)
 ```
 
-**파라미터**:
+**필수 파라미터**:
 - `PID`: 원본 FEM Part ID
-- `IGAID`: IGA Part ID
-- `File`: 출력 파일명
-- `rr,rs,rt`: 요소 크기 (선택, 기본 0.6)
-- `ratio`: bbox 확장 비율 (선택, 기본 1.1)
-- `ir`: integration rule (선택, 기본 0)
+- `IGAID`: 생성될 IGA Part ID (PID=VID=SID=PATCHID=RID로 모두 동일하게 사용)
+- `File`: 출력 파일명 (IGA 키워드 저장 경로)
+
+**선택 파라미터** (디폴트 값 제공):
+- `rr`: r-방향(ξ) 요소 크기 비율 (기본: 0.6, 범위: 0.0~1.0, 작을수록 조밀한 메시)
+- `rs`: s-방향(η) 요소 크기 비율 (기본: 0.6)
+- `rt`: t-방향(ζ) 요소 크기 비율 (기본: 0.6, 두께 방향)
+- `ratio`: Bounding Box 확장 비율 (기본: 1.1 = 10% 확장, FEM 파트 주변 IGA 도메인 크기)
+- `ir`: Integration Rule (기본: 0 = Reduced Gauss, 1 = Full Gauss)
+
+**주의**: 대괄호 `[...]`는 선택 파라미터를 의미합니다. 중간 파라미터는 건너뛸 수 없으므로, 예를 들어 `ratio`만 바꾸려면 `rr,rs,rt`도 명시해야 합니다.
 
 ### 방법 2: Python API 직접 사용
 

@@ -1,0 +1,291 @@
+{
+  "project_name": "Test_003_6Faces_Cyclic",
+  "base_dir": "/home/koopark/serviceApptainers/appt313/opt/pyKooCAE",
+  "environment": {
+    "koomeshmodifier_path": "/opt/KooMeshModifier/run.sh",
+    "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
+    "apptainer_sif": "/opt/apptainers/KooSimulation313.sif",
+    "apptainer_bind": "/data:/data,/shared:/shared",
+    "lsdyna_apptainer_sif": "/opt/apptainers/LSDynaBasic_ifort2022_impilatest_mpp_s.sif",
+    "lsdyna_apptainer_bind": "/data:/data,/shared:/shared"
+  },
+  "scenarios": [
+    {
+      "scenario_id": "6_Faces_3_Drops_Cyclic_S003",
+      "scenario_name": "6_Faces_3_Drops_Cyclic",
+      "total_steps": 3,
+      "steps": [
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F1_Back",
+            "roll": 0.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 0
+        },
+        {
+          "step_number": 2,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F2_Front",
+            "roll": 180.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step002.k",
+          "output_dir": "Step002",
+          "dynain_source": "Step001/dynain",
+          "doe_index": 0
+        },
+        {
+          "step_number": 3,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F3_Right",
+            "roll": 0.0,
+            "pitch": -90.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step003.k",
+          "output_dir": "Step003",
+          "dynain_source": "Step002/dynain",
+          "doe_index": 0
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F2_Front",
+            "roll": 180.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 1
+        },
+        {
+          "step_number": 2,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F3_Right",
+            "roll": 0.0,
+            "pitch": -90.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step002.k",
+          "output_dir": "Step002",
+          "dynain_source": "Step001/dynain",
+          "doe_index": 1
+        },
+        {
+          "step_number": 3,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F4_Left",
+            "roll": 0.0,
+            "pitch": 90.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step003.k",
+          "output_dir": "Step003",
+          "dynain_source": "Step002/dynain",
+          "doe_index": 1
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F3_Right",
+            "roll": 0.0,
+            "pitch": -90.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 2
+        },
+        {
+          "step_number": 2,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F4_Left",
+            "roll": 0.0,
+            "pitch": 90.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step002.k",
+          "output_dir": "Step002",
+          "dynain_source": "Step001/dynain",
+          "doe_index": 2
+        },
+        {
+          "step_number": 3,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F5_Top",
+            "roll": 90.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step003.k",
+          "output_dir": "Step003",
+          "dynain_source": "Step002/dynain",
+          "doe_index": 2
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F4_Left",
+            "roll": 0.0,
+            "pitch": 90.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 3
+        },
+        {
+          "step_number": 2,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F5_Top",
+            "roll": 90.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step002.k",
+          "output_dir": "Step002",
+          "dynain_source": "Step001/dynain",
+          "doe_index": 3
+        },
+        {
+          "step_number": 3,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F6_Bottom",
+            "roll": -90.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step003.k",
+          "output_dir": "Step003",
+          "dynain_source": "Step002/dynain",
+          "doe_index": 3
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F5_Top",
+            "roll": 90.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 4
+        },
+        {
+          "step_number": 2,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F6_Bottom",
+            "roll": -90.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step002.k",
+          "output_dir": "Step002",
+          "dynain_source": "Step001/dynain",
+          "doe_index": 4
+        },
+        {
+          "step_number": 3,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F1_Back",
+            "roll": 0.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step003.k",
+          "output_dir": "Step003",
+          "dynain_source": "Step002/dynain",
+          "doe_index": 4
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "F6_Bottom",
+            "roll": -90.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 5
+        },
+        {
+          "step_number": 2,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F1_Back",
+            "roll": 0.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step002.k",
+          "output_dir": "Step002",
+          "dynain_source": "Step001/dynain",
+          "doe_index": 5
+        },
+        {
+          "step_number": 3,
+          "template": "DROP_CUMULATIVE",
+          "mode": "DROP",
+          "angle": {
+            "name": "F2_Front",
+            "roll": 180.0,
+            "pitch": 0.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step003.k",
+          "output_dir": "Step003",
+          "dynain_source": "Step002/dynain",
+          "doe_index": 5
+        }
+      ]
+    }
+  ]
+}

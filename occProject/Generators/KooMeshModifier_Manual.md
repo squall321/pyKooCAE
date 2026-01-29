@@ -130,15 +130,19 @@ PART_EXCHANGE,2
 - **FEM_TO_IGA** (`**FEMtoIGA`) ⭐ NEW
   - 용도: FEM 솔리드 파트를 IGA (Isogeometric Analysis) 포맷으로 일괄 변환.
   - 주요 옵션: `*IGA,<PID>,<IGAID>,<File>[,rr[,rs[,rt[,ratio[,ir]]]]]` 한 줄에 하나의 IGA 파트 정의.
-  - 파라미터:
-    - `PID`: 원본 FEM Part ID (필수)
-    - `IGAID`: IGA Part ID (필수, PID=VID=SID=PATCHID=RID로 동일하게 사용)
-    - `File`: 출력 파일명 (필수, 예: `iga_part1.k`)
-    - `rr,rs,rt`: r/s/t 방향 요소 크기 (선택, 기본값: 0.6)
-    - `ratio`: 바운딩박스 확장 비율 (선택, 기본값: 1.1 = 10% 확장)
-    - `ir`: integration rule (선택, 기본값: 0 = reduced Gauss)
-  - 생성 파일: 메인 모델에 `*INCLUDE` 문 추가 + 개별 IGA 키워드 파일 (9개 블록: PARAMETER_LOCAL, PARAMETER_EXPRESSION_LOCAL, IGA_DEV_STABILIZATION, PART, SECTION_IGA_SOLID, IGA_DEV_VOLUME_XYZ, IGA_SOLID, IGA_3D_NURBS_XYZ, IGA_REFINE_SOLID)
-  - 예제: `tests/iga_tests/FEMtoIGA_Test.txt`
+  - 필수 파라미터:
+    - `PID`: 원본 FEM Part ID
+    - `IGAID`: 생성될 IGA Part ID (PID=VID=SID=PATCHID=RID로 모두 동일하게 사용)
+    - `File`: 출력 파일명 (IGA 키워드 저장 경로, 예: `iga_part1.k`)
+  - 선택 파라미터 (디폴트 값 제공):
+    - `rr`: r-방향(ξ) 요소 크기 비율 (기본값: 0.6, 범위: 0.0~1.0, 작을수록 조밀)
+    - `rs`: s-방향(η) 요소 크기 비율 (기본값: 0.6)
+    - `rt`: t-방향(ζ) 요소 크기 비율 (기본값: 0.6, 두께 방향)
+    - `ratio`: Bounding Box 확장 비율 (기본값: 1.1 = 10% 확장, 1.2 = 20% 확장)
+    - `ir`: Integration Rule (기본값: 0 = Reduced Gauss, 1 = Full Gauss)
+  - 주의: 대괄호 `[...]`는 선택 파라미터를 의미. 중간 파라미터는 건너뛸 수 없음 (예: `ratio`만 바꾸려면 `rr,rs,rt`도 명시)
+  - 생성 파일: 메인 모델에 `*INCLUDE` 문 추가 + 개별 IGA 키워드 파일 (11개 블록: *KEYWORD, PARAMETER_LOCAL, PARAMETER_EXPRESSION_LOCAL, IGA_DEV_STABILIZATION, PART, SECTION_IGA_SOLID, IGA_DEV_VOLUME_XYZ, IGA_SOLID, IGA_3D_NURBS_XYZ, IGA_REFINE_SOLID, *END)
+  - 예제: `occProject/Generators/dist/Examples/5.SimulationModify/FEMtoIGA/`
   - 출력 접미사: `_iga`
 
 ## 결과 파일/로그

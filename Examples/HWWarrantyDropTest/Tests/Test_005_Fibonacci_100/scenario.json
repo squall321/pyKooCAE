@@ -1,5 +1,5 @@
 {
-  "project_name": "Test_001_Full26_1Step",
+  "project_name": "Test_005_Fibonacci_100",
   "environment": {
     "koomeshmodifier_path": "/opt/KooMeshModifier/run.sh",
     "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
@@ -10,14 +10,12 @@
   },
   "scenarios": [
     {
-      "scenario_name": "Full_26_Directions_Single_Drop",
+      "scenario_name": "Fibonacci_Lattice_100_Directions",
       "template": "MinimumModel.k",
       "angle_source": {
-        "source_type": "cuboid_geometry",
-        "cuboid_geometry": {
-          "include_faces": true,
-          "include_edges": true,
-          "include_corners": true
+        "source_type": "fibonacci_lattice",
+        "fibonacci_lattice": {
+          "num_directions": 100
         }
       },
       "cumulative": {

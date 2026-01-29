@@ -1,0 +1,1521 @@
+{
+  "project_name": "Test_005_Fibonacci_100",
+  "base_dir": "/home/koopark/serviceApptainers/appt313/opt/pyKooCAE",
+  "environment": {
+    "koomeshmodifier_path": "/opt/KooMeshModifier/run.sh",
+    "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
+    "apptainer_sif": "/opt/apptainers/KooSimulation313.sif",
+    "apptainer_bind": "/data:/data,/shared:/shared",
+    "lsdyna_apptainer_sif": "/opt/apptainers/LSDynaBasic_ifort2022_impilatest_mpp_s.sif",
+    "lsdyna_apptainer_bind": "/data:/data,/shared:/shared"
+  },
+  "scenarios": [
+    {
+      "scenario_id": "Fibonacci_Lattice_100_Directions_S001",
+      "scenario_name": "Fibonacci_Lattice_100_Directions",
+      "total_steps": 1,
+      "steps": [
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0001",
+            "roll": -180.0,
+            "pitch": -90.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 0
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0002",
+            "roll": -42.49223594996212,
+            "pitch": -78.46363762762356,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 1
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0003",
+            "roll": 95.01552810007576,
+            "pitch": -73.65732088684177,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 2
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0004",
+            "roll": -127.4767078498864,
+            "pitch": -69.95002427584853,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 3
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0005",
+            "roll": 10.031056200151482,
+            "pitch": -66.80823048997212,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 4
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0006",
+            "roll": 147.53882025018936,
+            "pitch": -64.02560998217861,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 5
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0007",
+            "roll": -74.95341569977278,
+            "pitch": -61.49648988291987,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 6
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0008",
+            "roll": 62.554348350265,
+            "pitch": -59.158172045053405,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 7
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0009",
+            "roll": -159.93788759969704,
+            "pitch": -56.969848395363314,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 8
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0010",
+            "roll": -22.430123549659072,
+            "pitch": -54.903198772415394,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 9
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0011",
+            "roll": 115.07764050037872,
+            "pitch": -52.93761800807307,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 10
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0012",
+            "roll": -107.41459544958353,
+            "pitch": -51.05755873101862,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 11
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0013",
+            "roll": 30.093168600454447,
+            "pitch": -49.25094562252961,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 12
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0014",
+            "roll": 167.60093265049244,
+            "pitch": -47.50817622207699,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 13
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0015",
+            "roll": -54.891303299470025,
+            "pitch": -45.821463145358464,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 14
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0016",
+            "roll": 82.61646075056797,
+            "pitch": -44.184385153304454,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 15
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0017",
+            "roll": -139.87577519939407,
+            "pitch": -42.591571346396336,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 16
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0018",
+            "roll": -2.368011149356107,
+            "pitch": -41.03847320763768,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 17
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0019",
+            "roll": 135.13975290068186,
+            "pitch": -39.52119635864217,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 18
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0020",
+            "roll": -87.35248304928056,
+            "pitch": -38.03637395712357,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 19
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0021",
+            "roll": 50.15528100075741,
+            "pitch": -36.5810697902586,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 20
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0022",
+            "roll": -172.33695494920462,
+            "pitch": -35.15270296678003,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 21
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0023",
+            "roll": -34.82919089916706,
+            "pitch": -33.748988595888584,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 22
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0024",
+            "roll": 102.67857315087093,
+            "pitch": -32.367890485758544,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 23
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0025",
+            "roll": -119.8136627990911,
+            "pitch": -31.007583006867137,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 24
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0026",
+            "roll": 17.694101250946858,
+            "pitch": -29.666420032730876,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 25
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0027",
+            "roll": 155.20186530098482,
+            "pitch": -28.342909409394657,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 26
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0028",
+            "roll": -67.2903706489772,
+            "pitch": -27.03569178941229,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 27
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0029",
+            "roll": 70.21739340105995,
+            "pitch": -25.743522944358418,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 28
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0030",
+            "roll": -152.27484254890206,
+            "pitch": -24.4652588741193,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 29
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0031",
+            "roll": -14.767078498864095,
+            "pitch": -23.19984318290652,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 30
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0032",
+            "roll": 122.7406855511739,
+            "pitch": -21.946296305909684,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 31
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0033",
+            "roll": -99.75155039878815,
+            "pitch": -20.703706257032636,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 32
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0034",
+            "roll": 37.75621365124982,
+            "pitch": -19.47122063449069,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 33
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0035",
+            "roll": 175.26397770128779,
+            "pitch": -18.24803967235124,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 34
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0036",
+            "roll": -47.22825824867422,
+            "pitch": -17.033410166114166,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 35
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0037",
+            "roll": 90.27950580136371,
+            "pitch": -15.826620131872332,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 36
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0038",
+            "roll": -132.21273014859912,
+            "pitch": -14.626994083477896,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 37
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0039",
+            "roll": 5.29503390143887,
+            "pitch": -13.433888831959393,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 38
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0040",
+            "roll": 142.80279795147686,
+            "pitch": -12.246689727311349,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 39
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0041",
+            "roll": -79.68943799848519,
+            "pitch": -11.064807275559701,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 40
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0042",
+            "roll": 57.81832605155279,
+            "pitch": -9.887674074341035,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 41
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0043",
+            "roll": -164.67390989840925,
+            "pitch": -8.71474201861811,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 42
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0044",
+            "roll": -27.166145848371258,
+            "pitch": -7.545479734970016,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 43
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0045",
+            "roll": 110.34161820166588,
+            "pitch": -6.379370208442808,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 44
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0046",
+            "roll": -112.15061774829614,
+            "pitch": -5.215908570454118,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 45
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0047",
+            "roll": 25.357146301741835,
+            "pitch": -4.054600019895446,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 46
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0048",
+            "roll": 162.86491035177983,
+            "pitch": -2.8949578525085826,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 47
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0049",
+            "roll": -59.627325598182225,
+            "pitch": -1.7365015759379077,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 48
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0050",
+            "roll": 77.88043845185575,
+            "pitch": -0.5787550896607883,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 49
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0051",
+            "roll": -144.61179749810628,
+            "pitch": 0.5787550896607883,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 50
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0052",
+            "roll": -7.104033448068321,
+            "pitch": 1.7365015759379077,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 51
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0053",
+            "roll": 130.40373060196964,
+            "pitch": 2.894957852508597,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 52
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0054",
+            "roll": -92.08850534799318,
+            "pitch": 4.054600019895446,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 53
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0055",
+            "roll": 45.419258702045596,
+            "pitch": 5.215908570454118,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 54
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0056",
+            "roll": -177.0729772479164,
+            "pitch": 6.379370208442822,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 55
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0057",
+            "roll": -39.56521319788007,
+            "pitch": 7.545479734970016,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 56
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0058",
+            "roll": 97.94255085215792,
+            "pitch": 8.714742018618125,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 57
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0059",
+            "roll": -124.54968509780413,
+            "pitch": 9.88767407434105,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 58
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0060",
+            "roll": 12.958078952233848,
+            "pitch": 11.064807275559687,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 59
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0061",
+            "roll": 150.4658430022718,
+            "pitch": 12.246689727311363,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 60
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0062",
+            "roll": -72.02639294769021,
+            "pitch": 13.433888831959393,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 61
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0063",
+            "roll": 65.48137110234777,
+            "pitch": 14.62699408347791,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 62
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0064",
+            "roll": -157.01086484761427,
+            "pitch": 15.826620131872346,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 63
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0065",
+            "roll": -19.50310079757631,
+            "pitch": 17.03341016611418,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 64
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0066",
+            "roll": 118.00466325246168,
+            "pitch": 18.248039672351254,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 65
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0067",
+            "roll": -104.48757269750035,
+            "pitch": 19.47122063449069,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 66
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0068",
+            "roll": 33.02019135253761,
+            "pitch": 20.70370625703265,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 67
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0069",
+            "roll": 170.52795540257557,
+            "pitch": 21.946296305909684,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 68
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0070",
+            "roll": -51.96428054738644,
+            "pitch": 23.199843182906534,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 69
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0071",
+            "roll": 85.54348350265155,
+            "pitch": 24.465258874119286,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 70
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0072",
+            "roll": -136.94875244731048,
+            "pitch": 25.743522944358418,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 71
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0073",
+            "roll": 0.5590116027274803,
+            "pitch": 27.03569178941231,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 72
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0074",
+            "roll": 138.0667756527638,
+            "pitch": 28.34290940939465,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 73
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0075",
+            "roll": -84.42546029719821,
+            "pitch": 29.666420032730883,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 74
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0076",
+            "roll": 53.08230375283978,
+            "pitch": 31.007583006867137,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 75
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0077",
+            "roll": -169.40993219712226,
+            "pitch": 32.36789048575854,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 76
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0078",
+            "roll": -31.902168147084296,
+            "pitch": 33.748988595888605,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 77
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0079",
+            "roll": 105.60559590295367,
+            "pitch": 35.152702966780026,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 78
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0080",
+            "roll": -116.88664004700834,
+            "pitch": 36.581069790258596,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 79
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0081",
+            "roll": 20.62112400302962,
+            "pitch": 38.0363739571236,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 80
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0082",
+            "roll": 158.1288880530676,
+            "pitch": 39.521196358642186,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 81
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0083",
+            "roll": -64.36334789689442,
+            "pitch": 41.03847320763768,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 82
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0084",
+            "roll": 73.14441615314354,
+            "pitch": 42.591571346396336,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 83
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0085",
+            "roll": -149.3478197968185,
+            "pitch": 44.18438515330445,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 84
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0086",
+            "roll": -11.840055746780507,
+            "pitch": 45.82146314535848,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 85
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0087",
+            "roll": 125.66770830325748,
+            "pitch": 47.508176222077,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 86
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0088",
+            "roll": -96.82452764670457,
+            "pitch": 49.25094562252963,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 87
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0089",
+            "roll": 40.68323640333176,
+            "pitch": 51.05755873101862,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 88
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0090",
+            "roll": 178.19100045336972,
+            "pitch": 52.93761800807306,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 89
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0091",
+            "roll": -44.301235496592284,
+            "pitch": 54.90319877241541,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 90
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0092",
+            "roll": 93.20652855344571,
+            "pitch": 56.96984839536333,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 91
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0093",
+            "roll": -129.28570739651633,
+            "pitch": 59.15817204505339,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 92
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0094",
+            "roll": 8.222056653521634,
+            "pitch": 61.49648988291989,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 93
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0095",
+            "roll": 145.7298207035596,
+            "pitch": 64.02560998217862,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 94
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0096",
+            "roll": -76.76241524640243,
+            "pitch": 66.80823048997209,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 95
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0097",
+            "roll": 60.74534880363555,
+            "pitch": 69.95002427584853,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 96
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0098",
+            "roll": -161.7468871463265,
+            "pitch": 73.65732088684177,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 97
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0099",
+            "roll": -24.239123096288495,
+            "pitch": 78.4636376276236,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 98
+        },
+        {
+          "step_number": 1,
+          "template": "DROP_FIRST",
+          "mode": "DROP",
+          "angle": {
+            "name": "P0100",
+            "roll": 113.26864095374947,
+            "pitch": 90.0,
+            "yaw": 0.0
+          },
+          "input_file": "Step001.k",
+          "output_dir": "Step001",
+          "dynain_source": null,
+          "doe_index": 99
+        }
+      ]
+    }
+  ]
+}

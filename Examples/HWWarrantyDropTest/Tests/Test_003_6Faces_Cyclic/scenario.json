@@ -1,5 +1,5 @@
 {
-  "project_name": "Test_001_Full26_1Step",
+  "project_name": "Test_003_6Faces_Cyclic",
   "environment": {
     "koomeshmodifier_path": "/opt/KooMeshModifier/run.sh",
     "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
@@ -10,22 +10,22 @@
   },
   "scenarios": [
     {
-      "scenario_name": "Full_26_Directions_Single_Drop",
+      "scenario_name": "6_Faces_3_Drops_Cyclic",
       "template": "MinimumModel.k",
       "angle_source": {
         "source_type": "cuboid_geometry",
         "cuboid_geometry": {
           "include_faces": true,
-          "include_edges": true,
-          "include_corners": true
+          "include_edges": false,
+          "include_corners": false
         }
       },
       "cumulative": {
-        "num_steps": 1,
-        "mode_sequence": ["DROP"],
+        "num_steps": 3,
+        "mode_sequence": ["DROP", "DROP", "DROP"],
         "base_angle_index": 0,
         "angle_mixing": {
-          "strategy": "same_angle"
+          "strategy": "cyclic"
         }
       }
     }

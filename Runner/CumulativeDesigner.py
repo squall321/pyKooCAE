@@ -28,6 +28,7 @@ from dataclasses import dataclass, asdict
 # Runner 모듈 임포트
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from PathResolver import find_koomeshmodifier
 from CaseTxtParser import DropAngle
 from AngleSourceParser import (
     AngleSourceConfig, AngleSourceType,
@@ -107,7 +108,8 @@ class CumulativeDesigner:
 
         # 실행 파일 경로 기본값 설정 (사용자가 override 가능)
         if "koomeshmodifier_path" not in environment:
-            environment["koomeshmodifier_path"] = "/opt/KooMeshModifier/run.sh"
+            # PathResolver로 자동 탐색: 상대경로 → KOO_PATH → 설정 → 기본값
+            environment["koomeshmodifier_path"] = find_koomeshmodifier()
         if "lsdyna_path" not in environment:
             environment["lsdyna_path"] = "/opt/lsdyna/bin/ls-dyna"
 
@@ -148,8 +150,8 @@ class CumulativeDesigner:
             tolerance_config = self._parse_tolerance_config(tolerance_cfg)
             doe_angles = apply_tolerance_doe(base_angles, tolerance_config)
         else:
-            # Tolerance 없으면 원본 그대로 (doe_index=0 추가)
-            doe_angles = [(name, roll, pitch, yaw, 0) for name, roll, pitch, yaw in base_angles]
+            # Tolerance 없으면 원본 그대로 (각 케이스에 고유 doe_index 부여)
+            doe_angles = [(name, roll, pitch, yaw, idx) for idx, (name, roll, pitch, yaw) in enumerate(base_angles)]
 
         # Step 3: 누적 모드 및 스텝 수
         cumulative_cfg = scenario_cfg.get("cumulative", {})
@@ -177,25 +179,28 @@ class CumulativeDesigner:
                 doe_by_base[base_name] = []
             doe_by_base[base_name].append((name, roll, pitch, yaw, doe_idx))
 
+        # 전체 base 각도 리스트 (cyclic, random 등을 위해 모든 base 각도 사용)
+        all_base_angles = []
+        for base_name in sorted(doe_by_base.keys()):
+            # 각 base_name의 첫 DOE만 사용 (Tolerance 없는 경우 1개씩만 존재)
+            first_doe = doe_by_base[base_name][0]
+            all_base_angles.append((first_doe[0], first_doe[1], first_doe[2], first_doe[3]))
+
         # 각 DOE에 대해 누적 Step 시퀀스 생성
         for base_name in sorted(doe_by_base.keys()):
             doe_list = doe_by_base[base_name]
 
             for doe_name, doe_roll, doe_pitch, doe_yaw, doe_idx in doe_list:
-                # 이 DOE를 base로 하는 각도 리스트 (mixing 전략 적용용)
-                # cyclic, random 등을 위해 같은 base 그룹의 모든 DOE 사용
-                base_angles_for_mixing = [(n, r, p, y) for n, r, p, y, _ in doe_list]
-
-                # 현재 DOE의 인덱스 찾기
+                # 현재 DOE가 전체 base 각도 리스트에서 몇 번째인지 찾기
                 current_base_idx = 0
-                for idx, (n, r, p, y, _) in enumerate(doe_list):
+                for idx, (n, r, p, y) in enumerate(all_base_angles):
                     if n == doe_name and abs(r - doe_roll) < 0.01 and abs(p - doe_pitch) < 0.01:
                         current_base_idx = idx
                         break
 
                 # 각도 믹싱 전략 적용하여 Step별 각도 생성
                 angle_sequence = generate_cumulative_angle_sequence(
-                    base_angles_for_mixing, num_steps, mixing_config, current_base_idx
+                    all_base_angles, num_steps, mixing_config, current_base_idx
                 )
 
                 # 이 DOE의 Step 설정 생성
@@ -248,10 +253,12 @@ class CumulativeDesigner:
 
         elif source_type == AngleSourceType.FIBONACCI_LATTICE:
             fib_cfg = angle_source_cfg.get("fibonacci_lattice", {})
+            # num_directions는 num_points의 별칭으로 허용
+            num_pts = fib_cfg.get("num_points") or fib_cfg.get("num_directions", 26)
             config = AngleSourceConfig(
                 source_type=source_type,
                 fibonacci_lattice=FibonacciLatticeConfig(
-                    num_points=fib_cfg.get("num_points", 26)
+                    num_points=num_pts
                 )
             )
 

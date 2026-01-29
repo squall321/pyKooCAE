@@ -1,5 +1,5 @@
 {
-  "project_name": "Test_001_Full26_1Step",
+  "project_name": "Test_002_Full26_3Step",
   "environment": {
     "koomeshmodifier_path": "/opt/KooMeshModifier/run.sh",
     "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
@@ -10,7 +10,7 @@
   },
   "scenarios": [
     {
-      "scenario_name": "Full_26_Directions_Single_Drop",
+      "scenario_name": "Full_26_Directions_3_Consecutive_Drops",
       "template": "MinimumModel.k",
       "angle_source": {
         "source_type": "cuboid_geometry",
@@ -21,8 +21,8 @@
         }
       },
       "cumulative": {
-        "num_steps": 1,
-        "mode_sequence": ["DROP"],
+        "num_steps": 3,
+        "mode_sequence": ["DROP", "DROP", "DROP"],
         "base_angle_index": 0,
         "angle_mixing": {
           "strategy": "same_angle"
