@@ -78,6 +78,13 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         help='Path to runner_config.json file'
     )
     submit_parser.add_argument(
+        '--mode',
+        choices=['large-scale', 'cumulative'],
+        default='cumulative',
+        help='Submission mode: "cumulative" submits per-DOE slurm jobs using koocr run, '
+             '"large-scale" uses LargeScaleDOEManager array jobs (default: cumulative)'
+    )
+    submit_parser.add_argument(
         '--nodes',
         type=int,
         default=2,
@@ -94,6 +101,21 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         type=int,
         default=16,
         help='Number of CPUs per job (default: 16)'
+    )
+    submit_parser.add_argument(
+        '--partition',
+        default='normal',
+        help='Slurm partition (default: normal)'
+    )
+    submit_parser.add_argument(
+        '--memory',
+        default='64G',
+        help='Memory per DOE job (default: 64G)'
+    )
+    submit_parser.add_argument(
+        '--time-limit',
+        default='24:00:00',
+        help='Time limit per DOE job (default: 24:00:00)'
     )
     submit_parser.add_argument(
         '--data-root',
@@ -118,6 +140,31 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         '--watch',
         action='store_true',
         help='Continuously monitor status (update every 60s)'
+    )
+
+    # ========================================================================
+    # koocr run: Run single DOE pipeline (for compute node execution)
+    # ========================================================================
+    run_parser = subparsers.add_parser(
+        'run',
+        help='Run single DOE pipeline on compute node',
+        description='Execute a single DOE cumulative pipeline (MeshModifier → LS-DYNA → dynain → next step). '
+                    'Designed to be called from within a Slurm job.'
+    )
+    run_parser.add_argument(
+        'config',
+        help='Path to runner_config.json file'
+    )
+    run_parser.add_argument(
+        '--doe',
+        type=int,
+        required=True,
+        help='DOE index to run (1-based)'
+    )
+    run_parser.add_argument(
+        '--resume',
+        action='store_true',
+        help='Resume from checkpoint'
     )
 
     # ========================================================================
@@ -147,6 +194,8 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         cmd_prepare(args)
     elif args.command == 'submit':
         cmd_submit(args)
+    elif args.command == 'run':
+        cmd_run(args)
     elif args.command == 'status':
         cmd_status(args)
     elif args.command == 'collect':
@@ -186,7 +235,7 @@ def cmd_prepare(args):
             user_config = json.load(f)
 
         # Create designer and parse config
-        designer = CumulativeDesigner(user_config)
+        designer = CumulativeDesigner(user_config, scenario_dir=str(scenario_path.parent))
         runner_config = designer.parse_user_config()
 
         # Save runner_config.json
@@ -202,16 +251,24 @@ def cmd_prepare(args):
 
 def cmd_submit(args):
     """Execute submit command"""
-    from Runner.LargeScaleDOEManager import LargeScaleDOEManager
-
     config_path = Path(args.config).resolve()
 
     if not config_path.exists():
-        print(f"❌ Error: Config file not found: {config_path}")
+        print(f"Error: Config file not found: {config_path}")
         sys.exit(1)
 
+    if args.mode == 'cumulative':
+        _submit_cumulative(args, config_path)
+    else:
+        _submit_large_scale(args, config_path)
+
+
+def _submit_large_scale(args, config_path):
+    """LargeScaleDOEManager 기반 제출 (기존 방식)"""
+    from Runner.LargeScaleDOEManager import LargeScaleDOEManager
+
     print("=" * 80)
-    print("KooChainRun - Submit Jobs")
+    print("KooChainRun - Submit Jobs (large-scale mode)")
     print("=" * 80)
     print(f"Config:         {config_path}")
     print(f"Nodes:          {args.nodes}")
@@ -231,14 +288,157 @@ def cmd_submit(args):
         manager.run()
         print()
         print("=" * 80)
-        print("✅ Jobs submitted successfully")
+        print("Jobs submitted successfully")
         print("=" * 80)
         print()
         print("Next steps:")
         print(f"  Check status:    koocr status {config_path}")
         print(f"  Collect results: koocr collect {config_path}")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+def _submit_cumulative(args, config_path):
+    """DOE별 개별 slurm job 제출 (cumulative 방식)
+
+    각 DOE를 독립적인 slurm job으로 제출합니다.
+    각 job 내부에서 koocr run --doe N 을 실행하여
+    MeshModifier → LS-DYNA → dynain → 다음 step 파이프라인을 수행합니다.
+    """
+    import json
+    import subprocess
+
+    print("=" * 80)
+    print("KooChainRun - Submit Jobs (cumulative mode)")
+    print("=" * 80)
+    print(f"Config:     {config_path}")
+    print(f"Partition:  {args.partition}")
+    print(f"CPUs/job:   {args.ncpu_per_job}")
+    print(f"Memory:     {args.memory}")
+    print(f"Time limit: {args.time_limit}")
+    print()
+
+    # runner_config.json 로드하여 DOE 수 확인
+    with open(config_path, 'r', encoding='utf-8') as f:
+        runner_config = json.load(f)
+
+    doe_count = runner_config["scenario"]["doe_count"]
+    project_name = runner_config["project"]["name"]
+    output_dir = runner_config["project"]["output_dir"]
+
+    print(f"Project:    {project_name}")
+    print(f"DOE count:  {doe_count}")
+    print(f"Total jobs: {doe_count}")
+    print()
+
+    # koocr 실행 파일 경로
+    koocr_path = Path(__file__).resolve()
+
+    # slurm 스크립트 디렉토리 생성
+    slurm_dir = Path(output_dir) / "slurm_scripts"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+
+    submitted_jobs = []
+
+    for doe_idx in range(1, doe_count + 1):
+        job_name = f"{project_name}_DOE{doe_idx:03d}"
+        script_path = slurm_dir / f"run_doe_{doe_idx:03d}.sh"
+        log_path = slurm_dir / f"doe_{doe_idx:03d}_%j.log"
+
+        # Slurm 스크립트 생성
+        script_content = f"""#!/bin/bash
+#SBATCH --job-name={job_name}
+#SBATCH --partition={args.partition}
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task={args.ncpu_per_job}
+#SBATCH --mem={args.memory}
+#SBATCH --time={args.time_limit}
+#SBATCH --output={log_path}
+#SBATCH --error={log_path}
+
+echo "========================================"
+echo "Job: {job_name}"
+echo "DOE: {doe_idx}/{doe_count}"
+echo "Node: $(hostname)"
+echo "Start: $(date)"
+echo "========================================"
+
+{koocr_path} run {config_path} --doe {doe_idx}
+
+EXIT_CODE=$?
+
+echo "========================================"
+echo "End: $(date)"
+echo "Exit code: $EXIT_CODE"
+echo "========================================"
+
+exit $EXIT_CODE
+"""
+
+        with open(script_path, 'w') as f:
+            f.write(script_content)
+        os.chmod(str(script_path), 0o755)
+
+        # sbatch 제출
+        try:
+            result = subprocess.run(
+                ["sbatch", str(script_path)],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                job_id = result.stdout.strip().split()[-1]
+                submitted_jobs.append((doe_idx, job_id))
+                print(f"  DOE {doe_idx:3d}: submitted (job {job_id})")
+            else:
+                print(f"  DOE {doe_idx:3d}: FAILED - {result.stderr.strip()}")
+        except FileNotFoundError:
+            print(f"  DOE {doe_idx:3d}: FAILED - sbatch not found (not a Slurm cluster?)")
+            sys.exit(1)
+
+    print()
+    print("=" * 80)
+    print(f"Submitted {len(submitted_jobs)}/{doe_count} DOE jobs")
+    print("=" * 80)
+    print()
+    print("Next steps:")
+    print(f"  Check status:    squeue -u $USER")
+    print(f"  Check logs:      ls {slurm_dir}/doe_*.log")
+    print(f"  Cancel all:      scancel -n {project_name}_DOE*")
+    print(f"  Collect results: koocr collect {config_path}")
+
+
+def cmd_run(args):
+    """Execute run command - single DOE pipeline on compute node"""
+    from Runner.CumulativeScenarioRunner import CumulativeScenarioRunner
+
+    config_path = Path(args.config).resolve()
+
+    if not config_path.exists():
+        print(f"Error: Config file not found: {config_path}")
+        sys.exit(1)
+
+    print("=" * 80)
+    print(f"KooChainRun - Run DOE {args.doe}")
+    print("=" * 80)
+    print(f"Config: {config_path}")
+    print(f"DOE:    {args.doe}")
+    print(f"Resume: {args.resume}")
+    print()
+
+    try:
+        runner = CumulativeScenarioRunner(str(config_path), doe_filter=args.doe)
+        success = runner.run_all()
+        if success:
+            print(f"DOE {args.doe} completed successfully")
+        else:
+            print(f"DOE {args.doe} failed")
+            sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

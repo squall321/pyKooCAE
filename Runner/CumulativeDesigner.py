@@ -87,14 +87,16 @@ class RunnerConfig:
 class CumulativeDesigner:
     """누적 시뮬레이션 Designer"""
 
-    def __init__(self, user_config: Dict[str, Any]):
+    def __init__(self, user_config: Dict[str, Any], scenario_dir: Optional[str] = None):
         """
         Parameters:
             user_config: 사용자 JSON 설정
+            scenario_dir: scenario.json이 위치한 디렉토리 (template 상대경로 해석용)
         """
         self.user_config = user_config
         self.project_name = user_config.get("project_name", "CumulativeProject")
         self.base_dir = user_config.get("base_dir", os.getcwd())
+        self.scenario_dir = scenario_dir or os.getcwd()
 
     def parse_user_config(self) -> RunnerConfig:
         """
@@ -139,6 +141,15 @@ class CumulativeDesigner:
             ScenarioConfig
         """
         scenario_name = scenario_cfg.get("scenario_name", "UnnamedScenario")
+        # 사용자가 지정한 모델 파일 (template 필드) - 첫 시나리오만 저장
+        # scenario.json 기준 상대경로 → 절대경로 변환
+        if not hasattr(self, '_current_model_file') or not self._current_model_file:
+            template_raw = scenario_cfg.get("template", "")
+            if template_raw and not os.path.isabs(template_raw):
+                template_abs = str(Path(self.scenario_dir) / template_raw)
+            else:
+                template_abs = template_raw
+            self._current_model_file = template_abs
 
         # Step 1: 각도 소스 파싱
         angle_source_cfg = scenario_cfg.get("angle_source", {})
@@ -377,15 +388,94 @@ class CumulativeDesigner:
         )
 
     def save_runner_config(self, runner_config: RunnerConfig, output_path: str):
-        """runner_config.json 저장"""
-        # RunnerConfig → dict 변환
+        """runner_config.json 저장
+
+        CumulativeScenarioRunner가 기대하는 스키마로 출력:
+            project: name, model_file, output_dir, index_file
+            scenario: id, name, type, total_steps, doe_count, steps[]
+            execution: checkpoint_file, timeout_per_step_seconds, retry_on_failure, max_retries
+            environment: koomeshmodifier_path, lsdyna_path, ncpu, memory, ...
+            scenarios: (원본 시나리오 목록 - LargeScaleDOEManager 등 다른 Runner용)
+        """
+        output_dir_path = str(Path(output_path).parent / "output")
+        model_file = getattr(self, '_current_model_file', '')
+
+        # 첫 번째 시나리오를 기준으로 Runner 호환 구조 생성
+        first_scenario = runner_config.scenarios[0] if runner_config.scenarios else None
+
+        # DOE 수 계산: unique doe_index 수
+        doe_indices = set()
+        if first_scenario:
+            for step in first_scenario.steps:
+                doe_indices.add(step.doe_index)
+        doe_count = len(doe_indices) if doe_indices else 1
+
+        # CumulativeScenarioRunner 호환 steps 변환
+        # step_number별로 모드 정보 추출 (step 구조는 DOE 공통)
+        runner_steps = []
+        if first_scenario:
+            seen_steps = set()
+            for step in first_scenario.steps:
+                if step.step_number not in seen_steps:
+                    seen_steps.add(step.step_number)
+                    runner_steps.append({
+                        "step": step.step_number,
+                        "mode": step.mode,
+                        "condition": step.angle_name,
+                        "params": {}
+                    })
+
+        # DOE별 각도 매핑 테이블 생성
+        # doe_index → { step_number → { angle_name, roll, pitch, yaw } }
+        doe_angle_map = {}
+        if first_scenario:
+            for step in first_scenario.steps:
+                doe_idx = step.doe_index
+                if doe_idx not in doe_angle_map:
+                    doe_angle_map[doe_idx] = {}
+                doe_angle_map[doe_idx][step.step_number] = {
+                    "angle_name": step.angle_name,
+                    "roll": step.angle_roll,
+                    "pitch": step.angle_pitch,
+                    "yaw": step.angle_yaw
+                }
+
+        # DOE index를 1-based로 변환 (CumulativeScenarioRunner는 1-based)
+        doe_angles = {}
+        for doe_idx in sorted(doe_angle_map.keys()):
+            doe_angles[str(doe_idx + 1)] = doe_angle_map[doe_idx]
+
         data = {
+            # CumulativeScenarioRunner 호환 섹션
+            "project": {
+                "name": runner_config.project_name,
+                "model_file": model_file,
+                "output_dir": output_dir_path,
+                "index_file": str(Path(output_dir_path) / "simulation_index.json")
+            },
+            "scenario": {
+                "id": first_scenario.scenario_id if first_scenario else "",
+                "name": first_scenario.scenario_name if first_scenario else "",
+                "type": "cumulative",
+                "total_steps": first_scenario.total_steps if first_scenario else 0,
+                "doe_count": doe_count,
+                "steps": runner_steps,
+                "doe_angles": doe_angles
+            },
+            "execution": {
+                "checkpoint_file": str(Path(output_dir_path) / "checkpoint.json"),
+                "timeout_per_step_seconds": 7200,
+                "retry_on_failure": True,
+                "max_retries": 2
+            },
+            "environment": runner_config.environment,
+            # 원본 시나리오 목록 (LargeScaleDOEManager 등 다른 Runner 호환)
             "project_name": runner_config.project_name,
             "base_dir": runner_config.base_dir,
-            "environment": runner_config.environment,
             "scenarios": []
         }
 
+        # 원본 시나리오 데이터 (기존 구조 유지)
         for scenario in runner_config.scenarios:
             scenario_data = {
                 "scenario_id": scenario.scenario_id,
@@ -418,7 +508,7 @@ class CumulativeDesigner:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-        print(f"✅ runner_config.json 생성 완료: {output_path}")
+        print(f"runner_config.json 생성 완료: {output_path}")
 
 
 def main():
@@ -435,7 +525,8 @@ def main():
         user_config = json.load(f)
 
     # Designer 실행
-    designer = CumulativeDesigner(user_config)
+    scenario_dir = str(Path(args.input_json).resolve().parent)
+    designer = CumulativeDesigner(user_config, scenario_dir=scenario_dir)
     runner_config = designer.parse_user_config()
 
     # runner_config.json 저장

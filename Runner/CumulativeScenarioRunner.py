@@ -27,6 +27,36 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 
+class ApptainerWrapper:
+    """Apptainer 컨테이너 래핑 유틸리티"""
+
+    def __init__(self, config: Dict[str, Any]):
+        env = config.get("environment", {})
+        self.apptainer_sif = env.get("apptainer_sif")
+        self.apptainer_bind = env.get("apptainer_bind", "/data:/data")
+        self.lsdyna_apptainer_sif = env.get("lsdyna_apptainer_sif")
+        self.lsdyna_apptainer_bind = env.get("lsdyna_apptainer_bind", "/data:/data")
+
+    def wrap_command(self, cmd: List[str], use_lsdyna: bool = False) -> List[str]:
+        """명령어를 apptainer exec로 래핑"""
+        if use_lsdyna:
+            sif = self.lsdyna_apptainer_sif
+            bind = self.lsdyna_apptainer_bind
+        else:
+            sif = self.apptainer_sif
+            bind = self.apptainer_bind
+
+        if not sif:
+            return cmd
+
+        wrapped = ["apptainer", "exec"]
+        if bind:
+            wrapped.extend(["--bind", bind])
+        wrapped.append(sif)
+        wrapped.extend(cmd)
+        return wrapped
+
+
 class LSDynaSolverRunner:
     """LS-DYNA Solver 실행 및 관리"""
 
@@ -36,6 +66,7 @@ class LSDynaSolverRunner:
         self.ncpu = env.get("ncpu", 32)
         self.memory = env.get("memory", "2000m")
         self.mpi_enabled = env.get("mpi_enabled", False)
+        self.apptainer = ApptainerWrapper(config)
 
     def run(self, input_file: str, working_dir: str, timeout: int = 7200) -> bool:
         """LS-DYNA 실행 및 완료 대기"""
@@ -53,6 +84,9 @@ class LSDynaSolverRunner:
                 f"ncpu={self.ncpu}",
                 f"memory={self.memory}"
             ]
+
+        # Apptainer 래핑 (설정 시)
+        cmd = self.apptainer.wrap_command(cmd, use_lsdyna=True)
 
         logging.info(f"Executing: {' '.join(cmd)}")
         logging.info(f"Working directory: {working_dir}")
@@ -123,6 +157,7 @@ class CumulativeScenarioRunner:
         self.config_path = config_path
         self.doe_filter = doe_filter
         self.solver = LSDynaSolverRunner(self.config)
+        self.apptainer = ApptainerWrapper(self.config)
         self.koomesh_path = self.config["environment"]["koomeshmodifier_path"]
         self.output_dir = self.config["project"]["output_dir"]
         self.index_file = self.config["project"]["index_file"]
@@ -440,7 +475,7 @@ class CumulativeScenarioRunner:
 
         if mode == "DROP":
             # 낙하 시뮬레이션 설정
-            euler = self._condition_to_euler(condition)
+            euler = self._get_doe_euler(doe_index, step_num, condition)
             height = params.get("height_mm", 1500)
             surface = params.get("surface", "steelPlate")
 
@@ -518,6 +553,28 @@ RampTime,600
             logging.error(f"Failed to write config file: {e}")
             return None
 
+    def _get_doe_euler(self, doe_index: int, step_num: int, condition: str) -> Dict[str, float]:
+        """DOE별 Euler 각도 조회
+
+        doe_angles 테이블이 있으면 DOE별 각도 사용,
+        없으면 condition 코드 기반 변환 (하위 호환)
+        """
+        doe_angles = self.config.get("scenario", {}).get("doe_angles", {})
+        doe_key = str(doe_index)
+
+        if doe_key in doe_angles:
+            step_key = str(step_num)
+            if step_key in doe_angles[doe_key]:
+                angle_info = doe_angles[doe_key][step_key]
+                return {
+                    "roll": angle_info["roll"],
+                    "pitch": angle_info["pitch"],
+                    "yaw": angle_info["yaw"]
+                }
+
+        # 하위 호환: condition 코드 기반 변환
+        return self._condition_to_euler(condition)
+
     def _condition_to_euler(self, condition: str) -> Dict[str, float]:
         """Condition 코드 → Euler 각도 변환"""
         # Face 매핑
@@ -571,7 +628,9 @@ RampTime,600
     def _run_koomeshmodifier(self, config_file: str, working_dir: str) -> bool:
         """KooMeshModifier 실행"""
         cmd = ["python3", self.koomesh_path, config_file]
-        logging.info(f"Running KooMeshModifier: {config_file}")
+        # Apptainer 래핑 (설정 시)
+        cmd = self.apptainer.wrap_command(cmd, use_lsdyna=False)
+        logging.info(f"Running KooMeshModifier: {' '.join(cmd)}")
 
         try:
             result = subprocess.run(
