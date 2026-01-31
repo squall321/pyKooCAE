@@ -55,7 +55,9 @@ class ODBPPImporter():
             if stream ==0:
                 return None
             vertices = []
-            while True:                
+            edges = []
+            prevVertex = None
+            while True:
                 sline = stream.readline()
                 if isinstance(sline, bytes):
                     sline = sline.decode('utf-8')
@@ -66,18 +68,41 @@ class ODBPPImporter():
                     x = float(svector[1])*self.unitAmp
                     y = float(svector[2])*self.unitAmp
                     v = polyMan.CreateVertex(x,y)
+                    if prevVertex is not None:
+                        edges.append(polyMan.CreateLine(prevVertex, v))
                     vertices.append(v)
+                    prevVertex = v
+                elif sline.find('OC') == 0:
+                    xEnd = float(svector[1])*self.unitAmp
+                    yEnd = float(svector[2])*self.unitAmp
+                    xCenter = float(svector[3])*self.unitAmp
+                    yCenter = float(svector[4])*self.unitAmp
+                    cw = svector[5].strip().lower() == 'y'
+                    vEnd = polyMan.CreateVertex(xEnd, yEnd)
+                    vCenter = polyMan.CreateVertex(xCenter, yCenter)
+                    if prevVertex is not None:
+                        edges.append(polyMan.CreateArc(prevVertex, vEnd, vCenter, not cw))
+                    vertices.append(vEnd)
+                    vertices.append(vCenter)
+                    prevVertex = vEnd
                 elif sline.find('OE') == 0 or sline.find('CE') == 0:
                     break
-            aPoly = polyMan.CreatePolygon(vertices,'CT')
+            if len(edges) > 0:
+                aPoly = polyMan.CreatePolygon(vertices,'CT', edges)
+            else:
+                aPoly = polyMan.CreatePolygon(vertices,'CT')
+            if aPoly is not None:
+                aPoly.ReduceEdgesToArcs()
             return aPoly
         else:
             return None
-        
+
     def ImportFeature(self, polyMan, sline, stream):
-        if stream == 0: 
+        if stream == 0:
             return None
-        vertices = [] 
+        vertices = []
+        edges = []
+        prevVertex = None
         while True:
             sline = stream.readline()
             svector = sline.split(' ')
@@ -87,10 +112,31 @@ class ODBPPImporter():
                 x = float(svector[1])
                 y = float(svector[2])
                 v = polyMan.CreateVertex(x,y)
+                if prevVertex is not None:
+                    edges.append(polyMan.CreateLine(prevVertex, v))
                 vertices.append(v)
+                prevVertex = v
+            elif sline.find('OC') == 0:
+                xEnd = float(svector[1])
+                yEnd = float(svector[2])
+                xCenter = float(svector[3])
+                yCenter = float(svector[4])
+                cw = svector[5].strip().lower() == 'y'
+                vEnd = polyMan.CreateVertex(xEnd, yEnd)
+                vCenter = polyMan.CreateVertex(xCenter, yCenter)
+                if prevVertex is not None:
+                    edges.append(polyMan.CreateArc(prevVertex, vEnd, vCenter, not cw))
+                vertices.append(vEnd)
+                vertices.append(vCenter)
+                prevVertex = vEnd
             elif sline.find('OE') == 0 or sline.find('SE') == 0:
                 break
-        aPoly = polyMan.CreatePolygon(vertices,'CT')
+        if len(edges) > 0:
+            aPoly = polyMan.CreatePolygon(vertices,'CT', edges)
+        else:
+            aPoly = polyMan.CreatePolygon(vertices,'CT')
+        if aPoly is not None:
+            aPoly.ReduceEdgesToArcs()
         return aPoly
     
     def ImportPCBFeature(self, polyMan, stream):
@@ -151,9 +197,9 @@ class ODBPPImporter():
                 x = float(svector[1])
                 y = float(svector[2])
                 xprev = x
-                yprev = y         
+                yprev = y
                 curKey = curKey + 1
-                           
+
             elif sline.find('OS') == 0:
                 x = float(svector[1])
                 y = float(svector[2])
@@ -166,8 +212,23 @@ class ODBPPImporter():
                 edgesUnitList[curKey].append([xprev,yprev,x,y])
                 xprev = x
                 yprev = y
-                #curKey = curKey + 1              
-                
+
+            elif sline.find('OC') == 0:
+                xEnd = float(svector[1])
+                yEnd = float(svector[2])
+                xCenter = float(svector[3])
+                yCenter = float(svector[4])
+                clk = 0
+                if svector[5].strip().lower() == 'y':
+                    clk = 1
+                if curKey in edgesUnitList:
+                    pass
+                else:
+                    edgesUnitList[curKey] = []
+                edgesUnitList[curKey].append([xprev,yprev,xEnd,yEnd,xCenter,yCenter,clk])
+                xprev = xEnd
+                yprev = yEnd
+
             elif sline.find('OE') == 0 or sline.find('SE') == 0:
                 break
        

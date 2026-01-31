@@ -52,9 +52,10 @@ class Layer:
         self.symbolMap = {} 
 
         self.patternXList = []
-        self.patternYList = [] 
+        self.patternYList = []
         self.patternSymbolIDList = []
-        self.patternPolarityList = []   
+        self.patternPolarityList = []
+        self.patternClockwiseList = []   
         
         self.LayerCUStpList = [] 
         self.LayerPPGStpList = []
@@ -71,8 +72,9 @@ class Layer:
         self.patternXList.extend(layer.patternXList)
         self.patternYList.extend(layer.patternYList)
         self.patternSymbolIDList.extend(layer.patternSymbolIDList)
-        self.patternPolarityList.extend(layer.patternPolarityList)    
-        self.udSymbolMap.update(layer.udSymbolMap)  
+        self.patternPolarityList.extend(layer.patternPolarityList)
+        self.patternClockwiseList.extend(layer.patternClockwiseList)
+        self.udSymbolMap.update(layer.udSymbolMap)
         self.symbolMap.update(layer.symbolMap)
 
     def SetStartName(self, startName):
@@ -166,6 +168,7 @@ class Layer:
                 self.patternXList.append(xVec)
                 self.patternYList.append(yVec)
                 self.patternPolarityList.append(curPolarity)
+                self.patternClockwiseList.append([])
 
             elif firstChar == "L":
                 if "N" in line:
@@ -178,8 +181,8 @@ class Layer:
                 yf = unit * float(string_vector[4])
                 symbolid = int(string_vector[5])
 
-                xVec = [] 
-                yVec = [] 
+                xVec = []
+                yVec = []
                 xVec.append(xi)
                 xVec.append(xf)
                 yVec.append(yi)
@@ -188,6 +191,7 @@ class Layer:
                 self.patternXList.append(xVec)
                 self.patternYList.append(yVec)
                 self.patternPolarityList.append(curPolarity)
+                self.patternClockwiseList.append([])
             elif firstChar == "A":
                 if "N" in line:
                     curPolarity = 0
@@ -201,8 +205,8 @@ class Layer:
                 yc = unit * float(string_vector[6])
                 symbolid = int(string_vector[7])
 
-                xVec = [] 
-                yVec = [] 
+                xVec = []
+                yVec = []
                 xVec.append(xi)
                 xVec.append(xf)
                 xVec.append(xc)
@@ -213,19 +217,20 @@ class Layer:
                 self.patternXList.append(xVec)
                 self.patternYList.append(yVec)
                 self.patternPolarityList.append(curPolarity)
+                self.patternClockwiseList.append([])
 
             elif "OB" in line:
                 if firstChar != "O" or secondChar != "B":
                     continue
 
-                xVec = [] 
-                yVec = [] 
-                xVec.append(unit * float(string_vector[1]))
-                yVec.append(unit * float(string_vector[2]))
+                xStart = unit * float(string_vector[1])
+                yStart = unit * float(string_vector[2])
+                xMat = []
+                yMat = []
+                cwList = []
                 while True:
-                    
                     i = i + 1
-                    line = stringList[i]                    
+                    line = stringList[i]
                     line = line.decode('utf-8')
                     line = line.replace('\r\n','')
                     line = line.replace('\n','')
@@ -233,12 +238,33 @@ class Layer:
                     if "OE" in line:
                         break
                     string_vector = line.split(' ')
-                    xVec.append(unit * float(string_vector[1]))
-                    yVec.append(unit * float(string_vector[2]))
-                self.patternXList.append(xVec)
-                self.patternYList.append(yVec)
+                    if "OC" in line:
+                        xEnd = unit * float(string_vector[1])
+                        yEnd = unit * float(string_vector[2])
+                        xCenter = unit * float(string_vector[3])
+                        yCenter = unit * float(string_vector[4])
+                        cw = string_vector[5].strip().lower()
+                        if cw == "y":
+                            cwList.append(1)
+                        else:
+                            cwList.append(0)
+                        xMat.append([xStart, xEnd, xCenter])
+                        yMat.append([yStart, yEnd, yCenter])
+                        xStart = xEnd
+                        yStart = yEnd
+                    else:
+                        xEnd = unit * float(string_vector[1])
+                        yEnd = unit * float(string_vector[2])
+                        cwList.append(None)
+                        xMat.append([xStart, xEnd])
+                        yMat.append([yStart, yEnd])
+                        xStart = xEnd
+                        yStart = yEnd
+                self.patternXList.append(xMat)
+                self.patternYList.append(yMat)
                 self.patternSymbolIDList.append(-1)
-                self.patternPolarityList.append(curPolarity)            
+                self.patternPolarityList.append(curPolarity)
+                self.patternClockwiseList.append(cwList)
         return len(self.patternXList)
         
     def ImportPatternfromODBStream(self, file):
@@ -310,6 +336,7 @@ class Layer:
                     self.patternXList.append(xVec)
                     self.patternYList.append(yVec)
                     self.patternPolarityList.append(curPolarity)
+                    self.patternClockwiseList.append([])
 
                 elif firstChar == "L":
                     if "N" in line:
@@ -322,8 +349,8 @@ class Layer:
                     yf = unit * float(string_vector[4])
                     symbolid = int(string_vector[5])
 
-                    xVec = [] 
-                    yVec = [] 
+                    xVec = []
+                    yVec = []
                     xVec.append(xi)
                     xVec.append(xf)
                     yVec.append(yi)
@@ -332,6 +359,7 @@ class Layer:
                     self.patternXList.append(xVec)
                     self.patternYList.append(yVec)
                     self.patternPolarityList.append(curPolarity)
+                    self.patternClockwiseList.append([])
                 elif firstChar == "A":
                     if "N" in line:
                         curPolarity = 0
@@ -345,8 +373,8 @@ class Layer:
                     yc = unit * float(string_vector[6])
                     symbolid = int(string_vector[7])
 
-                    xVec = [] 
-                    yVec = [] 
+                    xVec = []
+                    yVec = []
                     xVec.append(xi)
                     xVec.append(xf)
                     xVec.append(xc)
@@ -357,6 +385,7 @@ class Layer:
                     self.patternXList.append(xVec)
                     self.patternYList.append(yVec)
                     self.patternPolarityList.append(curPolarity)
+                    self.patternClockwiseList.append([])
 
                 elif "OB" in line:
                     if firstChar != "O" or secondChar != "B":
@@ -366,10 +395,11 @@ class Layer:
                         line = line.replace('\n','')
                         break
 
-                    xVec = [] 
-                    yVec = [] 
-                    xVec.append(unit * float(string_vector[1]))
-                    yVec.append(unit * float(string_vector[2]))
+                    xStart = unit * float(string_vector[1])
+                    yStart = unit * float(string_vector[2])
+                    xMat = []
+                    yMat = []
+                    cwList = []
                     while True:
                         line = file.readline()
                         line = line.decode('utf-8')
@@ -379,12 +409,33 @@ class Layer:
                         if "OE" in line:
                             break
                         string_vector = line.split(' ')
-                        xVec.append(unit * float(string_vector[1]))
-                        yVec.append(unit * float(string_vector[2]))
-                    self.patternXList.append(xVec)
-                    self.patternYList.append(yVec)
+                        if "OC" in line:
+                            xEnd = unit * float(string_vector[1])
+                            yEnd = unit * float(string_vector[2])
+                            xCenter = unit * float(string_vector[3])
+                            yCenter = unit * float(string_vector[4])
+                            cw = string_vector[5].strip().lower()
+                            if cw == "y":
+                                cwList.append(1)
+                            else:
+                                cwList.append(0)
+                            xMat.append([xStart, xEnd, xCenter])
+                            yMat.append([yStart, yEnd, yCenter])
+                            xStart = xEnd
+                            yStart = yEnd
+                        else:
+                            xEnd = unit * float(string_vector[1])
+                            yEnd = unit * float(string_vector[2])
+                            cwList.append(None)
+                            xMat.append([xStart, xEnd])
+                            yMat.append([yStart, yEnd])
+                            xStart = xEnd
+                            yStart = yEnd
+                    self.patternXList.append(xMat)
+                    self.patternYList.append(yMat)
                     self.patternSymbolIDList.append(-1)
                     self.patternPolarityList.append(curPolarity)
+                    self.patternClockwiseList.append(cwList)
                 line = file.readline()
                 line = line.decode('utf-8')
                 line = line.replace('\r\n','')
@@ -1171,17 +1222,38 @@ class PrintedCircuitBoard():
             firstFeature : AISLayer = self.aisfeatures[0]
             patternX = firstFeature.layer.patternXList[0]
             patternY = firstFeature.layer.patternYList[0]
-            xMin = min(patternX)
-            xMax = max(patternX)
-            yMin = min(patternY)
-            yMax = max(patternY)
+            cwList = []
+            if len(firstFeature.layer.patternClockwiseList) > 0:
+                cwList = firstFeature.layer.patternClockwiseList[0]
+            hasArc = len(cwList) > 0 and any(cw is not None for cw in cwList)
+
+            # Flatten xMat/yMat to flat lists for min/max and RDP
+            # OB 블록(symbolID==-1)은 항상 2D 리스트(xMat) 구조
+            isMatFormat = len(patternX) > 0 and isinstance(patternX[0], list)
+            if isMatFormat:
+                flatX = []
+                flatY = []
+                for seg in patternX:
+                    for v in seg:
+                        flatX.append(v)
+                for seg in patternY:
+                    for v in seg:
+                        flatY.append(v)
+            else:
+                flatX = patternX
+                flatY = patternY
+
+            xMin = min(flatX)
+            xMax = max(flatX)
+            yMin = min(flatY)
+            yMax = max(flatY)
             lengthMin = min(xMax - xMin, yMax - yMin)
             numLayer = len(thicknessList)
             if tsp != 0.0:
                 numLayer = numLayer + 1
             if tsm != 0.0:
                 numLayer = numLayer + 1
-                
+
             totalThickness = max(tsp, tsm)
             for thickness in thicknessList:
                 totalThickness = totalThickness + thickness
@@ -1190,33 +1262,48 @@ class PrintedCircuitBoard():
                 file.write("Location,0.0,0.0\n")
             else:
                 file.write("Location,0.0,0.0,{0}\n".format(zLoc))
-                        
-            newPoints = firstFeature.create_closed_vector_rdp(patternX, patternY, totalThickness)    
-            newPatternX = []
-            newPatternY = []
-            for i in range(len(newPoints)):
-                newPatternX.append(newPoints[i][0]*0.001)
-                newPatternY.append(newPoints[i][1]*0.001)
-            newPatternX.append(newPoints[0][0]*0.001)
-            newPatternY.append(newPoints[0][1]*0.001)
-            
-            file.write("MeshGenerationType,Solid,Hexa\n")            
-            file.write("Thickness,{0}\n".format(totalThickness*0.001))  
+
+            file.write("MeshGenerationType,Solid,Hexa\n")
+            file.write("Thickness,{0}\n".format(totalThickness*0.001))
             file.write("MeshPath,PackageMesh\n")
             file.write("MeshSizeInPlane,{0}\n".format(lengthMin/100.0*0.001))
             file.write("NumberofElementinThickness,4\n")
             file.write("Part,Polynomial,Solid,1\n")
-            for i in range(len(newPatternX)):
-                if i == 0:
-                    file.write("OB {0} {1} I\n".format(format(newPatternX[i],".5e"),format(newPatternY[i],".5e")))                    
-                elif i == len(newPatternX) - 1:
-                    file.write("OS {0} {1}\n".format(format(newPatternX[i],".5e"),format(newPatternY[i],".5e")))                    
-                    file.write("OE\n")
-                else:
-                    file.write("OS {0} {1}\n".format(format(newPatternX[i],".5e"),format(newPatternY[i],".5e")))                    
-                    
-            
-            
+
+            if hasArc:
+                # Export with OC for arc segments
+                for i in range(len(patternX)):
+                    seg_x = patternX[i]
+                    seg_y = patternY[i]
+                    if i == 0:
+                        file.write("OB {0} {1} I\n".format(format(seg_x[0]*0.001,".5e"),format(seg_y[0]*0.001,".5e")))
+                    if cwList[i] is None:
+                        file.write("OS {0} {1}\n".format(format(seg_x[1]*0.001,".5e"),format(seg_y[1]*0.001,".5e")))
+                    else:
+                        cw_str = "Y" if cwList[i] == 1 else "N"
+                        file.write("OC {0} {1} {2} {3} {4}\n".format(
+                            format(seg_x[1]*0.001,".5e"), format(seg_y[1]*0.001,".5e"),
+                            format(seg_x[2]*0.001,".5e"), format(seg_y[2]*0.001,".5e"),
+                            cw_str))
+                file.write("OE\n")
+            else:
+                newPoints = firstFeature.create_closed_vector_rdp(flatX, flatY, totalThickness)
+                newPatternX = []
+                newPatternY = []
+                for i in range(len(newPoints)):
+                    newPatternX.append(newPoints[i][0]*0.001)
+                    newPatternY.append(newPoints[i][1]*0.001)
+                newPatternX.append(newPoints[0][0]*0.001)
+                newPatternY.append(newPoints[0][1]*0.001)
+                for i in range(len(newPatternX)):
+                    if i == 0:
+                        file.write("OB {0} {1} I\n".format(format(newPatternX[i],".5e"),format(newPatternY[i],".5e")))
+                    elif i == len(newPatternX) - 1:
+                        file.write("OS {0} {1}\n".format(format(newPatternX[i],".5e"),format(newPatternY[i],".5e")))
+                        file.write("OE\n")
+                    else:
+                        file.write("OS {0} {1}\n".format(format(newPatternX[i],".5e"),format(newPatternY[i],".5e")))
+
             file.write("MaterialID,1\n")
             file.write("*Material\n")
             file.write("Material.txt\n")
@@ -1834,6 +1921,7 @@ class AISLayer():
         patternYList = layer.patternYList
         patternSymbolIDList = layer.patternSymbolIDList
         patternPolarityList = layer.patternPolarityList
+        patternClockwiseList = layer.patternClockwiseList
         symbolMap = layer.symbolMap
         zLoc = self.zPos
         thickness = layer.thickness
@@ -1841,18 +1929,19 @@ class AISLayer():
         shapeList = []
 
         for i in range(len(patternXList)):
-            xVec = patternXList[i] 
+            xVec = patternXList[i]
             yVec = patternYList[i]
-            
+
             symbolID = patternSymbolIDList[i]
             polarity = patternPolarityList[i]
+            cwList = patternClockwiseList[i] if i < len(patternClockwiseList) else []
 
-            if symbolID == -1:     
+            if symbolID == -1:
                 if len(xVec) == 1 or len(xVec) == 2:
                     continue
-               
-                shape = self.GetOBShapePrev(xVec, yVec, zLoc, thickness)
-                
+
+                shape = self.GetOBShape(xVec, yVec, zLoc, thickness, cwList)
+
                 shapeList.append(shape)
             else:
                 aSymbol = symbolMap[symbolID]
@@ -1864,13 +1953,14 @@ class AISLayer():
                     continue
 
         return shapeList
-    
+
     def GetShape(self):
         layer = self.layer
         patternXList = layer.patternXList
         patternYList = layer.patternYList
         patternSymbolIDList = layer.patternSymbolIDList
         patternPolarityList = layer.patternPolarityList
+        patternClockwiseList = layer.patternClockwiseList
         symbolMap = layer.symbolMap
         zLoc = self.zPos
         thickness = layer.thickness
@@ -1878,26 +1968,24 @@ class AISLayer():
         shapeList = []
 
         for i in range(len(patternXList)):
-            xVec = patternXList[i] 
+            xVec = patternXList[i]
             yVec = patternYList[i]
-            
+
             symbolID = patternSymbolIDList[i]
             polarity = patternPolarityList[i]
+            cwList = patternClockwiseList[i] if i < len(patternClockwiseList) else []
 
-            if symbolID == -1:     
+            if symbolID == -1:
                 if len(xVec) == 1 or len(xVec) == 2:
                     continue
-                shape = self.GetOBShapePrev(xVec, yVec, zLoc, thickness)
-                    
-                
+                shape = self.GetOBShape(xVec, yVec, zLoc, thickness, cwList)
+
                 shapeList.append(shape)
             else:
                 aSymbol = symbolMap[symbolID]
                 curShapeList = self.GetShapewithSymbol(xVec, yVec, aSymbol, zLoc, thickness)
                 if curShapeList is not None:
                     shapeList.extend(curShapeList)
-
-
 
         return shapeList
     
@@ -2197,8 +2285,53 @@ class AISLayer():
                 
                 centerPrev = center
                 radiusPrev = radius
-        
-        newEdgePoints = [] 
+
+        # 경계 edge 흡수: arc 그룹(3점 이상) 양쪽의 작은 그룹(1~2점)이
+        # arc의 원 위에 있으면 arc 그룹에 흡수
+        changed = True
+        while changed:
+            changed = False
+            newMerged = []
+            skip = set()
+            for i in range(len(edgePoints)):
+                if i in skip:
+                    continue
+                group = edgePoints[i]
+                if len(group) >= 3:
+                    # 이 그룹의 중심/반경 계산
+                    mid = len(group) // 2
+                    gc, gr = self.calculate_circle_center_radius(group[0], group[mid], group[-1])
+                    if gr > 0:
+                        # 앞쪽 흡수: 이전 그룹이 1~2점이면
+                        if len(newMerged) > 0 and len(newMerged[-1]) <= 2:
+                            prevGroup = newMerged[-1]
+                            allOnArc = True
+                            for pt in prevGroup:
+                                dist = math.sqrt((pt.X() - gc[0])**2 + (pt.Y() - gc[1])**2)
+                                if abs(dist - gr) / gr > 0.05:
+                                    allOnArc = False
+                                    break
+                            if allOnArc:
+                                group = prevGroup + group
+                                newMerged.pop()
+                                changed = True
+                        # 뒤쪽 흡수: 다음 그룹이 1~2점이면
+                        if i + 1 < len(edgePoints) and i + 1 not in skip and len(edgePoints[i + 1]) <= 2:
+                            nextGroup = edgePoints[i + 1]
+                            allOnArc = True
+                            for pt in nextGroup:
+                                dist = math.sqrt((pt.X() - gc[0])**2 + (pt.Y() - gc[1])**2)
+                                if abs(dist - gr) / gr > 0.05:
+                                    allOnArc = False
+                                    break
+                            if allOnArc:
+                                group = group + nextGroup
+                                skip.add(i + 1)
+                                changed = True
+                newMerged.append(group)
+            edgePoints = newMerged
+
+        newEdgePoints = []
         lastPoint = None
         for i in range(len(edgePoints)):
             if len(edgePoints[i]) < 3:
@@ -2207,41 +2340,60 @@ class AISLayer():
                     newPoints.append(edgePoints[i][j])
                 newEdgePoints.append(newPoints)
             else:
-                newPoints = [] 
+                newPoints = []
                 newPoints.append(edgePoints[i][0])
-                numPoints = len(edgePoints[i])            
+                numPoints = len(edgePoints[i])
                 centernum = numPoints // 2
                 newPoints.append(edgePoints[i][centernum])
                 newPoints.append(edgePoints[i][-1])
                 newEdgePoints.append(newPoints)
                 lastPoint = newPoints[-1]
-        
+
         newLastPoints = [lastPoint, newEdgePoints[0][0]]
         newEdgePoints.append(newLastPoints)
 
-        '''for i in range(len(newEdgePoints)):
-            for j in range(len(newEdgePoints[i])):
-                print(newEdgePoints[i][j].X(), newEdgePoints[i][j].Y())
-            print("----")     '''           
         return newEdgePoints
     
-    def GetOBShape(self, xVec, yVec, zLoc, thickness):
+    def GetOBShape(self, xVec, yVec, zLoc, thickness, cwList=None):
+        # OB 블록은 항상 xMat/yMat 2D 구조
+        isMatFormat = len(xVec) > 0 and isinstance(xVec[0], list)
+        hasArc = isMatFormat and cwList is not None and len(cwList) > 0 and any(cw is not None for cw in cwList)
+
+        # Arc가 명시적으로 있으면 GetOBShapePrev로 위임 (Wire + Arc edge)
+        if hasArc:
+            return self.GetOBShapePrev(xVec, yVec, zLoc, thickness, cwList)
+
+        # xMat 구조이지만 Arc가 없으면 flat 좌표로 변환하여 create_closed_loop 사용
+        if isMatFormat:
+            flatX = []
+            flatY = []
+            for seg in xVec:
+                if not flatX:
+                    flatX.append(seg[0])
+                flatX.append(seg[1])
+            for seg in yVec:
+                if not flatY:
+                    flatY.append(seg[0])
+                flatY.append(seg[1])
+            xVec = flatX
+            yVec = flatY
+
         solid = None
         xmin = 1.0e99
         ymin = 1.0e99
         xmax = -1.0e99
         ymax = -1.0e99
-        for j in range(len(xVec)):            
+        for j in range(len(xVec)):
             xmin = min(xmin, xVec[j])
             xmax = max(xmax, xVec[j])
             ymin = min(ymin, yVec[j])
-            ymax = max(ymax, yVec[j])  
-        if xVec[0] != xVec[-1] or yVec[0] != yVec[-1]:            
+            ymax = max(ymax, yVec[j])
+        if xVec[0] != xVec[-1] or yVec[0] != yVec[-1]:
             xmin = min(xmin, xVec[0])
             xmax = max(xmax, xVec[0])
             ymin = min(ymin, yVec[0])
             ymax = max(ymax, yVec[0])
-        
+
         try:
             edgePoints = self.create_closed_loop(xVec, yVec, zLoc)
             for i in range(len(edgePoints)-1):
@@ -2275,47 +2427,83 @@ class AISLayer():
             print("XVector : ", yVec)
         return solid
 
-    def GetOBShapePrev(self, xVec, yVec, zLoc, thickness):
-        polygon_builder = BRepBuilderAPI_MakePolygon() 
+    def GetOBShapePrev(self, xVec, yVec, zLoc, thickness, cwList=None):
+        shape = None
         xmin = 1.0e99
         ymin = 1.0e99
         xmax = -1.0e99
         ymax = -1.0e99
-        '''with open("closedloop.txt", "w") as f:
-            
-            for j in range(len(xVec)):
-                f.write(str(xVec[j]))
-                f.write(",")
-                f.write(str(yVec[j]))
-                f.write("\n")'''
 
-        for j in range(len(xVec)):
-            polygon_builder.Add(gp_Pnt(xVec[j],yVec[j],zLoc))
-            xmin = min(xmin, xVec[j])
-            xmax = max(xmax, xVec[j])
-            ymin = min(ymin, yVec[j])
-            ymax = max(ymax, yVec[j])  
-        if xVec[0] != xVec[-1] or yVec[0] != yVec[-1]:
-            polygon_builder.Add(gp_Pnt(xVec[0],yVec[0],zLoc))
-            xmin = min(xmin, xVec[0])
-            xmax = max(xmax, xVec[0])
-            ymin = min(ymin, yVec[0])
-            ymax = max(ymax, yVec[0])
-        
+        # OB 블록은 항상 xMat/yMat 2D 구조로 저장됨 (OC 유무와 무관)
+        isMatFormat = len(xVec) > 0 and isinstance(xVec[0], list)
+        hasArc = isMatFormat and cwList is not None and len(cwList) > 0 and any(cw is not None for cw in cwList)
+
         try:
-                  
-            polygon = polygon_builder.Wire()
-            face_builder = BRepBuilderAPI_MakeFace(polygon, True)
+            if isMatFormat:
+                # xVec/yVec are xMat/yMat (2D lists)
+                wire_builder = BRepBuilderAPI_MakeWire()
+                for j in range(len(xVec)):
+                    seg_x = xVec[j]
+                    seg_y = yVec[j]
+                    for coord_x in seg_x:
+                        xmin = min(xmin, coord_x)
+                        xmax = max(xmax, coord_x)
+                    for coord_y in seg_y:
+                        ymin = min(ymin, coord_y)
+                        ymax = max(ymax, coord_y)
+
+                    if not hasArc or cwList[j] is None:
+                        p1 = gp_Pnt(seg_x[0], seg_y[0], zLoc)
+                        p2 = gp_Pnt(seg_x[1], seg_y[1], zLoc)
+                        edge = BRepBuilderAPI_MakeEdge(p1, p2).Edge()
+                    else:
+                        pStart = gp_Pnt(seg_x[0], seg_y[0], zLoc)
+                        pEnd = gp_Pnt(seg_x[1], seg_y[1], zLoc)
+                        pCenter = gp_Pnt(seg_x[2], seg_y[2], zLoc)
+                        radius = pCenter.Distance(pStart)
+                        if cwList[j] == 1:
+                            normal = gp_Dir(0, 0, -1)
+                        else:
+                            normal = gp_Dir(0, 0, 1)
+                        ax2 = gp_Ax2(pCenter, normal)
+                        edge = BRepBuilderAPI_MakeEdge(gp_Circ(ax2, radius), pStart, pEnd).Edge()
+                    wire_builder.Add(edge)
+                # Close the wire if not closed
+                first_seg = xVec[0]
+                last_seg = xVec[-1]
+                first_x, first_y = first_seg[0], yVec[0][0]
+                last_x = last_seg[1]
+                last_y = yVec[-1][1]
+                if abs(first_x - last_x) > 1.e-9 or abs(first_y - last_y) > 1.e-9:
+                    p1 = gp_Pnt(last_x, last_y, zLoc)
+                    p2 = gp_Pnt(first_x, first_y, zLoc)
+                    edge = BRepBuilderAPI_MakeEdge(p1, p2).Edge()
+                    wire_builder.Add(edge)
+                wire = wire_builder.Wire()
+            else:
+                # Legacy: xVec/yVec are flat lists (P/L/A symbols)
+                polygon_builder = BRepBuilderAPI_MakePolygon()
+                for j in range(len(xVec)):
+                    polygon_builder.Add(gp_Pnt(xVec[j], yVec[j], zLoc))
+                    xmin = min(xmin, xVec[j])
+                    xmax = max(xmax, xVec[j])
+                    ymin = min(ymin, yVec[j])
+                    ymax = max(ymax, yVec[j])
+                if xVec[0] != xVec[-1] or yVec[0] != yVec[-1]:
+                    polygon_builder.Add(gp_Pnt(xVec[0], yVec[0], zLoc))
+                wire = polygon_builder.Wire()
+
+            face_builder = BRepBuilderAPI_MakeFace(wire, True)
             face = face_builder.Face()
             prism_builder = BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, thickness))
             shape = prism_builder.Shape()
 
-            odbShape = ODBShape(shape, xmin,ymin,xmax,ymax)
+            odbShape = ODBShape(shape, xmin, ymin, xmax, ymax)
             self.odbShapeList.append(odbShape)
         except:
             print("Error!")
             print("XVector : ", xVec)
-            print("XVector : ", yVec)
+            print("YVector : ", yVec)
         return shape
     
     def GetShapewithSymbol(self, xVec, yVec, aSymbol, zLoc, thickness):

@@ -162,7 +162,9 @@ class ComponentManager():
                         comp_height_max = comp_height
                     if comp_height_min == 0.0:
                         comp_height_min = comp_height
-                
+
+                if comp_height == 0.0:
+                    comp_height = 0.5
                 package = self.CreatePackageComponent(id,xcoord,ycoord,zcoord,rotangle,mirror,pkg_ref,comp_height)
                 if package == None:
                     print("Error: Package {id} not found".format(id=pkg_ref))

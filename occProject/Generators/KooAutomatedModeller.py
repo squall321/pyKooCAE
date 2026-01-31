@@ -1,8 +1,37 @@
 import os
+import sys
+
+# --- Qt 라이브러리 충돌 방지: PyQt5 번들 Qt를 우선 로드 ---
+# LD_LIBRARY_PATH는 프로세스 시작 시 동적 링커가 읽으므로,
+# Python 내에서 설정 후 자기 자신을 재실행(re-exec)해야 적용됨.
+if sys.platform.startswith("linux"):
+    _reexec_marker = "_PYKOOCAE_QT_PATH_SET"
+    if os.environ.get(_reexec_marker) != "1":
+        # PyQt5 번들 Qt 경로 찾기
+        try:
+            import PyQt5
+            qt_lib_path = os.path.join(os.path.dirname(PyQt5.__file__), "Qt5", "lib")
+        except ImportError:
+            qt_lib_path = None
+
+        if qt_lib_path and os.path.isdir(qt_lib_path):
+            ld_path = os.environ.get("LD_LIBRARY_PATH", "")
+            if qt_lib_path not in ld_path.split(":"):
+                os.environ["LD_LIBRARY_PATH"] = qt_lib_path + ":" + ld_path
+
+        # OCC 라이브러리 경로도 함께 설정
+        occ_path = os.path.join(os.getcwd(), "Library", "OCC")
+        if os.path.isdir(occ_path):
+            ld_path = os.environ.get("LD_LIBRARY_PATH", "")
+            if occ_path not in ld_path.split(":"):
+                os.environ["LD_LIBRARY_PATH"] = occ_path + ":" + ld_path
+
+        # 재실행 마커 설정 후 re-exec
+        os.environ[_reexec_marker] = "1"
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-import sys
 getcwd = os.getcwd()
 path = os.path.join(getcwd, "Library", "OCC")  # 더 안전한 방법
 
@@ -10,7 +39,7 @@ if sys.platform.startswith("win"):
     # Windows 전용
     os.add_dll_directory(path)
 else:
-    # Linux/Unix 계열은 LD_LIBRARY_PATH에 넣으면 됨
+    # Linux/Unix 계열은 LD_LIBRARY_PATH에 넣으면 됨 (re-exec 후이므로 이미 적용됨)
     ld_path = os.environ.get("LD_LIBRARY_PATH", "")
     if path not in ld_path.split(":"):
         os.environ["LD_LIBRARY_PATH"] = path + ":" + ld_path
@@ -347,6 +376,9 @@ COPYRIGHT NOTICE: Copyright © 2025 Koo. All rights reserved.
     if len(sys.argv)<3:
         
         curDir = os.getcwd()
+        curDir = os.path.join(curDir,"Examples","ODB")
+        # set cwd as curDir
+        os.chdir(curDir)
         #sys.argv.clear()
         #sys.argv.append("KooAutomatedModeller")
         #sys.argv.append("MicroModelling")

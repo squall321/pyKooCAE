@@ -872,6 +872,247 @@ class Polygon2D():
                 print("v3",v3.x,v3.y," ")   
         return reorderedEdgeList
     
+    def ReduceEdgesToArcs(self, tol_center=0.05, tol_radius=0.05, min_group_size=3):
+        """
+        연속된 Line edge들 중 같은 원호 위에 있는 것들을 감지하여
+        하나의 Arc edge로 치환한다.
+
+        Args:
+            tol_center: 중심점 거리 비율 허용 오차
+            tol_radius: 반경 비율 허용 오차
+            min_group_size: Arc로 치환할 최소 연속 Line 수
+        """
+        lineEdges = [e for e in self.edges if e.type == "Line"]
+        if len(lineEdges) < min_group_size:
+            return
+
+        # 1) 각 연속 3점에서 외접원 center, radius 계산
+        centerList = []
+        radiusList = []
+        for i in range(len(lineEdges)):
+            if i == 0:
+                p1 = lineEdges[-1].vertices[0]
+                p2 = lineEdges[i].vertices[0]
+                p3 = lineEdges[i].vertices[1]
+            elif i == len(lineEdges) - 1:
+                p1 = lineEdges[i - 1].vertices[0]
+                p2 = lineEdges[i].vertices[0]
+                p3 = lineEdges[0].vertices[0]
+            else:
+                p1 = lineEdges[i - 1].vertices[0]
+                p2 = lineEdges[i].vertices[0]
+                p3 = lineEdges[i].vertices[1]
+
+            center, radius = self._circumcircle(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y)
+            centerList.append(center)
+            radiusList.append(radius)
+
+        # 2) 연속된 같은 원호 그룹으로 묶기
+        groups = []  # [(startIdx, endIdx), ...]
+        groupStart = 0
+        for i in range(1, len(centerList)):
+            prevC = centerList[i - 1]
+            curC = centerList[i]
+            prevR = radiusList[i - 1]
+            curR = radiusList[i]
+
+            if prevR == 0 or curR == 0:
+                if i - groupStart >= min_group_size:
+                    groups.append((groupStart, i - 1))
+                groupStart = i
+                continue
+
+            dist = math.sqrt((prevC[0] - curC[0]) ** 2 + (prevC[1] - curC[1]) ** 2)
+            sumR = prevR + curR
+            distRatio = dist / sumR if sumR > 0 else 1.0
+            radiusRatio = abs(prevR - curR) / sumR if sumR > 0 else 1.0
+
+            if distRatio < tol_center and radiusRatio < tol_radius:
+                continue
+            else:
+                if i - groupStart >= min_group_size:
+                    groups.append((groupStart, i - 1))
+                groupStart = i
+
+        # 마지막 그룹 체크
+        if len(centerList) - groupStart >= min_group_size:
+            groups.append((groupStart, len(centerList) - 1))
+
+        if len(groups) == 0:
+            return
+
+        # 2.5) 직선 그룹 필터링: 각 edge가 실제로 원호 위에 있는지 검사
+        # - 각 edge의 중점이 그룹 평균 원에서 벗어나면 해당 edge를 제외
+        # - 또한 각 edge의 subtended angle이 비정상적으로 크면 직선(chord)으로 간주
+        filteredGroups = []
+        for (gs, ge) in groups:
+            # 그룹 내 중심점 평균과 반경 평균
+            cx_avg = sum(centerList[k][0] for k in range(gs, ge + 1)) / (ge - gs + 1)
+            cy_avg = sum(centerList[k][1] for k in range(gs, ge + 1)) / (ge - gs + 1)
+            r_avg = sum(radiusList[k] for k in range(gs, ge + 1)) / (ge - gs + 1)
+
+            if r_avg < 1.0e-12:
+                continue
+
+            # 각 edge의 중점이 원호 위에 있는지 검사 (반경 편차)
+            # 또한 각 edge가 원에서 subtend하는 각도 검사
+            validStart = gs
+            validEnd = ge
+            subGroups = []
+            subStart = gs
+
+            for k in range(gs, ge + 1):
+                v1 = lineEdges[k].vertices[0]
+                v2 = lineEdges[k].vertices[1]
+                mx = (v1.x + v2.x) / 2.0
+                my = (v1.y + v2.y) / 2.0
+                distFromCenter = math.sqrt((mx - cx_avg) ** 2 + (my - cy_avg) ** 2)
+                # 중점의 반경 편차
+                radiusDev = abs(distFromCenter - r_avg) / r_avg
+
+                # edge 길이 대비 chord-to-arc 편차 (sagitta)
+                edgeLen = math.sqrt((v2.x - v1.x) ** 2 + (v2.y - v1.y) ** 2)
+                # 원호의 경우 중점은 원 위에 가까워야 함
+                # 직선의 경우 중점은 원 위에서 멀리 떨어짐
+                # 각 edge가 subtend하는 각도 계산
+                angle1 = math.atan2(v1.y - cy_avg, v1.x - cx_avg)
+                angle2 = math.atan2(v2.y - cy_avg, v2.x - cx_avg)
+                dAngle = abs(angle2 - angle1)
+                if dAngle > math.pi:
+                    dAngle = 2 * math.pi - dAngle
+
+                # 한 edge가 전체 원의 절반 이상을 커버하면 직선(chord)일 가능성 높음
+                # 또는 중점이 원에서 크게 벗어남 (radiusDev > 5%)
+                isChord = (dAngle > math.pi * 0.8) or (radiusDev > 0.05)
+
+                if isChord:
+                    # 이 edge까지를 끊고, 이전까지를 sub-group으로
+                    if k - subStart >= min_group_size:
+                        subGroups.append((subStart, k - 1))
+                    subStart = k + 1
+
+            # 마지막 sub-group
+            if ge + 1 - subStart >= min_group_size:
+                subGroups.append((subStart, ge))
+
+            filteredGroups.extend(subGroups)
+
+        groups = filteredGroups
+
+        if len(groups) == 0:
+            return
+
+        # 2.7) 경계 edge 확장: 각 그룹의 양쪽에 인접한 edge가 원 위에 있으면 흡수
+        expandedGroups = []
+        for (gs, ge) in groups:
+            # 그룹 평균 중심/반경
+            cx_avg = sum(centerList[k][0] for k in range(gs, ge + 1)) / (ge - gs + 1)
+            cy_avg = sum(centerList[k][1] for k in range(gs, ge + 1)) / (ge - gs + 1)
+            r_avg = sum(radiusList[k] for k in range(gs, ge + 1)) / (ge - gs + 1)
+            if r_avg < 1.0e-12:
+                expandedGroups.append((gs, ge))
+                continue
+
+            # 앞쪽 확장
+            newGs = gs
+            while newGs > 0:
+                prevEdge = lineEdges[newGs - 1]
+                v = prevEdge.vertices[0]
+                dist = math.sqrt((v.x - cx_avg) ** 2 + (v.y - cy_avg) ** 2)
+                if abs(dist - r_avg) / r_avg < 0.05:
+                    newGs -= 1
+                else:
+                    break
+
+            # 뒤쪽 확장
+            newGe = ge
+            while newGe < len(lineEdges) - 1:
+                nextEdge = lineEdges[newGe + 1]
+                v = nextEdge.vertices[1]
+                dist = math.sqrt((v.x - cx_avg) ** 2 + (v.y - cy_avg) ** 2)
+                if abs(dist - r_avg) / r_avg < 0.05:
+                    newGe += 1
+                else:
+                    break
+
+            expandedGroups.append((newGs, newGe))
+
+        # 확장된 그룹끼리 겹치면 병합
+        groups = []
+        for (gs, ge) in expandedGroups:
+            if groups and gs <= groups[-1][1] + 1:
+                groups[-1] = (groups[-1][0], max(groups[-1][1], ge))
+            else:
+                groups.append((gs, ge))
+
+        # 3) 그룹을 Arc로 치환하여 새 edge 리스트 생성
+        # lineEdges의 인덱스를 self.edges의 인덱스로 매핑
+        lineEdgeIndices = []
+        for i, e in enumerate(self.edges):
+            if e.type == "Line":
+                lineEdgeIndices.append(i)
+
+        # 치환할 self.edges 인덱스 범위를 모음
+        # 기존 vertex 최대 ID를 구해서 새 vertex에 고유 ID 부여
+        maxVid = max(v.id for v in self.vertices) if len(self.vertices) > 0 else 0
+
+        replacements = []  # [(selfStartIdx, selfEndIdx, arcEdge), ...]
+        for (gs, ge) in groups:
+            selfStart = lineEdgeIndices[gs]
+            selfEnd = lineEdgeIndices[ge]
+
+            # Arc 시작점, 끝점, 중심점
+            vStart = lineEdges[gs].vertices[0]
+            vEnd = lineEdges[ge].vertices[1]
+
+            # 그룹 내 중심점들의 평균으로 중심 계산
+            cx_sum = sum(centerList[k][0] for k in range(gs, ge + 1))
+            cy_sum = sum(centerList[k][1] for k in range(gs, ge + 1))
+            count = ge - gs + 1
+            cx = cx_sum / count
+            cy = cy_sum / count
+
+            maxVid += 1
+            vCenter = Vertex2D(maxVid, cx, cy, 0)
+
+            # clockwise 판별: cross product로 방향 결정
+            midIdx = (gs + ge) // 2
+            vMid = lineEdges[midIdx].vertices[0]
+            cross = (vMid.x - cx) * (vEnd.y - cy) - (vMid.y - cy) * (vEnd.x - cx)
+            ccw = cross > 0
+
+            arcEdge = Edges2D(0, [vStart, vEnd, vCenter], "Arc")
+            arcEdge.counterclockwise = ccw
+            replacements.append((selfStart, selfEnd, arcEdge))
+
+        # 4) 역순으로 치환 (인덱스 깨지지 않게)
+        newEdges = list(self.edges)
+        for (selfStart, selfEnd, arcEdge) in reversed(replacements):
+            newEdges[selfStart:selfEnd + 1] = [arcEdge]
+
+        self.edges = newEdges
+
+        # vertices 재구성 (id() 기반으로 중복 제거)
+        newVertices = []
+        seen = set()
+        for e in self.edges:
+            for v in e.vertices:
+                if id(v) not in seen:
+                    newVertices.append(v)
+                    seen.add(id(v))
+        self.vertices = newVertices
+
+    @staticmethod
+    def _circumcircle(x1, y1, x2, y2, x3, y3):
+        """3점의 외접원 중심과 반경을 계산한다."""
+        D = 2.0 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
+        if abs(D) < 1.0e-12:
+            return [0, 0], 0
+        ux = ((x1 * x1 + y1 * y1) * (y2 - y3) + (x2 * x2 + y2 * y2) * (y3 - y1) + (x3 * x3 + y3 * y3) * (y1 - y2)) / D
+        uy = ((x1 * x1 + y1 * y1) * (x3 - x2) + (x2 * x2 + y2 * y2) * (x1 - x3) + (x3 * x3 + y3 * y3) * (x2 - x1)) / D
+        r = math.sqrt((x1 - ux) ** 2 + (y1 - uy) ** 2)
+        return [ux, uy], r
+
     def Generate(self,thickness,upper, originX=0,originY=0,originZ=0,rotation=0,mirror=False):
         wire_builder = BRepBuilderAPI_MakeWire()
         
