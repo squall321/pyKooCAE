@@ -64,7 +64,8 @@ class ODBCADManager():
         self.ymin = -1.e99
         self.ymax = 1.e99
         self.detailPADName = {}
-        self.udPKGName = {}        
+        self.udPKGName = {}
+        self.skipLayerList = []
         self.unitamp = 25.4
 
         self.exportPKGOption = False
@@ -356,6 +357,9 @@ class ODBCADManager():
 
                                 
                                 
+                            elif sline.find("SkipLayer") == 0:
+                                self.skipLayerList.append(svector[1].strip())
+                                print("ODB SkipLayer: ", svector[1])
                             elif sline.find("PKG") == 0:
                                 if len(svector) < 3:
                                     print("PKG option is not enough")
@@ -551,7 +555,7 @@ class ODBCADManager():
                 #odbSTPPath = odbPath.replace(".zip","_pcb_multiscale.stp")
                 odbSTPPath = self.inputFileName.replace(".txt","_pcb_multiscale.stp")
                 shape = board.GenerateSolid()
-                shapeList = board.ExportShapeArea(odbSTPPath,self.xmin,self.ymin,self.xmax,self.ymax)
+                shapeList = board.ExportShapeArea(odbSTPPath,self.xmin,self.ymin,self.xmax,self.ymax, self.skipLayerList)
                 totalShapeList.extend(shapeList)
             else:
                 #change zip to stp 
@@ -662,14 +666,61 @@ class ODBCADManager():
             if self.exportPKGOption == True:
                 self.packageManager.ExportPackage(exportFolderPath,self.minimumSize)
                 
-            for compMan in self.componentManager:                                
+            pkgBodyShapeList = []
+            pkgSolderShapeList = []
+            for compMan in self.componentManager:
                 compMan : ComponentManager = compMan
-                addedList = compMan.Generate(self.minimumSize,self.detailPADName,self.udPKGName)
+                addedList, bodyList, solderList = compMan.Generate(self.minimumSize,self.detailPADName,self.udPKGName,
+                                             self.xmin,self.ymin,self.xmax,self.ymax)
                 if self.exportPKGOption == True:
                     compMan.ExportComponent(exportFolderPath,self.minimumSize)
                 shapeList.extend(addedList)
+                pkgBodyShapeList.extend(bodyList)
+                pkgSolderShapeList.extend(solderList)
             print("Number of Total Shapes : ", len(shapeList))
-            ith = ith + 1            
+
+            # 패키지 합친 STEP 파일 출력 (본체 + 솔더)
+            def _flatten_shapes_to_compound(shapeItems):
+                from OCC.Core.TopoDS import TopoDS_Compound
+                from OCC.Core.BRep import BRep_Builder
+                compound = TopoDS_Compound()
+                builder = BRep_Builder()
+                builder.MakeCompound(compound)
+                count = 0
+                for item in shapeItems:
+                    if item is None:
+                        continue
+                    if isinstance(item, list):
+                        for shape in item:
+                            if shape is not None:
+                                builder.Add(compound, shape)
+                                count += 1
+                    else:
+                        builder.Add(compound, item)
+                        count += 1
+                return compound, count
+
+            from OCC.Core.STEPControl import STEPControl_AsIs, STEPControl_Writer
+
+            # PKG 본체 STEP
+            compoundPKG, countPKG = _flatten_shapes_to_compound(pkgBodyShapeList)
+            if countPKG > 0:
+                pkgSTPPath = self.inputFileName.replace(".txt","_PKG.stp")
+                stepWriterPKG = STEPControl_Writer()
+                stepWriterPKG.Transfer(compoundPKG, STEPControl_AsIs)
+                stepWriterPKG.Write(pkgSTPPath)
+                print("Exporting Package Body STEP file: ", pkgSTPPath)
+
+            # 솔더 STEP
+            compoundS, countS = _flatten_shapes_to_compound(pkgSolderShapeList)
+            if countS > 0:
+                solderSTPPath = self.inputFileName.replace(".txt","_S.stp")
+                stepWriterS = STEPControl_Writer()
+                stepWriterS.Transfer(compoundS, STEPControl_AsIs)
+                stepWriterS.Write(solderSTPPath)
+                print("Exporting Solder STEP file: ", solderSTPPath)
+
+            ith = ith + 1
         self.shapeList = shapeList
         return shapeList
     

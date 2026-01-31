@@ -104,21 +104,22 @@ class PackageComponent(Component):
     def GenerateBottomShieldCan(self, pkgZLocation):
         pass
 
-    def GenerateTop(self, pkgZLocation,detailPADS):        
-        shapeList = [] 
+    def GenerateTop(self, pkgZLocation,detailPADS):
+        bodyShapeList = []
+        solderShapeList = []
         ith = 0
-        detailBallMode = False 
+        detailBallMode = False
         if self.pkg.name in detailPADS:
             detailBallMode = True
         elif "ALL" in detailPADS:
             detailBallMode = True
         if detailBallMode:
-            for aPolygon in self.pkg.polygons:                
+            for aPolygon in self.pkg.polygons:
                 #point2DList = aPolygon.GetPolygonsCoordinates(self.origin_x,self.origin_y,self.rotation,self.mirror)
                 if aPolygon == None:
                     continue
                 aPolygon : Polygon2D = aPolygon
-                if ith == 0:                    
+                if ith == 0:
                     thickness = self.package_thickness
                     x = self.origin_x
                     y = self.origin_y
@@ -129,8 +130,8 @@ class PackageComponent(Component):
                         pass
                     else:
                         shape = aPolygon.Generate(thickness,True,x,y,z,rotation,mirror)
-                        shapeList.append(shape)
-                else:                    
+                        bodyShapeList.append(shape)
+                else:
                     thickness = self.solderjoint_thickness
                     x = self.origin_x
                     y = self.origin_y
@@ -141,8 +142,8 @@ class PackageComponent(Component):
                         pass
                     else:
                         shape = aPolygon.Generate(thickness,True,x,y,z,rotation,mirror)
-                        shapeList.append(shape)
-                    
+                        solderShapeList.append(shape)
+
                 ith = ith + 1
         else:
             aPolygon = self.pkg.polygons[0]
@@ -151,15 +152,16 @@ class PackageComponent(Component):
             y = self.origin_y
             z = pkgZLocation + self.origin_z
             rotation = self.rotation
-            mirror = self.mirror            
+            mirror = self.mirror
             if aPolygon is not None:
                 shape = aPolygon.Generate(thickness,True,x,y,z,rotation,mirror)
                 if shape is not None:
-                    shapeList.append(shape)            
-        return shapeList
+                    bodyShapeList.append(shape)
+        return bodyShapeList, solderShapeList
 
     def GenerateBottom(self, pkgZLocation, detailPADS):
-        shapeList = [] 
+        bodyShapeList = []
+        solderShapeList = []
         ith = 0
         detailBallMode = False
         if self.pkg.name in detailPADS:
@@ -186,7 +188,7 @@ class PackageComponent(Component):
                     face = BRepBuilderAPI_MakeFace(p,True).Face()
                     thick = self.package_thickness
                     prism = BRepPrimAPI_MakePrism(face,gp_Vec(0,0,thick))
-                    shapeList.append(prism.Shape())
+                    bodyShapeList.append(prism.Shape())
                     '''
                     thickness = self.package_thickness
                     x = self.origin_x
@@ -197,9 +199,9 @@ class PackageComponent(Component):
                     if thickness == 0.0:
                         pass
                     else:
-                        shape = aPolygon.Generate(thickness,True,x,y,z,rotation,mirror)                
-                        shapeList.append(shape)
-                    
+                        shape = aPolygon.Generate(thickness,True,x,y,z,rotation,mirror)
+                        bodyShapeList.append(shape)
+
                 else:
                     '''
                     for aPoint in point2DList:
@@ -214,7 +216,7 @@ class PackageComponent(Component):
                     face = BRepBuilderAPI_MakeFace(p,True).Face()
                     thick = self.solderjoint_thickness
                     prism = BRepPrimAPI_MakePrism(face,gp_Vec(0,0,thick))
-                    shapeList.append(prism.Shape())              
+                    solderShapeList.append(prism.Shape())
                     '''
                     thickness = self.solderjoint_thickness
                     x = self.origin_x
@@ -226,7 +228,7 @@ class PackageComponent(Component):
                         pass
                     else:
                         shape = aPolygon.Generate(thickness,True,x,y,z,rotation,mirror)
-                        shapeList.append(shape)
+                        solderShapeList.append(shape)
 
                 ith = ith + 1
         else:
@@ -240,8 +242,8 @@ class PackageComponent(Component):
             mirror = not self.mirror
             if aPolygon is not None:
                 shape = aPolygon.Generate(thickness,True,x,y,z,rotation,mirror)
-                shapeList.append(shape)
-        return shapeList
+                bodyShapeList.append(shape)
+        return bodyShapeList, solderShapeList
     
     def GenerateTopUserdefined(self, pkgZLocation, detailPKGFileName):
         curPath = os.getcwd()
@@ -256,8 +258,8 @@ class PackageComponent(Component):
         pkgUserdefined.outFileName = detailPKGFileName.replace(".txt",".step")
         pkgUserdefined.ImportPackage(curFilePath)
         shapeList = pkgUserdefined.GenerateShapeList()
-        shapesTransformed = pkgUserdefined.TransformedShapeList()        
-        return shapesTransformed
+        shapesTransformed = pkgUserdefined.TransformedShapeList()
+        return shapesTransformed, []
 
     def GenerateBottomUserdefined(self, pkgZLocation, detailPKGFileName):
         curPath = os.getcwd()
@@ -272,8 +274,8 @@ class PackageComponent(Component):
         pkgUserdefined.outFileName = detailPKGFileName.replace(".txt",".step")
         pkgUserdefined.ImportPackage(curFilePath)
         shapeList = pkgUserdefined.GenerateShapeList()
-        shapesTransformed = pkgUserdefined.TransformedShapeList()        
-        return shapesTransformed
+        shapesTransformed = pkgUserdefined.TransformedShapeList()
+        return shapesTransformed, []
     
     def ExportTopDetail(self, file, pkgZLocation, generateMesh = False):
         self.ExportDetail(file, pkgZLocation, True, generateMesh)

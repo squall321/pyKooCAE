@@ -217,66 +217,87 @@ class ComponentManager():
         f.seek(cur, os.SEEK_SET)
         return cur == end
     
-    def Generate(self, minimumSize = 0.0, detailPADS = {}, udPKGName = {}):
+    def Generate(self, minimumSize = 0.0, detailPADS = {}, udPKGName = {},
+                 xmin = -1.e99, ymin = -1.e99, xmax = 1.e99, ymax = 1.e99):
         if self.isTop == True:
-            return self.GenerateTop(minimumSize, detailPADS, udPKGName)
+            return self.GenerateTop(minimumSize, detailPADS, udPKGName, xmin, ymin, xmax, ymax)
         else:
-            return self.GenerateBottom(minimumSize, detailPADS, udPKGName)            
+            return self.GenerateBottom(minimumSize, detailPADS, udPKGName, xmin, ymin, xmax, ymax)
 
-    def GenerateTop(self, minimumSize, detailPADS, udPKGName):
+    def GenerateTop(self, minimumSize, detailPADS, udPKGName,
+                    xmin = -1.e99, ymin = -1.e99, xmax = 1.e99, ymax = 1.e99):
         shapeList = []
+        bodyShapeList = []
+        solderShapeList = []
         pkgZLoc = self.pcbZLoc + self.pcbThickness
         for aComponent in self.components.values():
             aComponent : PackageComponent = aComponent
             boundaryBox = aComponent.BoundaryBox()
             minSize = max(boundaryBox[1]-boundaryBox[0],boundaryBox[3]-boundaryBox[2])
             if minSize < minimumSize:
-                continue    
+                continue
+            # BoundaryBox 공간 필터링: 완전 포함된 컴포넌트만 통과
+            if not (boundaryBox[0] >= xmin and boundaryBox[1] <= xmax and boundaryBox[2] >= ymin and boundaryBox[3] <= ymax):
+                continue
             '''if "fsc" in aComponent.pkg.name:
                 aComponent.pkg.polygons[0].ReshapeHolePolygonstoShell()
                 aComponent.type = "ShieldCan"'''
             if aComponent.pkg.name in udPKGName:
                 if udPKGName[aComponent.pkg.name] == "None":
                     continue
-                shape = aComponent.GenerateTopUserdefined(pkgZLoc,udPKGName[aComponent.pkg.name])
-                if shape == None:
+                bodyShapes, solderShapes = aComponent.GenerateTopUserdefined(pkgZLoc,udPKGName[aComponent.pkg.name])
+                if bodyShapes == None:
                     continue
             else:
-                shape = aComponent.GenerateTop(pkgZLoc,detailPADS)
+                bodyShapes, solderShapes = aComponent.GenerateTop(pkgZLoc,detailPADS)
 
             print("Draw Component Top {id} {name}".format(id=aComponent.id,name=aComponent.pkg.name))
 
-            if shape != None:
-                shapeList.append(shape)
-        return shapeList
-    
-    
-    def GenerateBottom(self, minimumSize, detailPADS, udPKGName):
-        shapeList = [] 
+            if bodyShapes is not None:
+                shapeList.append(bodyShapes)
+                bodyShapeList.append(bodyShapes)
+            if solderShapes is not None and len(solderShapes) > 0:
+                shapeList.append(solderShapes)
+                solderShapeList.append(solderShapes)
+        return shapeList, bodyShapeList, solderShapeList
+
+
+    def GenerateBottom(self, minimumSize, detailPADS, udPKGName,
+                       xmin = -1.e99, ymin = -1.e99, xmax = 1.e99, ymax = 1.e99):
+        shapeList = []
+        bodyShapeList = []
+        solderShapeList = []
         pkgZLoc = self.pcbZLoc
         for aComponent in self.components.values():
             aComponent : PackageComponent = aComponent
             boundaryBox = aComponent.BoundaryBox()
             minSize = max(boundaryBox[1]-boundaryBox[0],boundaryBox[3]-boundaryBox[2])
             if minSize < minimumSize:
-                continue      
+                continue
+            # BoundaryBox 공간 필터링: 완전 포함된 컴포넌트만 통과
+            if not (boundaryBox[0] >= xmin and boundaryBox[1] <= xmax and boundaryBox[2] >= ymin and boundaryBox[3] <= ymax):
+                continue
             if "intp_P3_L_R03_SLAVE" in aComponent.pkg.name:
-                pass      
+                pass
             '''if "fsc" in aComponent.pkg.name:
                 aComponent.pkg.polygons[0].ReshapeHolePolygonstoShell()
                 aComponent.type = "ShieldCan"'''
             if aComponent.pkg.name in udPKGName:
                 if udPKGName[aComponent.pkg.name] == "None":
                     continue
-                shape = aComponent.GenerateBottomUserdefined(pkgZLoc,udPKGName[aComponent.pkg.name])
-                if shape == None:
+                bodyShapes, solderShapes = aComponent.GenerateBottomUserdefined(pkgZLoc,udPKGName[aComponent.pkg.name])
+                if bodyShapes == None:
                     continue
             else:
-                shape = aComponent.GenerateBottom(pkgZLoc,detailPADS)
+                bodyShapes, solderShapes = aComponent.GenerateBottom(pkgZLoc,detailPADS)
             print("Draw Component Bottom {id} {name}".format(id=aComponent.id,name=aComponent.pkg.name))
-            if shape != None:
-                shapeList.append(shape)
-        return shapeList
+            if bodyShapes is not None:
+                shapeList.append(bodyShapes)
+                bodyShapeList.append(bodyShapes)
+            if solderShapes is not None and len(solderShapes) > 0:
+                shapeList.append(solderShapes)
+                solderShapeList.append(solderShapes)
+        return shapeList, bodyShapeList, solderShapeList
     
     def ExportComponent(self,folderPath, mininumSize = 0.0):
         if self.isTop == True:

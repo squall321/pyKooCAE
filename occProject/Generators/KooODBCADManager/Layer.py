@@ -907,9 +907,11 @@ class PrintedCircuitBoard():
         status = step_writer.Write(fileName)
         print("Exporting STEP file is done.")       
 
-    def ExportShapeArea(self, fileName, xmin, ymin, xmax, ymax):
+    def ExportShapeArea(self, fileName, xmin, ymin, xmax, ymax, skipLayerList=None):
+        if skipLayerList is None:
+            skipLayerList = []
         compound = TopoDS_Compound()
-        builder = BRep_Builder()        
+        builder = BRep_Builder()
         builder.MakeCompound(compound)
         print("Generate Solder Mask and Paste")
         if len(self.aisSolderMaskLayers) > 0:
@@ -927,7 +929,7 @@ class PrintedCircuitBoard():
             print("No Solder Paste Shape is generated")
             
         print("Generate PPG and CU")
-        originalShape, cushapeList, ppgshapeList = self.GeneratePPG(xmin,ymin,xmax,ymax)
+        originalShape, cushapeList, ppgshapeList = self.GeneratePPG(xmin,ymin,xmax,ymax, skipLayerList)
         print("PPG and CU Shape is generated")
         #shapeList = self.GeneratePPGMultiThread(xmin,ymin,xmax,ymax)
         for shape in originalShape:
@@ -1376,10 +1378,12 @@ class PrintedCircuitBoard():
                 
         return solderMaskShapeList
     
-    def GeneratePPG(self,xmin,ymin,xmax,ymax):
-        ppgShapeList = [] 
-        cuShapeList = [] 
-        originalShape = [] 
+    def GeneratePPG(self,xmin,ymin,xmax,ymax, skipLayerList=None):
+        if skipLayerList is None:
+            skipLayerList = []
+        ppgShapeList = []
+        cuShapeList = []
+        originalShape = []
         print("Generate PPG and CU External Shape")
         for layer in self.aisfeatures:
             curShapeList = layer.GetExternalShape()
@@ -1388,46 +1392,42 @@ class PrintedCircuitBoard():
             curLayer : AISLayer = layer
             curLayer.GetRectanglePPGShape(xmin,ymin,xmax,ymax)
             curShapeList = curLayer.RemoveRectangularfromOriginalShape()
-            
-            print("Number of shapes :", len(curShapeList), "are generated")
-            
 
-            #shapeList.extend(curShapeList)
-            #ppgShapeList.extend(curShapeList)
-        #for layer in self.aislayers:
+            print("Number of shapes :", len(curShapeList), "are generated")
+
         print("Generate PPG and CU Internal Shape")
-        self.LayerCUStpList = [] 
+        self.LayerCUStpList = []
         self.LayerPPGStpList = []
         for i in range(len(self.aislayers)):
             layer = self.aislayers[i]
-            curShape = layer.GetShape()
             curLayer : AISLayer = layer
-            curLayer.GetRectanglePPGShapeRemoveShape(xmin,ymin,xmax,ymax,originalShape[i])
-            #curLayer.GetRectanglePPGShape(xmin,ymin,xmax,ymax)
-            
-            #curLayer.GetRectanglePPGShapewithRemoved(xmin,ymin,xmax,ymax)
-            cuShape, ppgShape = curLayer.RemovePattenfromPPGShape()
+            layerName = curLayer.layer.name
+
+            if layerName in skipLayerList:
+                # 스킵된 레이어: BoundaryBox 전체를 솔리드 구리로 출력
+                print("SkipLayer: ", layerName, " -> Solid Copper Sheet")
+                cuShape = [curLayer.GenerateSolidCopperSheet(xmin, ymin, xmax, ymax, originalShape[i])]
+                ppgShape = []
+            else:
+                # 기존 로직: 회로 패턴 생성
+                curShape = layer.GetShape()
+                curLayer.GetRectanglePPGShapeRemoveShape(xmin,ymin,xmax,ymax,originalShape[i])
+                cuShape, ppgShape = curLayer.RemovePattenfromPPGShape()
+
             if cuShape is None or ppgShape is None:
                 print("No shape is generated")
                 continue
-            #shapeList.extend(curShapeList)
             cuShapeList.extend(cuShape)
-            ppgShapeList.extend(ppgShape)  
+            ppgShapeList.extend(ppgShape)
             if type(cuShape) == list:
                 self.LayerCUStpList.append(cuShape)
-                #print("Number of shapes :", len(cuShape), "are generated")
             else:
-                self.LayerCUStpList.append([cuShape])          
-                #print("Number of shapes :", 1, "are generated")
+                self.LayerCUStpList.append([cuShape])
             if type(ppgShape) == list:
                 self.LayerPPGStpList.append(ppgShape)
-                #print("Number of shapes :", len(ppgShape), "are generated")
             else:
                 self.LayerPPGStpList.append([ppgShape])
-                #print("Number of shapes :", 1, "are generated")
-                
-            
-        
+
         return originalShape, cuShapeList, ppgShapeList
 
     def process_layer(self,layer, shapeList,xmin,ymin,xmax,ymax):
@@ -2039,7 +2039,27 @@ class AISLayer():
         ppgShape = ODBShape(shape, xmin,ymin,xmax,ymax)
         self.ppgShapeList.append(ppgShape)
         return shape
-    
+
+    def GenerateSolidCopperSheet(self, xmin, ymin, xmax, ymax, externalShape):
+        """스킵된 레이어의 BoundaryBox 영역을 솔리드 구리로 생성.
+        BoundaryBox 사각형 prism을 만든 뒤 외곽 형상과 교집합."""
+        p1 = gp_Pnt(xmin,ymin,self.zPos)
+        p2 = gp_Pnt(xmax,ymin,self.zPos)
+        p3 = gp_Pnt(xmax,ymax,self.zPos)
+        p4 = gp_Pnt(xmin,ymax,self.zPos)
+        e1 = BRepBuilderAPI_MakeEdge(p1,p2).Edge()
+        e2 = BRepBuilderAPI_MakeEdge(p2,p3).Edge()
+        e3 = BRepBuilderAPI_MakeEdge(p3,p4).Edge()
+        e4 = BRepBuilderAPI_MakeEdge(p4,p1).Edge()
+        w = BRepBuilderAPI_MakeWire(e1,e2,e3,e4).Wire()
+        f = BRepBuilderAPI_MakeFace(w).Face()
+        vec = gp_Vec(0,0,self.layer.thickness)
+        prism = BRepPrimAPI_MakePrism(f,vec)
+        prism.Build()
+        preshape = prism.Shape()
+        shape = BRepAlgoAPI_Common(preshape, externalShape).Shape()
+        return shape
+
     def GetRectanglePPGShape(self, xmin, ymin, xmax, ymax):
         p1 = gp_Pnt(xmin,ymin,self.zPos)
         p2 = gp_Pnt(xmax,ymin,self.zPos)
@@ -2359,11 +2379,7 @@ class AISLayer():
         isMatFormat = len(xVec) > 0 and isinstance(xVec[0], list)
         hasArc = isMatFormat and cwList is not None and len(cwList) > 0 and any(cw is not None for cw in cwList)
 
-        # Arc가 명시적으로 있으면 GetOBShapePrev로 위임 (Wire + Arc edge)
-        if hasArc:
-            return self.GetOBShapePrev(xVec, yVec, zLoc, thickness, cwList)
-
-        # xMat 구조이지만 Arc가 없으면 flat 좌표로 변환하여 create_closed_loop 사용
+        # xMat 구조이면 flat 좌표로 변환
         if isMatFormat:
             flatX = []
             flatY = []
@@ -2377,6 +2393,10 @@ class AISLayer():
                 flatY.append(seg[1])
             xVec = flatX
             yVec = flatY
+
+        # Arc가 있었던 OB 블록은 직선 polygon으로 처리 (create_closed_loop의 자동 arc 감지가 segfault 유발)
+        if hasArc:
+            return self.GetOBShapePrev(xVec, yVec, zLoc, thickness)
 
         solid = None
         xmin = 1.0e99
@@ -2412,10 +2432,15 @@ class AISLayer():
                         continue
                     edge = BRepBuilderAPI_MakeEdge(edgePoints[i][0], edgePoints[i][1]).Edge()
                     wire.Add(edge)
-                elif len(edgePoints[i]) == 3:                    
+                elif len(edgePoints[i]) == 3:
                     arc = GC_MakeArcOfCircle(edgePoints[i][0], edgePoints[i][1], edgePoints[i][2])
-                    edge = BRepBuilderAPI_MakeEdge(arc.Value()).Edge()
-                    wire.Add(edge)
+                    if arc.IsDone():
+                        edge = BRepBuilderAPI_MakeEdge(arc.Value()).Edge()
+                        wire.Add(edge)
+                    else:
+                        # Arc 생성 실패 → 시작-끝 직선으로 fallback
+                        edge = BRepBuilderAPI_MakeEdge(edgePoints[i][0], edgePoints[i][2]).Edge()
+                        wire.Add(edge)
             closed_loop_wire = wire.Wire()
             face = BRepBuilderAPI_MakeFace(closed_loop_wire).Face()
             solid = BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, thickness)).Shape()
@@ -2452,7 +2477,7 @@ class AISLayer():
                         ymin = min(ymin, coord_y)
                         ymax = max(ymax, coord_y)
 
-                    if not hasArc or cwList[j] is None:
+                    if not hasArc or cwList[j] is None or len(seg_x) < 3:
                         p1 = gp_Pnt(seg_x[0], seg_y[0], zLoc)
                         p2 = gp_Pnt(seg_x[1], seg_y[1], zLoc)
                         edge = BRepBuilderAPI_MakeEdge(p1, p2).Edge()
@@ -2460,13 +2485,24 @@ class AISLayer():
                         pStart = gp_Pnt(seg_x[0], seg_y[0], zLoc)
                         pEnd = gp_Pnt(seg_x[1], seg_y[1], zLoc)
                         pCenter = gp_Pnt(seg_x[2], seg_y[2], zLoc)
-                        radius = pCenter.Distance(pStart)
-                        if cwList[j] == 1:
-                            normal = gp_Dir(0, 0, -1)
+                        rStart = pCenter.Distance(pStart)
+                        rEnd = pCenter.Distance(pEnd)
+                        # Arc 유효성 검증: center-start와 center-end 반경이 비슷해야 함
+                        if rStart < 1.e-9 or rEnd < 1.e-9 or abs(rStart - rEnd) / max(rStart, rEnd) > 0.01:
+                            # Degenerate arc → 직선으로 fallback
+                            edge = BRepBuilderAPI_MakeEdge(pStart, pEnd).Edge()
                         else:
-                            normal = gp_Dir(0, 0, 1)
-                        ax2 = gp_Ax2(pCenter, normal)
-                        edge = BRepBuilderAPI_MakeEdge(gp_Circ(ax2, radius), pStart, pEnd).Edge()
+                            radius = (rStart + rEnd) / 2.0
+                            if cwList[j] == 1:
+                                normal = gp_Dir(0, 0, -1)
+                            else:
+                                normal = gp_Dir(0, 0, 1)
+                            ax2 = gp_Ax2(pCenter, normal)
+                            arcBuilder = BRepBuilderAPI_MakeEdge(gp_Circ(ax2, radius), pStart, pEnd)
+                            if arcBuilder.IsDone():
+                                edge = arcBuilder.Edge()
+                            else:
+                                edge = BRepBuilderAPI_MakeEdge(pStart, pEnd).Edge()
                     wire_builder.Add(edge)
                 # Close the wire if not closed
                 first_seg = xVec[0]

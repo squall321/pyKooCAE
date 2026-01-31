@@ -1,0 +1,7 @@
+*ODB
+ODBFile,P3_EUR_REV03.zip
+ZLocation,0.0000
+Thickness,2.5e-5,3.1e-5,1.5e-5,3.1e-5,1.5e-5,3.1e-5,1.5e-5,6.5e-5,1.5e-5,3.1e-5,1.5e-5,3.1e-5,1.5e-5,3.1e-5,2.5e-5
+MinimumSize,0.005
+ExportPackage,True,PackageExported
+*End
