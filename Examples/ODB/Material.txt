@@ -1,0 +1,46 @@
+**Material,1
+*MAT_ELASTIC_TITLE
+Steel
+$$     MID        RO         E        PR
+         1    1100.02.41270E09      0.37
+**Material,7
+*MAT_ELASTIC_TITLE
+Steel
+$$     MID        RO         E        PR
+         7    1100.02.41270E09      0.37
+**Material,8
+*MAT_ELASTIC_TITLE
+Panel
+$$     MID        RO         E        PR
+         8    2230.02.50000E09      0.30
+**Material,9
+*MAT_ELASTIC_TITLE
+CU-DMA
+$$     MID        RO         E        PR
+         9    7900.01.0534E+11      0.30
+**Material,10
+*MAT_ELASTIC_TITLE
+SUS-DMA
+$$     MID        RO         E        PR
+        10    7900.01.5925E+11      0.30
+**Material,11
+*MAT_ELASTIC_TITLE
+TPU
+$$     MID        RO         E        PR
+        11    1100.05.0000E+07      0.37
+**Material,12
+*MAT_ELASTIC_TITLE
+P-film
+$$     MID        RO         E        PR
+        12    2200.03.7570E+09      0.35
+**Material,13
+*MAT_ELASTIC_TITLE
+PSA-rheology
+$$     MID        RO         E        PR
+        13    2000.00.0340E+06      0.35
+**Material,14
+*MAT_VISCOELASTIC_TITLE
+Test_for_viscoelastic
+$$     MID        RO      BULK        G0        GI      BETA
+        14    7900.01.5925E+11 1.500E+09 1.000E+08       0.5
+**End

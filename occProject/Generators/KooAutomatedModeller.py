@@ -383,15 +383,51 @@ COPYRIGHT NOTICE: Copyright © 2025 Koo. All rights reserved.
         #sys.argv.append("KooAutomatedModeller")
         #sys.argv.append("MicroModelling")
         
+        
+        ### New Examples for STC
+
+        sys.argv.clear()
+        sys.argv.append("KooAutomatedModeller")
+        
+        
+        
+        #sys.argv.append("PBA")
+        #sys.argv.append("ECADfilesforPBA_P3_Export.txt")
+        #sys.argv.append("ECADfilesforPBA_P3_Export_detail.txt")
+
+        sys.argv.append("PKG")
+        sys.argv.append("ECADfilesforPBA_P3_Export_detail_pcb_multiscale_mesh.txt")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         ########################################################
         ####### PBA Generation #################################
         ########################################################
         
-        sys.argv.clear()
-        sys.argv.append("KooAutomatedModeller")
-        sys.argv.append("PBA")
+        #sys.argv.clear()
+        #sys.argv.append("KooAutomatedModeller")
+        #sys.argv.append("PBA")
         #sys.argv.append("ECADfilesforPBA.txt")
-        #sys.argv.append("ECADfilesforPBA_P3.txt")        
+        #sys.argv.append("ECADfilesforPBA_P3.txt")
         # detail level
         #sys.argv.append("ECADfilesforPBA_P3_Multiscale.txt")
         #sys.argv.append("ECADfilesforPBA_P3_PADDetail.txt")
@@ -400,7 +436,7 @@ COPYRIGHT NOTICE: Copyright © 2025 Koo. All rights reserved.
         #sys.argv.append("ECADfilesforPBA_P3_PADSimpleBigPKGOnly.txt")
         #sys.argv.append("ECADfilesforPBA_P3_PrescribedPKG.txt")
         #sys.argv.append("ECADfilesforPBA_P3_Export.txt")
-        sys.argv.append("ECADfilesforPBA_P3_Export_detail.txt")
+        #sys.argv.append("ECADfilesforPBA_P3_Export_detail.txt")        
         #sys.argv.append("P3_3.txt")
         #sys.argv.append("P3_4_1.txt")
         #sys.argv.append("P3Multiscale_2_1.txt")        

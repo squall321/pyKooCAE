@@ -19,7 +19,9 @@ from OCC.Core.gp import gp_Dir, gp_Ax2, gp_Circ
 from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire
 from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakePrism
 from OCC.Core.gp import gp_Vec
-from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Cut    
+from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Cut
+from OCC.Core.GProp import GProp_GProps
+from OCC.Core.BRepGProp import brepgprop
 
 class Point():
     def __init__(self, x, y):
@@ -992,8 +994,16 @@ class Symbol(BasicSymbol):
                     wire = polygon_builder.Wire()
                     face = BRepBuilderAPI_MakeFace(wire).Face()
                     vec = gp_Vec(0,0,thickness)
-                    shape = BRepPrimAPI_MakePrism(face,vec)
-                    shapeList.append(shape.Shape())
+                    prism = BRepPrimAPI_MakePrism(face,vec)
+                    shape = prism.Shape()
+                    # Check volume: negative means inverted face normals (CW winding)
+                    props = GProp_GProps()
+                    brepgprop.VolumeProperties(shape, props)
+                    if props.Mass() < 0:
+                        face.Reverse()
+                        prism = BRepPrimAPI_MakePrism(face,vec)
+                        shape = prism.Shape()
+                    shapeList.append(shape)
                 except:
                     print("Error in GetShape")
                     pass

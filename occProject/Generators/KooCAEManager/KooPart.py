@@ -207,34 +207,47 @@ class KooPart():
         from KooCAEManager.KooMeshImporter import KooMSHImporter
         self.mshImporter : KooMSHImporter = KooMSHImporter(self.nodeManager, self.elementManager)
         
+    @staticmethod
+    def _find_linux_gmsh(basePath=None):
+        """리눅스에서 gmsh 경로를 찾는다. /opt → Library fallback → which gmsh"""
+        candidates = [
+            "/opt/gmsh-4.14.1-Linux64/bin/gmsh",
+        ]
+        if basePath is not None:
+            for i in range(5):
+                prefix = os.path.join(basePath, *(['..'] * i))
+                candidates.append(os.path.join(prefix, "Library", "gmsh-4.14.1-Linux64", "bin", "gmsh"))
+        else:
+            candidates.append(os.path.join(".", "Library", "gmsh-4.14.1-Linux64", "bin", "gmsh"))
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+        import shutil
+        found = shutil.which("gmsh")
+        if found:
+            return found
+        print("gmsh not found")
+        sys.exit()
+
     def SetPath(self, path):
         self.path = path
-        # find gmsh.exe in the path
-        if sys.platform.startswith("win"):            
-            self.gmshPath = os.path.join(path, ".\\Library\\gmsh-4.11.1-Windows64\\gmsh.exe")
-            if os.path.exists(self.gmshPath):
-                pass
-            else:
-                self.gmshPath = os.path.join(path, "..\\Library\\gmsh-4.11.1-Windows64\\gmsh.exe")
-                if os.path.exists(self.gmshPath):
-                    pass
-                else:
-                    self.gmshPath = os.path.join(path, "..\\..\\Library\\gmsh-4.11.1-Windows64\\gmsh.exe")
-                    if os.path.exists(self.gmshPath):
-                        pass
-                    else:
-                        self.gmshPath = os.path.join(path, "..\\..\\..\\Library\\gmsh-4.11.1-Windows64\\gmsh.exe")
-                        if os.path.exists(self.gmshPath):
-                            pass
-                        else:
-                            self.gmshPath = os.path.join(path, "..\\..\\..\\..\\Library\\gmsh-4.11.1-Windows64\\gmsh.exe")
-                            if os.path.exists(self.gmshPath):
-                                pass
-                            else:
-                                print("gmsh.exe not found")
-                                sys.exit()
+        if sys.platform.startswith("win"):
+            # find gmsh.exe in the path
+            winCandidates = [
+                os.path.join(path, ".\\Library\\gmsh-4.11.1-Windows64\\gmsh.exe"),
+                os.path.join(path, "..\\Library\\gmsh-4.11.1-Windows64\\gmsh.exe"),
+                os.path.join(path, "..\\..\\Library\\gmsh-4.11.1-Windows64\\gmsh.exe"),
+                os.path.join(path, "..\\..\\..\\Library\\gmsh-4.11.1-Windows64\\gmsh.exe"),
+                os.path.join(path, "..\\..\\..\\..\\Library\\gmsh-4.11.1-Windows64\\gmsh.exe"),
+            ]
+            for c in winCandidates:
+                if os.path.exists(c):
+                    self.gmshPath = c
+                    return
+            print("gmsh.exe not found")
+            sys.exit()
         else:
-            self.gmshPath = "/opt/gmsh-4.14.1-Linux64/bin/gmsh"
+            self.gmshPath = self._find_linux_gmsh(path)
 
     def Translate(self, dx, dy, dz):
         nodes = self.elementManager.GetElementNodes()

@@ -11,6 +11,7 @@ else:
     ld_path = os.environ.get("LD_LIBRARY_PATH", "")
     if path not in ld_path.split(":"):
         os.environ["LD_LIBRARY_PATH"] = path + ":" + ld_path
+import copy
 import math
 import zipfile
 import threading
@@ -697,10 +698,10 @@ class PrintedCircuitBoard():
                 layerList.append(layer)                
             elif layer.type == "SOLDER_PASTE":
                 solderPasteLayerList.append(layer)
-                #solderPasteFeatureList.append(self.features[i])                
+                solderPasteFeatureList.append(copy.copy(self.features[i]))
             elif layer.type == "SOLDER_MASK":
                 solderMaskLayerList.append(layer)
-                #solderMaskFeatureList.append(self.features[i])
+                solderMaskFeatureList.append(copy.copy(self.features[i]))
 
         j = 0
         for i in range(1,len(layerList)):
@@ -716,12 +717,8 @@ class PrintedCircuitBoard():
         for i in range(len(layerList)):
             feature = self.features[i]
             featureList.append(feature)
-        for i in range(len(layerList),len(layerList)+2):
-            feature = self.features[i]
-            solderPasteFeatureList.append(feature)
-        for i in range(len(layerList)+2,len(layerList)+4):
-            feature = self.features[i]
-            solderMaskFeatureList.append(feature)
+        # SP/SM features are now populated by type matching above (lines 698-703)
+        # instead of hardcoded index offsets which pointed to wrong layers (e.g. DRILL)
         
 
         for layer in self.layers: 
@@ -1340,7 +1337,7 @@ class PrintedCircuitBoard():
             curLayer : AISLayer = layer
             #curLayer.GetRectanglePPGShape(xMin,yMin,xMax,yMax)
             curLayer.GetRectanglePPGShapeRemoveShape(xmin, ymin, xmax, ymax,originalShape[i])
-            cuShape, ppgShape = curLayer.RemovePattenfromPPGShape()            
+            cuShape, ppgShape = curLayer.RemovePattenfromPPGShape()
             solderPasteShapeList.extend(cuShape)
             if type(cuShape) == list:
                 self.LayerSolderPasteStpList.append(cuShape)
@@ -1362,11 +1359,11 @@ class PrintedCircuitBoard():
             curLayer.GetRectanglePPGShape(xmin,ymin,xmax,ymax)
             curShapeList = curLayer.RemoveRectangularfromOriginalShape()
             
-        for i in range(len(self.aisSolderMaskLayers)):            
+        for i in range(len(self.aisSolderMaskLayers)):
             layer = self.aisSolderMaskLayers[i]
             curShape = layer.GetShape()
             curLayer : AISLayer = layer
-            #curLayer.GetRectanglePPGShape(xMin,yMin,xMax,yMax)
+            #curLayer.GetRectanglePPGShape(xMin,yMin,xMax,ymax)
             curLayer.GetRectanglePPGShapeRemoveShape(xmin, ymin, xmax, ymax,originalShape[i])
             cuShape, ppgShape = curLayer.RemovePattenfromPPGShape()
             #shapeList.extend(curShapeList)
@@ -1556,12 +1553,67 @@ class AISLayer():
 
 
     def RemovePattenfromPPGShape(self):
-        
-        ppgShapeList = [] 
-        patternShapeList = [] 
+
+        ppgShapeList = []
+        patternShapeList = []
         print("Remove Pattern from PPG Shape")
         print("Number of shapes :", len(self.ppgShapeList), "are generated")
-        count = 0 
+
+        # Fix negative-volume shapes (inverted normals from user-defined symbols)
+        from OCC.Core.GProp import GProp_GProps
+        from OCC.Core.BRepGProp import brepgprop
+        from OCC.Core.TopExp import TopExp_Explorer
+        from OCC.Core.TopAbs import TopAbs_FACE
+        from OCC.Core.TopoDS import topods
+        from OCC.Core.BRep import BRep_Builder
+        from OCC.Core.TopoDS import TopoDS_Compound
+        fixedCount = 0
+        skippedCount = 0
+        for odbShape in self.odbShapeList:
+            props = GProp_GProps()
+            brepgprop.VolumeProperties(odbShape.shape, props)
+            if props.Mass() < 0:
+                # Reverse all faces in the shape to fix orientation
+                builder = BRep_Builder()
+                compound = TopoDS_Compound()
+                builder.MakeCompound(compound)
+                explorer = TopExp_Explorer(odbShape.shape, TopAbs_FACE)
+                while explorer.More():
+                    face = topods.Face(explorer.Current())
+                    face.Reverse()
+                    builder.Add(compound, face)
+                    explorer.Next()
+                # Rebuild solid from reversed faces
+                from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
+                from OCC.Core.BRepOffsetAPI import BRepOffsetAPI_Sewing
+                sewing = BRepOffsetAPI_Sewing()
+                explorer2 = TopExp_Explorer(compound, TopAbs_FACE)
+                while explorer2.More():
+                    sewing.Add(explorer2.Current())
+                    explorer2.Next()
+                sewing.Perform()
+                sewedShape = sewing.SewedShape()
+                props2 = GProp_GProps()
+                brepgprop.VolumeProperties(sewedShape, props2)
+                if props2.Mass() > 0:
+                    odbShape.shape = sewedShape
+                    fixedCount += 1
+                else:
+                    skippedCount += 1
+        if fixedCount > 0:
+            print(f"Fixed {fixedCount} shapes with negative volume")
+        if skippedCount > 0:
+            print(f"Skipped {skippedCount} shapes that could not be fixed")
+
+        # Build valid list (positive volume only)
+        validOdbShapeList = []
+        for odbShape in self.odbShapeList:
+            props = GProp_GProps()
+            brepgprop.VolumeProperties(odbShape.shape, props)
+            if props.Mass() > 0:
+                validOdbShapeList.append(odbShape)
+
+        count = 0
         for ppgShape in self.ppgShapeList:
             curShape = ppgShape.shape
             originalShape = curShape
@@ -1570,15 +1622,15 @@ class AISLayer():
             yminj = ppgShape.ymin
             ymaxj = ppgShape.ymax
 
-            for i in range(len(self.odbShapeList)):
-                odbShape = self.odbShapeList[i]
+            for i in range(len(validOdbShapeList)):
+                odbShape = validOdbShapeList[i]
                 xmini = odbShape.xmin
                 xmaxi = odbShape.xmax
                 ymini = odbShape.ymin
                 ymaxi = odbShape.ymax
                 if xmaxi < xminj or xmaxj < xmini or ymaxi < yminj or ymaxj < ymini:
                     pass
-                else:                    
+                else:
                     shape1 = odbShape.shape
                     cutShape = BRepAlgoAPI_Cut(curShape,shape1).Shape()
                     count = count + 1
@@ -1587,14 +1639,14 @@ class AISLayer():
                         print(count, "th cut shape is done")
                     if cutShape is not None:
                         curShape = cutShape
-            
+
             ppgShapeList.append(curShape)
             ppgShape.shape = curShape
             curShape = BRepAlgoAPI_Cut(originalShape,curShape).Shape()
-            
+
             patternShapeList.append(curShape)
-        
-        print(count, "th cut shape is done")   
+
+        print(count, "th cut shape is done")
         print("Number of shapes :", len(patternShapeList), "are cut by PPG shape :", count)
         
         return patternShapeList, ppgShapeList

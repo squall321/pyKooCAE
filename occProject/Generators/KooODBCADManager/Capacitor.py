@@ -104,6 +104,26 @@ from KooCAEManager.KooSection import *
 from KooCAEManager.KooMeshImporter import KooDynaImporter
 
 class Capacitor():
+    @staticmethod
+    def _find_linux_evolver(basePath=None):
+        """리눅스에서 evolver 경로를 찾는다. /opt/Evolver → Library fallback → which evolver"""
+        candidates = ["/opt/Evolver/evolver"]
+        if basePath is not None:
+            for i in range(5):
+                prefix = os.path.join(basePath, *(['..'] * i)) if i > 0 else basePath
+                candidates.append(os.path.join(prefix, "Library", "Evolver", "evolver"))
+        else:
+            candidates.append(os.path.join(".", "Library", "Evolver", "evolver"))
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+        import shutil
+        found = shutil.which("evolver")
+        if found:
+            return found
+        print("evolver not found")
+        sys.exit()
+
     def __init__(self, id = 0, name = "Capacitor", matMan : KooMaterialManager = None, secMan : KooSectionManager = None, nodeSetMan : NodeSetManager = None, bndMan : KooBoundaryNodeManager = None, loadMan : KooLoadManager = None, defineMan : KooDefineManager = None, contactMan : KooContactManager = None, segMan : KooSegmentSetManager = None):
         self.id = id
         self.name = name
@@ -1268,9 +1288,12 @@ class Capacitor():
     def MakeLeftSolder(self,folderPath):
         fileName = "leftSolder.stl"
         script = self.MakeSolderScript(fileName, "left", self.tens, self.solderWidthRatio, self.solderThicknessRatio, self.solderBottomWidthRatio, self.sgValue, self.tilt)
-        evolverExe = os.path.join(folderPath,"Library\\Evolver\\evolver64.exe")
-        scriptName = os.path.join(folderPath,"Library\\Evolver\\tmpScript.txt")
-        cwd = os.path.join(folderPath,"Library\\Evolver\\")
+        if sys.platform.startswith("win"):
+            evolverExe = os.path.join(folderPath, "Library", "Evolver", "evolver64.exe")
+        else:
+            evolverExe = self._find_linux_evolver(folderPath)
+        scriptName = os.path.join(folderPath, "Library", "Evolver", "tmpScript.txt")
+        cwd = os.path.join(folderPath, "Library", "Evolver")
         with open(scriptName, "w") as f:
             f.write(script)
         
@@ -1292,12 +1315,15 @@ class Capacitor():
             display.DisplayShape(leftSolder,None,None)
         return leftSolder
     
-    def MakeRightSolder(self,folderPath):  
+    def MakeRightSolder(self,folderPath):
         fileName = "rightSolder.stl"
         script = self.MakeSolderScript(fileName, "right", self.tens, self.solderWidthRatio, self.solderThicknessRatio, self.solderBottomWidthRatio, self.sgValue, self.tilt)
-        evolverExe = os.path.join(folderPath,"Library\\Evolver\\evolver64.exe")
-        scriptName = os.path.join(folderPath,"Library\\Evolver\\tmpScript.txt")
-        cwd = os.path.join(folderPath,"Library\\Evolver\\")
+        if sys.platform.startswith("win"):
+            evolverExe = os.path.join(folderPath, "Library", "Evolver", "evolver64.exe")
+        else:
+            evolverExe = self._find_linux_evolver(folderPath)
+        scriptName = os.path.join(folderPath, "Library", "Evolver", "tmpScript.txt")
+        cwd = os.path.join(folderPath, "Library", "Evolver")
         with open(scriptName, "w") as f:
             f.write(script)
         

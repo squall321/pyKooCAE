@@ -1,0 +1,13 @@
+*Layer,CircuitPattern
+Location,0,0,0
+MeshGenerationType,Solid,Tetra
+MeshSizeInPlane,0.1
+MeshPath,PackageMesh
+MaterialID,1
+StepFile,0.0,0.0,ECADfilesforPBA_P3_Export_detail_pcb_multiscale_CU.stp,0.001,0.001,0.001,1
+StepFile,0.0,0.0,ECADfilesforPBA_P3_Export_detail_pcb_multiscale_PPG.stp,0.001,0.001,0.001,2
+StepFile,0.0,0.0,ECADfilesforPBA_P3_Export_detail_pcb_multiscale_SM.stp,0.001,0.001,0.001,3
+StepFile,0.0,0.0,ECADfilesforPBA_P3_Export_detail_pcb_multiscale_SP.stp,0.001,0.001,0.001,4
+*Material
+Material.txt
+*End

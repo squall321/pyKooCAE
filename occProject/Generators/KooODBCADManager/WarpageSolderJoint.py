@@ -99,10 +99,13 @@ class SolderJoint():
         self.meshManager = KooMeshManagerGMSH(nodeMan=nodeMan, elementMan=elementMan, partMan=partMan, sectionMan=sectionMan, materialMan=materialMan, nodeSetMan=nodeSetMan, part=part)
         
         self.name = name
-        self.evolverExe = ".\\Library\\Evolver\\evolver64.exe"
-        self.scriptPath = ".\\Library\\Evolver\\{fileName}"
-        self.scriptName = "tmpScript.txt"
         self.folderPath = os.getcwd()
+        if sys.platform.startswith("win"):
+            self.evolverExe = ".\\Library\\Evolver\\evolver64.exe"
+        else:
+            self.evolverExe = self._find_linux_evolver(self.folderPath)
+        self.scriptPath = os.path.join(".", "Library", "Evolver", "{fileName}")
+        self.scriptName = "tmpScript.txt"
         self.stlFileName = "tmpScript.stl"
         self.script = None
         self.SetName(name)
@@ -156,10 +159,33 @@ class SolderJoint():
     def SetVolume(self, volume):
         self.VOLUME = volume 
     
+    @staticmethod
+    def _find_linux_evolver(basePath=None):
+        """리눅스에서 evolver 경로를 찾는다. /opt/Evolver → Library fallback → which evolver"""
+        candidates = ["/opt/Evolver/evolver"]
+        if basePath is not None:
+            for i in range(5):
+                prefix = os.path.join(basePath, *(['..'] * i)) if i > 0 else basePath
+                candidates.append(os.path.join(prefix, "Library", "Evolver", "evolver"))
+        else:
+            candidates.append(os.path.join(".", "Library", "Evolver", "evolver"))
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+        import shutil
+        found = shutil.which("evolver")
+        if found:
+            return found
+        print("evolver not found")
+        sys.exit()
+
     def SetFolderPath(self, folderPath):
         self.folderPath = folderPath
-        self.evolverExe = os.path.join(self.folderPath, "Library\\Evolver\\evolver64.exe")
-        self.scriptPath = os.path.join(self.folderPath, "Library\\Evolver\\{fileName}")
+        if sys.platform.startswith("win"):
+            self.evolverExe = os.path.join(self.folderPath, "Library", "Evolver", "evolver64.exe")
+        else:
+            self.evolverExe = self._find_linux_evolver(self.folderPath)
+        self.scriptPath = os.path.join(self.folderPath, "Library", "Evolver", "{fileName}")
     
     def SetName(self, name):
         self.scriptName = name + ".txt"
@@ -169,7 +195,7 @@ class SolderJoint():
         if self.script is None or self.script == "":
             print("Script is None")
             return
-        cwd = os.path.join(self.folderPath, "Library\\Evolver")
+        cwd = os.path.join(self.folderPath, "Library", "Evolver")
         with open(self.scriptPath.format(fileName=self.scriptName), "w") as f:
             f.write(self.script)
         heightOptimizedPath = filePathOptPath = os.path.join(cwd,"heightOptimized.txt")
@@ -205,7 +231,7 @@ class SolderJoint():
         if self.script is None or self.script == "":
             print("Script is None")
             return
-        cwd = os.path.join(self.folderPath, "Library\\Evolver")
+        cwd = os.path.join(self.folderPath, "Library", "Evolver")
         with open(self.scriptPath.format(fileName=self.scriptName), "w") as f:
             f.write(self.script)   
         fileNameOutput = self.stlFileName.replace(".stl", ".step")
