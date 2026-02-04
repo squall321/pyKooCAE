@@ -38,6 +38,7 @@ class ApptainerWrapper:
         self.lsdyna_apptainer_bind = env.get("lsdyna_apptainer_bind", "/data:/data")
         self.lsdyna_apptainer_env = env.get("lsdyna_apptainer_env", {})
         self.apptainer_env = env.get("apptainer_env", {})
+        self.nodes_per_job = env.get("nodes_per_job", 1)
 
     def wrap_command(self, cmd: List[str], use_lsdyna: bool = False) -> List[str]:
         """명령어를 apptainer exec로 래핑"""
@@ -62,6 +63,32 @@ class ApptainerWrapper:
         wrapped.extend(cmd)
         return wrapped
 
+    def build_apptainer_exec_args(self, use_lsdyna: bool = False) -> List[str]:
+        """apptainer exec 인자 목록 생성 (멀티노드 MPI용)
+
+        멀티노드에서는 mpirun이 apptainer 바깥에서 실행되므로,
+        각 MPI rank가 실행할 'apptainer exec ... <binary>' 형태가 필요.
+        """
+        if use_lsdyna:
+            sif = self.lsdyna_apptainer_sif
+            bind = self.lsdyna_apptainer_bind
+            env_vars = self.lsdyna_apptainer_env
+        else:
+            sif = self.apptainer_sif
+            bind = self.apptainer_bind
+            env_vars = self.apptainer_env
+
+        if not sif:
+            return []
+
+        args = ["apptainer", "exec"]
+        if bind:
+            args.extend(["--bind", bind])
+        for key, value in env_vars.items():
+            args.extend(["--env", f"{key}={value}"])
+        args.append(sif)
+        return args
+
 
 class LSDynaSolverRunner:
     """LS-DYNA Solver 실행 및 관리"""
@@ -73,17 +100,63 @@ class LSDynaSolverRunner:
         self.ncpu = env.get("ncpu", 32)
         self.memory = env.get("lsdyna_memory", env.get("memory", "2000m"))
         self.mpi_enabled = env.get("mpi_enabled", False)
+        self.mpi_launcher = env.get("mpi_launcher", "mpirun")  # "mpirun" or "srun"
         self.apptainer = ApptainerWrapper(config)
 
     def run(self, input_file: str, working_dir: str, timeout: int = 7200) -> bool:
-        """LS-DYNA 실행 및 완료 대기"""
-        if self.mpi_enabled:
+        """LS-DYNA 실행 및 완료 대기
+
+        멀티노드 + srun (nodes_per_job >= 2, mpi_launcher == "srun"):
+            srun --mpi=pmi2 apptainer exec ... lsdyna i=... memory=...
+            → Slurm이 직접 프로세스 spawn, 호스트 MPI 불필요
+
+        멀티노드 + mpirun (nodes_per_job >= 2, mpi_launcher == "mpirun"):
+            mpirun -np {ncpu} -hostfile $SLURM_NODEFILE apptainer exec ... lsdyna i=... memory=...
+            → 호스트 MPI 필요, MPI가 apptainer 바깥에서 실행
+
+        단일노드 (nodes_per_job == 1):
+            apptainer exec ... mpirun -np {ncpu} lsdyna i=... memory=...
+            → 기존 방식: apptainer 안에서 mpirun + lsdyna 실행
+        """
+        nodes_per_job = self.apptainer.nodes_per_job
+
+        if nodes_per_job >= 2 and self.mpi_enabled:
+            appt_args = self.apptainer.build_apptainer_exec_args(use_lsdyna=True)
+
+            if self.mpi_launcher == "srun":
+                # srun 방식: Slurm이 직접 프로세스 spawn, 호스트 MPI 불필요
+                # srun --mpi=pmi2 apptainer exec ... lsdyna i=... memory=...
+                cmd = ["srun", "--mpi=pmi2"]
+                if appt_args:
+                    cmd.extend(appt_args)
+                cmd.extend([
+                    self.solver_path,
+                    f"i={input_file}",
+                    f"memory={self.memory}"
+                ])
+            else:
+                # mpirun 방식: 호스트 MPI가 프로세스 spawn
+                # mpirun -np {ncpu} -hostfile $SLURM_NODEFILE apptainer exec ... lsdyna i=... memory=...
+                cmd = [
+                    self.mpi_path, "-np", str(self.ncpu),
+                    "-hostfile", os.environ.get("SLURM_NODEFILE", "/dev/null"),
+                ]
+                if appt_args:
+                    cmd.extend(appt_args)
+                cmd.extend([
+                    self.solver_path,
+                    f"i={input_file}",
+                    f"memory={self.memory}"
+                ])
+        elif self.mpi_enabled:
             cmd = [
                 self.mpi_path, "-np", str(self.ncpu),
                 self.solver_path,
                 f"i={input_file}",
                 f"memory={self.memory}"
             ]
+            # 단일노드: 기존 방식 (apptainer 안에서 mpirun)
+            cmd = self.apptainer.wrap_command(cmd, use_lsdyna=True)
         else:
             cmd = [
                 self.solver_path,
@@ -91,9 +164,8 @@ class LSDynaSolverRunner:
                 f"ncpu={self.ncpu}",
                 f"memory={self.memory}"
             ]
-
-        # Apptainer 래핑 (설정 시)
-        cmd = self.apptainer.wrap_command(cmd, use_lsdyna=True)
+            # Apptainer 래핑 (설정 시)
+            cmd = self.apptainer.wrap_command(cmd, use_lsdyna=True)
 
         logging.info(f"Executing: {' '.join(cmd)}")
         logging.info(f"Working directory: {working_dir}")

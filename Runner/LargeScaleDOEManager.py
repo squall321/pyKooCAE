@@ -84,6 +84,10 @@ class LargeScaleDOEManager:
         self.lsdyna_apptainer_env = self.environment.get("lsdyna_apptainer_env", {})
         self.apptainer_env = self.environment.get("apptainer_env", {})
 
+        # 멀티노드 MPI 설정
+        self.nodes_per_job = self.environment.get("nodes_per_job", 1)
+        self.mpi_launcher = self.environment.get("mpi_launcher", "mpirun")  # "mpirun" or "srun"
+
         # 호환성을 위해 ncpu도 유지 (ncpu_per_job과 동일)
         self.ncpu = ncpu_per_job
 
@@ -131,6 +135,32 @@ class LargeScaleDOEManager:
         else:
             # Apptainer 없으면 원본 명령어 그대로
             return command
+
+    def build_apptainer_exec_prefix(self, use_lsdyna: bool = False) -> str:
+        """apptainer exec 프리픽스 생성 (멀티노드 MPI용)
+
+        멀티노드에서는 mpirun이 apptainer 바깥에서 실행되므로,
+        각 MPI rank가 실행할 'apptainer exec ...' 프리픽스가 필요.
+
+        Returns:
+            "apptainer exec --bind ... --env ... /path/to/sif" 또는 "" (SIF 미설정 시)
+        """
+        if use_lsdyna:
+            sif = self.lsdyna_apptainer_sif
+            bind = self.lsdyna_apptainer_bind
+            env_vars = self.lsdyna_apptainer_env
+        else:
+            sif = self.apptainer_sif
+            bind = self.apptainer_bind
+            env_vars = self.apptainer_env
+
+        if not sif:
+            return ""
+
+        bind_option = f"--bind {bind}" if bind else ""
+        env_options = " ".join(f"--env {k}={v}" for k, v in env_vars.items())
+        options = " ".join(filter(None, [bind_option, env_options]))
+        return f"apptainer exec {options} {sif}"
 
     # ========================================================================
     # Job 등록 시스템
@@ -425,9 +455,12 @@ class LargeScaleDOEManager:
             f.write(f"#SBATCH --job-name={job_name}\n")
             f.write(f"#SBATCH --partition={self.partition}\n")
             f.write(f"#SBATCH --array={doe_start}-{doe_end}%{concurrent_limit}\n")
-            f.write(f"#SBATCH --nodes=1\n")
-            f.write(f"#SBATCH --ntasks=1\n")
-            f.write(f"#SBATCH --cpus-per-task={self.ncpu_per_job}\n")
+            f.write(f"#SBATCH --nodes={self.nodes_per_job}\n")
+            if self.nodes_per_job >= 2:
+                f.write(f"#SBATCH --ntasks-per-node={self.ncpu_per_job}\n")
+            else:
+                f.write(f"#SBATCH --ntasks=1\n")
+            f.write(f"#SBATCH --cpus-per-task={1 if self.nodes_per_job >= 2 else self.ncpu_per_job}\n")
             f.write(f"#SBATCH --mem={self.memory}\n")
             f.write(f"#SBATCH --time={self._seconds_to_slurm_time(self.timeout)}\n")
             f.write(f"#SBATCH --output={job_name}_%A_%a.out\n")
@@ -620,10 +653,42 @@ class LargeScaleDOEManager:
             f.write("\n")
 
             f.write("# LS-DYNA 실행 (MPI 병렬)\n")
-            lsdyna_cmd = self.wrap_with_apptainer(
-                f'{self.mpi_path} -np {self.ncpu} {self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory} ncpu={self.ncpu}',
-                use_lsdyna=True
-            )
+            if self.nodes_per_job >= 2:
+                total_ncpu = self.ncpu_per_job * self.nodes_per_job
+                appt_prefix = self.build_apptainer_exec_prefix(use_lsdyna=True)
+
+                if self.mpi_launcher == "srun":
+                    # srun 방식: Slurm이 직접 프로세스 spawn, 호스트 MPI 불필요
+                    # srun --mpi=pmi2 apptainer exec ... lsdyna i=... memory=...
+                    if appt_prefix:
+                        lsdyna_cmd = (
+                            f'srun --mpi=pmi2 '
+                            f'{appt_prefix} {self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory}'
+                        )
+                    else:
+                        lsdyna_cmd = (
+                            f'srun --mpi=pmi2 '
+                            f'{self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory}'
+                        )
+                else:
+                    # mpirun 방식: 호스트 MPI가 프로세스 spawn
+                    # mpirun -np {ncpu} -hostfile $SLURM_NODEFILE apptainer exec ... lsdyna i=... memory=...
+                    if appt_prefix:
+                        lsdyna_cmd = (
+                            f'{self.mpi_path} -np {total_ncpu} -hostfile $SLURM_NODEFILE '
+                            f'{appt_prefix} {self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory}'
+                        )
+                    else:
+                        lsdyna_cmd = (
+                            f'{self.mpi_path} -np {total_ncpu} -hostfile $SLURM_NODEFILE '
+                            f'{self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory}'
+                        )
+            else:
+                # 단일노드: 기존 방식 (apptainer 안에서 mpirun)
+                lsdyna_cmd = self.wrap_with_apptainer(
+                    f'{self.mpi_path} -np {self.ncpu} {self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory} ncpu={self.ncpu}',
+                    use_lsdyna=True
+                )
             f.write(f"{lsdyna_cmd}\n")
             f.write("\n")
 
