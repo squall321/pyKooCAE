@@ -86,23 +86,23 @@ bash run.sh
 3. 사용자 확인 (y/n)
 4. Slurm 작업 제출
 
-### **방법 2: koocr 직접 사용**
+### **방법 2: KooChainRun 직접 사용**
 
 ```bash
 # 1. 설정 준비
-koocr prepare scenario.json
+KooChainRun prepare scenario.json
 
 # 2. 작업 제출
-koocr submit runner_config.json \
+KooChainRun submit runner_config.json \
     --nodes 2 \
     --jobs-per-node 4 \
     --ncpu-per-job 16
 
 # 3. 진행 상황 확인
-koocr status
+KooChainRun status
 
 # 4. 결과 수집
-koocr collect runner_config.json results/
+KooChainRun collect runner_config.json results/
 ```
 
 ---
@@ -239,7 +239,7 @@ find /data/Test_001_Full26_1Step -name ".lock" | wc -l
 ### **KooChainRun 상태 확인**
 
 ```bash
-koocr status runner_config.json
+KooChainRun status runner_config.json
 ```
 
 ### **개별 케이스 로그**
@@ -311,7 +311,7 @@ find /data/Test_001_Full26_1Step -name ".lock" | wc -l
 # 출력: 26 (모두 완료)
 
 # 결과 수집
-koocr collect runner_config.json results/
+KooChainRun collect runner_config.json results/
 
 # 결과 확인
 ls results/

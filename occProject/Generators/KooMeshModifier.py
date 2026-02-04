@@ -1,3 +1,18 @@
+"""
+KooMeshModifier (KMM) - LS-DYNA Model Transformation & Mesh Modification Engine
+
+Reads LS-DYNA keyword (.k) files, applies mode-based transformations
+(drop attitude, material exchange, part relocation, etc.),
+and outputs modified models for sequential/chained CAE simulations.
+
+Usage:
+    python KooMeshModifier.py <option_file_path> [working_directory]
+
+Author: koo.park
+Email: koo.park@samsung.com
+Group: CAE
+"""
+
 import sys
 import os
 import logging

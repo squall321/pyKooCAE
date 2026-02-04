@@ -71,6 +71,8 @@ class LargeScaleDOEManager:
         # 실행 파일 경로 (환경에서 override 가능)
         self.koomeshmodifier_path = self.environment.get("koomeshmodifier_path", "/opt/KooMeshModifier/run.sh")
         self.lsdyna_path = self.environment.get("lsdyna_path", "/opt/lsdyna/bin/ls-dyna")
+        self.mpi_path = self.environment.get("mpi_path", "mpirun")
+        self.lsdyna_memory = self.environment.get("lsdyna_memory", "2000m")
 
         # Apptainer 설정 (환경에서 override 가능)
         self.apptainer_sif = self.environment.get("apptainer_sif", None)
@@ -79,6 +81,8 @@ class LargeScaleDOEManager:
         # LS-DYNA용 별도 Apptainer (선택사항)
         self.lsdyna_apptainer_sif = self.environment.get("lsdyna_apptainer_sif", None)
         self.lsdyna_apptainer_bind = self.environment.get("lsdyna_apptainer_bind", "/data:/data")
+        self.lsdyna_apptainer_env = self.environment.get("lsdyna_apptainer_env", {})
+        self.apptainer_env = self.environment.get("apptainer_env", {})
 
         # 호환성을 위해 ncpu도 유지 (ncpu_per_job과 동일)
         self.ncpu = ncpu_per_job
@@ -111,15 +115,19 @@ class LargeScaleDOEManager:
             # LS-DYNA용 Apptainer (있으면)
             sif = self.lsdyna_apptainer_sif
             bind = self.lsdyna_apptainer_bind
+            env_vars = self.lsdyna_apptainer_env
         else:
             # KooMeshModifier용 Apptainer
             sif = self.apptainer_sif
             bind = self.apptainer_bind
+            env_vars = self.apptainer_env
 
         if sif:
             # Apptainer가 설정되어 있으면 래핑
             bind_option = f"--bind {bind}" if bind else ""
-            return f"apptainer exec {bind_option} {sif} {command}"
+            env_options = " ".join(f"--env {k}={v}" for k, v in env_vars.items())
+            options = " ".join(filter(None, [bind_option, env_options]))
+            return f"apptainer exec {options} {sif} {command}"
         else:
             # Apptainer 없으면 원본 명령어 그대로
             return command
@@ -613,7 +621,7 @@ class LargeScaleDOEManager:
 
             f.write("# LS-DYNA 실행 (MPI 병렬)\n")
             lsdyna_cmd = self.wrap_with_apptainer(
-                f'mpirun -np {self.ncpu} {self.lsdyna_path} i=\\"$OUTPUT_K\\" memory=60000m ncpu={self.ncpu}',
+                f'{self.mpi_path} -np {self.ncpu} {self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory} ncpu={self.ncpu}',
                 use_lsdyna=True
             )
             f.write(f"{lsdyna_cmd}\n")
@@ -682,7 +690,7 @@ class LargeScaleDOEManager:
         """
         전체 워크플로 실행 (모든 시나리오)
 
-        koocr CLI에서 호출되는 메인 메서드
+        KooChainRun CLI에서 호출되는 메인 메서드
         """
         if not self.scenarios:
             print("⚠️  경고: 실행할 시나리오가 없습니다.")

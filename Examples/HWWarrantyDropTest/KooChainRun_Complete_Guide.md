@@ -54,10 +54,10 @@
 
 ### 2.1 KooChainRun이란?
 
-KooChainRun (koocr)은 순차적 CAE 분석 워크플로를 자동화하는 CLI 도구입니다.
+KooChainRun (KooChainRun)은 순차적 CAE 분석 워크플로를 자동화하는 CLI 도구입니다.
 
 ```
-koocr - KooChainRun CLI Tool
+KooChainRun - KooChainRun CLI Tool
 ├── prepare  : scenario.json → runner_config.json 생성
 └── submit   : Slurm Job 제출 및 실행
 ```
@@ -69,7 +69,7 @@ koocr - KooChainRun CLI Tool
 scenario.json (사용자 친화적 설정)을 runner_config.json (실행 설정)으로 변환합니다.
 
 ```bash
-koocr prepare scenario.json -o runner_config.json
+KooChainRun prepare scenario.json -o runner_config.json
 ```
 
 **입력**: scenario.json
@@ -87,7 +87,7 @@ koocr prepare scenario.json -o runner_config.json
 runner_config.json을 읽어 Slurm Array Job을 제출하고 시뮬레이션을 실행합니다.
 
 ```bash
-koocr submit runner_config.json --nodes 2 --jobs-per-node 8
+KooChainRun submit runner_config.json --nodes 2 --jobs-per-node 8
 ```
 
 **동작**:
@@ -100,9 +100,9 @@ koocr submit runner_config.json --nodes 2 --jobs-per-node 8
 
 ```
 scenario.json
-    ↓ (koocr prepare)
+    ↓ (KooChainRun prepare)
 runner_config.json
-    ↓ (koocr submit)
+    ↓ (KooChainRun submit)
 Slurm Array Jobs
     ↓
 runid_00001/Step001/
@@ -122,7 +122,7 @@ runid_00002/Step002/
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     KooChainRun (koocr)                     │
+│                     KooChainRun (KooChainRun)                     │
 │  ┌─────────────┐              ┌──────────────────────┐     │
 │  │  scenario   │──prepare────▶│  runner_config.json  │     │
 │  │   .json     │              └──────────────────────┘     │
@@ -675,7 +675,7 @@ JOB3=$(sbatch --dependency=afterok:$JOB2 --array=1-26%8 step3.sh | awk '{print $
 #### 노드 기반 할당
 
 ```bash
-koocr submit runner_config.json \
+KooChainRun submit runner_config.json \
   --nodes 4 \
   --jobs-per-node 8 \
   --ncpu-per-job 16
@@ -794,7 +794,7 @@ echo "$(find /data/Test_001 -name 'Step001.lock' | wc -l) / 26 완료"
 
 ```bash
 cd /opt/pyKooCAE/Examples/HWWarrantyDropTest/Tests/Test_001_Full26_1Step
-koocr prepare scenario.json -o runner_config.json
+KooChainRun prepare scenario.json -o runner_config.json
 ```
 
 **출력**:
@@ -812,7 +812,7 @@ Output:   .../runner_config.json
 #### 2단계: Slurm Job 제출
 
 ```bash
-koocr submit runner_config.json \
+KooChainRun submit runner_config.json \
   --nodes 2 \
   --jobs-per-node 8 \
   --ncpu-per-job 16
@@ -829,7 +829,7 @@ run.sh 내용:
 #!/bin/bash
 set -e
 
-KOOCR="/opt/pyKooCAE/koocr"
+KOOCR="/opt/pyKooCAE/KooChainRun"
 
 echo "Step 1: runner_config.json 생성 중..."
 "$KOOCR" prepare scenario.json -o runner_config.json
@@ -856,7 +856,7 @@ find /data/Test_001_Full26_1Step -name "*.lock" | wc -l
 #### 4단계: 결과 수집
 
 ```bash
-koocr collect runner_config.json results/
+KooChainRun collect runner_config.json results/
 ```
 
 ---
@@ -1687,7 +1687,7 @@ config = AngleSourceConfig(
 - `Runner/AngleSourceParser.py`: 각도 소스 파싱
 
 **CLI**:
-- `koocr`: 메인 CLI 진입점
+- `KooChainRun`: 메인 CLI 진입점
 
 ### B.3 외부 참고
 

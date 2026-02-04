@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-KooChainRun (koocr) - Sequential CAE Analysis Workflow Manager
+KooChainRun (KCR) - Sequential CAE Analysis Workflow Manager
 
 A CLI tool for managing multi-step chained CAE simulations with automatic
 Slurm job submission and dependency management.
@@ -22,22 +22,22 @@ sys.path.insert(0, str(SCRIPT_DIR))
 def main():
     """Main entry point for KooChainRun CLI"""
     parser = argparse.ArgumentParser(
-        prog='koocr',
+        prog='KooChainRun',
         description='KooChainRun - Sequential CAE Analysis Workflow Manager',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Prepare configuration from scenario
-  koocr prepare scenario.json
+  KooChainRun prepare scenario.json
 
   # Submit jobs to Slurm
-  koocr submit runner_config.json --nodes 10 --jobs-per-node 4 --ncpu-per-job 16
+  KooChainRun submit runner_config.json --nodes 10 --jobs-per-node 4 --ncpu-per-job 16
 
   # Check execution status
-  koocr status
+  KooChainRun status
 
   # Collect results
-  koocr collect runner_config.json results/
+  KooChainRun collect runner_config.json results/
 
 For more information, visit: https://github.com/kooengineering/pyKooCAE
         """
@@ -48,7 +48,7 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
     # ========================================================================
-    # koocr prepare: scenario.json → runner_config.json
+    # KooChainRun prepare: scenario.json → runner_config.json
     # ========================================================================
     prepare_parser = subparsers.add_parser(
         'prepare',
@@ -66,7 +66,7 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     )
 
     # ========================================================================
-    # koocr submit: Submit jobs to Slurm
+    # KooChainRun submit: Submit jobs to Slurm
     # ========================================================================
     submit_parser = subparsers.add_parser(
         'submit',
@@ -81,7 +81,7 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         '--mode',
         choices=['large-scale', 'cumulative'],
         default='cumulative',
-        help='Submission mode: "cumulative" submits per-DOE slurm jobs using koocr run, '
+        help='Submission mode: "cumulative" submits per-DOE slurm jobs using KooChainRun run, '
              '"large-scale" uses LargeScaleDOEManager array jobs (default: cumulative)'
     )
     submit_parser.add_argument(
@@ -124,7 +124,7 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     )
 
     # ========================================================================
-    # koocr status: Check execution status
+    # KooChainRun status: Check execution status
     # ========================================================================
     status_parser = subparsers.add_parser(
         'status',
@@ -143,7 +143,7 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     )
 
     # ========================================================================
-    # koocr run: Run single DOE pipeline (for compute node execution)
+    # KooChainRun run: Run single DOE pipeline (for compute node execution)
     # ========================================================================
     run_parser = subparsers.add_parser(
         'run',
@@ -168,7 +168,7 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     )
 
     # ========================================================================
-    # koocr collect: Collect results
+    # KooChainRun collect: Collect results
     # ========================================================================
     collect_parser = subparsers.add_parser(
         'collect',
@@ -292,8 +292,8 @@ def _submit_large_scale(args, config_path):
         print("=" * 80)
         print()
         print("Next steps:")
-        print(f"  Check status:    koocr status {config_path}")
-        print(f"  Collect results: koocr collect {config_path}")
+        print(f"  Check status:    KooChainRun status {config_path}")
+        print(f"  Collect results: KooChainRun collect {config_path}")
     except Exception as e:
         print(f"Error: {e}")
         import traceback
@@ -305,7 +305,7 @@ def _submit_cumulative(args, config_path):
     """DOE별 개별 slurm job 제출 (cumulative 방식)
 
     각 DOE를 독립적인 slurm job으로 제출합니다.
-    각 job 내부에서 koocr run --doe N 을 실행하여
+    각 job 내부에서 KooChainRun run --doe N 을 실행하여
     MeshModifier → LS-DYNA → dynain → 다음 step 파이프라인을 수행합니다.
     """
     import json
@@ -334,8 +334,9 @@ def _submit_cumulative(args, config_path):
     print(f"Total jobs: {doe_count}")
     print()
 
-    # koocr 실행 파일 경로
-    koocr_path = Path(__file__).resolve()
+    # KooChainRun 실행 파일 경로: environment에서 우선, 없으면 자기 자신 경로
+    env = runner_config.get("environment", {})
+    kcr_path = env.get("koochainrun_path", str(Path(__file__).resolve()))
 
     # slurm 스크립트 디렉토리 생성
     slurm_dir = Path(output_dir) / "slurm_scripts"
@@ -367,7 +368,7 @@ echo "Node: $(hostname)"
 echo "Start: $(date)"
 echo "========================================"
 
-{koocr_path} run {config_path} --doe {doe_idx}
+{kcr_path} run {config_path} --doe {doe_idx}
 
 EXIT_CODE=$?
 
@@ -408,7 +409,7 @@ exit $EXIT_CODE
     print(f"  Check status:    squeue -u $USER")
     print(f"  Check logs:      ls {slurm_dir}/doe_*.log")
     print(f"  Cancel all:      scancel -n {project_name}_DOE*")
-    print(f"  Collect results: koocr collect {config_path}")
+    print(f"  Collect results: KooChainRun collect {config_path}")
 
 
 def cmd_run(args):

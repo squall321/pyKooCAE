@@ -58,7 +58,7 @@
 **위치**: `../../README_KooChainRun.md`
 
 **내용**:
-- koocr 명령어 상세 가이드
+- KooChainRun 명령어 상세 가이드
 - prepare, submit, status, collect 사용법
 - 전체 워크플로 설명
 
@@ -80,7 +80,7 @@
 
 ```
 /opt/pyKooCAE/
-├── koocr                              # CLI 실행 파일
+├── KooChainRun                              # CLI 실행 파일
 ├── README_KooChainRun.md              # CLI 가이드
 ├── QUICK_START_GUIDE.md               # 빠른 시작
 ├── CONTEXT_UPDATE.md                  # 개발 컨텍스트
@@ -133,9 +133,9 @@
 
 ```
 scenario.json
-    ↓ (koocr prepare)
+    ↓ (KooChainRun prepare)
 runner_config.json
-    ↓ (koocr submit)
+    ↓ (KooChainRun submit)
 Slurm Array Jobs (제출)
     ↓
 컴퓨트 노드 실행
@@ -189,7 +189,7 @@ Slurm Array Jobs (제출)
 
 #### 2. runner_config.json 생성
 ```bash
-/opt/pyKooCAE/koocr prepare scenario.json -o runner_config.json
+/opt/pyKooCAE/KooChainRun prepare scenario.json -o runner_config.json
 ```
 
 **출력**:
@@ -199,7 +199,7 @@ Slurm Array Jobs (제출)
 
 #### 3. Slurm 작업 제출
 ```bash
-/opt/pyKooCAE/koocr submit runner_config.json \
+/opt/pyKooCAE/KooChainRun submit runner_config.json \
     --nodes 2 \
     --jobs-per-node 4 \
     --ncpu-per-job 16
@@ -261,12 +261,12 @@ squeue -u $USER
 find /data/MyProject -name "*.lock" | wc -l
 
 # 상세 진행률
-koocr status
+KooChainRun status
 ```
 
 #### 6. 결과 수집
 ```bash
-koocr collect runner_config.json results/
+KooChainRun collect runner_config.json results/
 ```
 
 ---

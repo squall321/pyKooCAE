@@ -276,10 +276,10 @@ bash run.sh
 ```
 
 run.sh 스크립트는 다음을 수행:
-1. `koocr prepare`: scenario.json → runner_config.json 생성
-2. `koocr submit`: Slurm Array Job 제출
+1. `KooChainRun prepare`: scenario.json → runner_config.json 생성
+2. `KooChainRun submit`: Slurm Array Job 제출
 
-koocr submit이 실행하는 작업:
+KooChainRun submit이 실행하는 작업:
 1. runid 디렉토리 사전 생성 (`runid_00001`, `runid_00002`, ...)
 2. 각 runid에 metadata.json 저장
 3. Slurm Array Job 제출 (Step별 dependency 설정)

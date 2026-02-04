@@ -21,7 +21,7 @@ echo ""
 # 기존 빌드 결과 제거
 echo "기존 빌드 결과 제거 중..."
 rm -rf "$BUILD_DIR"
-rm -rf koocr.build koocr.dist .nuitka
+rm -rf KooChainRun.build KooChainRun.dist .nuitka
 rm -rf occProject/Generators/KooMeshModifier.build occProject/Generators/KooMeshModifier.dist occProject/Generators/.nuitka
 rm -rf occProject/Generators/KooAutomatedModeller.build occProject/Generators/KooAutomatedModeller.dist
 
@@ -84,11 +84,11 @@ cd "$SCRIPT_DIR"
 
 echo ""
 echo "================================================================================"
-echo "3/3: koocr (KooChainRun) 빌드"
+echo "3/3: KooChainRun (KooChainRun) 빌드"
 echo "================================================================================"
 echo ""
 
-./venv/bin/python -m nuitka ./koocr \
+./venv/bin/python -m nuitka ./KooChainRun \
         --standalone \
         --follow-imports \
         --include-package=Runner \
@@ -96,11 +96,11 @@ echo ""
         --show-progress
 
 echo ""
-echo "✅ koocr 빌드 완료"
-echo "   이동 중: koocr.dist → $LIB_DIR/koocr"
+echo "✅ KooChainRun 빌드 완료"
+echo "   이동 중: KooChainRun.dist → $LIB_DIR/KooChainRun"
 
-mv koocr.dist "$LIB_DIR/koocr"
-ln -sf "../lib/koocr/koocr.bin" "$BIN_DIR/koocr"
+mv KooChainRun.dist "$LIB_DIR/KooChainRun"
+ln -sf "../lib/KooChainRun/KooChainRun.bin" "$BIN_DIR/KooChainRun"
 
 echo ""
 echo "================================================================================"
@@ -119,16 +119,16 @@ echo "빌드 크기:"
 du -sh "$BUILD_DIR"
 du -sh "$LIB_DIR/KooMeshModifier"
 du -sh "$LIB_DIR/KooAutomatedModeller"
-du -sh "$LIB_DIR/koocr"
+du -sh "$LIB_DIR/KooChainRun"
 echo ""
 echo "테스트:"
 echo "  $BIN_DIR/KooMeshModifier --help"
 echo "  $BIN_DIR/KooAutomatedModeller --help"
-echo "  $BIN_DIR/koocr --version"
+echo "  $BIN_DIR/KooChainRun --version"
 echo ""
 echo "배포 방법:"
 echo "  sudo cp -r $BUILD_DIR /opt/pyKooCAE"
-echo "  sudo ln -sf /opt/pyKooCAE/bin/koocr /usr/local/bin/koocr"
+echo "  sudo ln -sf /opt/pyKooCAE/bin/KooChainRun /usr/local/bin/KooChainRun"
 echo "  sudo ln -sf /opt/pyKooCAE/bin/KooMeshModifier /usr/local/bin/KooMeshModifier"
 echo "  sudo ln -sf /opt/pyKooCAE/bin/KooAutomatedModeller /usr/local/bin/KooAutomatedModeller"
 echo ""

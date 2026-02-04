@@ -3,7 +3,7 @@
 PathResolver - pyKooCAE 실행 파일 경로 자동 탐색
 
 KooMeshModifier 경로를 다음 우선순위로 탐색:
-1. 상대 경로 (koocr와 같은 bin 디렉토리)
+1. 상대 경로 (KooChainRun와 같은 bin 디렉토리)
 2. 환경 변수 KOO_PATH
 3. scenario.json 설정
 4. 기본값 (/opt/KooMeshModifier/run.sh)
@@ -26,13 +26,13 @@ def find_koomeshmodifier(config_path: Optional[str] = None) -> str:
         KooMeshModifier 실행 파일 경로
 
     우선순위:
-        1. 상대 경로: koocr 실행 파일과 같은 bin 디렉토리
+        1. 상대 경로: KooChainRun 실행 파일과 같은 bin 디렉토리
         2. 환경 변수: $KOO_PATH/bin/KooMeshModifier
         3. 설정 파일: config_path
         4. 기본값: /opt/KooMeshModifier/run.sh
     """
 
-    # 1. 상대 경로: koocr 실행 파일 위치 기준
+    # 1. 상대 경로: KooChainRun 실행 파일 위치 기준
     try:
         if getattr(sys, 'frozen', False):
             # Nuitka로 빌드된 경우

@@ -3,12 +3,33 @@
 
 set -e  # 오류 발생 시 중단
 
+# 디폴트 설정
+NODES=23
+JOBS_PER_NODE=2
+NCPU_PER_JOB=64
+
+# 옵션 파싱
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --nodes) NODES="$2"; shift 2 ;;
+        --jobs-per-node) JOBS_PER_NODE="$2"; shift 2 ;;
+        --ncpu-per-job) NCPU_PER_JOB="$2"; shift 2 ;;
+        -h|--help)
+            echo "사용법: $0 [OPTIONS]"
+            echo "  --nodes N          노드 수 (기본: 23)"
+            echo "  --jobs-per-node N  노드당 Job 수 (기본: 2)"
+            echo "  --ncpu-per-job N   Job당 CPU 수 (기본: 64)"
+            exit 0 ;;
+        *) echo "알 수 없는 옵션: $1"; exit 1 ;;
+    esac
+done
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Tests/Test_001 → Examples/HWWarrantyDropTest → pyKooCAE
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
 # KooChainRun CLI path
-KOOCR="$PROJECT_ROOT/koocr"
+KOOCR=$(python3 -c "import json; print(json.load(open('$SCRIPT_DIR/scenario.json'))['environment']['koochainrun_path'])")
 
 echo "=========================================="
 echo "Test_001: 전각도 26방향 1회 낙하"
@@ -29,10 +50,10 @@ echo ""
 # Step 2: 실행 설정 확인
 echo "Step 2: 실행 설정"
 echo "  - 총 케이스: 26개"
-echo "  - 노드: 2개"
-echo "  - 노드당 Job: 4개"
-echo "  - 동시 실행: 8개"
-echo "  - 예상 Rounds: 4회"
+echo "  - 노드: ${NODES}개"
+echo "  - 노드당 Job: ${JOBS_PER_NODE}개"
+echo "  - 동시 실행: $((NODES * JOBS_PER_NODE))개"
+echo "  - Job당 CPU: ${NCPU_PER_JOB}개"
 echo ""
 
 # Step 3: 실행 확인
@@ -47,9 +68,9 @@ fi
 echo ""
 echo "Step 3: KooChainRun으로 작업 제출 중..."
 "$KOOCR" submit "$SCRIPT_DIR/runner_config.json" \
-    --nodes 2 \
-    --jobs-per-node 4 \
-    --ncpu-per-job 16
+    --nodes "$NODES" \
+    --jobs-per-node "$JOBS_PER_NODE" \
+    --ncpu-per-job "$NCPU_PER_JOB"
 
 echo ""
 echo "=========================================="

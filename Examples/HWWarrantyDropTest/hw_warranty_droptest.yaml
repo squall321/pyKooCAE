@@ -119,11 +119,11 @@ script:
     echo "Step 1: Preparing runner configuration"
     echo "=========================================="
 
-    # Run koocr prepare inside Apptainer
+    # Run KooChainRun prepare inside Apptainer
     apptainer exec \
       --bind /data:/data,/shared:/shared \
       /opt/apptainers/KooSimulation313.sif \
-      /opt/KooChainRun/koocr prepare scenario.json -o runner_config.json
+      /opt/pyKooCAE/KooChainRun prepare scenario.json -o runner_config.json
 
     if [ ! -f runner_config.json ]; then
         echo "❌ ERROR: runner_config.json creation failed"
@@ -149,11 +149,11 @@ script:
     echo "  Concurrent jobs: $((NODES * JOBS_PER_NODE))"
     echo ""
 
-    # Submit jobs via koocr
+    # Submit jobs via KooChainRun
     apptainer exec \
       --bind /data:/data,/shared:/shared \
       /opt/apptainers/KooSimulation313.sif \
-      /opt/KooChainRun/koocr submit runner_config.json \
+      /opt/pyKooCAE/KooChainRun submit runner_config.json \
         --nodes "$NODES" \
         --jobs-per-node "$JOBS_PER_NODE" \
         --ncpu-per-job "$NCPU_PER_JOB"
@@ -167,7 +167,7 @@ script:
     echo "=========================================="
     echo ""
     echo "Check status with:"
-    echo "  koocr status"
+    echo "  KooChainRun status"
     echo ""
     echo "Or manually check:"
     echo "  squeue -u \$USER"
@@ -211,7 +211,7 @@ script:
     apptainer exec \
       --bind /data:/data,/shared:/shared \
       /opt/apptainers/KooSimulation313.sif \
-      /opt/KooChainRun/koocr collect runner_config.json "$RESULTS_DIR" || true
+      /opt/pyKooCAE/KooChainRun collect runner_config.json "$RESULTS_DIR" || true
 
     echo ""
 

@@ -263,7 +263,7 @@ cat /data/Test_001_Full26_1Step/runid_00001/Step001/messag
 ### 결과 수집
 ```bash
 cd Test_001_Full26_1Step
-/opt/pyKooCAE/koocr collect runner_config.json results/
+/opt/pyKooCAE/KooChainRun collect runner_config.json results/
 ```
 
 ---

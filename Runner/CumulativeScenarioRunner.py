@@ -36,15 +36,19 @@ class ApptainerWrapper:
         self.apptainer_bind = env.get("apptainer_bind", "/data:/data")
         self.lsdyna_apptainer_sif = env.get("lsdyna_apptainer_sif")
         self.lsdyna_apptainer_bind = env.get("lsdyna_apptainer_bind", "/data:/data")
+        self.lsdyna_apptainer_env = env.get("lsdyna_apptainer_env", {})
+        self.apptainer_env = env.get("apptainer_env", {})
 
     def wrap_command(self, cmd: List[str], use_lsdyna: bool = False) -> List[str]:
         """명령어를 apptainer exec로 래핑"""
         if use_lsdyna:
             sif = self.lsdyna_apptainer_sif
             bind = self.lsdyna_apptainer_bind
+            env_vars = self.lsdyna_apptainer_env
         else:
             sif = self.apptainer_sif
             bind = self.apptainer_bind
+            env_vars = self.apptainer_env
 
         if not sif:
             return cmd
@@ -52,6 +56,8 @@ class ApptainerWrapper:
         wrapped = ["apptainer", "exec"]
         if bind:
             wrapped.extend(["--bind", bind])
+        for key, value in env_vars.items():
+            wrapped.extend(["--env", f"{key}={value}"])
         wrapped.append(sif)
         wrapped.extend(cmd)
         return wrapped
@@ -63,8 +69,9 @@ class LSDynaSolverRunner:
     def __init__(self, config: Dict[str, Any]):
         env = config.get("environment", {})
         self.solver_path = env.get("lsdyna_path", "/opt/lsdyna/lsdyna")
+        self.mpi_path = env.get("mpi_path", "mpirun")
         self.ncpu = env.get("ncpu", 32)
-        self.memory = env.get("memory", "2000m")
+        self.memory = env.get("lsdyna_memory", env.get("memory", "2000m"))
         self.mpi_enabled = env.get("mpi_enabled", False)
         self.apptainer = ApptainerWrapper(config)
 
@@ -72,7 +79,7 @@ class LSDynaSolverRunner:
         """LS-DYNA 실행 및 완료 대기"""
         if self.mpi_enabled:
             cmd = [
-                "mpirun", "-np", str(self.ncpu),
+                self.mpi_path, "-np", str(self.ncpu),
                 self.solver_path,
                 f"i={input_file}",
                 f"memory={self.memory}"

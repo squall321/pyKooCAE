@@ -13,7 +13,7 @@
 ### 시스템 구성
 
 ```
-scenario.json → koocr prepare → runner_config.json → koocr submit → Slurm 실행
+scenario.json → KooChainRun prepare → runner_config.json → KooChainRun submit → Slurm 실행
 ```
 
 ---
@@ -23,17 +23,17 @@ scenario.json → koocr prepare → runner_config.json → koocr submit → Slur
 ### KooChainRun CLI 확인
 
 ```bash
-# koocr 실행 파일 확인
-ls -l /opt/pyKooCAE/koocr
+# KooChainRun 실행 파일 확인
+ls -l /opt/pyKooCAE/KooChainRun
 
 # 실행 권한 확인
-chmod +x /opt/pyKooCAE/koocr
+chmod +x /opt/pyKooCAE/KooChainRun
 
 # PATH에 추가 (선택사항)
 export PATH="/opt/pyKooCAE:$PATH"
 
 # 버전 확인
-/opt/pyKooCAE/koocr --version
+/opt/pyKooCAE/KooChainRun --version
 ```
 
 ### Python 의존성
@@ -87,7 +87,7 @@ python3 -c "import numpy; print('numpy OK')"
 ### Step 2: KooChainRun으로 설정 준비
 
 ```bash
-koocr prepare my_config.json
+KooChainRun prepare my_config.json
 ```
 
 **출력**:
@@ -106,7 +106,7 @@ Output:   /path/to/runner_config.json
 ### Step 3: 작업 제출
 
 ```bash
-koocr submit runner_config.json \
+KooChainRun submit runner_config.json \
     --nodes 2 \
     --jobs-per-node 4 \
     --ncpu-per-job 16
@@ -134,8 +134,8 @@ Total parallel: 8
 ================================================================================
 
 Next steps:
-  Check status:    koocr status /path/to/runner_config.json
-  Collect results: koocr collect /path/to/runner_config.json
+  Check status:    KooChainRun status /path/to/runner_config.json
+  Collect results: KooChainRun collect /path/to/runner_config.json
 ```
 
 ---
@@ -143,7 +143,7 @@ Next steps:
 ### Step 4: 진행 상황 확인
 
 ```bash
-koocr status
+KooChainRun status
 ```
 
 **출력**:

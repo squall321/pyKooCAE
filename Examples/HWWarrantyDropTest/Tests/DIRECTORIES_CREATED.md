@@ -213,7 +213,7 @@ Roll과 Yaw는 모두 0° 고정.
 ## 생성 과정
 
 1. **scenario.json 업데이트**: 각 테스트의 `template` 경로를 로컬 `MinimumModel.k`로 변경
-2. **runner_config.json 생성**: `koocr prepare` 명령으로 실행 설정 생성
+2. **runner_config.json 생성**: `KooChainRun prepare` 명령으로 실행 설정 생성
 3. **디렉토리 생성**: `create_directories.py` 스크립트로 runid 및 Step 디렉토리 생성
 4. **metadata.json 생성**: 각 runid의 각도 정보와 Step 시퀀스를 metadata.json에 저장
 
@@ -229,8 +229,8 @@ bash run.sh
 ```
 
 run.sh는 다음을 수행합니다:
-1. `koocr prepare`: scenario.json → runner_config.json
-2. `koocr submit`: Slurm Array Job 제출 (시뮬레이션 실행)
+1. `KooChainRun prepare`: scenario.json → runner_config.json
+2. `KooChainRun submit`: Slurm Array Job 제출 (시뮬레이션 실행)
 
 ---
 
@@ -256,5 +256,5 @@ run.sh는 다음을 수행합니다:
 ---
 
 **생성일**: 2026-01-29
-**도구**: koocr prepare + create_directories.py
+**도구**: KooChainRun prepare + create_directories.py
 **총 디렉토리 크기**: ~0 bytes (시뮬레이션 파일 없음, 구조만 생성)

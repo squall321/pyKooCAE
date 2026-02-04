@@ -8,20 +8,20 @@
 
 ### 1. ✅ KooChainRun CLI 생성
 
-**위치**: `/opt/pyKooCAE/koocr`
+**위치**: `/opt/pyKooCAE/KooChainRun`
 
 **명령어**:
-- `koocr prepare` - scenario.json → runner_config.json 변환
-- `koocr submit` - Slurm 작업 제출
-- `koocr status` - 진행 상황 확인
-- `koocr collect` - 결과 수집
+- `KooChainRun prepare` - scenario.json → runner_config.json 변환
+- `KooChainRun submit` - Slurm 작업 제출
+- `KooChainRun status` - 진행 상황 확인
+- `KooChainRun collect` - 결과 수집
 
 **사용 예시**:
 ```bash
-koocr prepare scenario.json -o runner_config.json
-koocr submit runner_config.json --nodes 2 --jobs-per-node 4 --ncpu-per-job 16
-koocr status
-koocr collect runner_config.json results/
+KooChainRun prepare scenario.json -o runner_config.json
+KooChainRun submit runner_config.json --nodes 2 --jobs-per-node 4 --ncpu-per-job 16
+KooChainRun status
+KooChainRun collect runner_config.json results/
 ```
 
 ---
@@ -59,7 +59,7 @@ koocr collect runner_config.json results/
 
 **포함 파일**:
 - `scenario.json` - 26방향 1회 낙하 설정 (실제 Apptainer 경로 포함)
-- `run.sh` - 실행 스크립트 (koocr 명령 사용)
+- `run.sh` - 실행 스크립트 (KooChainRun 명령 사용)
 - `README.md` - 상세 실행 가이드
 
 **실행 방법**:
@@ -113,7 +113,7 @@ curl http://localhost:5010/api/v2/templates/hw-warranty-droptest
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      헤드 노드                           │
-│  - koocr CLI                                            │
+│  - KooChainRun CLI                                            │
 │  - scenario.json 준비                                   │
 │  - Slurm 작업 제출                                      │
 └─────────────────────┬───────────────────────────────────┘
@@ -167,7 +167,7 @@ curl http://localhost:5010/api/v2/templates/hw-warranty-droptest
 
 #### **단계 1: 준비 (헤드 노드)**
 ```bash
-koocr prepare scenario.json -o runner_config.json
+KooChainRun prepare scenario.json -o runner_config.json
 ```
 1. scenario.json 파싱
 2. 각도 생성 (cuboid_geometry, fibonacci_lattice 등)
@@ -177,7 +177,7 @@ koocr prepare scenario.json -o runner_config.json
 
 #### **단계 2: 제출 (헤드 노드)**
 ```bash
-koocr submit runner_config.json --nodes 2 --jobs-per-node 4 --ncpu-per-job 16
+KooChainRun submit runner_config.json --nodes 2 --jobs-per-node 4 --ncpu-per-job 16
 ```
 1. Slurm 스크립트 생성
 2. Array job 제출 (Step 1)
@@ -212,7 +212,7 @@ apptainer exec LSDynaBasic_*.sif \
 
 #### **단계 4: 수집 (헤드 노드)**
 ```bash
-koocr collect runner_config.json results/
+KooChainRun collect runner_config.json results/
 ```
 1. 완료된 케이스 확인 (*.lock 파일)
 2. 결과 파일 복사/정리
@@ -290,7 +290,7 @@ bash run.sh
 
 ### 실행 전 확인
 
-- [ ] `/opt/pyKooCAE/koocr` 실행 가능 (`chmod +x`)
+- [ ] `/opt/pyKooCAE/KooChainRun` 실행 가능 (`chmod +x`)
 - [ ] Apptainer SIF 파일 존재
   - [ ] `/opt/apptainers/KooSimulation313.sif`
   - [ ] `/opt/apptainers/LSDynaBasic_ifort2022_impilatest_mpp_s.sif`
@@ -321,7 +321,7 @@ bash run.sh
 
 | 문제 | 해결 |
 |------|------|
-| koocr 명령을 찾을 수 없음 | `chmod +x /opt/pyKooCAE/koocr` |
+| KooChainRun 명령을 찾을 수 없음 | `chmod +x /opt/pyKooCAE/KooChainRun` |
 | Apptainer SIF 없음 | 경로 확인 또는 apptainer_sif 제거 (직접 실행) |
 | 템플릿 파일 없음 | scenario.json의 template 경로 확인 |
 | 작업 제출 실패 | Slurm 설정 확인 (`sinfo`, `squeue`) |
@@ -335,7 +335,7 @@ bash run.sh
 **프로젝트 위치**: `/opt/pyKooCAE`
 
 **주요 파일**:
-- CLI: `koocr`
+- CLI: `KooChainRun`
 - 코어 로직: `Runner/LargeScaleDOEManager.py`
 - 각도 생성: `Angles/CumulativeDesigner.py`
 - 문서: `README_KooChainRun.md`

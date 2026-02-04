@@ -1,3 +1,18 @@
+"""
+KooAutomatedModeller (KAM) - ODB/CAD Package Generation & Multi-Format Mesh Exporter
+
+Converts ODB++ PCB package definitions into STEP CAD geometry,
+then generates FEA-ready meshes in multiple solver formats
+(LS-DYNA .k, Nastran .bdf, ANSYS .cdb, ABAQUS .inp, OBJ).
+
+Usage:
+    python KooAutomatedModeller.py <package_definition_file> [--display]
+
+Author: koo.park
+Email: koo.park@samsung.com
+Group: CAE
+"""
+
 import os
 import sys
 

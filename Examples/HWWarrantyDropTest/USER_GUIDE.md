@@ -530,7 +530,7 @@ cat scenario.json
 
 #### 3. runner_config.json 생성
 ```bash
-/opt/pyKooCAE/koocr prepare scenario.json -o runner_config.json
+/opt/pyKooCAE/KooChainRun prepare scenario.json -o runner_config.json
 ```
 
 **출력 예시**:
@@ -546,7 +546,7 @@ Output:   /opt/pyKooCAE/.../runner_config.json
 
 #### 4. 작업 제출
 ```bash
-/opt/pyKooCAE/koocr submit runner_config.json \
+/opt/pyKooCAE/KooChainRun submit runner_config.json \
     --nodes 2 \
     --jobs-per-node 4 \
     --ncpu-per-job 16
@@ -604,7 +604,7 @@ find /data/Test_001_Full26_1Step -name "Step001.lock" | wc -l
 
 #### 6. 결과 수집
 ```bash
-/opt/pyKooCAE/koocr collect runner_config.json results/
+/opt/pyKooCAE/KooChainRun collect runner_config.json results/
 ```
 
 ### 실행 스크립트 사용
@@ -744,7 +744,7 @@ max_stress = stress.max()
 
 ## 참고 문서
 
-- `README_KooChainRun.md`: koocr CLI 상세 가이드
+- `README_KooChainRun.md`: KooChainRun CLI 상세 가이드
 - `APPTAINER_GUIDE.md`: Apptainer 설정
 - `TEMPLATE_README.md`: 대시보드 사용법
 - 각 테스트 디렉토리의 `README.md`: 시나리오별 설명
