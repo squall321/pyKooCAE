@@ -4,9 +4,9 @@
 set -e  # 오류 발생 시 중단
 
 # 디폴트 설정
-NODES=23
+NODES=2
 JOBS_PER_NODE=2
-NCPU_PER_JOB=64
+NCPU_PER_JOB=1
 
 # 옵션 파싱
 while [[ $# -gt 0 ]]; do
@@ -77,9 +77,11 @@ echo "=========================================="
 echo "✅ 실행 완료"
 echo "=========================================="
 echo ""
-echo "진행 상황 확인:"
-echo "  $KOOCR status"
-echo "  find RUNDIR -name 'Step001.lock' | wc -l"
+echo "작업 관리:"
+echo "  $SCRIPT_DIR/stop.sh              # 전체 취소"
+echo "  $SCRIPT_DIR/rerun.sh --dry-run   # 상태 확인"
+echo "  $SCRIPT_DIR/rerun.sh             # 실패 재실행"
+echo "  $KOOCR diagnose $SCRIPT_DIR      # 실패 진단"
 echo ""
 echo "결과 수집:"
 echo "  $KOOCR collect $SCRIPT_DIR/runner_config.json"

@@ -1910,6 +1910,11 @@ class KooDynaImporter():
             additionals = interfaceSpringbackKeyword.getInterfaceSpringbackLSDYNA()
             for additional in additionals:
                 self.additionalManager.SetAdditionalfromDyna(additional)
+        if "DEFORMABLE_TO_RIGID_AUTOMATIC" in dynaKeyword:
+            d2rKeyword = dynaKeyword["DEFORMABLE_TO_RIGID_AUTOMATIC"]
+            additionals = d2rKeyword.getDeformableToRigidAutomatic()
+            for additional in additionals:
+                self.additionalManager.SetAdditionalfromDyna(additional)
         pass
                     
     def importDynaResult(self):

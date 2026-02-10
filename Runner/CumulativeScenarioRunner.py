@@ -22,6 +22,7 @@ import logging
 import argparse
 import hashlib
 import uuid
+import fcntl
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -39,6 +40,8 @@ class ApptainerWrapper:
         self.lsdyna_apptainer_env = env.get("lsdyna_apptainer_env", {})
         self.apptainer_env = env.get("apptainer_env", {})
         self.nodes_per_job = env.get("nodes_per_job", 1)
+        # APPTAINER_TMPDIR: /tmp 대신 /data 사용 (공간 부족 방지)
+        self.apptainer_tmpdir = env.get("apptainer_tmpdir", "/data/tmp")
 
     def wrap_command(self, cmd: List[str], use_lsdyna: bool = False) -> List[str]:
         """명령어를 apptainer exec로 래핑"""
@@ -53,6 +56,11 @@ class ApptainerWrapper:
 
         if not sif:
             return cmd
+
+        # APPTAINER_TMPDIR 디렉토리 생성
+        os.makedirs(self.apptainer_tmpdir, exist_ok=True)
+        # 호스트 환경변수에 APPTAINER_TMPDIR 설정 (sandbox 추출에 필요)
+        os.environ["APPTAINER_TMPDIR"] = self.apptainer_tmpdir
 
         wrapped = ["apptainer", "exec"]
         if bind:
@@ -80,6 +88,11 @@ class ApptainerWrapper:
 
         if not sif:
             return []
+
+        # APPTAINER_TMPDIR 디렉토리 생성
+        os.makedirs(self.apptainer_tmpdir, exist_ok=True)
+        # 호스트 환경변수에 APPTAINER_TMPDIR 설정 (sandbox 추출에 필요)
+        os.environ["APPTAINER_TMPDIR"] = self.apptainer_tmpdir
 
         args = ["apptainer", "exec"]
         if bind:
@@ -286,13 +299,24 @@ class CumulativeScenarioRunner:
             json.dump(self.checkpoint, f, indent=2)
 
     def _load_index(self):
-        """simulation_index.json 로드"""
-        if os.path.exists(self.index_file):
-            with open(self.index_file, 'r', encoding='utf-8') as f:
-                self.index = json.load(f)
-        else:
-            self.index = self._init_index()
-            self._save_index()
+        """simulation_index.json 로드 (파일 잠금 사용)"""
+        lock_file = self.index_file + ".lock"
+        with open(lock_file, 'w') as lf:
+            fcntl.flock(lf, fcntl.LOCK_EX)  # 배타적 잠금
+            try:
+                if os.path.exists(self.index_file):
+                    with open(self.index_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        if content.strip():
+                            self.index = json.loads(content)
+                        else:
+                            self.index = self._init_index()
+                            self._save_index_unlocked()
+                else:
+                    self.index = self._init_index()
+                    self._save_index_unlocked()
+            finally:
+                fcntl.flock(lf, fcntl.LOCK_UN)
 
     def _init_index(self) -> Dict[str, Any]:
         """simulation_index.json 초기화"""
@@ -315,10 +339,21 @@ class CumulativeScenarioRunner:
             }]
         }
 
-    def _save_index(self):
-        """simulation_index.json 저장"""
+    def _save_index_unlocked(self):
+        """simulation_index.json 저장 (잠금 없이 - 이미 잠금 상태에서 호출)"""
         with open(self.index_file, 'w', encoding='utf-8') as f:
             json.dump(self.index, f, ensure_ascii=False, indent=2)
+
+    def _save_index(self):
+        """simulation_index.json 저장 (파일 잠금 사용)"""
+        lock_file = self.index_file + ".lock"
+        with open(lock_file, 'w') as lf:
+            fcntl.flock(lf, fcntl.LOCK_EX)  # 배타적 잠금
+            try:
+                with open(self.index_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.index, f, ensure_ascii=False, indent=2)
+            finally:
+                fcntl.flock(lf, fcntl.LOCK_UN)
 
     def _update_index(self, alias: str, run_info: Dict[str, Any]):
         """simulation_index.json 업데이트"""
@@ -372,7 +407,10 @@ class CumulativeScenarioRunner:
 
         for doe in doe_range:
             # 체크포인트에서 시작 step 결정
-            if doe == self.checkpoint["current_doe"]:
+            # doe_filter가 있으면 (--doe N 모드) checkpoint 무시하고 step 1부터 실행
+            if self.doe_filter:
+                start_step = 1
+            elif doe == self.checkpoint["current_doe"]:
                 start_step = self.checkpoint["current_step"]
             elif doe < self.checkpoint["current_doe"]:
                 continue  # 이미 완료된 DOE
@@ -428,8 +466,26 @@ class CumulativeScenarioRunner:
         condition = step_config["condition"]
         params = step_config.get("params", {})
 
+        # DOE별 실제 angle_name으로 condition 교체
+        doe_angles = self.config.get("scenario", {}).get("doe_angles", {})
+        doe_key = str(doe_index)
+        step_key = str(step_num)
+        if doe_key in doe_angles and step_key in doe_angles[doe_key]:
+            condition = doe_angles[doe_key][step_key].get("angle_name", condition)
+
         alias = self._generate_alias(doe_index, step_num, mode, condition)
         logging.info(f"\n--- Running: {alias} ---")
+
+        # 0. 이미 완료된 step 스킵 (rerun 시 효율화)
+        scenario_runs = self.index["scenarios"][0]["runs"]
+        if alias in scenario_runs:
+            prev_run = scenario_runs[alias]
+            if prev_run.get("status") == "completed":
+                prev_folder = prev_run.get("folder", "")
+                dynain_path = os.path.join(self.output_dir, prev_folder, "dynain")
+                if prev_folder and os.path.exists(dynain_path):
+                    logging.info(f"이미 완료된 step 스킵: {alias} (폴더: {prev_folder})")
+                    return True
 
         # 1. 작업 디렉토리 생성
         run_id = self._generate_run_id()
@@ -490,9 +546,8 @@ class CumulativeScenarioRunner:
             })
             return False
 
-        # 6. dynain 생성 대기
-        output_dir = os.path.join(run_dir, "Output")
-        if not self.solver.wait_for_dynain(output_dir, timeout):
+        # 6. dynain 생성 대기 (dynain은 run_dir에 직접 생성됨)
+        if not self.solver.wait_for_dynain(run_dir, timeout):
             self._update_index(alias, {
                 "run_id": run_id,
                 "status": "failed",
@@ -558,9 +613,35 @@ class CumulativeScenarioRunner:
             height = params.get("height_mm", 1500)
             surface = params.get("surface", "steelPlate")
 
+            # simulation_params에서 값 가져오기 (기본값 제공)
+            sim_params = self.config.get("simulation_params", {})
+            tFinal = sim_params.get("tFinal", 0.005)
+            dt = sim_params.get("dt", 0.000001)
+            density = sim_params.get("density", 7850)
+            youngs_modulus = sim_params.get("youngs_modulus", 200000000000)
+            poisson_ratio = sim_params.get("poisson_ratio", 0.3)
+            sim_height = sim_params.get("height", height)
+
+            # drop_surface 설정 (simulation_params에서 읽기, 기본값 제공)
+            drop_surface = sim_params.get("drop_surface", {})
+            ds_type = drop_surface.get("type", "Plane")
+            ds_size = drop_surface.get("size", [300, 300, 20])
+            ds_mesh = drop_surface.get("mesh", [30, 30, 2])
+            drop_surface_line = f"DropSurface,{ds_type},{ds_size[0]},{ds_size[1]},{ds_size[2]},{ds_mesh[0]},{ds_mesh[1]},{ds_mesh[2]}"
+            if ds_type == "PlanewithRoughness":
+                roughness = drop_surface.get("roughness_mode", "Random")
+                r_max = drop_surface.get("r_max", 0.0)
+                sf1 = drop_surface.get("shape_factor", 0.0)
+                sf2 = drop_surface.get("shape_factor2", sf1)
+                drop_surface_line += f",{roughness},{r_max},{sf1},{sf2}"
+
+            # DeformableToRigid 옵션
+            d2r_enabled = drop_surface.get("deformable_to_rigid", False)
+            d2r_line = "\nDeformableToRigid,True" if d2r_enabled else ""
+
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,True,{run_dir},
+*RunDirectoryMode,True,{run_dir},{run_dir}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -570,17 +651,20 @@ DROP_ATTITUDE,1
 EulerRolling,{euler['roll']}
 EulerPitching,{euler['pitch']}
 EulerYawing,{euler['yaw']}
-Height,{height}
+Height,{sim_height}
 InitialVelocityX,0
 InitialVelocityY,0
 InitialVelocityZ,0
+InitialAngularVelocityX,0
+InitialAngularVelocityY,0
+InitialAngularVelocityZ,0
 OffsetDistance,0.1
-Density,7850
-YoungsModulus,200000000000
-PoissonRatio,0.3
-tFinal,0.005
-dt,0.000001
-DropSurface,Plane,300,300,20,30,30,2
+Density,{density}
+YoungsModulus,{youngs_modulus}
+PoissonRatio,{poisson_ratio}
+tFinal,{tFinal}
+dt,{dt}
+{drop_surface_line}{d2r_line}
 **EndDropAttitude
 *End
 """
@@ -592,7 +676,7 @@ DropSurface,Plane,300,300,20,30,30,2
 
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,True,{run_dir},
+*RunDirectoryMode,True,{run_dir},{run_dir}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition} T={target_temp}C
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -611,7 +695,7 @@ RampTime,600
             # 기타 모드는 기본 템플릿
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,True,{run_dir},
+*RunDirectoryMode,True,{run_dir},{run_dir}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -706,18 +790,20 @@ RampTime,600
 
     def _run_koomeshmodifier(self, config_file: str, working_dir: str) -> bool:
         """KooMeshModifier 실행"""
-        cmd = ["python3", self.koomesh_path, config_file]
+        # KooMeshModifier는 Nuitka 바이너리이므로 python3 prefix 없이 직접 실행
+        cmd = [self.koomesh_path, config_file]
         # Apptainer 래핑 (설정 시)
         cmd = self.apptainer.wrap_command(cmd, use_lsdyna=False)
         logging.info(f"Running KooMeshModifier: {' '.join(cmd)}")
 
         try:
+            # timeout 1800초 (30분) - sandbox 추출 시간 고려
             result = subprocess.run(
                 cmd,
                 cwd=working_dir,
                 capture_output=True,
                 text=True,
-                timeout=600
+                timeout=1800
             )
             if result.returncode != 0:
                 logging.error(f"KooMeshModifier failed: {result.stderr}")

@@ -19,8 +19,6 @@ import argparse
 from typing import Dict, Any, List
 from pathlib import Path
 
-# Runner 모듈 임포트
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 class SimplifiedExecutor:

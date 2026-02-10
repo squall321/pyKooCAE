@@ -26,25 +26,23 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 
 # Runner 모듈 임포트
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from PathResolver import find_koomeshmodifier
-from CaseTxtParser import DropAngle
-from AngleSourceParser import (
+from Runner.PathResolver import find_koomeshmodifier
+from Runner.CaseTxtParser import DropAngle
+from Runner.AngleSourceParser import (
     AngleSourceConfig, AngleSourceType,
     CuboidGeometryConfig, FibonacciLatticeConfig,
     PitchingSweepConfig, RollingSweepConfig, CaseTxtFileConfig,
     parse_angle_source
 )
-from ToleranceDOEGenerator import (
+from Runner.ToleranceDOEGenerator import (
     ToleranceConfig, ToleranceRange, DOEType,
     apply_tolerance_doe
 )
-from AngleMixingStrategy import (
+from Runner.AngleMixingStrategy import (
     CumulativeAngleConfig, MixingStrategy,
     generate_cumulative_angle_sequence
 )
-from TemplateManager import (
+from Runner.TemplateManager import (
     SimulationMode, TemplateType,
     select_template_for_scenario
 )
@@ -82,6 +80,7 @@ class RunnerConfig:
     base_dir: str
     scenarios: List[ScenarioConfig]
     environment: Dict[str, Any]
+    simulation_params: Optional[Dict[str, Any]] = None
 
 
 class CumulativeDesigner:
@@ -123,11 +122,15 @@ class CumulativeDesigner:
             scenario = self._process_scenario(scenario_cfg)
             scenarios.append(scenario)
 
+        # simulation_params 가져오기 (없으면 None)
+        simulation_params = self.user_config.get("simulation_params", None)
+
         return RunnerConfig(
             project_name=self.project_name,
             base_dir=self.base_dir,
             scenarios=scenarios,
-            environment=environment
+            environment=environment,
+            simulation_params=simulation_params
         )
 
     def _process_scenario(self, scenario_cfg: Dict[str, Any]) -> ScenarioConfig:
@@ -469,6 +472,8 @@ class CumulativeDesigner:
                 "max_retries": 2
             },
             "environment": runner_config.environment,
+            # simulation_params (있으면 추가)
+            **({"simulation_params": runner_config.simulation_params} if runner_config.simulation_params else {}),
             # 원본 시나리오 목록 (LargeScaleDOEManager 등 다른 Runner 호환)
             "project_name": runner_config.project_name,
             "base_dir": runner_config.base_dir,

@@ -1225,6 +1225,7 @@ class KooMeshModifier(KooSimulationGenerator):
                     curOptions["TFinal"] = 0.0
                     curOptions["DT"] = 0.0
                     curOptions["DropSurface"] = ["Plane", 0.0, 0.0, 0.0, 10, 10, 10]
+                    curOptions["DeformableToRigid"] = False
                     curOptions["runid"] = []
                     while True:
                         line = f.readline().strip()
@@ -1364,7 +1365,10 @@ class KooMeshModifier(KooSimulationGenerator):
                                     curOptions["DropSurface"] = ["PlanewithRoughness", xLength, yLength, zLength, numX, numY, numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor2]
                                 else:
                                     curOptions["DropSurface"] = ["PlanewithRoughness", xLength, yLength, zLength, numX, numY, numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor]
-                              
+                        elif "deformabletorigid" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DeformableToRigid"] = svector[1].strip().lower() == "true"
+
                     self.modeIDOption[curModeID] = curOptions
                 elif "*weakcoupling" in line.lower():
                     svector = line.split(",")

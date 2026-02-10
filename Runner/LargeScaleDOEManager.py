@@ -88,6 +88,9 @@ class LargeScaleDOEManager:
         self.nodes_per_job = self.environment.get("nodes_per_job", 1)
         self.mpi_launcher = self.environment.get("mpi_launcher", "mpirun")  # "mpirun" or "srun"
 
+        # APPTAINER_TMPDIR: /tmp 대신 /data 사용 (공간 부족 방지)
+        self.apptainer_tmpdir = self.environment.get("apptainer_tmpdir", "/data/tmp")
+
         # 호환성을 위해 ncpu도 유지 (ncpu_per_job과 동일)
         self.ncpu = ncpu_per_job
 
@@ -128,6 +131,9 @@ class LargeScaleDOEManager:
 
         if sif:
             # Apptainer가 설정되어 있으면 래핑
+            # APPTAINER_TMPDIR 디렉토리 생성 및 호스트 환경변수 설정
+            os.makedirs(self.apptainer_tmpdir, exist_ok=True)
+            os.environ["APPTAINER_TMPDIR"] = self.apptainer_tmpdir
             bind_option = f"--bind {bind}" if bind else ""
             env_options = " ".join(f"--env {k}={v}" for k, v in env_vars.items())
             options = " ".join(filter(None, [bind_option, env_options]))
@@ -157,6 +163,9 @@ class LargeScaleDOEManager:
         if not sif:
             return ""
 
+        # APPTAINER_TMPDIR 디렉토리 생성 및 호스트 환경변수 설정
+        os.makedirs(self.apptainer_tmpdir, exist_ok=True)
+        os.environ["APPTAINER_TMPDIR"] = self.apptainer_tmpdir
         bind_option = f"--bind {bind}" if bind else ""
         env_options = " ".join(f"--env {k}={v}" for k, v in env_vars.items())
         options = " ".join(filter(None, [bind_option, env_options]))
@@ -587,7 +596,7 @@ class LargeScaleDOEManager:
                 f.write("\n")
 
                 f.write("# DYNAIN_TO_INITIAL 실행\n")
-                km_cmd = self.wrap_with_apptainer(f"{self.koomeshmodifier_path} --input=\\"dynaintoinitial.txt\\"")
+                km_cmd = self.wrap_with_apptainer(f'{self.koomeshmodifier_path} --input="dynaintoinitial.txt"')
                 f.write(f"{km_cmd}\n")
                 f.write("\n")
 
@@ -613,7 +622,7 @@ class LargeScaleDOEManager:
             f.write("\n")
 
             f.write("# DROP_ATTITUDE 설정 파일 실행\n")
-            km_cmd = self.wrap_with_apptainer(f'{self.koomeshmodifier_path} --input=\\"$INPUT_TXT\\"')
+            km_cmd = self.wrap_with_apptainer(f'{self.koomeshmodifier_path} --input="$INPUT_TXT"')
             f.write(f"{km_cmd}\n")
             f.write("\n")
 
@@ -663,12 +672,12 @@ class LargeScaleDOEManager:
                     if appt_prefix:
                         lsdyna_cmd = (
                             f'srun --mpi=pmi2 '
-                            f'{appt_prefix} {self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory}'
+                            f'{appt_prefix} {self.lsdyna_path} i="$OUTPUT_K" memory={self.lsdyna_memory}'
                         )
                     else:
                         lsdyna_cmd = (
                             f'srun --mpi=pmi2 '
-                            f'{self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory}'
+                            f'{self.lsdyna_path} i="$OUTPUT_K" memory={self.lsdyna_memory}'
                         )
                 else:
                     # mpirun 방식: 호스트 MPI가 프로세스 spawn
@@ -676,17 +685,17 @@ class LargeScaleDOEManager:
                     if appt_prefix:
                         lsdyna_cmd = (
                             f'{self.mpi_path} -np {total_ncpu} -hostfile $SLURM_NODEFILE '
-                            f'{appt_prefix} {self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory}'
+                            f'{appt_prefix} {self.lsdyna_path} i="$OUTPUT_K" memory={self.lsdyna_memory}'
                         )
                     else:
                         lsdyna_cmd = (
                             f'{self.mpi_path} -np {total_ncpu} -hostfile $SLURM_NODEFILE '
-                            f'{self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory}'
+                            f'{self.lsdyna_path} i="$OUTPUT_K" memory={self.lsdyna_memory}'
                         )
             else:
                 # 단일노드: 기존 방식 (apptainer 안에서 mpirun)
                 lsdyna_cmd = self.wrap_with_apptainer(
-                    f'{self.mpi_path} -np {self.ncpu} {self.lsdyna_path} i=\\"$OUTPUT_K\\" memory={self.lsdyna_memory} ncpu={self.ncpu}',
+                    f'{self.mpi_path} -np {self.ncpu} {self.lsdyna_path} i="$OUTPUT_K" memory={self.lsdyna_memory} ncpu={self.ncpu}',
                     use_lsdyna=True
                 )
             f.write(f"{lsdyna_cmd}\n")
@@ -721,8 +730,8 @@ class LargeScaleDOEManager:
             f.write('LOCK_FILE="$STEP_DIR/.lock"\n')
             f.write('cat > "$LOCK_FILE" << EOF\n')
             f.write('{\n')
-            f.write('  "completed_at": "'$(date -Iseconds)'",\n')
-            f.write('  "exit_code": '$EXIT_CODE'\n')
+            f.write('  "completed_at": "$(date -Iseconds)",\n')
+            f.write('  "exit_code": $EXIT_CODE\n')
             f.write('}\n')
             f.write('EOF\n')
             f.write("\n")

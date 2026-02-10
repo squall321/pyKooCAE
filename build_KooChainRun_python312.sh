@@ -88,3 +88,18 @@ else
     echo "   sudo cp -r $LIB_DIR/KooChainRun /opt/KooChainRun"
     echo "   sudo ln -sf /opt/KooChainRun/KooChainRun.bin /usr/local/bin/KooChainRun"
 fi
+
+# /data/SmartTwinPreprocessor에도 설치 (테스트 환경용)
+DATA_STP_DIR="/data/SmartTwinPreprocessor"
+if [ -d "$DATA_STP_DIR" ]; then
+    echo ""
+    echo "================================================================================"
+    echo "/data/SmartTwinPreprocessor에 설치"
+    echo "================================================================================"
+    echo ""
+    sudo rm -rf "$DATA_STP_DIR/lib/KooChainRun"
+    sudo cp -r "$LIB_DIR/KooChainRun" "$DATA_STP_DIR/lib/KooChainRun"
+    sudo ln -sf "../lib/KooChainRun/KooChainRun.bin" "$DATA_STP_DIR/bin/KooChainRun"
+    echo "✅ /data/SmartTwinPreprocessor 설치 완료"
+    "$DATA_STP_DIR/bin/KooChainRun" --version 2>&1 || true
+fi

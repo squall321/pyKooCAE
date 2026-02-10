@@ -2037,6 +2037,7 @@ class KooDynaAdvancedModification:
                 self.dynaImporter.initialManager.RemoveInitial(initV.id)
                 if nodeSetFixed != None:
                     nodeSetFixed.Clear()
+                self.dynaImporter.additionalManager.d2r_automatics.clear()
 
             self.dynaImporter.SyncronizeMaxID()
             RxOrigin = RxList[i]
@@ -2142,6 +2143,20 @@ class KooDynaAdvancedModification:
             VSF = ""
             surfacetosurfaceContact = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(SSID, MSID, SSTYP, MSTYP, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
             surfacetosurfaceContact.SetOptCardA(2)
+
+            # DeformableToRigid Paired Switch
+            if option.get("DeformableToRigid", False):
+                cid = surfacetosurfaceContact.cid
+                wall_pid = part.id
+                # SWSET 20: contact force=0 → D2R (first)
+                self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
+                    swset=20, code=2, entno=cid, relsw=10, paired=1,
+                    d2r_pids=[(wall_pid, 0)], r2d_pids=[])
+                # SWSET 10: contact force!=0 → R2D (second)
+                self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
+                    swset=10, code=4, entno=cid, relsw=20, paired=-1,
+                    d2r_pids=[], r2d_pids=[wall_pid])
+
             self.dynaImporter.metaData["scenario_mode"] = "DropAttitude"
             self.dynaImporter.metaData["initial_conditions"]["orientation_euler_deg"]["pitch"] = RyOrigin
             self.dynaImporter.metaData["initial_conditions"]["orientation_euler_deg"]["roll"] = RxOrigin
@@ -2154,7 +2169,7 @@ class KooDynaAdvancedModification:
             self.dynaImporter.metaData["initial_conditions"]["angular_velocity"][2] = angular_velocity[2]
             self.dynaImporter.metaData["initial_conditions"]["drop_height"]= height
             if self.runDirectoryMode == True:
-                if len(RxList) > 1:
+                if len(RxList) >= 1:
                     if len(runids)>i:
                         run_id = runids[i]
                     else:
@@ -2163,11 +2178,12 @@ class KooDynaAdvancedModification:
                         modifiedKeyword = os.path.join(filePath.replace(".k",""), "Run_" + run_id)
                     else:
                         if self.metaDirectoryPath[0] == "/":
+                            # 절대 경로가 주어지면 그 경로를 그대로 사용 (run_id 추가 안함)
                             modifiedKeyword = self.metaDirectoryPath
                         else:
                             path = os.getcwd()
                             modifiedKeyword = os.path.join(path,self.runDirectoryPath)
-                        modifiedKeyword = os.path.join(modifiedKeyword, "Run_" + run_id)
+                            modifiedKeyword = os.path.join(modifiedKeyword, "Run_" + run_id)
 
                     folderPath = modifiedKeyword
                     if not os.path.exists(folderPath):
@@ -2241,7 +2257,8 @@ class KooDynaAdvancedModification:
                     modifiedKeyword = modifiedKeyword.strip()
                     self.WriteModifiedFile(filePath, modifiedKeyword)
                     print("Drop Attitude ", i+1, " is Created")
-        outPathListFile.close()
+        if outPathListFile is not None:
+            outPathListFile.close()
 
     def Transform(self, option):
         nodeMan : NodeManager = self.dynaImporter.nodeManager

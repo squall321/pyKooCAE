@@ -6045,6 +6045,70 @@ class FrequencyDomainSSD(DynaKeyword):
             formatted_elements = f"{str(parameters[i][0]):>10}{str(parameters[i][1]):>10}{str(parameters[i][2]):>10}{str(parameters[i][3]):>10}{str(parameters[i][4]):>10}{str(parameters[i][5]):>10}{str(parameters[i][6]):>10}{str(parameters[i][7]):>10}\n"
             stream.write(formatted_elements)
 
+class DeformableToRigidAutomatic(DynaKeyword):
+    def __init__(self):
+        super(DeformableToRigidAutomatic,self).__init__("DEFORMABLE_TO_RIGID_AUTOMATIC")
+
+    def parse(self, d2rKeywords):
+        for i in range(len(d2rKeywords)):
+            parameterList = []
+            lines = d2rKeywords[i]
+            # Card 1: SWSET, CODE, TIME1, TIME2, TIME3, ENTNO, RELSW, PAIRED
+            card1 = self.parse_whole(lines[0], [10, 10, 10, 10, 10, 10, 10, 10])
+            parameterList.append(card1)
+            # Card 2: NRBF, NCSF, RWF, DTMAX, D2R, R2D, OFFSET
+            card2 = self.parse_whole(lines[1], [10, 10, 10, 10, 10, 10, 10])
+            parameterList.append(card2)
+            # D2R count and R2D count
+            d2r_count = int(card2[4].strip()) if card2[4].strip() else 0
+            r2d_count = int(card2[5].strip()) if card2[5].strip() else 0
+            line_idx = 2
+            # Card 3: D2R PIDs (PID, LRB, PTYPE) per line
+            for j in range(d2r_count):
+                if line_idx < len(lines):
+                    card3 = self.parse_whole(lines[line_idx], [10, 10, 10])
+                    parameterList.append(card3)
+                    line_idx += 1
+            # Card 4: R2D PIDs (PID, PTYPE) per line
+            for j in range(r2d_count):
+                if line_idx < len(lines):
+                    card4 = self.parse_whole(lines[line_idx], [10, 10])
+                    parameterList.append(card4)
+                    line_idx += 1
+            self.parameters.append(parameterList)
+
+    def getDeformableToRigidAutomatic(self):
+        d2rList = []
+        for i in range(len(self.parameters)):
+            parameter = self.parameters[i]
+            curD2R = []
+            curD2R.append("*DEFORMABLE_TO_RIGID_AUTOMATIC")
+            for j in range(len(parameter)):
+                curD2R.append(parameter[j])
+            d2rList.append(curD2R)
+        return d2rList
+
+    def write(self, stream):
+        for i in range(len(self.parameters)):
+            parameter = self.parameters[i]
+            stream.write("*DEFORMABLE_TO_RIGID_AUTOMATIC\n")
+            # Card 1
+            stream.write("$    swset      code     time1     time2     time3     entno     relsw    paired\n")
+            for k in range(len(parameter[0])):
+                stream.write(f"{str(parameter[0][k]):>10}")
+            stream.write("\n")
+            # Card 2
+            stream.write("$     nrbf      ncsf       rwf     dtmax       D2R       R2D    offset\n")
+            for k in range(len(parameter[1])):
+                stream.write(f"{str(parameter[1][k]):>10}")
+            stream.write("\n")
+            # Card 3, 4 (variable)
+            for j in range(2, len(parameter)):
+                for k in range(len(parameter[j])):
+                    stream.write(f"{str(parameter[j][k]):>10}")
+                stream.write("\n")
+
+
 class Hourglass(DynaKeyword):
     def __init__(self):
         super(Hourglass,self).__init__("HOURGLASS")
@@ -13753,7 +13817,15 @@ class DynaManager():
                 ispringback_seamless.write(file)
                 dynaKeywordMan.addKeyword(ispringback_seamless)
                 while "INTERFACE_SPRINGBACK_SEAMLESS" in lines_with_asterisk:
-                    lines_with_asterisk.remove("INTERFACE_SPRINGBACK_SEAMLESS")                
+                    lines_with_asterisk.remove("INTERFACE_SPRINGBACK_SEAMLESS")
+            if "DEFORMABLE_TO_RIGID_AUTOMATIC" in lines_with_asterisk:
+                d2r_auto_data = keyword_dict["DEFORMABLE_TO_RIGID_AUTOMATIC"]
+                d2r_auto = DeformableToRigidAutomatic()
+                d2r_auto.parse(d2r_auto_data)
+                d2r_auto.write(file)
+                dynaKeywordMan.addKeyword(d2r_auto)
+                while "DEFORMABLE_TO_RIGID_AUTOMATIC" in lines_with_asterisk:
+                    lines_with_asterisk.remove("DEFORMABLE_TO_RIGID_AUTOMATIC")
             print("Interface Keywords Read Complete")
             if "KEYWORD_ID" in lines_with_asterisk:
                 keyword_id = keyword_dict["KEYWORD_ID"]

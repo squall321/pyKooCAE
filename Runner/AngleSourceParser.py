@@ -17,7 +17,7 @@ from enum import Enum
 import os
 import math
 
-from CaseTxtParser import parse_case_txt_file, DropAngle
+from Runner.CaseTxtParser import parse_case_txt_file, DropAngle
 
 
 class AngleSourceType(Enum):

@@ -18,8 +18,13 @@ echo "Python: $(./venv312/bin/python --version)"
 echo "출력 디렉토리: $BUILD_DIR"
 echo ""
 
-# 기존 빌드 결과 제거
+# 기존 빌드 결과 제거 (Library 백업 후 복원)
 echo "기존 빌드 결과 제거 중..."
+LIBRARY_BACKUP="/tmp/pyKooCAE_Library_backup_$$"
+if [ -d "$BUILD_DIR/Library" ]; then
+    echo "  build_dist/Library 백업 중..."
+    cp -r "$BUILD_DIR/Library" "$LIBRARY_BACKUP"
+fi
 rm -rf "$BUILD_DIR"
 rm -rf KooChainRun.build KooChainRun.dist .nuitka
 rm -rf occProject/Generators/KooMeshModifier.build occProject/Generators/KooMeshModifier.dist occProject/Generators/.nuitka
@@ -90,8 +95,22 @@ echo ""
 
 ./venv312/bin/python -m nuitka ./KooChainRun \
         --standalone \
-        --follow-imports \
         --include-package=Runner \
+        --include-module=Runner.PathResolver \
+        --include-module=Runner.CaseTxtParser \
+        --include-module=Runner.AngleSourceParser \
+        --include-module=Runner.ToleranceDOEGenerator \
+        --include-module=Runner.AngleMixingStrategy \
+        --include-module=Runner.TemplateManager \
+        --include-module=Runner.AliasManager \
+        --include-module=Runner.CumulativeDesigner \
+        --include-module=Runner.CumulativeScenarioRunner \
+        --include-module=Runner.LargeScaleDOEManager \
+        --include-module=Runner.SimplifiedExecutor \
+        --include-module=Runner.SlurmSubmitter \
+        --include-module=Runner.DOEParallelOptimizer \
+        --include-module=Runner.NodeOccupancyMonitor \
+        --include-module=Runner.DirectInputWorkflow \
         --jobs=8 \
         --show-progress
 
@@ -108,16 +127,33 @@ echo "4/4: 외부 런타임 의존성 복사 (Library)"
 echo "================================================================================"
 echo ""
 
+# Library 소스 결정: 프로젝트 루트 Library/ → 백업에서 복원
+# 우선순위:
+#   1. $SCRIPT_DIR/Library/ (프로젝트 루트)
+#   2. $LIBRARY_BACKUP/ (빌드 전 build_dist/Library/ 백업)
+LIBRARY_SRC=""
+if [ -d "$SCRIPT_DIR/Library" ]; then
+    LIBRARY_SRC="$SCRIPT_DIR/Library"
+    echo "Library 소스: 프로젝트 루트 ($LIBRARY_SRC)"
+elif [ -d "$LIBRARY_BACKUP" ]; then
+    LIBRARY_SRC="$LIBRARY_BACKUP"
+    echo "Library 소스: 이전 빌드 백업 ($LIBRARY_SRC)"
+else
+    echo "  ⚠️  Library 소스 없음 — 프로젝트 루트에 Library/ 폴더를 배치하세요"
+fi
+
+mkdir -p "$BUILD_DIR/Library"
+
 # gmsh: KooMeshModifier, KooAutomatedModeller에서 subprocess로 호출
 #   탐색 경로: /opt/gmsh-4.14.1-Linux64/bin/gmsh
 #            → {basePath}/../../Library/gmsh-4.14.1-Linux64/bin/gmsh  (상위 탐색)
 #            → ./Library/gmsh-4.14.1-Linux64/bin/gmsh  (cwd 기준)
-if [ -d "$SCRIPT_DIR/Library/gmsh-4.14.1-Linux64" ]; then
+if [ -n "$LIBRARY_SRC" ] && [ -d "$LIBRARY_SRC/gmsh-4.14.1-Linux64" ]; then
     echo "gmsh 복사 중..."
-    cp -r "$SCRIPT_DIR/Library/gmsh-4.14.1-Linux64" "$BUILD_DIR/Library/gmsh-4.14.1-Linux64"
+    cp -r "$LIBRARY_SRC/gmsh-4.14.1-Linux64" "$BUILD_DIR/Library/gmsh-4.14.1-Linux64"
     echo "  ✅ Library/gmsh-4.14.1-Linux64/bin/gmsh"
 else
-    echo "  ⚠️  Library/gmsh-4.14.1-Linux64 없음 — 배포 환경에서 /opt/gmsh-4.14.1-Linux64 또는 PATH 필요"
+    echo "  ⚠️  gmsh-4.14.1-Linux64 없음 — 배포 환경에서 /opt/gmsh-4.14.1-Linux64 또는 PATH 필요"
 fi
 
 # Evolver: WarpageSolderJoint에서 subprocess로 호출 (바이너리 + 스크립트 파일 모두 필요)
@@ -125,23 +161,28 @@ fi
 #            → {basePath}/../../Library/Evolver/evolver  (상위 탐색)
 #            → ./Library/Evolver/evolver  (cwd 기준)
 #   스크립트:  {folderPath}/Library/Evolver/{fileName}
-if [ -d "$SCRIPT_DIR/Library/Evolver" ]; then
+if [ -n "$LIBRARY_SRC" ] && [ -d "$LIBRARY_SRC/Evolver" ]; then
     echo "Evolver 복사 중..."
-    cp -r "$SCRIPT_DIR/Library/Evolver" "$BUILD_DIR/Library/Evolver"
+    cp -r "$LIBRARY_SRC/Evolver" "$BUILD_DIR/Library/Evolver"
     echo "  ✅ Library/Evolver/ (바이너리 + 스크립트)"
 else
-    echo "  ⚠️  Library/Evolver 없음 — 배포 환경에서 /opt/Evolver 또는 PATH 필요"
+    echo "  ⚠️  Evolver 없음 — 배포 환경에서 /opt/Evolver 또는 PATH 필요"
 fi
 
 # OCC 네이티브 라이브러리 (.so): LD_LIBRARY_PATH로 로드
 #   탐색 경로: {cwd}/Library/OCC/
 #   Nuitka --include-package=OCC는 Python 바인딩만 포함, .so는 별도 필요
-if [ -d "$SCRIPT_DIR/Library/OCC" ]; then
+if [ -n "$LIBRARY_SRC" ] && [ -d "$LIBRARY_SRC/OCC" ]; then
     echo "OCC 네이티브 라이브러리 복사 중..."
-    cp -r "$SCRIPT_DIR/Library/OCC" "$BUILD_DIR/Library/OCC"
+    cp -r "$LIBRARY_SRC/OCC" "$BUILD_DIR/Library/OCC"
     echo "  ✅ Library/OCC/ (.so 라이브러리)"
 else
-    echo "  ⚠️  Library/OCC 없음 — pythonOCC .so가 Nuitka standalone에 이미 포함되었을 수 있음"
+    echo "  ⚠️  OCC 없음 — pythonOCC .so가 Nuitka standalone에 이미 포함되었을 수 있음"
+fi
+
+# 백업 정리
+if [ -d "$LIBRARY_BACKUP" ]; then
+    rm -rf "$LIBRARY_BACKUP"
 fi
 
 echo ""

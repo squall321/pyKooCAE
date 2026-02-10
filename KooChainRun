@@ -109,8 +109,8 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     )
     submit_parser.add_argument(
         '--memory',
-        default='64G',
-        help='Memory per DOE job (default: 64G)'
+        default=None,
+        help='Memory per DOE job (default: from runner_config.json environment.memory, or 64G)'
     )
     submit_parser.add_argument(
         '--time-limit',
@@ -186,6 +186,67 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         help='Output directory for collected results (default: ./results)'
     )
 
+    # ========================================================================
+    # KooChainRun stop: 제출된 모든 작업 취소
+    # ========================================================================
+    stop_parser = subparsers.add_parser(
+        'stop',
+        help='제출된 모든 작업 취소',
+        description='jobs.json에 저장된 Slurm 작업을 모두 취소합니다'
+    )
+    stop_parser.add_argument(
+        'test_dir',
+        nargs='?',
+        default='.',
+        help='테스트 디렉토리 경로 (기본: 현재 디렉토리)'
+    )
+
+    # ========================================================================
+    # KooChainRun rerun: 실패/미완료 DOE만 재실행
+    # ========================================================================
+    rerun_parser = subparsers.add_parser(
+        'rerun',
+        help='실패/미완료 DOE만 재실행',
+        description='실패하거나 완료되지 않은 DOE만 식별하여 재제출합니다'
+    )
+    rerun_parser.add_argument(
+        'test_dir',
+        nargs='?',
+        default='.',
+        help='테스트 디렉토리 경로 (기본: 현재 디렉토리)'
+    )
+    rerun_parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='실제 제출 없이 상태만 표시'
+    )
+    rerun_parser.add_argument(
+        '--force',
+        action='store_true',
+        help='확인 없이 즉시 재제출'
+    )
+    rerun_parser.add_argument(
+        '--does',
+        type=str,
+        default=None,
+        help='특정 DOE만 재실행 (콤마 구분, 예: 1,3,7)'
+    )
+
+    # ========================================================================
+    # KooChainRun diagnose: 실패 DOE 원인 진단
+    # ========================================================================
+    diagnose_parser = subparsers.add_parser(
+        'diagnose',
+        help='실패 DOE 원인 진단',
+        description='실패한 DOE들의 원인을 분석합니다 (라이선스, 타임아웃, 메모리 등)'
+    )
+    diagnose_parser.add_argument(
+        'test_dir',
+        nargs='?',
+        default='.',
+        help='테스트 디렉토리 경로 (기본: 현재 디렉토리)'
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -200,6 +261,12 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         cmd_status(args)
     elif args.command == 'collect':
         cmd_collect(args)
+    elif args.command == 'stop':
+        cmd_stop(args)
+    elif args.command == 'rerun':
+        cmd_rerun(args)
+    elif args.command == 'diagnose':
+        cmd_diagnose(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -310,16 +377,13 @@ def _submit_cumulative(args, config_path):
     """
     import json
     import subprocess
+    import shutil
+    from datetime import datetime
 
     print("=" * 80)
     print("KooChainRun - Submit Jobs (cumulative mode)")
     print("=" * 80)
     print(f"Config:     {config_path}")
-    print(f"Partition:  {args.partition}")
-    print(f"CPUs/job:   {args.ncpu_per_job}")
-    print(f"Memory:     {args.memory}")
-    print(f"Time limit: {args.time_limit}")
-    print()
 
     # runner_config.json 로드하여 DOE 수 확인
     with open(config_path, 'r', encoding='utf-8') as f:
@@ -329,18 +393,49 @@ def _submit_cumulative(args, config_path):
     project_name = runner_config["project"]["name"]
     output_dir = runner_config["project"]["output_dir"]
 
+    # KooChainRun 실행 파일 경로: environment에서 우선, 없으면 자기 자신 경로
+    env = runner_config.get("environment", {})
+    kcr_path = env.get("koochainrun_path", str(Path(__file__).resolve()))
+
+    # CLI 인자가 없으면 runner_config.json의 환경 설정에서 읽기
+    memory = args.memory or env.get("memory", "64G")
+    partition = args.partition if args.partition != 'normal' else env.get("partition", "normal")
+    time_limit = args.time_limit if args.time_limit != '24:00:00' else env.get("time_limit", "24:00:00")
+
+    # apptainer_env 또는 lsdyna_apptainer_env에서 APPTAINER_TMPDIR 읽기
+    apptainer_tmpdir = env.get("apptainer_env", {}).get("APPTAINER_TMPDIR") or \
+                       env.get("lsdyna_apptainer_env", {}).get("APPTAINER_TMPDIR")
+
+    print(f"Partition:  {partition}")
+    print(f"CPUs/job:   {args.ncpu_per_job}")
+    print(f"Memory:     {memory}")
+    print(f"Time limit: {time_limit}")
+    if apptainer_tmpdir:
+        print(f"APPTAINER_TMPDIR: {apptainer_tmpdir}")
+    print()
+
     print(f"Project:    {project_name}")
     print(f"DOE count:  {doe_count}")
     print(f"Total jobs: {doe_count}")
     print()
 
-    # KooChainRun 실행 파일 경로: environment에서 우선, 없으면 자기 자신 경로
-    env = runner_config.get("environment", {})
-    kcr_path = env.get("koochainrun_path", str(Path(__file__).resolve()))
-
     # slurm 스크립트 디렉토리 생성
     slurm_dir = Path(output_dir) / "slurm_scripts"
     slurm_dir.mkdir(parents=True, exist_ok=True)
+
+    # jobs.json 준비 (기존 파일 백업)
+    jobs_file = config_path.parent / "jobs.json"
+    if jobs_file.exists():
+        bak_file = config_path.parent / "jobs.json.bak"
+        shutil.copy2(str(jobs_file), str(bak_file))
+
+    jobs_data = {
+        "project_name": project_name,
+        "config_path": str(config_path),
+        "submitted_at": datetime.now().isoformat(),
+        "doe_count": doe_count,
+        "jobs": {}
+    }
 
     submitted_jobs = []
 
@@ -352,14 +447,15 @@ def _submit_cumulative(args, config_path):
         # Slurm 스크립트 생성
         script_content = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
-#SBATCH --partition={args.partition}
+#SBATCH --partition={partition}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task={args.ncpu_per_job}
-#SBATCH --mem={args.memory}
-#SBATCH --time={args.time_limit}
+#SBATCH --mem={memory}
+#SBATCH --time={time_limit}
 #SBATCH --output={log_path}
 #SBATCH --error={log_path}
+{f"export APPTAINER_TMPDIR={apptainer_tmpdir}" if apptainer_tmpdir else "# APPTAINER_TMPDIR not configured"}
 
 echo "========================================"
 echo "Job: {job_name}"
@@ -394,6 +490,17 @@ exit $EXIT_CODE
                 job_id = result.stdout.strip().split()[-1]
                 submitted_jobs.append((doe_idx, job_id))
                 print(f"  DOE {doe_idx:3d}: submitted (job {job_id})")
+
+                # jobs.json에 기록 (incremental write)
+                jobs_data["jobs"][str(doe_idx)] = {
+                    "job_id": job_id,
+                    "job_name": job_name,
+                    "status": "submitted",
+                    "submitted_at": datetime.now().isoformat(),
+                    "script_path": str(script_path)
+                }
+                with open(jobs_file, 'w', encoding='utf-8') as jf:
+                    json.dump(jobs_data, jf, indent=2, ensure_ascii=False)
             else:
                 print(f"  DOE {doe_idx:3d}: FAILED - {result.stderr.strip()}")
         except FileNotFoundError:
@@ -404,11 +511,14 @@ exit $EXIT_CODE
     print("=" * 80)
     print(f"Submitted {len(submitted_jobs)}/{doe_count} DOE jobs")
     print("=" * 80)
+    print(f"  Job ID 저장: {jobs_file}")
     print()
     print("Next steps:")
     print(f"  Check status:    squeue -u $USER")
     print(f"  Check logs:      ls {slurm_dir}/doe_*.log")
-    print(f"  Cancel all:      scancel -n {project_name}_DOE*")
+    print(f"  Cancel all:      KooChainRun stop {config_path.parent}")
+    print(f"  Rerun failed:    KooChainRun rerun {config_path.parent}")
+    print(f"  Diagnose:        KooChainRun diagnose {config_path.parent}")
     print(f"  Collect results: KooChainRun collect {config_path}")
 
 
@@ -506,6 +616,164 @@ def cmd_collect(args):
     except Exception as e:
         print(f"❌ Error: {e}")
         sys.exit(1)
+
+
+def cmd_stop(args):
+    """제출된 모든 작업 취소"""
+    from Runner.JobManager import JobManager
+
+    test_dir = Path(args.test_dir).resolve()
+    manager = JobManager(str(test_dir))
+
+    print("=" * 80)
+    print("KooChainRun - 작업 취소")
+    print("=" * 80)
+
+    try:
+        results = manager.cancel_all_jobs()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+    cancelled = sum(1 for r in results.values() if r["cancel_result"] == "success")
+    already = sum(1 for r in results.values() if r["cancel_result"] == "already_done")
+    errors = sum(1 for r in results.values() if r["cancel_result"] == "error")
+
+    print()
+    for doe_idx in sorted(results.keys()):
+        r = results[doe_idx]
+        if r["cancel_result"] == "success":
+            print(f"  DOE {doe_idx:3d}: 취소 완료 (job {r['job_id']})")
+        elif r["cancel_result"] == "already_done":
+            print(f"  DOE {doe_idx:3d}: 이미 종료됨 ({r.get('slurm_state', '')})")
+        elif r["cancel_result"] == "error":
+            print(f"  DOE {doe_idx:3d}: 취소 실패 - {r.get('error', '')}")
+
+    print()
+    print(f"취소: {cancelled}개 / 이미 종료: {already}개 / 실패: {errors}개")
+
+
+def cmd_rerun(args):
+    """실패/미완료 DOE만 재실행"""
+    from Runner.JobManager import JobManager
+
+    test_dir = Path(args.test_dir).resolve()
+    manager = JobManager(str(test_dir))
+
+    print("=" * 80)
+    print("KooChainRun - DOE 상태 확인")
+    print("=" * 80)
+
+    try:
+        status_map = manager.get_doe_status()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+    # 상태 테이블 출력
+    print()
+    print(f"  {'DOE':>5}  {'상태':<15} {'Slurm':<12} {'Step':>8}")
+    print("  " + "-" * 45)
+    for doe_idx in sorted(status_map.keys()):
+        info = status_map[doe_idx]
+        step_str = f"{info['steps_completed']}/{info['steps_total']}"
+        print(f"  {doe_idx:>5}  {info['status']:<15} {info['slurm_state']:<12} {step_str:>8}")
+
+    # 재실행 대상 결정
+    if args.does:
+        target_does = [int(d.strip()) for d in args.does.split(",")]
+    else:
+        target_does = [
+            doe_idx for doe_idx, info in status_map.items()
+            if info["status"] in ("failed", "killed", "not_started", "license_error")
+        ]
+
+    completed = sum(1 for info in status_map.values() if info["status"] == "completed")
+    print()
+    print(f"완료: {completed}/{len(status_map)}개")
+
+    if not target_does:
+        print("재실행 대상 DOE가 없습니다.")
+        return
+
+    print(f"재실행 대상: {len(target_does)}개 - DOE {target_does}")
+
+    if args.dry_run:
+        print("\n[DRY-RUN] 실제 제출하지 않습니다.")
+        return
+
+    if not args.force:
+        try:
+            reply = input(f"\n{len(target_does)}개 DOE를 재제출하시겠습니까? (y/n): ")
+            if reply.lower() != 'y':
+                print("취소됨")
+                return
+        except EOFError:
+            print("비대화형 모드 - --force 옵션을 사용하세요")
+            return
+
+    print()
+    results = manager.resubmit_does(target_does)
+    print()
+    print(f"재제출 완료: {len(results)}개")
+
+
+def cmd_diagnose(args):
+    """실패 DOE 원인 진단"""
+    from Runner.JobManager import JobManager
+
+    test_dir = Path(args.test_dir).resolve()
+    manager = JobManager(str(test_dir))
+
+    print("=" * 80)
+    print("KooChainRun - 실패 원인 진단")
+    print("=" * 80)
+
+    try:
+        diagnoses = manager.diagnose_failures()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+    if not diagnoses:
+        print("\n실패한 DOE가 없습니다.")
+        return
+
+    # 원인별 그룹화
+    by_cause = {}
+    for d in diagnoses:
+        cause = d["cause"]
+        by_cause.setdefault(cause, []).append(d)
+
+    cause_labels = {
+        "license_error": "라이선스 에러",
+        "mpi_error": "MPI 에러",
+        "timeout": "타임아웃 (KooMeshModifier/LS-DYNA)",
+        "slurm_timeout": "Slurm 시간 초과",
+        "disk_full": "디스크 공간 부족",
+        "out_of_memory": "메모리 부족",
+        "apptainer_error": "Apptainer 에러",
+        "cancelled": "수동 취소",
+        "killed": "실행 중 종료",
+        "failed": "기타 실패",
+        "not_started": "실행 안 됨",
+    }
+
+    print(f"\n총 실패/미완료 DOE: {len(diagnoses)}개\n")
+
+    for cause, does in sorted(by_cause.items()):
+        doe_nums = [d["doe"] for d in does]
+        label = cause_labels.get(cause, cause)
+        print(f"  [{label}] {len(does)}개")
+        print(f"    DOE: {doe_nums}")
+        # 첫 번째 진단의 로그 발췌 표시
+        excerpt = does[0].get("log_excerpt", "")
+        if excerpt:
+            # 최대 3줄만 표시
+            lines = excerpt.split('\n')[:3]
+            for line in lines:
+                print(f"    > {line[:120]}")
+        print()
 
 
 if __name__ == '__main__':

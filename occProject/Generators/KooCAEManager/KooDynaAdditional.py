@@ -322,13 +322,52 @@ class KooInterfaceSpringbackLSDyna:
             stream.write("\n")
 
 
+class KooDeformableToRigidAutomatic:
+    """*DEFORMABLE_TO_RIGID_AUTOMATIC 키워드 클래스"""
+    def __init__(self, swset, code, time1, time2, time3, entno, relsw, paired,
+                 nrbf, ncsf, rwf, dtmax, d2r_pids, r2d_pids, offset=0.0):
+        self.swset = swset
+        self.code = code
+        self.time1 = time1
+        self.time2 = time2
+        self.time3 = time3
+        self.entno = entno
+        self.relsw = relsw
+        self.paired = paired
+        self.nrbf = nrbf
+        self.ncsf = ncsf
+        self.rwf = rwf
+        self.dtmax = dtmax
+        self.d2r_pids = d2r_pids   # list of (pid, lrb)
+        self.r2d_pids = r2d_pids   # list of pid
+        self.offset = offset
+
+    def WriteDynaKeyword(self):
+        kw = "*DEFORMABLE_TO_RIGID_AUTOMATIC\n"
+        kw += "$    swset      code     time1     time2     time3     entno     relsw    paired\n"
+        kw += f"{self.swset:>10}{self.code:>10}{self.time1:>10.1f}{self.time2:>10.1e}"
+        kw += f"{self.time3:>10.1f}{self.entno:>10}{self.relsw:>10}{self.paired:>10}\n"
+        kw += "$     nrbf      ncsf       rwf     dtmax       D2R       R2D    offset\n"
+        kw += f"{self.nrbf:>10}{self.ncsf:>10}{self.rwf:>10}{self.dtmax:>10.1f}"
+        kw += f"{len(self.d2r_pids):>10}{len(self.r2d_pids):>10}{self.offset:>10.1f}\n"
+        for pid, lrb in self.d2r_pids:
+            kw += f"{pid:>10}{lrb:>10}      PART\n"
+        for pid in self.r2d_pids:
+            kw += f"{pid:>10}      PART\n"
+        return kw
+
+    def WriteStreamDynaKeyword(self, stream):
+        stream.write(self.WriteDynaKeyword())
+
+
 class KooDynaAdditionalManager:
     def __init__(self):
-        self.maxRWID = 0 
+        self.maxRWID = 0
         self.rigidwalls = {}
         self.hourglasses = {}
         self.maxInterface = 0
         self.interfaces = {}
+        self.d2r_automatics = {}
 
     def OverwritefromDynaAdditionalManager(self, dynaAdditionalManager: KooDynaAdditionalManager):
 
@@ -342,6 +381,8 @@ class KooDynaAdditionalManager:
             self.interfaces[key + self.maxInterface] = value
             maxInterfaceKey = max(maxInterfaceKey, key+self.maxInterface)
         self.maxInterface = maxInterfaceKey
+        for key, value in dynaAdditionalManager.d2r_automatics.items():
+            self.d2r_automatics[key] = value
 
     def CreateRigidwallPlanarMovingForces(self, NSID=0, NSIDEX=0, BOXID=0,OFFSET=0.0,BIRTH=0.0,DEATH=1.0e20,RWKSF=1.0,XT=0.0,YT=0.0,ZT=0.0,XH=0.0,YH=0.0,ZH=0.0,FRIC=0.0,WVEL=0.0,MASS=0.0,V0=0.0, SOFT=0,SSID=0,N1=0,N2=0,N3=0,N4=0):
         self.maxRWID = self.maxRWID + 1
@@ -379,6 +420,14 @@ class KooDynaAdditionalManager:
         interface = KooInterfaceSpringbackLSDyna(self.maxInterface, PSID, NSHV, FTYPE, FTENSR, NTHHSV, RFLAG, INTSTRN, OPTC1, SLDO, NCYC, FSPLIT, NGFLAG, CFLAG, HFLAG, OPTC2, DTWRT, OPTC3, NMWRT, IVFLG)
         self.interfaces[self.maxInterface] = interface
         return interface
+
+    def CreateDeformableToRigidAutomatic(self, swset, code, entno, relsw, paired,
+                                          d2r_pids, r2d_pids, offset=0.0):
+        d2r = KooDeformableToRigidAutomatic(
+            swset, code, 0.0, 1e20, 0.0, entno, relsw, paired,
+            0, 0, 0, 0.0, d2r_pids, r2d_pids, offset)
+        self.d2r_automatics[swset] = d2r
+        return d2r
 
     def SetAdditionalfromDyna(self, additionalKeyword):
         if additionalKeyword[0] == "*INTERFACE_SPRINGBACK_LSDYNA":            
@@ -600,6 +649,45 @@ class KooDynaAdditionalManager:
             
             rigidWall = self.CreateRigidwallGeometricFlatDisplaywithID(ID,name,NSID,NSIDEX,BOXID,BIRTH,DEATH,XT,YT,ZT,XH,YH,ZH,FRIC,XHEV,YHEV,ZHEV,LENL,LENM)
             return rigidWall
+        elif additionalKeyword[0] == "*DEFORMABLE_TO_RIGID_AUTOMATIC":
+            # Card 1: SWSET, CODE, TIME1, TIME2, TIME3, ENTNO, RELSW, PAIRED
+            card1 = additionalKeyword[1]
+            if len(card1) < 8:
+                card1 += [""] * (8 - len(card1))
+            swset = KooDynaInt(card1[0], 0)
+            code = KooDynaInt(card1[1], 0)
+            entno = KooDynaInt(card1[5], 0)
+            relsw = KooDynaInt(card1[6], 0)
+            paired = KooDynaInt(card1[7], 0)
+            # Card 2: NRBF, NCSF, RWF, DTMAX, D2R, R2D, OFFSET
+            card2 = additionalKeyword[2]
+            if len(card2) < 7:
+                card2 += [""] * (7 - len(card2))
+            d2r_count = KooDynaInt(card2[4], 0)
+            r2d_count = KooDynaInt(card2[5], 0)
+            offset = KooDynaFloat(card2[6], 0.0)
+            # Card 3: D2R PIDs
+            d2r_pids = []
+            card_idx = 3
+            for j in range(d2r_count):
+                if card_idx < len(additionalKeyword):
+                    card3 = additionalKeyword[card_idx]
+                    pid = KooDynaInt(card3[0], 0)
+                    lrb = KooDynaInt(card3[1], 0) if len(card3) > 1 else 0
+                    d2r_pids.append((pid, lrb))
+                    card_idx += 1
+            # Card 4: R2D PIDs
+            r2d_pids = []
+            for j in range(r2d_count):
+                if card_idx < len(additionalKeyword):
+                    card4 = additionalKeyword[card_idx]
+                    pid = KooDynaInt(card4[0], 0)
+                    r2d_pids.append(pid)
+                    card_idx += 1
+            d2r = self.CreateDeformableToRigidAutomatic(
+                swset=swset, code=code, entno=entno, relsw=relsw, paired=paired,
+                d2r_pids=d2r_pids, r2d_pids=r2d_pids, offset=offset)
+            return d2r
         return None
             
         
@@ -614,8 +702,10 @@ class KooDynaAdditionalManager:
         for key in self.interfaces:
             interface = self.interfaces[key]
             keyword += interface.WriteDynaKeyword()
+        for key in self.d2r_automatics:
+            keyword += self.d2r_automatics[key].WriteDynaKeyword()
         return keyword
-    
+
     def WriteStreamDynaKeyword(self, stream):
         for key in self.rigidwalls:
             rigidwall = self.rigidwalls[key]
@@ -626,3 +716,5 @@ class KooDynaAdditionalManager:
         for key in self.interfaces:
             interface = self.interfaces[key]
             interface.WriteStreamDynaKeyword(stream)
+        for key in self.d2r_automatics:
+            self.d2r_automatics[key].WriteStreamDynaKeyword(stream)
