@@ -1,0 +1,44 @@
+*Translation,21.64999988,5.81000108,0.3910000000000001
+*Rotation,270
+*Mirror,False
+*IsTop,True
+*Layer,PackageWarpage,Defined
+Location,0,0,0.0
+Length,1.500e+00,1.500e+00
+Thickness,8.000e-02
+MeshGenerationType,Solid,Tetra
+MeshPath,PackageMesh
+MeshSizeInPlane,0.1
+NumberofElementinThickness,5
+MaterialID,1
+MisalignmentAngle,0,0.0
+SurfaceTension,480.0
+BoxWarpage,-6.500e-01,3.000e-01,3.500e-01,2.000e-01
+BoxWarpage,-6.500e-01,-1.000e-01,3.500e-01,2.000e-01
+BoxWarpage,-6.500e-01,-5.000e-01,3.500e-01,2.000e-01
+BoxWarpage,-1.000e-01,-6.500e-01,2.000e-01,3.500e-01
+BoxWarpage,3.000e-01,-5.000e-01,3.500e-01,2.000e-01
+BoxWarpage,3.000e-01,-1.000e-01,3.500e-01,2.000e-01
+BoxWarpage,3.000e-01,3.000e-01,3.500e-01,2.000e-01
+BoxWarpage,-1.000e-01,3.000e-01,2.000e-01,3.500e-01
+BoxWarpage,-1.000e-01,-1.000e-01,2.000e-01,2.000e-01
+*Layer,PackageWarpage,Defined
+Location,0,0
+Thickness,5.000e-01
+MeshGenerationType,Solid,Hexa
+MeshPath,PackageMesh
+MeshSizeInPlane,0.1
+NumberofElementinXDirection,20
+NumberofElementinYDirection,20
+NumberofElementinThickness,3
+Part,Polynomial,Solid,1
+OB -7.500e-01 -7.500e-01 I
+OS 7.500e-01 -7.500e-01
+OS 7.500e-01 7.500e-01
+OS -7.500e-01 7.500e-01
+OS -7.500e-01 -7.500e-01
+OE
+MaterialID,2
+*Material
+Material.txt
+*End

@@ -1,0 +1,20 @@
+$# LS-PrePost command file created by LS-PrePost(R) 2025 R1 (v4.12.8) - 07Aug2025 -64bit-Linux
+$# Created on Feb-1-2026 (02:06:06)
+open keyword "/home/koopark/serviceApptainers/appt313/opt/pyKooCAE/Examples/ODB/ECADfilesforPBA_P3_Export_detail_pcb_multiscale_mesh.k"
+Message 1
+Message 0
+top
+top
+bottom
+back
+back
+back
+back
+bottom
+-M H3
+occview hide
+occview shadewithedge
+occview hide
+occview shadewithedge
+bottom
+top

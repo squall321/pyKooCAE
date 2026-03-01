@@ -23,6 +23,7 @@ import argparse
 import hashlib
 import uuid
 import fcntl
+import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -237,17 +238,22 @@ class LSDynaSolverRunner:
 class CumulativeScenarioRunner:
     """누적 시나리오 실행자"""
 
-    def __init__(self, config_path: str, doe_filter: Optional[int] = None):
+    def __init__(self, config_path: str, doe_filter: Optional[int] = None,
+                 skip_koomeshmodifier: bool = False, pregenerated_dir: Optional[str] = None):
         """
         Args:
             config_path: runner_config.json 경로
             doe_filter: 특정 DOE만 실행 (병렬 실행 시 사용)
+            skip_koomeshmodifier: KooMeshModifier 실행 생략 (batch 사전 생성 모드)
+            pregenerated_dir: 사전 생성된 DropSet.k 파일 디렉토리
         """
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
 
         self.config_path = config_path
         self.doe_filter = doe_filter
+        self.skip_koomeshmodifier = skip_koomeshmodifier
+        self.pregenerated_dir = pregenerated_dir
         self.solver = LSDynaSolverRunner(self.config)
         self.apptainer = ApptainerWrapper(self.config)
         self.koomesh_path = self.config["environment"]["koomeshmodifier_path"]
@@ -466,11 +472,14 @@ class CumulativeScenarioRunner:
         condition = step_config["condition"]
         params = step_config.get("params", {})
 
-        # DOE별 실제 angle_name으로 condition 교체
+        # DOE별 실제 condition 교체 (angle_name 또는 position_name)
         doe_angles = self.config.get("scenario", {}).get("doe_angles", {})
+        doe_positions = self.config.get("scenario", {}).get("doe_positions", {})
         doe_key = str(doe_index)
         step_key = str(step_num)
-        if doe_key in doe_angles and step_key in doe_angles[doe_key]:
+        if doe_key in doe_positions and step_key in doe_positions[doe_key]:
+            condition = doe_positions[doe_key][step_key].get("position_name", condition)
+        elif doe_key in doe_angles and step_key in doe_angles[doe_key]:
             condition = doe_angles[doe_key][step_key].get("angle_name", condition)
 
         alias = self._generate_alias(doe_index, step_num, mode, condition)
@@ -505,35 +514,48 @@ class CumulativeScenarioRunner:
             "prev": self._get_prev_alias(doe_index, step_num)
         })
 
-        # 3. KooMeshModifier 설정 파일 생성
-        config_file = self._create_step_config(doe_index, step_config, run_dir)
-        if config_file is None:
-            logging.error("Failed to create step config file")
-            self._update_index(alias, {
-                "run_id": run_id,
-                "status": "failed",
-                "folder": f"Run_{run_id}",
-                "mode": mode,
-                "condition": condition,
-                "error": "Config creation failed"
-            })
-            return False
+        # 3~4. KooMeshModifier (사전 생성 모드이면 복사, 아니면 실행)
+        if self.skip_koomeshmodifier and self.pregenerated_dir:
+            # Batch 사전 생성 모드: pregenerated 폴더에서 DropSet.k 등을 복사
+            if not self._copy_pregenerated(doe_index, run_dir, mode):
+                self._update_index(alias, {
+                    "run_id": run_id,
+                    "status": "failed",
+                    "folder": f"Run_{run_id}",
+                    "mode": mode,
+                    "condition": condition,
+                    "error": "Pregenerated DropSet.k 복사 실패"
+                })
+                return False
+        else:
+            # 일반 모드: KooMeshModifier 설정 파일 생성 + 실행
+            config_file = self._create_step_config(doe_index, step_config, run_dir)
+            if config_file is None:
+                logging.error("Failed to create step config file")
+                self._update_index(alias, {
+                    "run_id": run_id,
+                    "status": "failed",
+                    "folder": f"Run_{run_id}",
+                    "mode": mode,
+                    "condition": condition,
+                    "error": "Config creation failed"
+                })
+                return False
 
-        # 4. KooMeshModifier 실행 (모델링)
-        if not self._run_koomeshmodifier(config_file, run_dir):
-            self._update_index(alias, {
-                "run_id": run_id,
-                "status": "failed",
-                "folder": f"Run_{run_id}",
-                "mode": mode,
-                "condition": condition,
-                "error": "KooMeshModifier failed"
-            })
-            return False
+            if not self._run_koomeshmodifier(config_file, run_dir):
+                self._update_index(alias, {
+                    "run_id": run_id,
+                    "status": "failed",
+                    "folder": f"Run_{run_id}",
+                    "mode": mode,
+                    "condition": condition,
+                    "error": "KooMeshModifier failed"
+                })
+                return False
 
         # 5. LS-DYNA 실행
         input_file = self._find_input_file(run_dir, mode)
-        timeout = self.config["execution"]["timeout_per_step_seconds"]
+        timeout = self.config["execution"].get("timeout_per_step_seconds", 604800)
 
         if not self.solver.run(input_file, run_dir, timeout):
             self._update_index(alias, {
@@ -547,7 +569,8 @@ class CumulativeScenarioRunner:
             return False
 
         # 6. dynain 생성 대기 (dynain은 run_dir에 직접 생성됨)
-        if not self.solver.wait_for_dynain(run_dir, timeout):
+        dynain_timeout = self.config["execution"].get("timeout_dynain_seconds", 604800)
+        if not self.solver.wait_for_dynain(run_dir, dynain_timeout):
             self._update_index(alias, {
                 "run_id": run_id,
                 "status": "failed",
@@ -641,7 +664,7 @@ class CumulativeScenarioRunner:
 
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,True,{run_dir},{run_dir}
+*RunDirectoryMode,True,{run_dir}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -669,6 +692,46 @@ dt,{dt}
 *End
 """
 
+        elif mode == "IMPACT":
+            # 충격 위치 DOE 설정
+            pos = self._get_doe_position(doe_index, step_num, condition)
+
+            sim_params = self.config.get("simulation_params", {})
+            impact_params = sim_params.get("impact", {})
+
+            dim_damper = impact_params.get("dimension_damper", [0.001, 0.001, 0.001])
+            dim_damper_str = ",".join(str(v) for v in dim_damper)
+
+            config_content = f"""*Inputfile
+{model_file}
+*RunDirectoryMode,True,{run_dir}
+*Info,{project},Step{step_num}
+*Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
+*Creator,automation,auto@system.com,CAE,AUTO
+*Mode
+DROP_WEIGHT_IMPACT_TEST,1
+**DropWeightImpactTest,1
+GenerationMode,DampingSpring
+LocationX,{pos['x']}
+LocationY,{pos['y']}
+Height,{impact_params.get('height', 0.5)}
+InitialVelocityX,0
+InitialVelocityY,0
+InitialVelocityZ,0
+Type,{impact_params.get('type', 'Sphere')}
+Dimension,{impact_params.get('dimension', 0.008)}
+MeshSize,{impact_params.get('mesh_size', 0.001)}
+DimensionDamper,{dim_damper_str}
+Density,{impact_params.get('density', 7800)}
+YoungsModulus,{impact_params.get('youngs_modulus', 201e9)}
+PoissonRatio,{impact_params.get('poisson_ratio', 0.3)}
+tFinal,{impact_params.get('tFinal', 0.001)}
+dt,{impact_params.get('dt', 1e-6)}
+OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
+**EndDropWeightImpactTest
+*End
+"""
+
         elif mode == "THERM":
             # 열응력 시뮬레이션 설정 (기본 템플릿)
             target_temp = params.get("target_temp_C", 85)
@@ -676,7 +739,7 @@ dt,{dt}
 
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,True,{run_dir},{run_dir}
+*RunDirectoryMode,True,{run_dir}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition} T={target_temp}C
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -695,7 +758,7 @@ RampTime,600
             # 기타 모드는 기본 템플릿
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,True,{run_dir},{run_dir}
+*RunDirectoryMode,True,{run_dir}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -737,6 +800,26 @@ RampTime,600
 
         # 하위 호환: condition 코드 기반 변환
         return self._condition_to_euler(condition)
+
+    def _get_doe_position(self, doe_index: int, step_num: int, condition: str) -> Dict[str, float]:
+        """DOE별 충격 위치 조회
+
+        doe_positions 테이블에서 DOE별 위치(X, Y) 조회
+        """
+        doe_positions = self.config.get("scenario", {}).get("doe_positions", {})
+        doe_key = str(doe_index)
+
+        if doe_key in doe_positions:
+            step_key = str(step_num)
+            if step_key in doe_positions[doe_key]:
+                pos_info = doe_positions[doe_key][step_key]
+                return {
+                    "x": pos_info["x"],
+                    "y": pos_info["y"]
+                }
+
+        logging.warning(f"DOE {doe_index} Step {step_num}의 충격 위치를 찾을 수 없습니다. 기본값(0,0) 사용")
+        return {"x": 0.0, "y": 0.0}
 
     def _condition_to_euler(self, condition: str) -> Dict[str, float]:
         """Condition 코드 → Euler 각도 변환"""
@@ -797,17 +880,21 @@ RampTime,600
         logging.info(f"Running KooMeshModifier: {' '.join(cmd)}")
 
         try:
-            # timeout 1800초 (30분) - sandbox 추출 시간 고려
+            koomesh_timeout = self.config["execution"].get("timeout_koomeshmodifier_seconds", 604800)
             result = subprocess.run(
                 cmd,
                 cwd=working_dir,
                 capture_output=True,
                 text=True,
-                timeout=1800
+                timeout=koomesh_timeout
             )
             if result.returncode != 0:
-                logging.error(f"KooMeshModifier failed: {result.stderr}")
+                logging.error(f"KooMeshModifier failed (returncode={result.returncode})")
+                logging.error(f"KooMeshModifier stdout:\n{result.stdout}")
+                logging.error(f"KooMeshModifier stderr:\n{result.stderr}")
                 return False
+            logging.info(f"KooMeshModifier completed successfully")
+            logging.debug(f"KooMeshModifier stdout:\n{result.stdout}")
             return True
         except subprocess.TimeoutExpired:
             logging.error("KooMeshModifier timed out")
@@ -816,10 +903,59 @@ RampTime,600
             logging.error(f"KooMeshModifier execution error: {e}")
             return False
 
+    def _copy_pregenerated(self, doe_index: int, run_dir: str, mode: str) -> bool:
+        """사전 생성된 DropSet.k를 pregenerated 디렉토리에서 run_dir로 복사
+
+        Args:
+            doe_index: DOE 인덱스 (1-based)
+            run_dir: 실행 디렉토리
+            mode: 시뮬레이션 모드 (DROP, IMPACT, THERM)
+
+        Returns:
+            bool: 성공 여부
+        """
+        # pregenerated 폴더 경로: Run_{doe_idx}/
+        src_dir = os.path.join(self.pregenerated_dir, f"Run_{doe_index}")
+
+        if not os.path.isdir(src_dir):
+            logging.error(f"Pregenerated 디렉토리 없음: {src_dir}")
+            return False
+
+        # 입력 파일명 결정
+        input_filename = self._find_input_file(run_dir, mode)
+
+        # src_dir에서 모든 파일을 run_dir로 복사
+        copied_files = []
+        try:
+            for item in os.listdir(src_dir):
+                src_path = os.path.join(src_dir, item)
+                dst_path = os.path.join(run_dir, item)
+                if os.path.isfile(src_path):
+                    shutil.copy2(src_path, dst_path)
+                    copied_files.append(item)
+                elif os.path.isdir(src_path):
+                    if os.path.exists(dst_path):
+                        shutil.rmtree(dst_path)
+                    shutil.copytree(src_path, dst_path)
+                    copied_files.append(f"{item}/")
+        except Exception as e:
+            logging.error(f"Pregenerated 파일 복사 실패: {e}")
+            return False
+
+        # 입력 파일 존재 확인
+        if not os.path.exists(os.path.join(run_dir, input_filename)):
+            logging.error(f"Pregenerated 입력 파일 없음: {input_filename} (복사된 파일: {copied_files})")
+            return False
+
+        logging.info(f"Pregenerated 파일 복사 완료: {src_dir} → {run_dir} ({len(copied_files)}개 파일)")
+        return True
+
     def _find_input_file(self, run_dir: str, mode: str) -> str:
         """LS-DYNA 입력 파일 찾기"""
         if mode == "DROP":
             return "DropSet.k"
+        elif mode == "IMPACT":
+            return "DropWeightImpactTestSet.k"
         elif mode == "THERM":
             return "ThermalSet.k"
         else:
@@ -831,13 +967,22 @@ def main():
     parser.add_argument("config", help="Path to runner_config.json")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--doe", type=int, help="Run specific DOE only (for parallel execution)")
+    parser.add_argument("--skip-koomeshmodifier", action="store_true",
+                        help="KooMeshModifier 실행 생략 (batch 사전 생성 모드)")
+    parser.add_argument("--pregenerated-dir", type=str, default=None,
+                        help="사전 생성된 DropSet.k 파일 디렉토리")
     args = parser.parse_args()
 
     if not os.path.exists(args.config):
         print(f"Error: Config file not found: {args.config}")
         sys.exit(1)
 
-    runner = CumulativeScenarioRunner(args.config, doe_filter=args.doe)
+    runner = CumulativeScenarioRunner(
+        args.config,
+        doe_filter=args.doe,
+        skip_koomeshmodifier=args.skip_koomeshmodifier,
+        pregenerated_dir=args.pregenerated_dir
+    )
     success = runner.run_all()
     sys.exit(0 if success else 1)
 

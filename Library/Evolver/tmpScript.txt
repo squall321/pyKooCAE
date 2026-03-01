@@ -1,0 +1,384 @@
+//Capacitor 
+Evolver_Version 2.11
+// Physical dimensions of the chip
+parameter lpw = 600.0 // leftPadWidth
+parameter lph = 800.0 // leftPadHeight
+parameter pt = 30.0 // padThickness
+parameter piw = 250.0 // padIntervalWidth
+parameter rpw = 600.0 // rightPadWidth
+parameter rph = 800.0 // rightPadHeight
+parameter cbw = 1000 // ceramicBodyWidth
+parameter cbh = 500 // ceramicBodyHeight
+parameter cbt = 418.41 // ceramicBodyThickness
+parameter ltw = 125.0 // leftTerminalWidth
+parameter ltt = 10.0 // leftTerminalThickness
+parameter rtw = 125.0 // rightTerminalWidth
+parameter rtt = 10.0 // rightTerminalThickness
+parameter lbw = 20.0 // leftBarrierWidth
+parameter lbt = 10.0 // leftBarrierThickness
+parameter rbw = 20.0 // rightBarrierWidth
+parameter rbt = 10.0 // rightBarrierThickness
+parameter lfw = 20.0 // leftFinishWidth
+parameter lft = 10.0 // leftFinishThickness
+parameter rfw = 20.0 // rightFinishWidth
+parameter rft = 10.0 // rightFinishThickness
+parameter lst = 30.0 // leftSolderThickness
+parameter lsv = 0.041997368329829095 // leftSolderVolume
+parameter rst = lst // rightSolderThickness
+parameter rsv = 0.041997368329829095 // rightSolderVolume
+parameter v1 = lsv*1000*1000*1000
+parameter v2 = rsv*1000*1000*1000
+parameter leftTotalThickness = ltt + lbt + lft + lst + pt// left total thickness
+parameter rightTotalThickness = rtt + rbt + rft + rst + pt// right total thickness
+// solder
+parameter solderWidthRatio = 0.0048 // solderWidthRatio
+parameter solderThicknessRatio = 0.8 // solderThicknessRatio
+parameter solderBottomWidthRatio = 0.5 // solderBottonWidth
+parameter PW_x = lpw
+parameter PW_y = lph
+parameter TENS = 0.4*1000
+parameter SG = 8
+parameter tilt = 0
+#define st sin(tilt*pi/180)
+#define ct cos(tilt*pi/180)
+parameter x0 = 0
+parameter zl0 = leftTotalThickness+cbt/2.0
+parameter zr0 = rightTotalThickness+cbt/2.0
+parameter z0 = 0
+#define CHIPLX    (ct*(x-x0)-st*(z-zl0))
+#define CHIPLY    (y)
+#define CHIPLZ    (st*(x-x0)+ct*(z-zl0))+zl0
+#define CHIPRX    (ct*(x-x0)-st*(z-zr0))
+#define CHIPRY    (y)
+#define CHIPRZ    (st*(x-x0)+ct*(z-zr0))+zr0
+gravity_constant  9.81
+scale_limit  1/TENS
+// Left Pad
+constraint 1 // +x face of left pad
+formula : x = -piw/2.0
+constraint 2 // -x face of left pad
+formula : x = -lpw-piw/2.0
+constraint 3 // +y face of left pad
+formula : y = lph/2.0
+constraint 4 // -y face of left pad
+formula : y = -lph/2.0
+constraint 5 // +z face of left pad
+formula : z = pt
+constraint 6 // -z face of left pad
+formula : z = 0
+// Left Finish
+constraint 7 // +x face of left finish
+formula : CHIPLX = -cbw/2.0+ltw+lbw+lfw+ltt+lbt+lft
+constraint 8 // -x face of left finish
+formula : CHIPLX = -cbw/2.0-ltt-lbt-lft
+constraint 9 // +y face of left finish
+formula : CHIPLY = cbh/2.0+ltt+lbt+lft
+constraint 10 // -y face of left finish
+formula : CHIPLY = -cbh/2.0-ltt-lbt-lft
+constraint 11 // +z face of left finish
+formula : CHIPLZ = leftTotalThickness + cbt + ltt + lbt + lft
+constraint 12 // -z face of left finish
+formula : CHIPLZ = leftTotalThickness - ltt - lbt - lft
+// Right Pad
+constraint 1001 // +x face of right pad
+formula : x = rpw+piw/2.0
+constraint 1002 // -x face of right pad
+formula : x = piw/2.0
+constraint 1003 // +y face of right pad
+formula : y = rph/2.0
+constraint 1004 // -y face of right pad
+formula : y = -rph/2.0
+constraint 1005 // +z face of right pad
+formula : z = pt
+constraint 1006 // -z face of right pad
+formula : z = 0
+// Right Finish
+constraint 1007 // +x face of right finish
+formula : CHIPRX = cbw/2.0 - rtw - rbw - rfw - rtt - rbt - rft
+constraint 1008 // -x face of right finish
+formula : CHIPRX = cbw/2.0 + rtt + rbt + rft
+constraint 1009 // +y face of right finish
+formula : CHIPRY = cbh/2.0 + rtt + rbt + rft
+constraint 1010 // -y face of right finish
+formula : CHIPRY = -cbh/2.0 - rtt - rbt - rft
+constraint 1011 // +z face of right finish
+formula : CHIPRZ = rightTotalThickness + cbt + rtt + rbt + rft
+constraint 1012 // -z face of right finish
+formula : CHIPRZ = rightTotalThickness - rtt - rbt - rft
+// Constraint for solder on chip
+// Left pad
+constraint 101 nonpositive // to keep solder within pos y bound
+formula : x+piw/2.0
+constraint 102 nonnegative
+formula : x+piw/2.0+lpw
+constraint 103 nonpositive
+formula : y-lph/2.0
+constraint 104 nonnegative
+formula : y+lph/2.0
+constraint 105 nonpositive
+formula : z-pt
+constraint 106 nonnegative
+formula : z
+// Left Finish
+constraint 107 nonpositive // +x face of left finish
+formula : CHIPLX + cbw/2.0 - ltw - lbw - lfw - ltt - lbw - lft
+constraint 108 nonnegative // -x face of left finish
+formula : CHIPLX + cbw/2.0 + ltt + lbt + lft
+constraint 109 nonpositive // +y face of left finish
+formula : CHIPLY - cbh/2.0 - ltt - lbt - lft
+constraint 110 nonnegative // -y face of left finish
+formula : CHIPLY + cbh/2.0 + ltt + lbt + lft
+constraint 111 nonpositive // +z face of left finish
+formula : CHIPLZ - leftTotalThickness - cbt - ltt - lbt - lft
+constraint 112 nonnegative // -z face of left finish
+formula : CHIPLZ - leftTotalThickness + ltt + lbt + lft
+// Right Pad
+constraint 1101 nonpositive // +x face of right pad
+formula : x - rpw - piw/2.0
+constraint 1102 nonnegative // -x face of right pad
+formula : x - piw/2.0
+constraint 1103 nonpositive // +y face of right pad
+formula : y - rph/2.0
+constraint 1104 nonnegative // -y face of right pad
+formula : y + rph/2.0
+constraint 1105 nonpositive // +z face of right pad
+formula : z - pt
+constraint 1106 nonnegative // -z face of right pad
+formula : z
+// Right Finish
+constraint 1107 nonnegative // +x face of right finish
+formula : CHIPRX - cbw/2.0 + rtw + rbw + rfw + rtt + rbt + rft
+constraint 1108 nonpositive // -x face of right finish
+formula : CHIPRX - cbw/2.0 - rtt - rbt - rft
+constraint 1109 nonpositive // +y face of right finish
+formula : CHIPRY - cbh/2.0 - rtt - rbt - rft
+constraint 1110 nonnegative // -y face of right finish
+formula : CHIPRY + cbh/2.0 + rtt + rbt + rft
+constraint 1111 nonpositive // +z face of right finish
+formula : CHIPRZ - rightTotalThickness - cbt - rtt - rbt - rft
+constraint 1112 nonnegative // -z face of right finish
+formula : CHIPRZ - rightTotalThickness + rtt + rbt + rft
+// Initial Shape Specification
+// Note that numbering of elements is not continous to keep the same 
+// elements after loading, start Evolver with the -i option
+// given as coordinates
+vertices
+//left pad
+1 -lpw-piw/2.0    -lph/2.0    0.0 fixed
+2 -piw/2.0    -lph/2.0     0.0 fixed
+3 -piw/2.0    lph/2.0     0.0 fixed
+4 -lpw-piw/2.0    lph/2.0     0.0 fixed
+5 -lpw-piw/2.0    -lph/2.0    pt fixed
+6 -piw/2.0    -lph/2.0     pt fixed
+7 -piw/2.0    lph/2.0     pt fixed
+8 -lpw-piw/2.0    lph/2.0     pt fixed
+//left finish 
+9 -cbw/2.0-ltt-lbt-lft    -cbh/2.0-ltt-lbt-lft    leftTotalThickness-ltt-lbt-lft fixed
+10 -cbw/2.0+ltw+lbw+lfw+ltt+lbt+lft    -cbh/2.0-ltt-lbt-lft    leftTotalThickness-ltt-lbt-lft fixed
+11 -cbw/2.0+ltw+lbw+lfw+ltt+lbt+lft    cbh/2.0+ltt+lbt+lft    leftTotalThickness-ltt-lbt-lft fixed
+12 -cbw/2.0-ltt-lbt-lft    cbh/2.0+ltt+lbt+lft    leftTotalThickness-ltt-lbt-lft fixed
+13 -cbw/2.0-ltt-lbt-lft    -cbh/2.0-ltt-lbt-lft    leftTotalThickness+cbt+ltt+lbt+lft fixed
+14 -cbw/2.0+ltw+lbw+lfw+ltt+lbt+lft    -cbh/2.0-ltt-lbt-lft    leftTotalThickness+cbt+ltt+lbt+lft fixed
+15 -cbw/2.0+ltw+lbw+lfw+ltt+lbt+lft    cbh/2.0+ltt+lbt+lft    leftTotalThickness+cbt+ltt+lbt+lft fixed
+16 -cbw/2.0-ltt-lbt-lft    cbh/2.0+ltt+lbt+lft    leftTotalThickness+cbt+ltt+lbt+lft fixed
+//right pad
+1001 rpw+piw/2.0    -rph/2.0    0.0 fixed
+1002 piw/2.0    -rph/2.0     0.0 fixed
+1003 piw/2.0    rph/2.0     0.0 fixed
+1004 rpw+piw/2.0    rph/2.0     0.0 fixed
+1005 rpw+piw/2.0    -rph/2.0    pt fixed
+1006 piw/2.0    -rph/2.0     pt fixed
+1007 piw/2.0    rph/2.0     pt fixed
+1008 rpw+piw/2.0    rph/2.0     pt fixed
+//right finish
+1009 cbw/2.0+rtt+rbt+rft    -cbh/2.0-rtt-rbt-rft    rightTotalThickness-rtt-rbt-rft fixed
+1010 cbw/2.0-rtw-rbw-rfw-rtt-rbt-rft    -cbh/2.0-rtt-rbt-rft    rightTotalThickness-rtt-rbt-rft fixed
+1011 cbw/2.0-rtw-rbw-rfw-rtt-rbt-rft    cbh/2.0+rtt+rbt+rft    rightTotalThickness-rtt-rbt-rft fixed
+1012 cbw/2.0+rtt+rbt+rft    cbh/2.0+rtt+rbt+rft    rightTotalThickness-rtt-rbt-rft fixed
+1013 cbw/2.0+rtt+rbt+rft    -cbh/2.0-rtt-rbt-rft    rightTotalThickness+cbt+rtt+rbt+rft fixed
+1014 cbw/2.0-rtw-rbw-rfw-rtt-rbt-rft   -cbh/2.0-rtt-rbt-rft    rightTotalThickness+cbt+rtt+rbt+rft fixed
+1015 cbw/2.0-rtw-rbw-rfw-rtt-rbt-rft    cbh/2.0+rtt+rbt+rft    rightTotalThickness+cbt+rtt+rbt+rft fixed
+1016 cbw/2.0+rtt+rbt+rft    cbh/2.0+rtt+rbt+rft    rightTotalThickness+cbt+rtt+rbt+rft fixed
+//left solder
+101 -lpw-piw/2.0    -lph/2.0    pt    constraints 5   105
+102 -lpw*(1.0-solderBottomWidthRatio)-piw/2.0    -lph/2.0     pt    constraints 5   105
+103 -lpw*(1.0-solderBottomWidthRatio)-piw/2.0    lph/2.0    pt    constraints 5   105
+104 -lpw-piw/2.0    lph/2.0    pt    constraints 5   105
+105 -cbw/2.0-ltt-lbt-lft   -cbh/2.0-ltt-lbt-lft    leftTotalThickness-ltt-lbt-lft  constraints 12  8   10
+106 -cbw/2.0-ltt-lbt-lft+solderWidthRatio*(ltw+lbw+lfw+2.0*ltt+2.0*lbt+2.0*lft)   -cbh/2.0-ltt-lbt-lft    leftTotalThickness-ltt-lbt-lft  constraints 12
+107 -cbw/2.0-ltt-lbt-lft+solderWidthRatio*(ltw+lbw+lfw+2.0*ltt+2.0*lbt+2.0*lft)   cbh/2.0+ltt+lbt+lft    leftTotalThickness-ltt-lbt-lft  constraints 12
+108 -cbw/2.0-ltt-lbt-lft   cbh/2.0+ltt+lbt+lft    leftTotalThickness-ltt-lbt-lft  constraints 12  8   9
+109 -cbw/2.0-ltt-lbt-lft   -cbh/2.0-ltt-lbt-lft    leftTotalThickness-ltt-lbt-lft+solderThicknessRatio*(cbt+2.0*ltt+2.0*lbt+2.0*lft)  constraints 8   10
+110 -cbw/2.0-ltt-lbt-lft   cbh/2.0+ltt+lbt+lft    leftTotalThickness-ltt-lbt-lft+solderThicknessRatio*(cbt+2.0*ltt+2.0*lbt+2.0*lft)  constraints 8    9
+//right solder
+1101  rpw+piw/2.0   -rph/2.0  pt  constraints 1005   1105
+1102  rpw*(1.0-solderBottomWidthRatio)+piw/2.0   -rph/2.0  pt  constraints 1005   1105
+1103  rpw*(1.0-solderBottomWidthRatio)+piw/2.0   rph/2.0  pt  constraints 1005   1105
+1104  rpw+piw/2.0   rph/2.0  pt  constraints 1005   1105
+1105  cbw/2.0+rtt+rbt+rft   -cbh/2.0-rtt-rbt-rft    rightTotalThickness-rtt-rbt-rft  constraints 1012  1008   1010
+1106  cbw/2.0+rtt+rbt+rft-solderWidthRatio*(rtw+rbw+rfw+2.0*rtt+2.0*rbt+2.0*rft)   -cbh/2.0-rtt-rbt-rft    rightTotalThickness-rtt-rbt-rft  constraints 1012
+1107  cbw/2.0+rtt+rbt+rft-solderWidthRatio*(rtw+rbw+rfw+2.0*rtt+2.0*rbt+2.0*rft)  cbh/2.0+rtt+rbt+rft    rightTotalThickness-rtt-rbt-rft  constraints 1012
+1108  cbw/2.0+rtt+rbt+rft   cbh/2.0+rtt+rbt+rft    rightTotalThickness-rtt-rbt-rft  constraints 1012  1008   1009
+1109  cbw/2.0+rtt+rbt+rft   -cbh/2.0-rtt-rbt-rft    rightTotalThickness-rtt-rbt-rft+solderThicknessRatio*(cbt+2.0*rtt+2.0*rbt+2.0*rft)  constraints 1008   1010
+1110  cbw/2.0+rtt+rbt+rft   cbh/2.0+rtt+rbt+rft    rightTotalThickness-rtt-rbt-rft+solderThicknessRatio*(cbt+2.0*rtt+2.0*rbt+2.0*rft)  constraints 1008    1009
+100001    x0  -1000 zl0
+100002    x0  1000  zl0
+100003    x0  -1000 zr0
+100004    x0  1000  zr0
+edges
+100001    100001  100002
+100002    100003  100004
+//left pad 
+1  1  2   fixed   no_refine
+2  2  3   fixed   no_refine
+3  3  4   fixed   no_refine
+4  4  1   fixed   no_refine
+5  5  6   fixed   no_refine
+6  6  7   fixed   no_refine
+7  7  8   fixed   no_refine
+8  8  5   fixed   no_refine
+9  1  5   fixed   no_refine
+10  2  6   fixed   no_refine
+11  3  7   fixed   no_refine
+12  4  8   fixed   no_refine
+//left finish
+13  9  10   fixed   no_refine
+14  10  11   fixed   no_refine
+15  11  12   fixed   no_refine
+16  12  9   fixed   no_refine
+17  13  14   fixed   no_refine
+18  14  15   fixed   no_refine
+19  15  16   fixed   no_refine
+20  16  13   fixed   no_refine
+21  9  13   fixed   no_refine
+22  10  14   fixed   no_refine
+23  11  15   fixed   no_refine
+24  12  16   fixed   no_refine
+// right pad
+1001  1001  1002   fixed   no_refine
+1002  1002  1003   fixed   no_refine
+1003  1003  1004   fixed   no_refine
+1004  1004  1001   fixed   no_refine
+1005  1005  1006   fixed   no_refine
+1006  1006  1007   fixed   no_refine
+1007  1007  1008   fixed   no_refine
+1008  1008  1005   fixed   no_refine
+1009  1001  1005   fixed   no_refine
+1010  1002  1006   fixed   no_refine
+1011  1003  1007   fixed   no_refine
+1012  1004  1008   fixed   no_refine
+// right finish
+1013  1009  1010   fixed   no_refine
+1014  1010  1011   fixed   no_refine
+1015  1011  1012   fixed   no_refine
+1016  1012  1009   fixed   no_refine
+1017  1013  1014   fixed   no_refine
+1018  1014  1015   fixed   no_refine
+1019  1015  1016   fixed   no_refine
+1020  1016  1013   fixed   no_refine
+1021  1009  1013   fixed   no_refine
+1022  1010  1014   fixed   no_refine
+1023  1011  1015   fixed   no_refine
+1024  1012  1016   fixed   no_refine
+// left solder below
+101   101 102 constraints 5   105 106
+102   102 103 constraints 5   105 106
+103   103 104 constraints 5   105 106
+104   104 101 constraints 5   105 106
+105 101 109
+106 104 110
+107 109 110 constraints 8 108
+109 106 102
+111 107 103
+112 106 107 constraints 12 112
+114 108 105 constraints 12 8
+108 109 106 constraints 10 110
+115 105 106 constraints 12 10
+116 105 109 constraints 8 10
+110 110 107 constraints 9 109
+113 107 108 constraints 12 9 
+117 108 110 constraints 8 9 
+// right solder below
+1101 1101 1102 constraints 1005 1105 1106 
+1102 1102 1103 constraints 1005 1105 1106 
+1103 1103 1104 constraints 1005 1105 1106 
+1104 1104 1101 constraints 1005 1105 1106 
+1105 1101 1109 
+1106 1104 1110 
+1107 1109 1110 constraints 1008 1108 
+1109 1106 1102 
+1111 1107 1103 
+1112 1106 1107 constraints 1012 1112 
+1114 1108 1105 constraints 1012 1008 
+1108 1109 1106 constraints 1010 1110 
+1115 1105 1106 constraints 1012 1010 
+1116 1105 1109 constraints 1008 1010 
+1110 1110 1107 constraints 1009 1109 
+1113 1107 1108 constraints 1012 1009  
+1117 1108 1110 constraints 1008 1009  
+faces
+// left pad
+/*
+1 -4 -3 -2 -1 color red fixed no_refine
+2 5 6 7 8 color red fixed no_refine
+3 1 10 -5 -9 color red fixed no_refine
+4 2 11 -6 -10 color red fixed no_refine
+5 3 12 -7 -11 color red fixed no_refine
+6 4 9 -8 -12 color red fixed no_refine
+// left finish
+7 -16 -15 -14 -13 color lightred fixed no_refine
+8 17 18 19 20 color lightred fixed no_refine
+9 13 22 -17 -21 color lightred fixed no_refine
+10 14 23 -18 -22 color lightred fixed no_refine
+11 15 24 -19 -23 color lightred fixed no_refine
+12 16 21 -20 -24 color lightred fixed no_refine
+// right pad
+1001 1001 1002 1003 1004 color red fixed no_refine
+1002 -1008 -1007 -1006 -1005 color red fixed no_refine
+1003 1009 1005 -1010 -1001 color red fixed no_refine
+1004 1010 1006 -1011 -1002 color red fixed no_refine
+1005 1011 1007 -1012 -1003 color red fixed no_refine
+1006 1012 1008 -1009 -1004 color red fixed no_refine
+// right finish
+1007 1013 1014 1015 1016 color lightred fixed no_refine
+1008 -1020 -1019 -1018 -1017 color lightred fixed no_refine
+1009 1021 1017 -1022 -1013 color lightred fixed no_refine
+1010 1022 1018 -1023 -1014 color lightred fixed no_refine
+1011 1023 1019 -1024 -1015 color lightred fixed no_refine
+1012 1024 1020 -1021 -1016 color lightred fixed no_refine
+*/
+//right solder 
+// 밑면 
+1101 1101 1102 1103 1104 color blue constraints 1005 1105 
+// 좌측면
+1102 1106 -1107 -1105 -1104 color blue constraints 1107
+1103 1108 1109 -1101 1105 color blue
+1104 -1103 -1111 -1110 -1106 color blue 
+1105 1111 -1102 -1109 1112 color red constraints 1012 1112
+//측면 하단
+1106 -1116 1115 -1108 color blue constraints 1010 1110 
+//측면 상단
+1107 1110 1113 1117 color blue constraints 1009 1109
+//내부 수직면
+1108 1107 -1117 1114 1116 color blue constraints 1008 1108
+1109 -1114 -1113 -1112 -1115 color blue constraints 1012 1112
+bodies
+4 1101 1102 1103 1104 1105 1106 1107 1108 1109 volume v2
+read
+//typical evolution
+gogo :={ r; g 15; r; g10;
+conj_grad;
+t 10;
+u;u;u;u;u;u;u;u;u;u;u;u;u;u;u;u;
+t 10;
+u;u;u;u;u;u;u;u;u;u;u;u;u;u;u;u;
+}
+gogo
+t 10;
+u;u;u;u;u;u;u;u;u;u;u;u;u;u;u;u;
+g 10;
+optimize 1
+read "stl.cmd"
+stl >>> "rightSolder.stl"
+q
+q

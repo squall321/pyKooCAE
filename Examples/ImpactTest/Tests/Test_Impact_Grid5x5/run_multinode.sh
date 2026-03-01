@@ -1,0 +1,100 @@
+#!/bin/bash
+# Test_Impact_Grid5x5: 5x5 그리드 충격 DOE (멀티노드 MPI)
+#
+# 멀티노드 MPI 모드:
+#   - 각 DOE가 nodes_per_job개 노드를 점유
+#   - mpirun이 apptainer 바깥에서 실행
+
+set -e
+
+# 디폴트 설정
+CONCURRENT_DOES=12       # 동시 실행 DOE 수
+NCPU_PER_JOB=128         # 노드당 CPU 수
+
+# 옵션 파싱
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --concurrent-does) CONCURRENT_DOES="$2"; shift 2 ;;
+        --ncpu-per-job) NCPU_PER_JOB="$2"; shift 2 ;;
+        -h|--help)
+            echo "사용법: $0 [OPTIONS]"
+            echo ""
+            echo "멀티노드 MPI 모드: 각 DOE가 여러 노드를 점유하여 실행"
+            echo ""
+            echo "  --concurrent-does N  동시 실행 DOE 수 (기본: 12)"
+            echo "  --ncpu-per-job N     노드당 CPU 수 (기본: 128)"
+            echo ""
+            echo "nodes_per_job은 scenario_multinode.json의 environment.nodes_per_job에서 설정"
+            exit 0 ;;
+        *) echo "알 수 없는 옵션: $1"; exit 1 ;;
+    esac
+done
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# scenario_multinode.json 사용
+SCENARIO_JSON="$SCRIPT_DIR/scenario_multinode.json"
+if [ ! -f "$SCENARIO_JSON" ]; then
+    echo "scenario_multinode.json 없음: $SCENARIO_JSON"
+    echo "멀티노드 모드를 사용하려면 scenario_multinode.json을 생성하세요."
+    exit 1
+fi
+
+KOOCR=$(python3 -c "import json; print(json.load(open('$SCENARIO_JSON'))['environment']['koochainrun_path'])")
+NODES_PER_JOB=$(python3 -c "import json; print(json.load(open('$SCENARIO_JSON'))['environment'].get('nodes_per_job', 1))")
+
+TOTAL_NODES=$((CONCURRENT_DOES * NODES_PER_JOB))
+TOTAL_MPI_RANKS=$((NCPU_PER_JOB * NODES_PER_JOB))
+
+echo "=========================================="
+echo "Test_Impact_Grid5x5: 5x5 충격 DOE (멀티노드)"
+echo "=========================================="
+echo ""
+
+# Step 1: runner_config.json 생성
+echo "Step 1: runner_config.json 생성 중..."
+"$KOOCR" prepare "$SCENARIO_JSON" -o "$SCRIPT_DIR/runner_config_multinode.json"
+
+if [ ! -f "$SCRIPT_DIR/runner_config_multinode.json" ]; then
+    echo "runner_config_multinode.json 생성 실패"
+    exit 1
+fi
+echo ""
+
+# Step 2: 실행 설정 확인
+echo "Step 2: 실행 설정"
+echo "  - 총 케이스: 25개 (5x5 그리드)"
+echo "  - nodes_per_job: ${NODES_PER_JOB}개 (DOE당 노드 수)"
+echo "  - 동시 실행 DOE: ${CONCURRENT_DOES}개"
+echo "  - 필요 노드: ${TOTAL_NODES}개"
+echo "  - 노드당 CPU: ${NCPU_PER_JOB}개"
+echo "  - DOE당 MPI ranks: ${TOTAL_MPI_RANKS}개"
+echo ""
+
+# Step 3: 실행 확인
+read -p "실행하시겠습니까? (y/n): " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "실행 취소됨"
+    exit 0
+fi
+
+# Step 4: KooChainRun으로 작업 제출
+echo ""
+echo "Step 3: KooChainRun으로 작업 제출 중..."
+"$KOOCR" submit "$SCRIPT_DIR/runner_config_multinode.json" \
+    --nodes "$CONCURRENT_DOES" \
+    --jobs-per-node 1 \
+    --ncpu-per-job "$NCPU_PER_JOB"
+
+echo ""
+echo "=========================================="
+echo "실행 완료"
+echo "=========================================="
+echo ""
+echo "작업 관리:"
+echo "  $SCRIPT_DIR/stop.sh              # 전체 취소"
+echo "  $SCRIPT_DIR/rerun.sh --dry-run   # 상태 확인"
+echo "  $SCRIPT_DIR/rerun.sh             # 실패 재실행"
+echo "  $KOOCR diagnose $SCRIPT_DIR      # 실패 진단"
+echo ""

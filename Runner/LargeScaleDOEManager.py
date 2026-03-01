@@ -91,6 +91,12 @@ class LargeScaleDOEManager:
         # APPTAINER_TMPDIR: /tmp 대신 /data 사용 (공간 부족 방지)
         self.apptainer_tmpdir = self.environment.get("apptainer_tmpdir", "/data/tmp")
 
+        # Scratch Run 설정
+        scratch_cfg = self.environment.get("scratch_run", {})
+        self.scratch_enabled = scratch_cfg.get("enabled", False)
+        self.scratch_base = scratch_cfg.get("scratch_base", "/scratch")
+        self.scratch_cleanup = scratch_cfg.get("cleanup_on_success", True)
+
         # 호환성을 위해 ncpu도 유지 (ncpu_per_job과 동일)
         self.ncpu = ncpu_per_job
 
@@ -452,6 +458,8 @@ class LargeScaleDOEManager:
         print(f"    - Job당 CPU: {self.ncpu_per_job}개")
         print(f"    - 동시 실행 제한: {concurrent_limit}개")
         print(f"    - 예상 Rounds: {(total_jobs + concurrent_limit - 1) // concurrent_limit}회")
+        if self.scratch_enabled:
+            print(f"    - Scratch Run: 활성 (base: {self.scratch_base})")
         if dependency_job_id:
             print(f"  의존성: {dependency_job_id}")
         print(f"{'─'*100}")
@@ -467,9 +475,10 @@ class LargeScaleDOEManager:
             f.write(f"#SBATCH --nodes={self.nodes_per_job}\n")
             if self.nodes_per_job >= 2:
                 f.write(f"#SBATCH --ntasks-per-node={self.ncpu_per_job}\n")
+                f.write(f"#SBATCH --cpus-per-task=1\n")
             else:
-                f.write(f"#SBATCH --ntasks=1\n")
-            f.write(f"#SBATCH --cpus-per-task={1 if self.nodes_per_job >= 2 else self.ncpu_per_job}\n")
+                f.write(f"#SBATCH --ntasks={self.ncpu_per_job}\n")
+                f.write(f"#SBATCH --cpus-per-task=1\n")
             f.write(f"#SBATCH --mem={self.memory}\n")
             f.write(f"#SBATCH --time={self._seconds_to_slurm_time(self.timeout)}\n")
             f.write(f"#SBATCH --output={job_name}_%A_%a.out\n")
@@ -477,6 +486,10 @@ class LargeScaleDOEManager:
 
             if dependency_job_id:
                 f.write(f"#SBATCH --dependency=afterok:{dependency_job_id}\n")
+
+            # APPTAINER_TMPDIR 설정
+            if self.apptainer_tmpdir:
+                f.write(f"\nexport APPTAINER_TMPDIR={self.apptainer_tmpdir}\n")
 
             f.write("\n")
             f.write("# ====================================================================\n")
@@ -487,23 +500,81 @@ class LargeScaleDOEManager:
             f.write("DOE_INDEX=$SLURM_ARRAY_TASK_ID\n")
             f.write("\n")
 
-            f.write("# runid 디렉토리 경로\n")
+            f.write("# runid 디렉토리 경로 (NFS 원본)\n")
             f.write(f'RUNID="runid_$(printf %05d $DOE_INDEX)"\n')
-            f.write(f'RUNID_DIR="{self.project_dir}/$RUNID"\n')
-            f.write(f'STEP_DIR="$RUNID_DIR/Step{step_number:03d}"\n')
+            f.write(f'ORIG_RUNID_DIR="{self.project_dir}/$RUNID"\n')
+            f.write(f'ORIG_STEP_DIR="$ORIG_RUNID_DIR/Step{step_number:03d}"\n')
             f.write("\n")
 
-            f.write('if [ ! -d "$STEP_DIR" ]; then\n')
-            f.write('    echo "❌ Step directory not found: $STEP_DIR"\n')
+            f.write('if [ ! -d "$ORIG_STEP_DIR" ]; then\n')
+            f.write('    echo "❌ Step directory not found: $ORIG_STEP_DIR"\n')
             f.write('    exit 1\n')
             f.write('fi\n')
             f.write("\n")
 
+            if self.scratch_enabled:
+                f.write("# ====================================================================\n")
+                f.write("# Scratch Run 설정 (로컬 디스크에서 실행)\n")
+                f.write("# ====================================================================\n")
+                f.write("\n")
+                f.write("EXIT_CODE=1\n")
+                f.write(f'SCRATCH_DIR={self.scratch_base}/$SLURM_JOB_ID/$RUNID/Step{step_number:03d}\n')
+                f.write('mkdir -p $SCRATCH_DIR\n')
+                f.write('echo "Scratch 디렉토리: $SCRATCH_DIR"\n')
+                f.write("\n")
+                f.write('# 메타데이터 + 모델 파일 복사\n')
+                f.write('cp $ORIG_STEP_DIR/metadata.json $SCRATCH_DIR/\n')
+                f.write(f'cp {self.project_dir}/$RUNID/metadata.json $SCRATCH_DIR/../ 2>/dev/null || true\n')
+                f.write('echo "메타데이터 복사 완료"\n')
+                f.write("\n")
+
+                if step_number > 1:
+                    f.write(f'# 이전 Step dynain 복사\n')
+                    f.write(f'PREV_STEP_DIR="$ORIG_RUNID_DIR/Step{step_number-1:03d}"\n')
+                    f.write(f'SCRATCH_PREV_DIR={self.scratch_base}/$SLURM_JOB_ID/$RUNID/Step{step_number-1:03d}\n')
+                    f.write('mkdir -p $SCRATCH_PREV_DIR\n')
+                    f.write('if [ -f "$PREV_STEP_DIR/dynain" ]; then\n')
+                    f.write('    cp $PREV_STEP_DIR/dynain $SCRATCH_PREV_DIR/\n')
+                    f.write('    echo "이전 Step dynain 복사 완료"\n')
+                    f.write('else\n')
+                    f.write('    echo "❌ 이전 Step dynain 없음: $PREV_STEP_DIR/dynain"\n')
+                    f.write('    exit 1\n')
+                    f.write('fi\n')
+                    f.write("\n")
+
+                cleanup_flag = 'true' if self.scratch_cleanup else 'false'
+                f.write('# EXIT trap: 결과를 NFS로 복사\n')
+                f.write('cleanup() {\n')
+                f.write('    echo ""\n')
+                f.write('    echo "========================================"\n')
+                f.write('    echo "결과 복사: scratch → NFS 원본 위치"\n')
+                f.write('    echo "========================================"\n')
+                f.write('    rsync -a $SCRATCH_DIR/ $ORIG_STEP_DIR/ 2>/dev/null || \\\n')
+                f.write('        cp -r $SCRATCH_DIR/* $ORIG_STEP_DIR/ 2>/dev/null || true\n')
+                f.write('    echo "결과 복사 완료"\n')
+                f.write(f'    if [ "{cleanup_flag}" = "true" ] && [ $EXIT_CODE -eq 0 ]; then\n')
+                f.write(f'        rm -rf {self.scratch_base}/$SLURM_JOB_ID/$RUNID\n')
+                f.write('        echo "Scratch 디렉토리 정리 완료"\n')
+                f.write('    else\n')
+                f.write('        echo "Scratch 디렉토리 유지: $SCRATCH_DIR"\n')
+                f.write('    fi\n')
+                f.write('}\n')
+                f.write('trap cleanup EXIT\n')
+                f.write("\n")
+                f.write('# 작업 디렉토리 → scratch\n')
+                f.write('STEP_DIR="$SCRATCH_DIR"\n')
+                f.write('RUNID_DIR="$(dirname $SCRATCH_DIR)"\n')
+            else:
+                f.write('# NFS에서 직접 실행\n')
+                f.write('STEP_DIR="$ORIG_STEP_DIR"\n')
+                f.write('RUNID_DIR="$ORIG_RUNID_DIR"\n')
+
+            f.write("\n")
             f.write("# ====================================================================\n")
             f.write("# metadata.json 읽기\n")
             f.write("# ====================================================================\n")
             f.write("\n")
-            f.write('METADATA_FILE="$STEP_DIR/metadata.json"\n')
+            f.write('METADATA_FILE="$ORIG_STEP_DIR/metadata.json"\n')
             f.write("\n")
             f.write('if [ ! -f "$METADATA_FILE" ]; then\n')
             f.write('    echo "❌ Metadata not found: $METADATA_FILE"\n')
@@ -720,7 +791,10 @@ class LargeScaleDOEManager:
             f.write('fi\n')
             f.write("\n")
 
-            f.write("EXIT_CODE=0\n")
+            if self.scratch_enabled:
+                f.write("EXIT_CODE=0\n")
+            else:
+                f.write("EXIT_CODE=0\n")
             f.write("\n")
 
             f.write("# ====================================================================\n")
@@ -736,7 +810,9 @@ class LargeScaleDOEManager:
             f.write('EOF\n')
             f.write("\n")
 
-            f.write('echo "✅ $RUNID Step {step_number} 완료 (Lock: $LOCK_FILE)"\n')
+            f.write(f'echo "✅ $RUNID Step {step_number} 완료 (Lock: $LOCK_FILE)"\n')
+            f.write("\n")
+            f.write("exit $EXIT_CODE\n")
 
         os.chmod(script_path, 0o755)
 

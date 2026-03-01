@@ -13,11 +13,40 @@
     "lsdyna_apptainer_bind": "/data:/data,/shared:/shared",
     "lsdyna_apptainer_env": {
       "LSTC_FILE": "/opt/ls-dyna_license/LSTC_FILE",
+      "LSTC_LICENSE_SERVER": "10.179.100.25",
       "FI_PROVIDER": "tcp",
       "I_MPI_FABRICS": "ofi",
       "LD_LIBRARY_PATH": "/opt/openmpi/lib"
     },
-    "koochainrun_path": "/data/SmartTwinPreprocessor/bin/KooChainRun"
+    "apptainer_tmpdir": "/data/tmp",
+    "nodes_per_job": 1,
+    "mpi_launcher": "mpirun",
+    "mpi_enabled": true,
+    "ncpu": 1,
+    "koochainrun_path": "/data/SmartTwinPreprocessor/bin/KooChainRun",
+    "time_limit": "168:00:00"
+  },
+  "simulation_params": {
+    "height": 1500,
+    "tFinal": 0.005,
+    "dt": 1e-06,
+    "density": 7850,
+    "youngs_modulus": 200000000000,
+    "poisson_ratio": 0.3,
+    "drop_surface": {
+      "type": "Plane",
+      "size": [
+        300,
+        300,
+        20
+      ],
+      "mesh": [
+        30,
+        30,
+        2
+      ],
+      "deformable_to_rigid": false
+    }
   },
   "scenarios": [
     {
@@ -26,8 +55,8 @@
       "angle_source": {
         "source_type": "pitching_sweep",
         "pitching_sweep": {
-          "pitch_start": -40,
-          "pitch_end": 40,
+          "pitch_min": -40,
+          "pitch_max": 40,
           "pitch_step": 1,
           "roll": 0,
           "yaw": 0

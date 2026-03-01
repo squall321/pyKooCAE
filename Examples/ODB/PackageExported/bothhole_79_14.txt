@@ -1,0 +1,16 @@
+*Translation,-3.69000024,-22.48000076,0.3910000000000001
+*Rotation,0
+*Mirror,False
+*IsTop,True
+*Layer,SolderJoint
+Location,0,0,0.0
+Length,0.000e+00,0.000e+00
+Thickness,8.000e-02
+MisalignmentAngle,0,0.0
+SurfaceTension,480.0
+Cylinder,0.000e+00,0.000e+00,1.050e+00
+*Layer,Package
+Location,0,0
+Thickness,5.000e-01
+Length,0.000e+00,0.000e+00
+*End

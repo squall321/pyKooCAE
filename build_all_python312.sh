@@ -111,6 +111,7 @@ echo ""
         --include-module=Runner.DOEParallelOptimizer \
         --include-module=Runner.NodeOccupancyMonitor \
         --include-module=Runner.DirectInputWorkflow \
+        --include-module=Runner.ImpactPositionSource \
         --jobs=8 \
         --show-progress
 
@@ -259,6 +260,37 @@ else
     echo "   수동 설치가 필요합니다."
 fi
 
+# /data/SmartTwinPreprocessor 추가 배포 (공유 스토리지)
+DATA_STP_DIR="/data/SmartTwinPreprocessor"
+if [ -d "$DATA_STP_DIR" ]; then
+    echo ""
+    echo "================================================================================"
+    echo "6/6: /data/SmartTwinPreprocessor에 추가 배포"
+    echo "================================================================================"
+    echo ""
+    echo "배포 대상: $DATA_STP_DIR"
+
+    echo "KooChainRun 배포 중..."
+    sudo rm -rf "$DATA_STP_DIR/lib/KooChainRun"
+    sudo cp -r "$LIB_DIR/KooChainRun" "$DATA_STP_DIR/lib/KooChainRun"
+    sudo ln -sf "../lib/KooChainRun/KooChainRun.bin" "$DATA_STP_DIR/bin/KooChainRun"
+
+    echo "KooMeshModifier 배포 중..."
+    sudo rm -rf "$DATA_STP_DIR/lib/KooMeshModifier"
+    sudo cp -r "$LIB_DIR/KooMeshModifier" "$DATA_STP_DIR/lib/KooMeshModifier"
+    sudo ln -sf "../lib/KooMeshModifier/KooMeshModifier.bin" "$DATA_STP_DIR/bin/KooMeshModifier"
+
+    echo "KooAutomatedModeller 배포 중..."
+    sudo rm -rf "$DATA_STP_DIR/lib/KooAutomatedModeller"
+    sudo cp -r "$LIB_DIR/KooAutomatedModeller" "$DATA_STP_DIR/lib/KooAutomatedModeller"
+    sudo ln -sf "../lib/KooAutomatedModeller/KooAutomatedModeller.bin" "$DATA_STP_DIR/bin/KooAutomatedModeller"
+
+    echo ""
+    echo "✅ /data/SmartTwinPreprocessor 배포 완료"
+    echo "   $DATA_STP_DIR/bin/KooChainRun --version:"
+    "$DATA_STP_DIR/bin/KooChainRun" --version 2>&1 || true
+fi
+
 echo ""
 echo "================================================================================"
 echo "전체 완료!"
@@ -266,6 +298,9 @@ echo "==========================================================================
 echo ""
 echo "빌드 출력: $BUILD_DIR"
 echo "설치 위치: $STP_DIR"
+if [ -d "$DATA_STP_DIR" ]; then
+    echo "추가 배포: $DATA_STP_DIR"
+fi
 echo ""
 echo "환경 설정:"
 echo "  export PATH=$STP_DIR/bin:\$PATH"

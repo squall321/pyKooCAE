@@ -2044,7 +2044,115 @@ class KooDynaImporter():
         self.additionalManager.WriteStreamDynaKeyword(stream)
         return stream.getvalue()
         
-    def ExportDynaString(self):  
+    def WriteStreamBaseKeyword(self, exclude_nodeset_sids=None, exclude_d2r=True):
+        """베이스 모델 직렬화 (FastDOE용). nodeSetFixed와 D2R을 제외."""
+        stream = StringIO()
+        if len(self.title) > 0:
+            stream.write("*TITLE\n")
+            stream.write(self.title)
+            stream.write('\n')
+        self.controlManager.WriteStreamDynaKeyword(stream)
+        self.databaseManager.WriteStreamDynaKeyword(stream)
+        self.contactManager.WriteStreamDynaKeyword(stream, 0)
+        self.dampingManager.WriteStreamDynaKeyword(stream, 0)
+        self.matManager.WriteStreamDynaKeyword(stream, 0)
+        self.sectionManager.WriteStreamDynaKeyword(stream)
+        self.partManager.WriteStreamDynaKeyword(stream, 0, 0, 0)
+        self.nodeManager.WriteStreamDynaKeyword(stream, 0)
+        if len(self.partManager.elementManager.elements) > 0:
+            self.partManager.elementManager.WriteStreamDynaKeyword(stream, 0, 0, 0)
+        # nodeSetManager — exclude specified SIDs
+        if exclude_nodeset_sids:
+            for key in self.nodeSetManager.nodeSets:
+                if key not in exclude_nodeset_sids:
+                    self.nodeSetManager.nodeSets[key].WriteStreamDynaKeyword(stream, 0)
+        else:
+            self.nodeSetManager.WriteStreamDynaKeyword(stream, 0)
+        self.segmentSetManager.WriteStreamDynaKeyword(stream, 0)
+        self.defineManager.WriteStreamDynaKeyword(stream, 0)
+        self.loadManager.WriteStreamDynaKeyword(stream, 0)
+        self.boundaryNodeManager.WriteStreamDynaKeyword(stream, 0)
+        self.initialManager.WriteStreamDynaKeyword(stream, 0)
+        self.constrainedManager.WriteStreamDynaKeyword(stream, 0)
+        # additionalManager — exclude D2R if requested
+        if exclude_d2r:
+            for key in self.additionalManager.rigidwalls:
+                self.additionalManager.rigidwalls[key].WriteStreamDynaKeyword(stream)
+            for key in self.additionalManager.hourglasses:
+                self.additionalManager.hourglasses[key].WriteStreamDynaKeyword(stream)
+            for key in self.additionalManager.interfaces:
+                self.additionalManager.interfaces[key].WriteStreamDynaKeyword(stream)
+        else:
+            self.additionalManager.WriteStreamDynaKeyword(stream)
+        return stream.getvalue()
+
+    def WriteStreamDeltaKeyword(self, base_state):
+        """delta만 직렬화 (FastDOE용). base 이후 추가된 항목만."""
+        stream = StringIO()
+        # 1a. 새 파트 (base에 없던 PID)
+        for pid in self.partManager.parts:
+            if pid not in base_state["part_ids"]:
+                part = self.partManager.parts[pid]
+                part.WriteStreamDynaPart(stream, 0)
+                if len(part.elementManager.elements) > 0:
+                    part.WriteStreamDynaElements(stream, 0, 0)
+        # 1b. 재사용 파트의 새 요소 (base에 있지만 DOE마다 요소 재생성)
+        for pid in base_state.get("reusable_part_ids", set()):
+            if pid in self.partManager.parts:
+                part = self.partManager.parts[pid]
+                if len(part.elementManager.elements) > 0:
+                    part.WriteStreamDynaElements(stream, 0, 0)
+        # 2. 새 노드 (ID > base max_nid)
+        self.nodeManager.WriteStreamDeltaNodes(stream, base_state["max_nid"])
+        # 3. 새 접촉
+        for cid in self.contactManager.contacts:
+            if cid not in base_state["contact_keys"]:
+                self.contactManager.contacts[cid].WriteStreamDynaKeyword(stream, 0)
+        # 4. 새 초기조건
+        for iid in self.initialManager.inits:
+            if iid not in base_state["initial_keys"]:
+                self.initialManager.inits[iid].WriteStreamDynaKeyword(stream, 0)
+        # 5. 제외했던 nodeSet (nodeSetFixed 등)
+        for nsid in base_state.get("excluded_nodeset_sids", set()):
+            if nsid in self.nodeSetManager.nodeSets:
+                self.nodeSetManager.nodeSets[nsid].WriteStreamDynaKeyword(stream, 0)
+        # 6. D2R automatics
+        for key in self.additionalManager.d2r_automatics:
+            self.additionalManager.d2r_automatics[key].WriteStreamDynaKeyword(stream)
+        return stream.getvalue()
+
+    def WriteStreamPreNodesKeyword(self):
+        """노드 섹션 이전까지 직렬화 (섹션 1-7): TITLE~partManager (Group C FastDOE용)"""
+        stream = StringIO()
+        if len(self.title) > 0:
+            stream.write("*TITLE\n")
+            stream.write(self.title)
+            stream.write('\n')
+        self.controlManager.WriteStreamDynaKeyword(stream)
+        self.databaseManager.WriteStreamDynaKeyword(stream)
+        self.contactManager.WriteStreamDynaKeyword(stream, 0)
+        self.dampingManager.WriteStreamDynaKeyword(stream, 0)
+        self.matManager.WriteStreamDynaKeyword(stream, 0)
+        self.sectionManager.WriteStreamDynaKeyword(stream)
+        self.partManager.WriteStreamDynaKeyword(stream, 0, 0, 0)
+        return stream.getvalue()
+
+    def WriteStreamPostNodesKeyword(self):
+        """노드 섹션 이후 직렬화 (섹션 9-17): elementManager~additional (Group C FastDOE용)"""
+        stream = StringIO()
+        if len(self.partManager.elementManager.elements) > 0:
+            self.partManager.elementManager.WriteStreamDynaKeyword(stream, 0, 0, 0)
+        self.nodeSetManager.WriteStreamDynaKeyword(stream, 0)
+        self.segmentSetManager.WriteStreamDynaKeyword(stream, 0)
+        self.defineManager.WriteStreamDynaKeyword(stream, 0)
+        self.loadManager.WriteStreamDynaKeyword(stream, 0)
+        self.boundaryNodeManager.WriteStreamDynaKeyword(stream, 0)
+        self.initialManager.WriteStreamDynaKeyword(stream, 0)
+        self.constrainedManager.WriteStreamDynaKeyword(stream, 0)
+        self.additionalManager.WriteStreamDynaKeyword(stream)
+        return stream.getvalue()
+
+    def ExportDynaString(self):
         keyword = ""      
         if len(self.title) > 0:
             keyword += "*TITLE\n"

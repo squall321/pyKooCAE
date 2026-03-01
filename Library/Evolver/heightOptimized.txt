@@ -1,0 +1,8 @@
+Logfile ON.
+Enter command: print 0.0649926627227041
+  0.0649926627227041
+Enter command: print sqrt((zt-(0.015007337277295902))^2+(yt-(-0.6187554998700074))^2+(xt-(0.24749836087013075))^2)
+   0.142158249761684
+Enter command: logfile
+Logfile ON. (was on)
+Enter command: q

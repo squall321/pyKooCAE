@@ -1,0 +1,37 @@
+
+
+ When error termination was triggered, this processor was
+ in unknown location          0
+
+ E r r o r   t e r m i n a t i o n                             02/15/26 22:15:21
+
+ S t o r a g e   a l l o c a t i o n   
+
+ Memory required to complete solution   :        0
+ Additional dynamically allocated memory:     148K
+                                   Total:     148K
+
+
+ P r o c e s s o r   #         0
+
+ T i m i n g   i n f o r m a t i o n
+                        CPU(seconds)   %CPU  Clock(seconds) %Clock
+  ----------------------------------------------------------------
+  Initialization ....... 6.6543E-04  100.00     2.7239E-02  100.00
+  ----------------------------------------------------------------
+  T o t a l s            6.6543E-04  100.00     2.7239E-02  100.00
+
+ Problem time       =    0.0000E+00
+ Problem cycle      =         0
+ Total CPU time     =         0 seconds (   0 hours  0 minutes  0 seconds)
+ CPU time per zone cycle  =          0.000 picoseconds
+ Clock time per zone cycle=          0.000 picoseconds
+
+ Parallel execution with      1 MPP proc
+ NLQ used/max               120/   120
+ Start time   02/15/2026 22:15:21  
+ End time     02/15/2026 22:15:21  
+ Elapsed time       0 second  for       0 cycles using     1 MPP proc 
+             (      0 hour   0 minute   0 second )
+
+ E r r o r   t e r m i n a t i o n                             02/15/26 22:15:21

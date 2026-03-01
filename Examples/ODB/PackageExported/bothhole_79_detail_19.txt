@@ -1,0 +1,19 @@
+*Translation,-2.3500003799999996,-21.450000279999998,0.3910000000000001
+*Rotation,0
+*Mirror,False
+*IsTop,True
+*Layer,SolderJointWarpage,SolderJointWarped
+Location,0,0,0.0
+Length,0.000e+00,0.000e+00
+Thickness,8.000e-02
+DetailSolder,True
+MisalignmentAngle,0,0.0
+SurfaceTension,480.0
+SMD,PIN1,0.000e+00,0.000e+00,1.050e+00,0.000e+00,0.000e+00,1.050e+00,1.575e+00,0.01,0.01,None
+*Layer,PackageWarpage,Defined
+Location,0,0
+Thickness,5.000e-01
+Part,Polynomial,Solid,1
+OB 0.000e+00 0.000e+00 I
+OE
+*End

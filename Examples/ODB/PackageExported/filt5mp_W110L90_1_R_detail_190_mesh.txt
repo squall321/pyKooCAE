@@ -1,0 +1,45 @@
+*Translation,31.46000058,-16.31499912,0.3910000000000001
+*Rotation,270
+*Mirror,False
+*IsTop,True
+*Layer,SolderJointWarpage,SolderJointWarped
+Location,0,0,0.0
+Length,1.375e+00,1.175e+00
+Thickness,8.000e-02
+MeshGenerationType,Solid,Tetra
+MeshPath,PackageMesh
+MeshSizeInPlane,0.1
+NumberofElementinThickness,5
+MaterialID,1
+DetailSolder,True
+MisalignmentAngle,0,0.0
+SurfaceTension,480.0
+SMD,PIN1,-4.000e-01,0.000e+00,1.500e-01,-4.000e-01,0.000e+00,1.500e-01,2.250e-01,0.01,0.01,None
+SMD,PIN2,0.000e+00,-2.500e-01,1.500e-01,0.000e+00,-2.500e-01,1.500e-01,2.250e-01,0.01,0.01,None
+SMD,PIN3,4.000e-01,-2.500e-01,1.500e-01,4.000e-01,-2.500e-01,1.500e-01,2.250e-01,0.01,0.01,None
+SMD,PIN4,4.000e-01,2.500e-01,1.500e-01,4.000e-01,2.500e-01,1.500e-01,2.250e-01,0.01,0.01,None
+SMD,PIN5,0.000e+00,2.500e-01,1.500e-01,0.000e+00,2.500e-01,1.500e-01,2.250e-01,0.01,0.01,None
+*Layer,PackageWarpage,Defined
+Location,0,0
+Thickness,5.000e-01
+MeshGenerationType,Solid,Hexa
+MeshPath,PackageMesh
+MeshSizeInPlane,0.1
+NumberofElementinXDirection,20
+NumberofElementinYDirection,20
+NumberofElementinThickness,3
+Part,Polynomial,Solid,1
+OB 6.500e-01 -5.500e-01 I
+OS -4.250e-01 -5.500e-01
+OS -4.250e-01 -6.250e-01
+OS -7.250e-01 -6.250e-01
+OS -7.250e-01 -3.250e-01
+OS -6.500e-01 -3.250e-01
+OS -6.500e-01 5.500e-01
+OS 6.500e-01 5.500e-01
+OS 6.500e-01 -5.500e-01
+OE
+MaterialID,2
+*Material
+Material.txt
+*End

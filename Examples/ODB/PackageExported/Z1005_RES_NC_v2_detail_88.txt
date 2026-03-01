@@ -1,0 +1,24 @@
+*Translation,-15.00000048,-18.74000062,0.0
+*Rotation,0
+*Mirror,False
+*IsTop,False
+*Layer,PackageWarpage,Defined
+Location,0,0,0.0
+Length,1.500e+00,1.050e+00
+Thickness,3.000e-02
+MisalignmentAngle,0,0.0
+SurfaceTension,480.0
+BoxWarpage,-4.700e-01,-2.800e-01,4.100e-01,5.600e-01
+BoxWarpage,6.000e-02,-2.800e-01,4.100e-01,5.600e-01
+*Layer,PackageWarpage,Defined
+Location,0,0
+Thickness,5.000e-01
+Part,Polynomial,Solid,1
+OB -7.500e-01 -5.250e-01 I
+OS -7.500e-01 4.250e-01
+OS -6.500e-01 5.250e-01
+OS 7.500e-01 5.250e-01
+OS 7.500e-01 -5.250e-01
+OS -7.500e-01 -5.250e-01
+OE
+*End

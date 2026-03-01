@@ -1592,6 +1592,12 @@ class NodeManager:
             return True
         else:
             return False
+
+    def RemoveNodesAboveID(self, max_id):
+        """ID > max_id인 노드만 삭제 (FastDOE용)"""
+        to_remove = [nid for nid in self.nodes if nid > max_id]
+        for nid in to_remove:
+            del self.nodes[nid]
     
     def ReorderNodeID(self,startid=1):
         newNodes = {}
@@ -1740,6 +1746,17 @@ class NodeManager:
         
         stream.write(''.join(lines))
          
+    def WriteStreamDeltaNodes(self, stream, min_id, startID=0):
+        """ID > min_id인 노드만 직렬화 (FastDOE용)"""
+        delta_nodes = [n for n in self.nodes.values() if n.id > min_id]
+        if not delta_nodes:
+            return
+        stream.write("*NODE\n$$   NID               X               Y               Z      TC      RC\n")
+        lines = [f"{n.id+startID:>8}{n.x:>16.8e}{n.y:>16.8e}"
+                f"{n.z:>16.8e}{n.tc:>8}{n.rc:>8}\n"
+                for n in delta_nodes]
+        stream.write(''.join(lines))
+
     def WriteStreamDynaKeywordPrev(self, stream, startID):
         stream.write("*NODE\n")
         stream.write("$$   NID               X               Y               Z      TC      RC\n")

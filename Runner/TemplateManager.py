@@ -28,6 +28,7 @@ from enum import Enum
 class SimulationMode(Enum):
     """시뮬레이션 모드"""
     DROP = "DROP"              # 낙하
+    IMPACT = "IMPACT"          # 충격 (DropWeightImpactTest)
     THERM = "THERM"            # 열응력
     STAT = "STAT"              # 정적 하중
     VIB = "VIB"                # 진동
@@ -39,6 +40,8 @@ class TemplateType(Enum):
     """템플릿 타입"""
     DROP_FIRST = "DROP_FIRST"                      # 첫 번째 낙하
     DROP_CUMULATIVE = "DROP_CUMULATIVE"            # 누적 낙하
+    IMPACT_FIRST = "IMPACT_FIRST"                  # 첫 번째 충격
+    IMPACT_CUMULATIVE = "IMPACT_CUMULATIVE"        # 누적 충격
     THERMAL_FIRST = "THERMAL_FIRST"                # 첫 번째 열해석
     THERMAL_CUMULATIVE = "THERMAL_CUMULATIVE"      # 누적 열해석
     THERMAL_TO_DROP = "THERMAL_TO_DROP"            # 열→낙하 전환
@@ -70,6 +73,16 @@ TEMPLATE_DEFINITIONS = {
     TemplateType.DROP_CUMULATIVE: TemplateInfo(
         template_type=TemplateType.DROP_CUMULATIVE,
         description="누적 낙하 (DYNAIN_TO_INITIAL → DROP_ATTITUDE, DR 자동 재추가)",
+        requires_dynain=True
+    ),
+    TemplateType.IMPACT_FIRST: TemplateInfo(
+        template_type=TemplateType.IMPACT_FIRST,
+        description="첫 번째 충격 (DROP_WEIGHT_IMPACT_TEST 실행)",
+        requires_dynain=False
+    ),
+    TemplateType.IMPACT_CUMULATIVE: TemplateInfo(
+        template_type=TemplateType.IMPACT_CUMULATIVE,
+        description="누적 충격 (DYNAIN_TO_INITIAL → DROP_WEIGHT_IMPACT_TEST)",
         requires_dynain=True
     ),
     TemplateType.THERMAL_FIRST: TemplateInfo(
@@ -133,6 +146,8 @@ def select_template_for_step(
     if step == 1:
         if mode == SimulationMode.DROP:
             return TemplateType.DROP_FIRST
+        elif mode == SimulationMode.IMPACT:
+            return TemplateType.IMPACT_FIRST
         elif mode == SimulationMode.THERM:
             return TemplateType.THERMAL_FIRST
         else:
@@ -151,6 +166,10 @@ def select_template_for_step(
             else:
                 # 낙하→낙하 (누적 낙하)
                 return TemplateType.DROP_CUMULATIVE
+
+        elif mode == SimulationMode.IMPACT:
+            # IMPACT 모드
+            return TemplateType.IMPACT_CUMULATIVE
 
         elif mode == SimulationMode.THERM:
             # THERM 모드 (항상 누적)

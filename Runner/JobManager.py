@@ -80,8 +80,47 @@ class JobManager:
         return f"{project}_CUM{total_steps:03d}_DOE{doe_index:03d}_S{step_num:03d}_{mode}_{condition}"
 
     def _load_simulation_index(self, runner_config: dict) -> dict:
-        """simulation_index.json 로드"""
+        """simulation_index.json 로드
+
+        scratch_run 모드에서는 DOE별 index 파일들을 자동 병합합니다.
+        """
+        output_dir = runner_config["project"].get("output_dir", "")
         index_file = runner_config["project"].get("index_file")
+
+        # scratch 모드: DOE별 index 파일이 있으면 병합
+        doe_index_pattern = os.path.join(output_dir, "simulation_index_doe_*.json")
+        doe_index_files = sorted(glob.glob(doe_index_pattern))
+
+        if doe_index_files:
+            merged = None
+            for idx_file in doe_index_files:
+                try:
+                    with open(idx_file, 'r', encoding='utf-8') as f:
+                        content = f.read().strip()
+                        if not content:
+                            continue
+                        doe_index = json.loads(content)
+                except (json.JSONDecodeError, IOError):
+                    continue
+
+                if merged is None:
+                    merged = doe_index
+                else:
+                    if "scenarios" in doe_index and doe_index["scenarios"]:
+                        doe_runs = doe_index["scenarios"][0].get("runs", {})
+                        merged["scenarios"][0]["runs"].update(doe_runs)
+
+            if merged:
+                # 병합 결과를 메인 index에도 저장
+                if index_file:
+                    try:
+                        with open(index_file, 'w', encoding='utf-8') as f:
+                            json.dump(merged, f, indent=2, ensure_ascii=False)
+                    except IOError:
+                        pass
+                return merged
+
+        # 일반 모드: 메인 index 파일 로드
         if index_file and os.path.exists(index_file):
             with open(index_file, 'r', encoding='utf-8') as f:
                 content = f.read().strip()

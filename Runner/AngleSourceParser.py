@@ -163,17 +163,9 @@ def parse_fibonacci_lattice(config: FibonacciLatticeConfig) -> List[Tuple[str, f
     """
     Fibonacci Lattice 각도 생성
 
-    Fibonacci 포인트 공식:
-        phi = (1 + sqrt(5)) / 2
-        golden_angle = 2 * pi * (1 - 1/phi) ≈ 137.508°
-
-        theta_i = acos(1 - 2*i/(N-1))  # Polar angle [0, π]
-        phi_i = i * golden_angle % (2*pi)  # Azimuthal angle [0, 2π]
-
-        # Euler 각도 변환 (Drop 방향 = -Z)
-        roll = degrees(phi_i) - 180
-        pitch = degrees(theta_i) - 90
-        yaw = 0
+    fibonacci_lattice_generator.py와 동일한 알고리즘 사용:
+        1. fibonacci_sphere(N)으로 구면 균등 분포 (x, y, z) 생성
+        2. vector_to_euler(x, y, z)로 오일러 각도 변환
 
     Returns:
         List of (name, roll, pitch, yaw)
@@ -185,22 +177,29 @@ def parse_fibonacci_lattice(config: FibonacciLatticeConfig) -> List[Tuple[str, f
         26
     """
     N = config.num_points
-
-    # Golden angle
-    phi = (1 + math.sqrt(5)) / 2
-    golden_angle = 2 * math.pi * (1 - 1/phi)  # ≈ 137.508°
+    golden_angle = math.pi * (3.0 - math.sqrt(5.0))  # ≈ 137.508°
 
     angles = []
 
     for i in range(N):
-        # Fibonacci 포인트 계산
-        theta_i = math.acos(1 - 2*i/(N-1))  # Polar angle [0, π]
-        phi_i = (i * golden_angle) % (2*math.pi)  # Azimuthal angle [0, 2π]
+        # 구면 균등 분포 점 생성
+        y = 1 - (i / float(N - 1)) * 2 if N > 1 else 0
+        radius = math.sqrt(1 - y * y)
+        theta = golden_angle * i
 
-        # Euler 각도 변환
-        roll = math.degrees(phi_i) - 180
-        pitch = math.degrees(theta_i) - 90
-        yaw = 0.0
+        x = math.cos(theta) * radius
+        z = math.sin(theta) * radius
+
+        # 오일러 각도 변환
+        r = math.sqrt(x*x + y*y + z*z)
+        if r == 0:
+            roll, pitch, yaw = 0.0, 0.0, 0.0
+        else:
+            lat = math.asin(max(-1, min(1, y / r)))
+            lon = math.atan2(z, x)
+            roll = round(math.degrees(lat) - 90, 2)
+            pitch = round(-math.degrees(lon), 2)
+            yaw = 0.0
 
         name = f"P{i+1:04d}"
         angles.append((name, roll, pitch, yaw))

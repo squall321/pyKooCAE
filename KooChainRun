@@ -166,6 +166,17 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         action='store_true',
         help='Resume from checkpoint'
     )
+    run_parser.add_argument(
+        '--skip-koomeshmodifier',
+        action='store_true',
+        help='KooMeshModifier 실행 생략 (batch 사전 생성 모드에서 사용)'
+    )
+    run_parser.add_argument(
+        '--pregenerated-dir',
+        type=str,
+        default=None,
+        help='사전 생성된 DropSet.k 파일이 있는 디렉토리 경로'
+    )
 
     # ========================================================================
     # KooChainRun collect: Collect results
@@ -368,12 +379,204 @@ def _submit_large_scale(args, config_path):
         sys.exit(1)
 
 
+def _prepare_batch_koomeshmodifier(runner_config, output_dir, env):
+    """Batch KooMeshModifier용 config 파일 생성 및 실행 명령어 반환
+
+    batch_config.txt를 생성하고, KooMeshModifier 실행 명령어를 반환합니다.
+    실제 실행은 _submit_cumulative()에서 Popen으로 백그라운드 실행합니다.
+
+    Returns:
+        tuple: (pregenerated_dir, cmd_list) 성공 시, (None, None) 실패 시
+    """
+    doe_count = runner_config["scenario"]["doe_count"]
+    doe_angles = runner_config["scenario"].get("doe_angles", {})
+    model_file = runner_config["project"]["model_file"]
+    project_name = runner_config["project"]["name"]
+    sim_params = runner_config.get("simulation_params", {})
+
+    pregenerated_dir = str(Path(output_dir) / "pregenerated")
+    os.makedirs(pregenerated_dir, exist_ok=True)
+
+    # DOE별 각도 추출 (1-based index)
+    rolls, pitches, yaws, runids = [], [], [], []
+    for doe_idx in range(1, doe_count + 1):
+        doe_key = str(doe_idx)
+        if doe_key in doe_angles and "1" in doe_angles[doe_key]:
+            angle = doe_angles[doe_key]["1"]
+            rolls.append(str(angle["roll"]))
+            pitches.append(str(angle["pitch"]))
+            yaws.append(str(angle["yaw"]))
+        else:
+            rolls.append("0")
+            pitches.append("0")
+            yaws.append("0")
+        runids.append(str(doe_idx))
+
+    # simulation_params에서 값 가져오기
+    height = sim_params.get("height", 1500)
+    tFinal = sim_params.get("tFinal", 0.005)
+    dt = sim_params.get("dt", 0.000001)
+    density = sim_params.get("density", 7850)
+    youngs_modulus = sim_params.get("youngs_modulus", 200000000000)
+    poisson_ratio = sim_params.get("poisson_ratio", 0.3)
+
+    # drop_surface 설정
+    drop_surface = sim_params.get("drop_surface", {})
+    ds_type = drop_surface.get("type", "Plane")
+    ds_size = drop_surface.get("size", [300, 300, 20])
+    ds_mesh = drop_surface.get("mesh", [30, 30, 2])
+    drop_surface_line = f"DropSurface,{ds_type},{ds_size[0]},{ds_size[1]},{ds_size[2]},{ds_mesh[0]},{ds_mesh[1]},{ds_mesh[2]}"
+
+    # roughness 추가 (PlanewithRoughness 타입)
+    if ds_type == "PlanewithRoughness":
+        roughness = drop_surface.get("roughness_mode", "Random")
+        r_max = drop_surface.get("r_max", 0.0)
+        sf1 = drop_surface.get("shape_factor", 0.0)
+        sf2 = drop_surface.get("shape_factor2", sf1)
+        drop_surface_line += f",{roughness},{r_max},{sf1},{sf2}"
+
+    # DeformableToRigid 옵션
+    d2r_enabled = drop_surface.get("deformable_to_rigid", False)
+    d2r_line = "\nDeformableToRigid,True" if d2r_enabled else ""
+
+    n = doe_count
+    height_list = ",".join([str(height)] * n)
+    zeros = ",".join(["0"] * n)
+
+    # batch config 파일 생성
+    batch_config_content = f"""*Inputfile
+{model_file}
+*RunDirectoryMode,True,{pregenerated_dir},{pregenerated_dir}
+*Info,{project_name},Step1
+*Description,Batch pre-generation for {doe_count} DOEs
+*Creator,automation,auto@system.com,CAE,AUTO
+*Mode
+DROP_ATTITUDE,1
+**DropAttitude,1
+Runid,{','.join(runids)}
+EulerRolling,{','.join(rolls)}
+EulerPitching,{','.join(pitches)}
+EulerYawing,{','.join(yaws)}
+Height,{height_list}
+InitialVelocityX,{zeros}
+InitialVelocityY,{zeros}
+InitialVelocityZ,{zeros}
+InitialAngularVelocityX,{zeros}
+InitialAngularVelocityY,{zeros}
+InitialAngularVelocityZ,{zeros}
+OffsetDistance,0.1
+Density,{density}
+YoungsModulus,{youngs_modulus}
+PoissonRatio,{poisson_ratio}
+tFinal,{tFinal}
+dt,{dt}
+{drop_surface_line}{d2r_line}
+**EndDropAttitude
+*End
+"""
+
+    batch_config_path = os.path.join(pregenerated_dir, "batch_config.txt")
+    with open(batch_config_path, 'w', encoding='utf-8') as f:
+        f.write(batch_config_content)
+
+    print(f"  Batch config 생성: {batch_config_path}")
+
+    # KooMeshModifier 실행 명령어 (Apptainer로 래핑하여 헤드노드에서 실행)
+    koomesh_path = env.get("koomeshmodifier_path", "/opt/SmartTwinPreprocessor/bin/KooMeshModifier")
+
+    apptainer_sif = env.get("apptainer_sif", "")
+    apptainer_bind = env.get("apptainer_bind", "")
+    apptainer_env = env.get("apptainer_env", {})
+    apptainer_tmpdir = env.get("apptainer_tmpdir", "")
+
+    if apptainer_sif:
+        # Apptainer 래핑: 컨테이너 내부 경로 그대로 사용
+        if apptainer_tmpdir:
+            os.makedirs(apptainer_tmpdir, exist_ok=True)
+            os.environ["APPTAINER_TMPDIR"] = apptainer_tmpdir
+
+        cmd = ["apptainer", "exec"]
+        if apptainer_bind:
+            cmd.extend(["--bind", apptainer_bind])
+        for key, value in apptainer_env.items():
+            cmd.extend(["--env", f"{key}={value}"])
+        cmd.append(apptainer_sif)
+        cmd.extend([koomesh_path, batch_config_path])
+        print(f"  Apptainer 래핑 사용: {apptainer_sif}")
+    else:
+        # Apptainer 미설정 시: 호스트 경로로 직접 실행
+        if koomesh_path.startswith("/opt/"):
+            kcr_host = env.get("koochainrun_path", "")
+            if kcr_host:
+                host_bin_dir = str(Path(kcr_host).parent)
+                host_koomesh = os.path.join(host_bin_dir, "KooMeshModifier")
+                if os.path.isfile(host_koomesh):
+                    print(f"  KooMeshModifier 호스트 경로 사용: {host_koomesh}")
+                    koomesh_path = host_koomesh
+        cmd = [koomesh_path, batch_config_path]
+
+    return pregenerated_dir, cmd
+
+
+def _merge_doe_indexes(output_dir):
+    """scratch 모드에서 DOE별로 생성된 simulation_index_doe_N.json 파일들을 병합
+
+    Args:
+        output_dir: output 디렉토리 경로
+
+    Returns:
+        dict: 병합된 simulation_index 데이터
+    """
+    import json
+    import glob
+
+    merged_index = None
+    index_files = sorted(glob.glob(os.path.join(output_dir, "simulation_index_doe_*.json")))
+
+    if not index_files:
+        # DOE별 index가 없으면 기존 통합 index 반환
+        main_index_path = os.path.join(output_dir, "simulation_index.json")
+        if os.path.exists(main_index_path):
+            with open(main_index_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return None
+
+    for idx_file in index_files:
+        try:
+            with open(idx_file, 'r', encoding='utf-8') as f:
+                doe_index = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            continue
+
+        if merged_index is None:
+            merged_index = doe_index
+        else:
+            # runs 병합 (scenarios[0].runs)
+            if "scenarios" in doe_index and doe_index["scenarios"]:
+                doe_runs = doe_index["scenarios"][0].get("runs", {})
+                merged_index["scenarios"][0]["runs"].update(doe_runs)
+
+    if merged_index:
+        # 병합 결과 저장
+        merged_path = os.path.join(output_dir, "simulation_index.json")
+        with open(merged_path, 'w', encoding='utf-8') as f:
+            json.dump(merged_index, f, indent=2, ensure_ascii=False)
+
+    return merged_index
+
+
 def _submit_cumulative(args, config_path):
     """DOE별 개별 slurm job 제출 (cumulative 방식)
 
     각 DOE를 독립적인 slurm job으로 제출합니다.
     각 job 내부에서 KooChainRun run --doe N 을 실행하여
     MeshModifier → LS-DYNA → dynain → 다음 step 파이프라인을 수행합니다.
+
+    지원 모드:
+      - 기본: 각 DOE에서 KooMeshModifier + LS-DYNA 실행
+      - scratch_run: compute node 로컬 scratch에서 실행 후 결과 복사
+      - batch_koomeshmodifier: 헤드노드에서 KooMeshModifier 일괄 실행 후 LS-DYNA만 제출
+      - scratch_run + batch: 두 기능 결합
     """
     import json
     import subprocess
@@ -392,6 +595,9 @@ def _submit_cumulative(args, config_path):
     doe_count = runner_config["scenario"]["doe_count"]
     project_name = runner_config["project"]["name"]
     output_dir = runner_config["project"]["output_dir"]
+    model_file = runner_config["project"]["model_file"]
+    model_dir = str(Path(model_file).parent)
+    model_basename = Path(model_file).name
 
     # KooChainRun 실행 파일 경로: environment에서 우선, 없으면 자기 자신 경로
     env = runner_config.get("environment", {})
@@ -402,9 +608,19 @@ def _submit_cumulative(args, config_path):
     partition = args.partition if args.partition != 'normal' else env.get("partition", "normal")
     time_limit = args.time_limit if args.time_limit != '24:00:00' else env.get("time_limit", "24:00:00")
 
-    # apptainer_env 또는 lsdyna_apptainer_env에서 APPTAINER_TMPDIR 읽기
-    apptainer_tmpdir = env.get("apptainer_env", {}).get("APPTAINER_TMPDIR") or \
+    # apptainer_tmpdir 읽기
+    apptainer_tmpdir = env.get("apptainer_tmpdir") or \
+                       env.get("apptainer_env", {}).get("APPTAINER_TMPDIR") or \
                        env.get("lsdyna_apptainer_env", {}).get("APPTAINER_TMPDIR")
+
+    # scratch_run 설정
+    scratch_cfg = env.get("scratch_run", {})
+    scratch_enabled = scratch_cfg.get("enabled", False)
+    scratch_base = scratch_cfg.get("scratch_base", "/scratch")
+    scratch_cleanup = scratch_cfg.get("cleanup_on_success", True)
+
+    # batch_koomeshmodifier 설정
+    batch_koomesh = runner_config.get("scenario", {}).get("batch_koomeshmodifier", False)
 
     print(f"Partition:  {partition}")
     print(f"CPUs/job:   {args.ncpu_per_job}")
@@ -412,6 +628,10 @@ def _submit_cumulative(args, config_path):
     print(f"Time limit: {time_limit}")
     if apptainer_tmpdir:
         print(f"APPTAINER_TMPDIR: {apptainer_tmpdir}")
+    if scratch_enabled:
+        print(f"Scratch:    활성 (base: {scratch_base})")
+    if batch_koomesh:
+        print(f"Batch KooMeshModifier: 활성")
     print()
 
     print(f"Project:    {project_name}")
@@ -434,28 +654,147 @@ def _submit_cumulative(args, config_path):
         "config_path": str(config_path),
         "submitted_at": datetime.now().isoformat(),
         "doe_count": doe_count,
+        "scratch_run": scratch_enabled,
+        "batch_koomeshmodifier": batch_koomesh,
         "jobs": {}
     }
 
     submitted_jobs = []
 
+    # ====================================================================
+    # DOE sbatch 스크립트 사전 생성 (batch/일반 공통)
+    # ====================================================================
+    apptainer_tmpdir_line = f"export APPTAINER_TMPDIR={apptainer_tmpdir}" if apptainer_tmpdir else "# APPTAINER_TMPDIR not configured"
+
+    # batch 모드: config 준비
+    pregenerated_dir = None
+    koomesh_cmd = None
+    if batch_koomesh:
+        pregenerated_dir, koomesh_cmd = _prepare_batch_koomeshmodifier(runner_config, output_dir, env)
+        if pregenerated_dir is None:
+            print("  Batch config 생성 실패. 일반 모드로 전환합니다.")
+            batch_koomesh = False
+
+    # DOE별 sbatch 스크립트 생성
+    doe_scripts = {}  # doe_idx → script_path
     for doe_idx in range(1, doe_count + 1):
         job_name = f"{project_name}_DOE{doe_idx:03d}"
         script_path = slurm_dir / f"run_doe_{doe_idx:03d}.sh"
         log_path = slurm_dir / f"doe_{doe_idx:03d}_%j.log"
 
-        # Slurm 스크립트 생성
-        script_content = f"""#!/bin/bash
+        sbatch_header = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH --partition={partition}
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task={args.ncpu_per_job}
+#SBATCH --ntasks={args.ncpu_per_job}
+#SBATCH --cpus-per-task=1
 #SBATCH --mem={memory}
 #SBATCH --time={time_limit}
 #SBATCH --output={log_path}
 #SBATCH --error={log_path}
-{f"export APPTAINER_TMPDIR={apptainer_tmpdir}" if apptainer_tmpdir else "# APPTAINER_TMPDIR not configured"}
+"""
+
+        if scratch_enabled:
+            pregenerated_copy = ""
+            if batch_koomesh and pregenerated_dir:
+                pregenerated_copy = f"""
+# Pre-generated DropSet.k 복사
+PREGENERATED_DIR=$SCRATCH_DIR/pregenerated
+mkdir -p $PREGENERATED_DIR
+cp -r {pregenerated_dir}/Run_{doe_idx} $PREGENERATED_DIR/
+echo "Pre-generated 파일 복사 완료: $PREGENERATED_DIR"
+"""
+                run_cmd_resolved = f"{kcr_path} run $SCRATCH_DIR/runner_config.json --doe {doe_idx} --skip-koomeshmodifier --pregenerated-dir $PREGENERATED_DIR"
+            else:
+                run_cmd_resolved = f"{kcr_path} run $SCRATCH_DIR/runner_config.json --doe {doe_idx}"
+
+            script_content = sbatch_header + f"""{apptainer_tmpdir_line}
+
+echo "========================================"
+echo "Job: {job_name} (scratch mode)"
+echo "DOE: {doe_idx}/{doe_count}"
+echo "Node: $(hostname)"
+echo "Start: $(date)"
+echo "========================================"
+
+# ---- Scratch 설정 ----
+SCRATCH_DIR={scratch_base}/$SLURM_JOB_ID/DOE_{doe_idx:03d}
+ORIG_OUTPUT_DIR={output_dir}
+EXIT_CODE=1
+
+mkdir -p $SCRATCH_DIR
+echo "Scratch 디렉토리: $SCRATCH_DIR"
+
+# 모델 파일 복사
+cp {model_file} $SCRATCH_DIR/
+cp {model_dir}/*.k $SCRATCH_DIR/ 2>/dev/null || true
+echo "모델 파일 복사 완료"
+{pregenerated_copy}
+# runner_config.json 경로 치환하여 scratch에 복사
+python3 -c "
+import json
+with open('{config_path}') as f:
+    cfg = json.load(f)
+cfg['project']['output_dir'] = '$SCRATCH_DIR/output'
+cfg['project']['index_file'] = '$SCRATCH_DIR/output/simulation_index.json'
+cfg['project']['model_file'] = '$SCRATCH_DIR/{model_basename}'
+cfg['execution']['checkpoint_file'] = '$SCRATCH_DIR/output/checkpoint.json'
+import os
+os.makedirs('$SCRATCH_DIR/output', exist_ok=True)
+with open('$SCRATCH_DIR/runner_config.json', 'w') as f:
+    json.dump(cfg, f, indent=2)
+"
+echo "Runner config 생성 완료: $SCRATCH_DIR/runner_config.json"
+
+# ---- EXIT trap: 결과 복사 (성공/실패 모두) ----
+cleanup() {{
+    echo ""
+    echo "========================================"
+    echo "결과 복사: scratch → 원본 위치"
+    echo "========================================"
+
+    # Run_ 폴더 복사
+    if ls $SCRATCH_DIR/output/Run_* 1>/dev/null 2>&1; then
+        mkdir -p $ORIG_OUTPUT_DIR
+        rsync -a $SCRATCH_DIR/output/Run_*/ $ORIG_OUTPUT_DIR/ 2>/dev/null || \\
+            cp -r $SCRATCH_DIR/output/Run_* $ORIG_OUTPUT_DIR/ 2>/dev/null || true
+        echo "Run 폴더 복사 완료"
+    fi
+
+    # DOE별 simulation_index 복사
+    if [ -f "$SCRATCH_DIR/output/simulation_index.json" ]; then
+        cp $SCRATCH_DIR/output/simulation_index.json \\
+           $ORIG_OUTPUT_DIR/simulation_index_doe_{doe_idx:03d}.json 2>/dev/null || true
+        echo "Index 파일 복사 완료: simulation_index_doe_{doe_idx:03d}.json"
+    fi
+
+    # Scratch 정리
+    if [ "{'true' if scratch_cleanup else 'false'}" = "true" ] && [ $EXIT_CODE -eq 0 ]; then
+        rm -rf $SCRATCH_DIR
+        echo "Scratch 디렉토리 정리 완료"
+    else
+        echo "Scratch 디렉토리 유지: $SCRATCH_DIR"
+    fi
+
+    echo "========================================"
+    echo "End: $(date)"
+    echo "Exit code: $EXIT_CODE"
+    echo "========================================"
+}}
+trap cleanup EXIT
+
+# ---- 실행 ----
+{run_cmd_resolved}
+EXIT_CODE=$?
+exit $EXIT_CODE
+"""
+        else:
+            if batch_koomesh and pregenerated_dir:
+                run_cmd_final = f"{kcr_path} run {config_path} --doe {doe_idx} --skip-koomeshmodifier --pregenerated-dir {pregenerated_dir}"
+            else:
+                run_cmd_final = f"{kcr_path} run {config_path} --doe {doe_idx}"
+
+            script_content = sbatch_header + f"""{apptainer_tmpdir_line}
 
 echo "========================================"
 echo "Job: {job_name}"
@@ -464,7 +803,7 @@ echo "Node: $(hostname)"
 echo "Start: $(date)"
 echo "========================================"
 
-{kcr_path} run {config_path} --doe {doe_idx}
+{run_cmd_final}
 
 EXIT_CODE=$?
 
@@ -479,8 +818,14 @@ exit $EXIT_CODE
         with open(script_path, 'w') as f:
             f.write(script_content)
         os.chmod(str(script_path), 0o755)
+        doe_scripts[doe_idx] = script_path
 
-        # sbatch 제출
+    # ====================================================================
+    # 제출: batch 모드 → Popen + polling, 일반 → 즉시 제출
+    # ====================================================================
+
+    def _sbatch_doe(doe_idx, script_path):
+        """단일 DOE sbatch 제출"""
         try:
             result = subprocess.run(
                 ["sbatch", str(script_path)],
@@ -490,26 +835,111 @@ exit $EXIT_CODE
                 job_id = result.stdout.strip().split()[-1]
                 submitted_jobs.append((doe_idx, job_id))
                 print(f"  DOE {doe_idx:3d}: submitted (job {job_id})")
-
-                # jobs.json에 기록 (incremental write)
                 jobs_data["jobs"][str(doe_idx)] = {
                     "job_id": job_id,
-                    "job_name": job_name,
+                    "job_name": f"{project_name}_DOE{doe_idx:03d}",
                     "status": "submitted",
                     "submitted_at": datetime.now().isoformat(),
                     "script_path": str(script_path)
                 }
                 with open(jobs_file, 'w', encoding='utf-8') as jf:
                     json.dump(jobs_data, jf, indent=2, ensure_ascii=False)
+                return True
             else:
                 print(f"  DOE {doe_idx:3d}: FAILED - {result.stderr.strip()}")
+                return False
         except FileNotFoundError:
-            print(f"  DOE {doe_idx:3d}: FAILED - sbatch not found (not a Slurm cluster?)")
-            sys.exit(1)
+            print(f"  DOE {doe_idx:3d}: FAILED - sbatch not found")
+            return False
+
+    if batch_koomesh and pregenerated_dir and koomesh_cmd:
+        # ==============================================================
+        # Batch 모드: KooMeshModifier Popen + .done 파일 polling 제출
+        # ==============================================================
+        import time
+
+        print("-" * 60)
+        print("Batch KooMeshModifier 실행 + DOE Job 제출")
+        print("-" * 60)
+        print(f"  명령어: {' '.join(koomesh_cmd)}")
+
+        koomesh_log = slurm_dir / "batch_koomeshmodifier.log"
+        koomesh_logf = open(koomesh_log, 'w')
+        proc = subprocess.Popen(
+            koomesh_cmd,
+            cwd=pregenerated_dir,
+            stdout=koomesh_logf,
+            stderr=subprocess.STDOUT
+        )
+        print(f"  PID: {proc.pid}, 로그: {koomesh_log}")
+
+        pending_does = set(range(1, doe_count + 1))
+        poll_interval = 2  # 초
+
+        while pending_does:
+            # .done 파일 감지 → 즉시 sbatch 제출
+            newly_ready = []
+            for doe_idx in sorted(pending_does):
+                done_path = os.path.join(pregenerated_dir, f"Run_{doe_idx}", ".done")
+                if os.path.isfile(done_path):
+                    newly_ready.append(doe_idx)
+
+            for doe_idx in newly_ready:
+                _sbatch_doe(doe_idx, doe_scripts[doe_idx])
+                pending_does.discard(doe_idx)
+
+            # KooMeshModifier 프로세스 종료 확인
+            if proc.poll() is not None:
+                # 프로세스 종료 → 남은 DOE 한번 더 확인
+                for doe_idx in sorted(pending_does):
+                    done_path = os.path.join(pregenerated_dir, f"Run_{doe_idx}", ".done")
+                    if os.path.isfile(done_path):
+                        _sbatch_doe(doe_idx, doe_scripts[doe_idx])
+                        pending_does.discard(doe_idx)
+
+                if pending_does:
+                    koomesh_logf.close()
+                    submitted_count = doe_count - len(pending_does)
+                    if proc.returncode != 0:
+                        print(f"\n  ❌ KooMeshModifier 실패 (exit code: {proc.returncode})")
+                    print(f"  미생성 DOE {len(pending_does)}개: {sorted(pending_does)[:10]}{'...' if len(pending_does) > 10 else ''}")
+                    print(f"  제출 완료: {submitted_count}/{doe_count}개")
+                    print(f"  미생성 DOE는 제출하지 않습니다.")
+                    print(f"  로그 확인: {koomesh_log}")
+                    if submitted_count > 0:
+                        print(f"\n  이미 제출된 {submitted_count}개 Job은 정상 실행됩니다.")
+                        print(f"  실패 DOE 재실행: rerun.sh 사용")
+                break
+
+            time.sleep(poll_interval)
+
+        koomesh_logf.close()
+        if proc.poll() is None:
+            proc.wait()
+        print(f"\n  KooMeshModifier 종료 (exit code: {proc.returncode})")
+
+    else:
+        # ==============================================================
+        # 일반 모드: 모든 DOE 즉시 제출
+        # ==============================================================
+        print("-" * 60)
+        print("Slurm Job 제출")
+        print("-" * 60)
+
+        for doe_idx in range(1, doe_count + 1):
+            if not _sbatch_doe(doe_idx, doe_scripts[doe_idx]):
+                if doe_idx == 1:
+                    # 첫 번째에서 sbatch 자체가 실패하면 중단
+                    print("  sbatch 실행 불가. 중단합니다.")
+                    sys.exit(1)
 
     print()
     print("=" * 80)
     print(f"Submitted {len(submitted_jobs)}/{doe_count} DOE jobs")
+    if scratch_enabled:
+        print(f"  모드: Scratch Run (base: {scratch_base})")
+    if batch_koomesh:
+        print(f"  모드: Batch KooMeshModifier (pregenerated: {pregenerated_dir})")
     print("=" * 80)
     print(f"  Job ID 저장: {jobs_file}")
     print()
@@ -532,16 +962,27 @@ def cmd_run(args):
         print(f"Error: Config file not found: {config_path}")
         sys.exit(1)
 
+    skip_koomesh = getattr(args, 'skip_koomeshmodifier', False)
+    pregenerated_dir = getattr(args, 'pregenerated_dir', None)
+
     print("=" * 80)
     print(f"KooChainRun - Run DOE {args.doe}")
     print("=" * 80)
     print(f"Config: {config_path}")
     print(f"DOE:    {args.doe}")
     print(f"Resume: {args.resume}")
+    if skip_koomesh:
+        print(f"Mode:   Batch (KooMeshModifier 생략)")
+        print(f"Pregenerated: {pregenerated_dir}")
     print()
 
     try:
-        runner = CumulativeScenarioRunner(str(config_path), doe_filter=args.doe)
+        runner = CumulativeScenarioRunner(
+            str(config_path),
+            doe_filter=args.doe,
+            skip_koomeshmodifier=skip_koomesh,
+            pregenerated_dir=pregenerated_dir
+        )
         success = runner.run_all()
         if success:
             print(f"DOE {args.doe} completed successfully")

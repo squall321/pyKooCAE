@@ -1,0 +1,28 @@
+{
+  "project": "Test_008_Fibonacci_100_v2",
+  "created": "2026-02-15T13:15:18.832919",
+  "scenarios": [
+    {
+      "id": "Fibonacci_Lattice_100_Directions_S001",
+      "name": "Fibonacci_Lattice_100_Directions",
+      "type": "cumulative",
+      "total_steps": 1,
+      "doe_count": 100,
+      "total_runs": 100,
+      "status": "in_progress",
+      "mode_sequence": [
+        "DROP"
+      ],
+      "runs": {
+        "Test_008_Fibonacci_100_v2_CUM001_DOE001_S001_DROP_P0001": {
+          "run_id": "20260215_131522_3180cd",
+          "status": "failed",
+          "folder": "Run_20260215_131522_3180cd",
+          "mode": "DROP",
+          "condition": "P0001",
+          "error": "LS-DYNA failed"
+        }
+      }
+    }
+  ]
+}

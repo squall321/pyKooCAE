@@ -1,0 +1,115 @@
+*Translation,7.74009882,-23.229999259999996,0.3910000000000001
+*Rotation,0
+*Mirror,False
+*IsTop,True
+*Layer,PackageWarpage,Defined
+Location,0,0,0.0
+Length,1.335e+01,2.670e+00
+Thickness,8.000e-02
+MeshGenerationType,Solid,Tetra
+MeshPath,PackageMesh
+MeshSizeInPlane,0.1
+NumberofElementinThickness,5
+MaterialID,1
+MisalignmentAngle,0,0.0
+SurfaceTension,480.0
+BoxWarpage,-4.815e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-4.815e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-4.465e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-4.465e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-4.115e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-4.115e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-3.765e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-3.765e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-3.415e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-3.415e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-3.065e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-3.065e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-2.715e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-2.715e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-2.365e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-2.365e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-2.015e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-2.015e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-1.665e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-1.665e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-1.315e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-1.315e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-9.650e-01,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-9.650e-01,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-6.150e-01,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-6.150e-01,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-2.650e-01,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,-2.650e-01,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,8.500e-02,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,8.500e-02,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,4.350e-01,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,4.350e-01,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,7.850e-01,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,7.850e-01,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,1.135e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,1.135e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,1.485e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,1.485e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,1.835e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,1.835e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,2.185e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,2.185e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,2.535e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,2.535e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,2.885e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,2.885e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,3.235e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,3.235e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,3.585e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,3.585e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,3.935e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,3.935e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,4.285e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,4.285e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,4.635e+00,7.900e-01,1.800e-01,5.100e-01
+BoxWarpage,4.635e+00,-1.300e+00,1.800e-01,5.100e-01
+BoxWarpage,-5.790e+00,8.300e-01,7.750e-01,3.800e-01
+BoxWarpage,-5.790e+00,-1.210e+00,7.750e-01,3.800e-01
+BoxWarpage,-6.600e+00,3.500e-01,6.500e-01,9.000e-01
+BoxWarpage,-6.600e+00,-1.250e+00,6.500e-01,9.000e-01
+BoxWarpage,5.015e+00,8.300e-01,7.750e-01,3.800e-01
+BoxWarpage,5.015e+00,-1.210e+00,7.750e-01,3.800e-01
+BoxWarpage,5.950e+00,3.500e-01,6.500e-01,9.000e-01
+BoxWarpage,5.950e+00,-1.250e+00,6.500e-01,9.000e-01
+*Layer,PackageWarpage,Defined
+Location,0,0
+Thickness,5.000e-01
+MeshGenerationType,Solid,Hexa
+MeshPath,PackageMesh
+MeshSizeInPlane,0.1
+NumberofElementinXDirection,20
+NumberofElementinYDirection,20
+NumberofElementinThickness,3
+Part,Polynomial,Solid,1
+OB -6.675e+00 -1.325e+00 I
+OS -6.675e+00 1.325e+00
+OS -5.875e+00 1.325e+00
+OS -5.875e+00 1.285e+00
+OS -4.890e+00 1.285e+00
+OS -4.890e+00 1.335e+00
+OS 4.890e+00 1.335e+00
+OS 4.890e+00 1.285e+00
+OS 5.875e+00 1.285e+00
+OS 5.875e+00 1.325e+00
+OS 6.675e+00 1.325e+00
+OS 6.675e+00 -1.325e+00
+OS 5.875e+00 -1.325e+00
+OS 5.875e+00 -1.285e+00
+OS 4.890e+00 -1.285e+00
+OS 4.890e+00 -1.335e+00
+OS -4.890e+00 -1.335e+00
+OS -4.890e+00 -1.285e+00
+OS -5.875e+00 -1.285e+00
+OS -5.875e+00 -1.325e+00
+OS -6.675e+00 -1.325e+00
+OE
+MaterialID,2
+*Material
+Material.txt
+*End

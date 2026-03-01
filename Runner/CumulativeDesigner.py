@@ -46,6 +46,9 @@ from Runner.TemplateManager import (
     SimulationMode, TemplateType,
     select_template_for_scenario
 )
+from Runner.ImpactPositionSource import (
+    ImpactPosition, parse_position_source
+)
 
 
 @dataclass
@@ -154,6 +157,28 @@ class CumulativeDesigner:
                 template_abs = template_raw
             self._current_model_file = template_abs
 
+        # 누적 모드 및 스텝 수
+        cumulative_cfg = scenario_cfg.get("cumulative", {})
+        num_steps = cumulative_cfg.get("num_steps", 1)
+        mode_sequence = self._parse_mode_sequence(cumulative_cfg, num_steps)
+
+        # IMPACT 모드 여부 확인
+        has_impact = any(m == SimulationMode.IMPACT for m in mode_sequence)
+
+        if has_impact:
+            return self._process_impact_scenario(scenario_cfg, scenario_name,
+                                                  cumulative_cfg, num_steps, mode_sequence)
+        else:
+            return self._process_drop_scenario(scenario_cfg, scenario_name,
+                                                cumulative_cfg, num_steps, mode_sequence)
+
+    def _process_drop_scenario(self, scenario_cfg: Dict[str, Any],
+                                scenario_name: str,
+                                cumulative_cfg: Dict[str, Any],
+                                num_steps: int,
+                                mode_sequence: List[SimulationMode]) -> ScenarioConfig:
+        """낙하/열응력 시나리오 처리 (기존 로직)"""
+
         # Step 1: 각도 소스 파싱
         angle_source_cfg = scenario_cfg.get("angle_source", {})
         base_angles = self._parse_angle_source(angle_source_cfg)
@@ -167,20 +192,15 @@ class CumulativeDesigner:
             # Tolerance 없으면 원본 그대로 (각 케이스에 고유 doe_index 부여)
             doe_angles = [(name, roll, pitch, yaw, idx) for idx, (name, roll, pitch, yaw) in enumerate(base_angles)]
 
-        # Step 3: 누적 모드 및 스텝 수
-        cumulative_cfg = scenario_cfg.get("cumulative", {})
-        num_steps = cumulative_cfg.get("num_steps", 1)
-        mode_sequence = self._parse_mode_sequence(cumulative_cfg, num_steps)
-
-        # Step 4: 각도 믹싱 전략
+        # Step 3: 각도 믹싱 전략
         mixing_cfg = cumulative_cfg.get("angle_mixing", {})
         base_angle_index = cumulative_cfg.get("base_angle_index", 0)
         mixing_config = self._parse_mixing_config(mixing_cfg)
 
-        # Step 5: 템플릿 자동 선택
+        # Step 4: 템플릿 자동 선택
         templates = select_template_for_scenario(mode_sequence)
 
-        # Step 6: 각 DOE마다 Step 시퀀스 생성
+        # Step 5: 각 DOE마다 Step 시퀀스 생성
         steps = []
 
         # DOE 각도 그룹화 (base 각도별로)
@@ -240,6 +260,61 @@ class CumulativeDesigner:
                     steps.append(step_cfg)
 
         # 시나리오 ID 생성
+        scenario_id = f"{scenario_name}_S{num_steps:03d}"
+
+        return ScenarioConfig(
+            scenario_id=scenario_id,
+            scenario_name=scenario_name,
+            total_steps=num_steps,
+            steps=steps
+        )
+
+    def _process_impact_scenario(self, scenario_cfg: Dict[str, Any],
+                                  scenario_name: str,
+                                  cumulative_cfg: Dict[str, Any],
+                                  num_steps: int,
+                                  mode_sequence: List[SimulationMode]) -> ScenarioConfig:
+        """충격 위치 DOE 시나리오 처리
+
+        position_source로 충격 위치 목록을 생성하고,
+        각 위치를 DOE 케이스로 매핑합니다.
+        """
+        # position_source 파싱 (bbox 미지정 시 모델 파일에서 자동 계산)
+        position_source_cfg = scenario_cfg.get("position_source", {})
+        positions = parse_position_source(position_source_cfg, model_file=self._current_model_file)
+
+        if not positions:
+            raise ValueError("position_source에서 충격 위치가 생성되지 않았습니다")
+
+        # 충격 위치 목록 저장 (save_runner_config에서 doe_positions 생성에 사용)
+        self._impact_positions = positions
+
+        # 템플릿 자동 선택
+        templates = select_template_for_scenario(mode_sequence)
+
+        # 각 위치(DOE)마다 Step 시퀀스 생성
+        steps = []
+        for doe_idx, pos in enumerate(positions):
+            for i in range(num_steps):
+                step_number = i + 1
+                template = templates[i]
+                mode = mode_sequence[i]
+
+                step_cfg = StepConfig(
+                    step_number=step_number,
+                    template=template.value,
+                    mode=mode.value,
+                    angle_name=pos.name,  # position_name을 angle_name에 저장
+                    angle_roll=0.0,       # IMPACT에서는 각도 미사용
+                    angle_pitch=0.0,
+                    angle_yaw=0.0,
+                    input_file=f"Step{step_number:03d}.k",
+                    output_dir=f"Step{step_number:03d}",
+                    dynain_source=f"Step{step_number-1:03d}/dynain" if step_number > 1 else None,
+                    doe_index=doe_idx
+                )
+                steps.append(step_cfg)
+
         scenario_id = f"{scenario_name}_S{num_steps:03d}"
 
         return ScenarioConfig(
@@ -390,6 +465,29 @@ class CumulativeDesigner:
             custom_mapping=custom_mapping
         )
 
+    def _get_batch_koomeshmodifier_flag(self) -> bool:
+        """batch_koomeshmodifier 설정 확인
+
+        scenario.json의 scenarios[0].batch_koomeshmodifier가 true이고
+        num_steps == 1인 경우에만 활성화. 그 외에는 False 반환.
+        """
+        scenarios = self.user_config.get("scenarios", [])
+        if not scenarios:
+            return False
+
+        scenario_cfg = scenarios[0]
+        batch_flag = scenario_cfg.get("batch_koomeshmodifier", False)
+        if not batch_flag:
+            return False
+
+        cumulative_cfg = scenario_cfg.get("cumulative", {})
+        num_steps = cumulative_cfg.get("num_steps", 1)
+        if num_steps != 1:
+            print(f"⚠️  batch_koomeshmodifier는 num_steps=1일 때만 사용 가능합니다 (현재: {num_steps}). 무시합니다.")
+            return False
+
+        return True
+
     def save_runner_config(self, runner_config: RunnerConfig, output_path: str):
         """runner_config.json 저장
 
@@ -448,6 +546,29 @@ class CumulativeDesigner:
         for doe_idx in sorted(doe_angle_map.keys()):
             doe_angles[str(doe_idx + 1)] = doe_angle_map[doe_idx]
 
+        # IMPACT 모드: doe_positions 생성
+        doe_positions = {}
+        if hasattr(self, '_impact_positions') and self._impact_positions:
+            for pos_idx, pos in enumerate(self._impact_positions):
+                doe_key = str(pos_idx + 1)  # 1-based
+                doe_positions[doe_key] = {
+                    "1": {
+                        "position_name": pos.name,
+                        "x": pos.x,
+                        "y": pos.y
+                    }
+                }
+                # 누적 step이 있으면 모든 step에 같은 위치 할당
+                if first_scenario:
+                    for step in first_scenario.steps:
+                        if step.doe_index == pos_idx:
+                            step_key = str(step.step_number)
+                            doe_positions[doe_key][step_key] = {
+                                "position_name": pos.name,
+                                "x": pos.x,
+                                "y": pos.y
+                            }
+
         data = {
             # CumulativeScenarioRunner 호환 섹션
             "project": {
@@ -463,11 +584,16 @@ class CumulativeDesigner:
                 "total_steps": first_scenario.total_steps if first_scenario else 0,
                 "doe_count": doe_count,
                 "steps": runner_steps,
-                "doe_angles": doe_angles
+                "doe_angles": doe_angles,
+                **({"doe_positions": doe_positions} if doe_positions else {}),
+                # batch_koomeshmodifier: 1-step 시나리오에서 헤드노드 일괄 생성 옵션
+                "batch_koomeshmodifier": self._get_batch_koomeshmodifier_flag()
             },
             "execution": {
                 "checkpoint_file": str(Path(output_dir_path) / "checkpoint.json"),
-                "timeout_per_step_seconds": 7200,
+                "timeout_per_step_seconds": runner_config.environment.get("timeout_per_step_seconds", 604800),
+                "timeout_koomeshmodifier_seconds": runner_config.environment.get("timeout_koomeshmodifier_seconds", 604800),
+                "timeout_dynain_seconds": runner_config.environment.get("timeout_dynain_seconds", 604800),
                 "retry_on_failure": True,
                 "max_retries": 2
             },

@@ -28,6 +28,7 @@ import numpy as np
 import math
 import csv
 import json
+from io import StringIO
 from OCC.Core.gp import gp_Pnt, gp_Vec, gp_Dir, gp_Ax2, gp_Circ, gp_Trsf, gp_Ax1, gp_Pln
 
 
@@ -1907,6 +1908,111 @@ class KooDynaAdvancedModification:
         
         
     
+    # ================================================================
+    # FastDOE: CacheBase + WriteDelta (DropAttitude 고속 모드)
+    # ================================================================
+
+    def _CacheBaseKeyword(self, exclude_nodeset_sids=None, reusable_part_ids=None):
+        """베이스 모델 캐시 + 상태 경계값 기록 (FastDOE용)
+        reusable_part_ids: 베이스에 포함되지만 DOE마다 요소가 재생성되는 파트 ID 집합
+        """
+        cached_base = self.dynaImporter.WriteStreamBaseKeyword(
+            exclude_nodeset_sids=exclude_nodeset_sids, exclude_d2r=True)
+        base_state = {
+            "max_nid": max(self.dynaImporter.nodeManager.nodes.keys()) if self.dynaImporter.nodeManager.nodes else 0,
+            "max_eid": self.dynaImporter.maxEID,
+            "part_ids": set(self.dynaImporter.partManager.parts.keys()),
+            "contact_keys": set(self.dynaImporter.contactManager.contacts.keys()),
+            "initial_keys": set(self.dynaImporter.initialManager.inits.keys()),
+            "excluded_nodeset_sids": exclude_nodeset_sids or set(),
+            "reusable_part_ids": reusable_part_ids or set(),
+        }
+        return cached_base, base_state
+
+    def _RestoreBaseState(self, base_state):
+        """DOE 추가분만 빠르게 제거하고 베이스 상태로 복원 (FastDOE용)"""
+        # 1. 노드 제거 (ID > base max)
+        self.dynaImporter.nodeManager.RemoveNodesAboveID(base_state["max_nid"])
+        # 2. 파트 제거 (base에 없던 PID)
+        pids_to_remove = [pid for pid in self.dynaImporter.partManager.parts
+                          if pid not in base_state["part_ids"]]
+        for pid in pids_to_remove:
+            self.dynaImporter.partManager.parts[pid].elementManager.RemoveAllElements()
+            self.dynaImporter.partManager.RemovePart(pid)
+        # 2b. 재사용 파트 요소 클리어 (베이스에 존재하지만 DOE마다 요소 재생성)
+        for pid in base_state.get("reusable_part_ids", set()):
+            if pid in self.dynaImporter.partManager.parts:
+                self.dynaImporter.partManager.parts[pid].elementManager.RemoveAllElements()
+        # 3. 접촉 제거
+        cids_to_remove = [cid for cid in self.dynaImporter.contactManager.contacts
+                          if cid not in base_state["contact_keys"]]
+        for cid in cids_to_remove:
+            del self.dynaImporter.contactManager.contacts[cid]
+        # 4. 초기조건 제거
+        iids_to_remove = [iid for iid in self.dynaImporter.initialManager.inits
+                          if iid not in base_state["initial_keys"]]
+        for iid in iids_to_remove:
+            del self.dynaImporter.initialManager.inits[iid]
+        # 5. nodeSet 클리어
+        for nsid in base_state["excluded_nodeset_sids"]:
+            if nsid in self.dynaImporter.nodeSetManager.nodeSets:
+                self.dynaImporter.nodeSetManager.nodeSets[nsid].Clear()
+        # 6. D2R 클리어
+        self.dynaImporter.additionalManager.d2r_automatics.clear()
+        # 7. Max ID 복원 (SyncronizeMaxID 불필요)
+        self.dynaImporter.maxEID = base_state["max_eid"]
+        for pid in self.dynaImporter.partManager.parts:
+            self.dynaImporter.partManager.parts[pid].elementManager.SetMaxID(base_state["max_eid"])
+        self.dynaImporter.nodeManager.maxID = base_state["max_nid"]
+
+    def _WriteFastModifiedFile(self, filePath, modifiedKeyword, cached_base, base_state, copytoOutputFolder=False):
+        """캐시된 베이스 + delta를 결합하여 .k + .json 출력 (FastDOE용)"""
+        if ".k" in modifiedKeyword:
+            curPath = filePath + modifiedKeyword
+            jsonPath = filePath + modifiedKeyword.replace(".k", ".json")
+        else:
+            curPath = filePath + modifiedKeyword + ".k"
+            jsonPath = filePath + modifiedKeyword + ".json"
+        delta = self.dynaImporter.WriteStreamDeltaKeyword(base_state)
+        with open(curPath, "w") as f:
+            f.write("*KEYWORD\n")
+            f.write(cached_base)
+            f.write(delta)
+            f.write("*END\n")
+        self.dynaImporter.AddMetaDatafromManager()
+        with open(jsonPath, "w") as f:
+            json.dump(self.dynaImporter.metaData, f, ensure_ascii=False, indent=2)
+        if copytoOutputFolder:
+            folderPath = "/".join(curPath.split("/")[:-1])
+            outputFolderPath = os.path.join(folderPath, "Output")
+            if not os.path.exists(outputFolderPath):
+                os.makedirs(outputFolderPath)
+            dynamicRelaxPath = os.path.join(folderPath, "DynamicRelaxation")
+            if not os.path.exists(dynamicRelaxPath):
+                os.makedirs(dynamicRelaxPath)
+            shutil.copy(curPath, outputFolderPath)
+            shutil.copy(curPath, dynamicRelaxPath)
+
+    def _WriteCachedExceptNodesFile(self, filePath, modifiedKeyword, cached_pre, cached_post):
+        """캐시된 pre/post + 현재 노드 직렬화 결합 출력 (Group C FastDOE용)"""
+        if ".k" in modifiedKeyword:
+            curPath = filePath + modifiedKeyword
+            jsonPath = filePath + modifiedKeyword.replace(".k", ".json")
+        else:
+            curPath = filePath + modifiedKeyword + ".k"
+            jsonPath = filePath + modifiedKeyword + ".json"
+        node_stream = StringIO()
+        self.dynaImporter.nodeManager.WriteStreamDynaKeyword(node_stream, 0)
+        with open(curPath, "w") as f:
+            f.write("*KEYWORD\n")
+            f.write(cached_pre)
+            f.write(node_stream.getvalue())
+            f.write(cached_post)
+            f.write("*END\n")
+        self.dynaImporter.AddMetaDatafromManager()
+        with open(jsonPath, "w") as f:
+            json.dump(self.dynaImporter.metaData, f, ensure_ascii=False, indent=2)
+
     def DropAttitude(self, option, filePath):
         fileName = os.path.basename(filePath)
         RxList = option["EulerRolling"]
@@ -2026,20 +2132,37 @@ class KooDynaAdvancedModification:
             outPathListFile = open(outputPathListFileName, 'w')
 
 
+        # === FastDOE: 베이스 캐시 초기화 ===
+        use_fast_mode = len(RxList) > 1
+        cached_base = None
+        base_state = None
+        if use_fast_mode:
+            try:
+                exclude_sids = {nodeSetFixed.sid} if nodeSetFixed else set()
+                cached_base, base_state = self._CacheBaseKeyword(exclude_nodeset_sids=exclude_sids)
+                print(f"Fast DOE mode 활성화: 베이스 캐시 완료 ({len(cached_base)//1024//1024}MB)")
+            except Exception as e:
+                print(f"Fast DOE mode 초기화 실패, 기존 방식 사용: {e}")
+                use_fast_mode = False
+
         for i in range(len(RxList)):
             if i != 0:
-                nodes = part.elementManager.GetElementNodes()
-                part.elementManager.RemoveAllElements()
-                part.nodeManager.RemoveNodesExceptNodes(nodes)
-                if surfacetosurfaceContact is not None:
-                    self.dynaImporter.contactManager.RemoveContact(surfacetosurfaceContact)
-                self.dynaImporter.partManager.RemovePart(part.id)
-                self.dynaImporter.initialManager.RemoveInitial(initV.id)
-                if nodeSetFixed != None:
-                    nodeSetFixed.Clear()
-                self.dynaImporter.additionalManager.d2r_automatics.clear()
+                if use_fast_mode:
+                    self._RestoreBaseState(base_state)
+                else:
+                    nodes = part.elementManager.GetElementNodes()
+                    part.elementManager.RemoveAllElements()
+                    part.nodeManager.RemoveNodesExceptNodes(nodes)
+                    if surfacetosurfaceContact is not None:
+                        self.dynaImporter.contactManager.RemoveContact(surfacetosurfaceContact)
+                    self.dynaImporter.partManager.RemovePart(part.id)
+                    self.dynaImporter.initialManager.RemoveInitial(initV.id)
+                    if nodeSetFixed != None:
+                        nodeSetFixed.Clear()
+                    self.dynaImporter.additionalManager.d2r_automatics.clear()
 
-            self.dynaImporter.SyncronizeMaxID()
+            if not use_fast_mode:
+                self.dynaImporter.SyncronizeMaxID()
             RxOrigin = RxList[i]
             RyOrigin = RyList[i]
             RzOrigin = RzList[i]
@@ -2108,7 +2231,8 @@ class KooDynaAdvancedModification:
             initV = self.dynaImporter.initialManager.CreateInitialVelocity(nsid,0,0,0,0, velocity[0],velocity[1],velocity[2],angular_velocity[0],angular_velocity[1],angular_velocity[2],0.0,0.0,0.0,0.0,0.0,0.0)
 
             part = self.dynaImporter.partManager.AddSolidPart(self.dynaImporter.nodeManager, None, section, material)
-            self.dynaImporter.SyncronizeMaxID()
+            if not use_fast_mode:
+                self.dynaImporter.SyncronizeMaxID()
             if dropSurface[0] == "Plane":
 
                 nsFixed = part.elementManager.CreateImpactBox(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ) 
@@ -2171,14 +2295,15 @@ class KooDynaAdvancedModification:
             if self.runDirectoryMode == True:
                 if len(RxList) >= 1:
                     if len(runids)>i:
-                        run_id = runids[i]
+                        run_id = str(runids[i])
                     else:
                         run_id = self.dynaImporter.GenerateRunID()
                     if len(self.runDirectoryPath) == 0:
                         modifiedKeyword = os.path.join(filePath.replace(".k",""), "Run_" + run_id)
                     else:
-                        if self.metaDirectoryPath[0] == "/":
-                            # 절대 경로가 주어지면 그 경로를 그대로 사용 (run_id 추가 안함)
+                        if len(self.runDirectoryPath) > 0 and self.runDirectoryPath[0] == "/":
+                            modifiedKeyword = os.path.join(self.runDirectoryPath, "Run_" + run_id)
+                        elif len(self.metaDirectoryPath) > 0 and self.metaDirectoryPath[0] == "/":
                             modifiedKeyword = self.metaDirectoryPath
                         else:
                             path = os.getcwd()
@@ -2202,7 +2327,10 @@ class KooDynaAdvancedModification:
                     else:
                         modifiedKeyword = os.path.join(modifiedKeyword, "DropSet")
                     modifiedKeyword = modifiedKeyword.strip()
-                    self.WriteModifiedFile(modifiedKeyword, "", True)
+                    if use_fast_mode:
+                        self._WriteFastModifiedFile(modifiedKeyword, "", cached_base, base_state, True)
+                    else:
+                        self.WriteModifiedFile(modifiedKeyword, "", True)
 
                     dynainPath = os.path.join(outputFolderPath, "dynain")
                     dynaintoinitialPath = os.path.join(dynamicRelaxPath, "dynaintoinitial.txt")
@@ -2229,6 +2357,10 @@ class KooDynaAdvancedModification:
 
 
                     print("Drop Attitude ", i+1, " is Created")
+                    # DOE 완료 표시 파일 생성 (polling용)
+                    done_file = os.path.join(folderPath, ".done")
+                    with open(done_file, "w") as df:
+                        df.write("done")
                     if outPathListFile is not None:
                         if self.runDirectoryPath[0] == "/":
                             writePath = os.path.join(self.runDirectoryPath, "Run_"+ run_id, "DropSet.k")
@@ -2255,7 +2387,10 @@ class KooDynaAdvancedModification:
                     modifiedKeyword += "_WY_" + format(wy, '.3f')
                     modifiedKeyword += "_WZ_" + format(wz, '.3f')
                     modifiedKeyword = modifiedKeyword.strip()
-                    self.WriteModifiedFile(filePath, modifiedKeyword)
+                    if use_fast_mode:
+                        self._WriteFastModifiedFile(filePath, modifiedKeyword, cached_base, base_state)
+                    else:
+                        self.WriteModifiedFile(filePath, modifiedKeyword)
                     print("Drop Attitude ", i+1, " is Created")
         if outPathListFile is not None:
             outPathListFile.close()
@@ -2998,17 +3133,37 @@ class KooDynaAdvancedModification:
         self.dynaImporter.boundaryNodeManager.CreateBoundaryPrescribedMotionRigid(wallPart, 1, 2, curve.lcid)
         self.dynaImporter.boundaryNodeManager.CreateBoundaryPrescribedMotionRigid(wallPart, 2, 2, curve.lcid)
         self.dynaImporter.boundaryNodeManager.CreateBoundaryPrescribedMotionRigid(wallPart, 3, 2, curve.lcid)
-        
-        
+
+        # === FastDOE 초기화 ===
+        use_fast_mode = len(locX) > 1 and stressWaveDistance == 0.0
+        cached_base = None
+        base_state = None
+        if use_fast_mode:
+            try:
+                reusable_pids = {impactorPart.id, wallPart.id}
+                if impactorType.lower() == "cylinder":
+                    reusable_pids.add(impactFrontPart.id)
+                exclude_sids = set()
+                cached_base, base_state = self._CacheBaseKeyword(
+                    exclude_nodeset_sids=exclude_sids, reusable_part_ids=reusable_pids)
+                print(f"Fast DOE mode 활성화 (DropWeightImpactTest): 베이스 캐시 완료 ({len(cached_base)//1024//1024}MB)")
+            except Exception as e:
+                print(f"Fast DOE mode 초기화 실패, 기존 방식 사용: {e}")
+                use_fast_mode = False
+
         for i in range(len(locX)):
             Vx = VxList[i]
             Vy = VyList[i]
             Vz = VzList[i]
             height = heightList[i]
             velocity = [Vx, Vy, Vz-9.81*height]
-                
-            self.dynaImporter.SyncronizeMaxID()  
-            if i != 0:                
+
+            if not use_fast_mode:
+                self.dynaImporter.SyncronizeMaxID()
+            if i != 0:
+              if use_fast_mode:
+                self._RestoreBaseState(base_state)
+              else:
                 for pid in self.dynaImporter.partManager.parts:
                     self.dynaImporter.SyncronizeMaxID()                             
                     if pid == beamPart.id:
@@ -3100,37 +3255,38 @@ class KooDynaAdvancedModification:
                 nodeSetInside = None
                 nodeSetFixed = None
                 spcBoundary = None
-            self.dynaImporter.SyncronizeMaxID()  
+            if not use_fast_mode:
+                self.dynaImporter.SyncronizeMaxID()
             boundaryFixNodes = []
-            boundaryBetweenNodes = [] 
+            boundaryBetweenNodes = []
             addedBeamElems = {}
-            
+
             if stressWaveDistance != 0.0:
                 for node in boundaryNodes:
                     x1 = node.x
                     y1 = node.y
-                    z1 = node.z            
+                    z1 = node.z
                     dirR = (x1-impactPoint[0], y1-impactPoint[1], z1-impactPoint[2])
                     normDir = (dirR[0]**2+dirR[1]**2+dirR[2]**2)**0.5
                     dirR = (dirR[0]/normDir, dirR[1]/normDir, dirR[2]/normDir)
                     x2 = x1 + dirR[0]*offsetDampingDistance
                     y2 = y1 + dirR[1]*offsetDampingDistance
                     z2 = z1 + dirR[2]*offsetDampingDistance
-                    
+
                     x3 = x1 + dirR[0]*offsetDampingDistance*0.5
                     y3 = y1 + dirR[1]*offsetDampingDistance*0.5
                     z3 = z1 + dirR[2]*offsetDampingDistance*0.5 + 0.5*offsetDampingDistance
-                    
+
                     node2 = nodeMan.CreateNode(x2, y2, z2)
                     node3 = nodeMan.CreateNode(x3, y3, z3)
                     boundaryFixNodes.append(node2)
                     boundaryBetweenNodes.append(node3)
                     beamElem = beamElemMan.CreateLineQuadraticElement(node,node2,node3)
                     addedBeamElems[beamElem.id] = beamElem
-                        
+
                 nodeSetFixed.AddNodes(boundaryFixNodes)
-                                
-                
+
+
             self.dynaImporter.SyncronizeMaxID()
             if impactorType.lower() == "sphere":
                 radius = dimension[0]
@@ -3186,10 +3342,10 @@ class KooDynaAdvancedModification:
                 tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
                 
             
-            if len(locX) > 1: 
-                modifiedKeyword = "_MODE_DS"   
+            if len(locX) > 1:
+                modifiedKeyword = "_MODE_DS"
                 if impactorType.lower() == "cylinder":
-                    modifiedKeyword += "_CYL_"            
+                    modifiedKeyword += "_CYL_"
                     modifiedKeyword += format(dimension[0], '.3e')
                 elif impactorType.lower() == "sphere":
                     modifiedKeyword += "_SPH_"
@@ -3201,8 +3357,11 @@ class KooDynaAdvancedModification:
                 modifiedKeyword += "_VZ_" + format(Vz, '.3e')
                 modifiedKeyword += "_H_" + format(height, '.3e')
                 modifiedKeyword = modifiedKeyword.strip()
-                self.WriteModifiedFile(filePath, modifiedKeyword)                
-    
+                if use_fast_mode:
+                    self._WriteFastModifiedFile(filePath, modifiedKeyword, cached_base, base_state)
+                else:
+                    self.WriteModifiedFile(filePath, modifiedKeyword)
+
     def DropWeightImpactTestbyPart(self, option, filePath):
         if "TFinal" in option:
             tfinal = option["TFinal"]
@@ -3349,6 +3508,23 @@ class KooDynaAdvancedModification:
         self.dynaImporter.boundaryNodeManager.CreateBoundaryPrescribedMotionRigid(wallPart, 1, 2, curve.lcid)
         self.dynaImporter.boundaryNodeManager.CreateBoundaryPrescribedMotionRigid(wallPart, 2, 2, curve.lcid)
         self.dynaImporter.boundaryNodeManager.CreateBoundaryPrescribedMotionRigid(wallPart, 3, 2, curve.lcid)
+
+        # === FastDOE 초기화 ===
+        use_fast_mode = len(partIDs) > 0
+        cached_base = None
+        base_state = None
+        if use_fast_mode:
+            try:
+                reusable_pids = {impactorPart.id, wallPart.id}
+                if impactorType.lower() == "cylinder":
+                    reusable_pids.add(impactFrontPart.id)
+                cached_base, base_state = self._CacheBaseKeyword(
+                    reusable_part_ids=reusable_pids)
+                print(f"Fast DOE mode 활성화 (DropWeightImpactTestbyPart): 베이스 캐시 완료 ({len(cached_base)//1024//1024}MB)")
+            except Exception as e:
+                print(f"Fast DOE mode 초기화 실패, 기존 방식 사용: {e}")
+                use_fast_mode = False
+
         i = 0
         for partID in partIDs:
             if partID not in self.dynaImporter.partManager.parts:
@@ -3388,10 +3564,14 @@ class KooDynaAdvancedModification:
             velocity = [Vx, Vy, Vz-9.81*height]
         
             for j in range(len(locX)):
-                self.dynaImporter.SyncronizeMaxID()
+                if not use_fast_mode:
+                    self.dynaImporter.SyncronizeMaxID()
                 if j != 0 or i != 0:
+                  if use_fast_mode:
+                    self._RestoreBaseState(base_state)
+                  else:
                     for pid in self.dynaImporter.partManager.parts:
-                        self.dynaImporter.SyncronizeMaxID()                             
+                        self.dynaImporter.SyncronizeMaxID()
                         if pid == wallPart.id:
                             continue
                         if pid == impactorPart.id:
@@ -3399,26 +3579,26 @@ class KooDynaAdvancedModification:
                         if impactorType.lower() == "cylinder":
                             if pid == impactFrontPart.id:
                                 continue
-                        pidPart = self.dynaImporter.partManager.parts[pid] 
-                        elemMan : ElementManager = pidPart.elementManager 
+                        pidPart = self.dynaImporter.partManager.parts[pid]
+                        elemMan : ElementManager = pidPart.elementManager
                         if pid in removedElemList:
                             elemMan.AddElements(removedElemList[pid])
                         if pid in removedNodeList:
-                            nodeMan.AddNodes(removedNodeList[pid])        
+                            nodeMan.AddNodes(removedNodeList[pid])
                     self.dynaImporter.SyncronizeMaxID()
                     if impactorType.lower() == "cylinder":
                         nodesImpactFront = impactFrontElemMan.GetElementNodes()
                         nodeMan.RemoveNodes(nodesImpactFront)
                     nodesImpact = impactElemMan.GetElementNodes()
                     nodeMan.RemoveNodes(nodesImpact)
-                    nodesWall = wallElemMan.GetElementNodes()   
+                    nodesWall = wallElemMan.GetElementNodes()
                     nodeMan.RemoveNodes(nodesWall)
-                    
+
                     if impactorType.lower() == "cylinder":
                         impactFrontElemMan.RemoveAllElements()
                     impactElemMan.RemoveAllElements()
                     wallElemMan.RemoveAllElements()
-                    
+
                     self.dynaImporter.initialManager.RemoveInitial(initV.id)
                     self.dynaImporter.contactManager.RemoveContact(contactWalltoObjects)
                     self.dynaImporter.contactManager.RemoveContact(contactImpactortoObjects)
@@ -3477,9 +3657,9 @@ class KooDynaAdvancedModification:
                     tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
                 
                 if len(locX) > 1:
-                    modifiedKeyword = "_MODE_DWIP"   
+                    modifiedKeyword = "_MODE_DWIP"
                     if impactorType.lower() == "cylinder":
-                        modifiedKeyword += "_CYL_"            
+                        modifiedKeyword += "_CYL_"
                         modifiedKeyword += format(dimension[0], '.3e')
                     elif impactorType.lower() == "sphere":
                         modifiedKeyword += "_SPH_"
@@ -3492,7 +3672,10 @@ class KooDynaAdvancedModification:
                     modifiedKeyword += "_VZ_" + format(Vz, '.3e')
                     modifiedKeyword += "_H_" + format(height, '.3e')
                     modifiedKeyword = modifiedKeyword.strip()
-                    self.WriteModifiedFile(filePath, modifiedKeyword)
+                    if use_fast_mode:
+                        self._WriteFastModifiedFile(filePath, modifiedKeyword, cached_base, base_state)
+                    else:
+                        self.WriteModifiedFile(filePath, modifiedKeyword)
             i = i + 1
 
     def CreateWallPart(self, option):
@@ -3698,7 +3881,20 @@ class KooDynaAdvancedModification:
             maskPart : KooPart = self.dynaImporter.partManager.parts[maskPID]
         else:
             maskPart : KooPart = None
-                    
+
+        # === FastDOE 초기화 (CacheExceptNodes) ===
+        use_fast_mode = numofSamples > 1
+        cached_pre = None
+        cached_post = None
+        if use_fast_mode:
+            try:
+                cached_pre = self.dynaImporter.WriteStreamPreNodesKeyword()
+                cached_post = self.dynaImporter.WriteStreamPostNodesKeyword()
+                print(f"Fast DOE mode 활성화 (PartLocationDOE): 노드 제외 캐시 완료 ({(len(cached_pre)+len(cached_post))//1024//1024}MB)")
+            except Exception as e:
+                print(f"Fast DOE mode 초기화 실패, 기존 방식 사용: {e}")
+                use_fast_mode = False
+
         for pid in pidList:
             part : KooPart = self.dynaImporter.partManager.parts[pid]  
             xmin, xmax, ymin, ymax, zmin, zmax = part.elementManager.GetBoundaryBox()
@@ -3749,7 +3945,10 @@ class KooDynaAdvancedModification:
                             curDyExponent = format(curDy, '.3e')
                             curDzExponent = format(curDz, '.3e')                        
                             modifiedKeyword = "_DY_" + curDyExponent + "_DZ_" + curDzExponent + ".k"
-                            self.WriteModifiedFile(filePath, modifiedKeyword)
+                            if use_fast_mode:
+                                self._WriteCachedExceptNodesFile(filePath, modifiedKeyword, cached_pre, cached_post)
+                            else:
+                                self.WriteModifiedFile(filePath, modifiedKeyword)
                             print("DY: ", curDy, "DZ: ", curDz, " moved and exported")
                         else:
                             print("DY: ", curDy, "DZ: ", curDz, " is not valid")
@@ -3765,7 +3964,10 @@ class KooDynaAdvancedModification:
                             curDxExponent = format(curDx, '.3e')
                             curDzExponent = format(curDz, '.3e')                  
                             modifiedKeyword = "_DX_" + curDxExponent + "_DZ_" + curDzExponent + ".k"
-                            self.WriteModifiedFile(filePath, modifiedKeyword)
+                            if use_fast_mode:
+                                self._WriteCachedExceptNodesFile(filePath, modifiedKeyword, cached_pre, cached_post)
+                            else:
+                                self.WriteModifiedFile(filePath, modifiedKeyword)
                             print("DX: ", curDx, "DZ: ", curDz, " moved and exported")
                         else:
                             print("DX: ", curDx, "DZ: ", curDz, " is not valid")
@@ -3780,7 +3982,10 @@ class KooDynaAdvancedModification:
                             curDxExponent = format(curDx, '.3e')
                             curDyExponent = format(curDy, '.3e')                        
                             modifiedKeyword = "_DX_" + curDxExponent + "_DY_" + curDyExponent + ".k"
-                            self.WriteModifiedFile(filePath, modifiedKeyword)
+                            if use_fast_mode:
+                                self._WriteCachedExceptNodesFile(filePath, modifiedKeyword, cached_pre, cached_post)
+                            else:
+                                self.WriteModifiedFile(filePath, modifiedKeyword)
                             print("DX: ", curDx, "DY: ", curDy, " moved and exported to")
                         else:
                             print("DX: ", curDx, "DY: ", curDy, " is not valid")
@@ -4592,8 +4797,22 @@ class KooDynaAdvancedModification:
         firstpidTransXList = translationDict[firstpid]["X"]
         numofSamples = len(firstpidTransXList)
         jsonFileName = filePath + "_TranslationDOE.json"
-        f = open(jsonFileName, "w")
+        jsonFile = open(jsonFileName, "w")
         jsonDict = {}
+
+        # === FastDOE 초기화 (CacheExceptNodes) ===
+        use_fast_mode = numofSamples > 1
+        cached_pre = None
+        cached_post = None
+        if use_fast_mode:
+            try:
+                cached_pre = self.dynaImporter.WriteStreamPreNodesKeyword()
+                cached_post = self.dynaImporter.WriteStreamPostNodesKeyword()
+                print(f"Fast DOE mode 활성화 (TranslationDOE): 노드 제외 캐시 완료 ({(len(cached_pre)+len(cached_post))//1024//1024}MB)")
+            except Exception as e:
+                print(f"Fast DOE mode 초기화 실패, 기존 방식 사용: {e}")
+                use_fast_mode = False
+
         for i in range(numofSamples):
             for pid in translationDict:
                 transX = translationDict[pid]["X"][i]
@@ -4604,10 +4823,20 @@ class KooDynaAdvancedModification:
 
             modifiedKeyword = f"_TranslationDOE_{i}.k"
             curPath = filePath + modifiedKeyword
-            with open(curPath, "w") as f:
-                f.write("*Keyword\n")
-                f.write(self.dynaImporter.WriteStreamDynaKeyword())
-                f.write("*End\n")
+            if use_fast_mode:
+                node_stream = StringIO()
+                self.dynaImporter.nodeManager.WriteStreamDynaKeyword(node_stream, 0)
+                with open(curPath, "w") as f:
+                    f.write("*KEYWORD\n")
+                    f.write(cached_pre)
+                    f.write(node_stream.getvalue())
+                    f.write(cached_post)
+                    f.write("*END\n")
+            else:
+                with open(curPath, "w") as f:
+                    f.write("*Keyword\n")
+                    f.write(self.dynaImporter.WriteStreamDynaKeyword())
+                    f.write("*End\n")
             jsonDict[i] = {}
             jsonDict[i]["filePath"] = curPath
             jsonDict[i]["parts"] = {}
@@ -4619,8 +4848,8 @@ class KooDynaAdvancedModification:
                 part.Translate(-transX, -transY, -transZ)
                 jsonDict[i]["parts"][pid] = {"transX": transX, "transY": transY, "transZ": transZ}
 
-        f.write(json.dumps(jsonDict, indent=4))
-        f.close()
+        jsonFile.write(json.dumps(jsonDict, indent=4))
+        jsonFile.close()
 
     def SimulationAutomation(self, jsonOptionList, inputFile, inputObjFile, metaData):
         dynaASScriptGenerator : KooDynaAutomaticSimulationScriptGenerator = KooDynaAutomaticSimulationScriptGenerator(jsonOptionList, metaData)                

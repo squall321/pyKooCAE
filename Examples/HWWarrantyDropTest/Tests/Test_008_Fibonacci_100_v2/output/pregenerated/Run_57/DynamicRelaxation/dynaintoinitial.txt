@@ -1,0 +1,12 @@
+*Inputfile
+DropSet.k
+*Mode
+DYNAIN_TO_INITIAL,1
+**DynainPath,/home/koopark/serviceApptainers/appt313/opt/pyKooCAE/Examples/HWWarrantyDropTest/Tests/Test_008_Fibonacci_100_v2/output/pregenerated/Run_57/Output/dynain
+*IncludeStress,True
+*RemoveDynamicRelaxation,True
+*MovetoOriginAutomatic,True
+*RemovePartbyID,79
+*RemoveContactbyID,228
+**EndDynainToInitial
+*End
