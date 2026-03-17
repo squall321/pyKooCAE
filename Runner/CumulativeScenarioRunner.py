@@ -24,6 +24,7 @@ import hashlib
 import uuid
 import fcntl
 import shutil
+import tempfile
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -282,10 +283,23 @@ class CumulativeScenarioRunner:
     def _load_checkpoint(self):
         """체크포인트 로드"""
         if os.path.exists(self.checkpoint_file):
-            with open(self.checkpoint_file, 'r', encoding='utf-8') as f:
-                self.checkpoint = json.load(f)
-            logging.info(f"Checkpoint loaded: DOE {self.checkpoint['current_doe']}, "
-                        f"Step {self.checkpoint['current_step']}")
+            try:
+                with open(self.checkpoint_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:
+                        self.checkpoint = json.loads(content)
+                        logging.info(f"Checkpoint loaded: DOE {self.checkpoint['current_doe']}, "
+                                    f"Step {self.checkpoint['current_step']}")
+                        return
+            except json.JSONDecodeError as e:
+                # 백업에서 복구 시도
+                backup = self.checkpoint_file + ".bak"
+                if os.path.exists(backup):
+                    logging.warning(f"checkpoint.json 손상 감지, 백업에서 복구: {e}")
+                    with open(backup, 'r', encoding='utf-8') as bf:
+                        self.checkpoint = json.load(bf)
+                    return
+                logging.warning(f"checkpoint.json 손상, 백업 없음. 초기화합니다: {e}")
         else:
             self.checkpoint = {
                 "scenario_id": self.config["scenario"]["id"],
@@ -297,12 +311,27 @@ class CumulativeScenarioRunner:
             }
 
     def _save_checkpoint(self, doe: int, step: int):
-        """체크포인트 저장"""
+        """체크포인트 저장 (atomic write: 중단 시 파일 손상 방지)"""
         self.checkpoint["current_doe"] = doe
         self.checkpoint["current_step"] = step
         self.checkpoint["last_updated"] = datetime.now().isoformat()
-        with open(self.checkpoint_file, 'w', encoding='utf-8') as f:
-            json.dump(self.checkpoint, f, indent=2)
+        target = self.checkpoint_file
+        # 기존 파일 백업
+        if os.path.exists(target):
+            try:
+                os.replace(target, target + ".bak")
+            except OSError:
+                pass
+        dir_path = os.path.dirname(target) or "."
+        fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(self.checkpoint, f, indent=2)
+            os.replace(tmp_path, target)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
 
     def _load_index(self):
         """simulation_index.json 로드 (파일 잠금 사용)"""
@@ -314,7 +343,19 @@ class CumulativeScenarioRunner:
                     with open(self.index_file, 'r', encoding='utf-8') as f:
                         content = f.read()
                         if content.strip():
-                            self.index = json.loads(content)
+                            try:
+                                self.index = json.loads(content)
+                            except json.JSONDecodeError as e:
+                                # 백업에서 복구 시도
+                                backup = self.index_file + ".bak"
+                                if os.path.exists(backup):
+                                    logging.warning(f"simulation_index.json 손상, 백업에서 복구: {e}")
+                                    with open(backup, 'r', encoding='utf-8') as bf:
+                                        self.index = json.load(bf)
+                                else:
+                                    logging.warning(f"simulation_index.json 손상, 초기화: {e}")
+                                    self.index = self._init_index()
+                                self._save_index_unlocked()
                         else:
                             self.index = self._init_index()
                             self._save_index_unlocked()
@@ -346,18 +387,31 @@ class CumulativeScenarioRunner:
         }
 
     def _save_index_unlocked(self):
-        """simulation_index.json 저장 (잠금 없이 - 이미 잠금 상태에서 호출)"""
-        with open(self.index_file, 'w', encoding='utf-8') as f:
-            json.dump(self.index, f, ensure_ascii=False, indent=2)
+        """simulation_index.json 저장 (잠금 없이 - 이미 잠금 상태에서 호출, atomic write)"""
+        target = self.index_file
+        if os.path.exists(target):
+            try:
+                os.replace(target, target + ".bak")
+            except OSError:
+                pass
+        dir_path = os.path.dirname(target) or "."
+        fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(self.index, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, target)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
 
     def _save_index(self):
-        """simulation_index.json 저장 (파일 잠금 사용)"""
+        """simulation_index.json 저장 (파일 잠금 + atomic write)"""
         lock_file = self.index_file + ".lock"
         with open(lock_file, 'w') as lf:
             fcntl.flock(lf, fcntl.LOCK_EX)  # 배타적 잠금
             try:
-                with open(self.index_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.index, f, ensure_ascii=False, indent=2)
+                self._save_index_unlocked()
             finally:
                 fcntl.flock(lf, fcntl.LOCK_UN)
 
@@ -664,7 +718,7 @@ class CumulativeScenarioRunner:
 
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,True,{run_dir}
+*RunDirectoryMode,False
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -704,7 +758,7 @@ dt,{dt}
 
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,True,{run_dir}
+*RunDirectoryMode,False
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -739,7 +793,7 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
 
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,True,{run_dir}
+*RunDirectoryMode,False
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition} T={target_temp}C
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -758,7 +812,7 @@ RampTime,600
             # 기타 모드는 기본 템플릿
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,True,{run_dir}
+*RunDirectoryMode,False
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO

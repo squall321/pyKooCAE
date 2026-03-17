@@ -8,9 +8,11 @@ Author: koo.park
 """
 
 import os
+import re
 import json
 import subprocess
 import glob
+import tempfile
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -29,12 +31,40 @@ class JobManager:
         if not self.jobs_file.exists():
             raise FileNotFoundError(f"jobs.json not found: {self.jobs_file}")
         with open(self.jobs_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            content = f.read().strip()
+            if not content:
+                raise FileNotFoundError(f"jobs.json is empty: {self.jobs_file}")
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError as e:
+                # 백업 파일이 있으면 복구 시도
+                backup = str(self.jobs_file) + ".bak"
+                if os.path.exists(backup):
+                    print(f"[WARNING] jobs.json 손상 감지, 백업에서 복구: {e}")
+                    with open(backup, 'r', encoding='utf-8') as bf:
+                        return json.load(bf)
+                raise
 
     def _save_jobs(self, jobs_data: dict):
-        """jobs.json 저장"""
-        with open(self.jobs_file, 'w', encoding='utf-8') as f:
-            json.dump(jobs_data, f, indent=2, ensure_ascii=False)
+        """jobs.json 저장 (atomic write: 임시파일 → rename으로 중단 시 파일 손상 방지)"""
+        target = str(self.jobs_file)
+        # 기존 파일 백업
+        if os.path.exists(target):
+            try:
+                os.replace(target, target + ".bak")
+            except OSError:
+                pass
+        # 임시파일에 쓰고 rename (같은 디렉토리여야 atomic)
+        fd, tmp_path = tempfile.mkstemp(dir=str(self.jobs_file.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(jobs_data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, target)
+        except Exception:
+            # 실패 시 임시파일 정리
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
 
     def load_runner_config(self) -> dict:
         """runner_config.json 로드"""
@@ -83,7 +113,9 @@ class JobManager:
         """simulation_index.json 로드
 
         scratch_run 모드에서는 DOE별 index 파일들을 자동 병합합니다.
+        손상된 DOE 인덱스 파일 목록은 self._corrupted_doe_files에 기록됩니다.
         """
+        self._corrupted_doe_files = []  # 손상된 DOE 인덱스 파일 추적
         output_dir = runner_config["project"].get("output_dir", "")
         index_file = runner_config["project"].get("index_file")
 
@@ -100,7 +132,9 @@ class JobManager:
                         if not content:
                             continue
                         doe_index = json.loads(content)
-                except (json.JSONDecodeError, IOError):
+                except (json.JSONDecodeError, IOError) as e:
+                    print(f"[WARNING] DOE 인덱스 파일 손상: {idx_file} ({e})")
+                    self._corrupted_doe_files.append(idx_file)
                     continue
 
                 if merged is None:
@@ -111,21 +145,34 @@ class JobManager:
                         merged["scenarios"][0]["runs"].update(doe_runs)
 
             if merged:
-                # 병합 결과를 메인 index에도 저장
+                # 병합 결과를 메인 index에도 저장 (atomic write)
                 if index_file:
                     try:
-                        with open(index_file, 'w', encoding='utf-8') as f:
+                        dir_path = os.path.dirname(index_file) or "."
+                        fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
+                        with os.fdopen(fd, 'w', encoding='utf-8') as f:
                             json.dump(merged, f, indent=2, ensure_ascii=False)
-                    except IOError:
-                        pass
+                        os.replace(tmp_path, index_file)
+                    except (IOError, OSError):
+                        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+                            os.unlink(tmp_path)
                 return merged
 
         # 일반 모드: 메인 index 파일 로드
         if index_file and os.path.exists(index_file):
-            with open(index_file, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if content:
-                    return json.loads(content)
+            try:
+                with open(index_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:
+                        return json.loads(content)
+            except json.JSONDecodeError as e:
+                # 백업에서 복구 시도
+                backup = index_file + ".bak"
+                if os.path.exists(backup):
+                    print(f"[WARNING] simulation_index.json 손상 감지, 백업에서 복구: {e}")
+                    with open(backup, 'r', encoding='utf-8') as bf:
+                        return json.load(bf)
+                print(f"[WARNING] simulation_index.json 손상, 백업 없음. 초기화합니다: {e}")
         return {"scenarios": [{"runs": {}}]}
 
     def _find_log_file(self, output_dir: str, doe_idx: int) -> Optional[str]:
@@ -230,7 +277,12 @@ class JobManager:
 
     def get_doe_status(self) -> Dict[int, dict]:
         """모든 DOE의 완료/실패/중단 상태 분석"""
-        jobs_data = self.load_jobs()
+        try:
+            jobs_data = self.load_jobs()
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            print(f"[WARNING] jobs.json 로드 실패, 빈 상태로 진행: {e}")
+            jobs_data = {"jobs": {}}
+
         runner_config = self.load_runner_config()
 
         output_dir = runner_config["project"]["output_dir"]
@@ -240,12 +292,32 @@ class JobManager:
         sim_index = self._load_simulation_index(runner_config)
         runs = sim_index.get("scenarios", [{}])[0].get("runs", {})
 
+        # 손상된 DOE 인덱스 파일에서 DOE 번호 추출
+        corrupted_does = set()
+        for corrupted_file in getattr(self, '_corrupted_doe_files', []):
+            # simulation_index_doe_003.json → DOE 3
+            m = re.search(r'simulation_index_doe_(\d+)', corrupted_file)
+            if m:
+                corrupted_does.add(int(m.group(1)))
+
         results = {}
 
         for doe_idx in range(1, doe_count + 1):
             doe_key = str(doe_idx)
             job_info = jobs_data.get("jobs", {}).get(doe_key, {})
             job_id = job_info.get("job_id")
+
+            # JSON 손상 DOE는 바로 문제 잡으로 표시
+            if doe_idx in corrupted_does:
+                results[doe_idx] = {
+                    "status": "failed",
+                    "slurm_state": "UNKNOWN",
+                    "steps_completed": 0,
+                    "steps_total": total_steps,
+                    "job_id": job_id,
+                    "json_corrupted": True
+                }
+                continue
 
             # Slurm 상태 조회
             slurm_state = self._query_slurm_status(job_id) if job_id else "UNKNOWN"

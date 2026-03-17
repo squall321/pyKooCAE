@@ -99,8 +99,8 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     submit_parser.add_argument(
         '--ncpu-per-job',
         type=int,
-        default=16,
-        help='Number of CPUs per job (default: 16)'
+        default=None,
+        help='Number of CPUs per job (default: runner_config.json environment.ncpu, fallback 16)'
     )
     submit_parser.add_argument(
         '--partition',
@@ -320,11 +320,36 @@ def cmd_prepare(args):
         designer.save_runner_config(runner_config, str(output_path))
 
         print(f"✅ Successfully generated: {output_path}")
+
+        # rerun.sh / stop.sh / diagnose.sh 자동 생성
+        script_dir = scenario_path.parent
+        _generate_helper_scripts(script_dir)
+
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
+
+def _generate_helper_scripts(script_dir: Path):
+    """rerun.sh, stop.sh, diagnose.sh 자동 생성"""
+    import stat
+    scripts = {
+        "rerun.sh":   '"$KOOCR" rerun "$SCRIPT_DIR" "$@"',
+        "stop.sh":    '"$KOOCR" stop "$SCRIPT_DIR"',
+        "diagnose.sh": '"$KOOCR" diagnose "$SCRIPT_DIR"',
+    }
+    header = (
+        '#!/bin/bash\n'
+        'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
+        'KOOCR=$(python3 -c "import json; print(json.load(open(\'$SCRIPT_DIR/scenario.json\'))[\'environment\'][\'koochainrun_path\'])")\n'
+    )
+    for filename, cmd in scripts.items():
+        path = script_dir / filename
+        path.write_text(header + cmd + "\n", encoding="utf-8")
+        path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    print(f"✅ Helper scripts generated: rerun.sh, stop.sh, diagnose.sh")
 
 
 def cmd_submit(args):
@@ -343,7 +368,13 @@ def cmd_submit(args):
 
 def _submit_large_scale(args, config_path):
     """LargeScaleDOEManager 기반 제출 (기존 방식)"""
+    import json
     from Runner.LargeScaleDOEManager import LargeScaleDOEManager
+
+    with open(config_path, 'r', encoding='utf-8') as f:
+        runner_config = json.load(f)
+    env = runner_config.get("environment", {})
+    ncpu = args.ncpu_per_job if args.ncpu_per_job is not None else env.get("ncpu", 16)
 
     print("=" * 80)
     print("KooChainRun - Submit Jobs (large-scale mode)")
@@ -351,7 +382,7 @@ def _submit_large_scale(args, config_path):
     print(f"Config:         {config_path}")
     print(f"Nodes:          {args.nodes}")
     print(f"Jobs per node:  {args.jobs_per_node}")
-    print(f"CPUs per job:   {args.ncpu_per_job}")
+    print(f"CPUs per job:   {ncpu}")
     print(f"Total parallel: {args.nodes * args.jobs_per_node}")
     print()
 
@@ -361,7 +392,7 @@ def _submit_large_scale(args, config_path):
             data_root=args.data_root,
             nodes=args.nodes,
             jobs_per_node=args.jobs_per_node,
-            ncpu_per_job=args.ncpu_per_job
+            ncpu_per_job=ncpu
         )
         manager.run()
         print()
@@ -607,6 +638,7 @@ def _submit_cumulative(args, config_path):
     memory = args.memory or env.get("memory", "64G")
     partition = args.partition if args.partition != 'normal' else env.get("partition", "normal")
     time_limit = args.time_limit if args.time_limit != '24:00:00' else env.get("time_limit", "24:00:00")
+    ncpu = args.ncpu_per_job if args.ncpu_per_job is not None else env.get("ncpu", 16)
 
     # apptainer_tmpdir 읽기
     apptainer_tmpdir = env.get("apptainer_tmpdir") or \
@@ -623,7 +655,7 @@ def _submit_cumulative(args, config_path):
     batch_koomesh = runner_config.get("scenario", {}).get("batch_koomeshmodifier", False)
 
     print(f"Partition:  {partition}")
-    print(f"CPUs/job:   {args.ncpu_per_job}")
+    print(f"CPUs/job:   {ncpu}")
     print(f"Memory:     {memory}")
     print(f"Time limit: {time_limit}")
     if apptainer_tmpdir:
@@ -686,7 +718,7 @@ def _submit_cumulative(args, config_path):
 #SBATCH --job-name={job_name}
 #SBATCH --partition={partition}
 #SBATCH --nodes=1
-#SBATCH --ntasks={args.ncpu_per_job}
+#SBATCH --ntasks={ncpu}
 #SBATCH --cpus-per-task=1
 #SBATCH --mem={memory}
 #SBATCH --time={time_limit}
@@ -1110,28 +1142,42 @@ def cmd_rerun(args):
     except FileNotFoundError as e:
         print(f"Error: {e}")
         sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] JSON 파일 손상으로 상태 확인 불가: {e}")
+        print("  손상된 JSON 파일을 수동으로 확인하거나 삭제 후 재시도하세요.")
+        sys.exit(1)
 
     # 상태 테이블 출력
     print()
     print(f"  {'DOE':>5}  {'상태':<15} {'Slurm':<12} {'Step':>8}")
     print("  " + "-" * 45)
+    corrupted_does = []
     for doe_idx in sorted(status_map.keys()):
         info = status_map[doe_idx]
         step_str = f"{info['steps_completed']}/{info['steps_total']}"
-        print(f"  {doe_idx:>5}  {info['status']:<15} {info['slurm_state']:<12} {step_str:>8}")
+        status_label = info['status']
+        if info.get("json_corrupted"):
+            status_label = "json_corrupted"
+            corrupted_does.append(doe_idx)
+        print(f"  {doe_idx:>5}  {status_label:<15} {info['slurm_state']:<12} {step_str:>8}")
 
-    # 재실행 대상 결정
+    # 재실행 대상 결정 (json_corrupted DOE는 제외)
     if args.does:
         target_does = [int(d.strip()) for d in args.does.split(",")]
     else:
         target_does = [
             doe_idx for doe_idx, info in status_map.items()
             if info["status"] in ("failed", "killed", "not_started", "license_error")
+            and not info.get("json_corrupted")
         ]
 
     completed = sum(1 for info in status_map.values() if info["status"] == "completed")
     print()
     print(f"완료: {completed}/{len(status_map)}개")
+
+    if corrupted_does:
+        print(f"[WARNING] JSON 손상 DOE (재실행 제외): {corrupted_does}")
+        print("  해당 DOE의 simulation_index/checkpoint 파일을 확인하세요.")
 
     if not target_does:
         print("재실행 대상 DOE가 없습니다.")
