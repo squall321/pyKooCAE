@@ -972,15 +972,15 @@ RampTime,600
                 logging.error(f"KooMeshModifier failed (returncode={result.returncode})")
                 return None
 
-            # stdout에서 run_id 파싱 ("xxx is generated as run_id")
+            # stdout에서 run_id 파싱 — 마지막 매치 사용 (KooMeshModifier가 run_id를 여러 번 생성할 수 있음)
             import re
-            match = re.search(r'(\S+)\s+is generated as run_id', result.stdout)
-            if match:
-                run_id = match.group(1)
-                logging.info(f"KooMeshModifier run_id: {run_id}")
+            matches = re.findall(r'(\S+)\s+is generated as run_id', result.stdout)
+            if matches:
+                run_id = matches[-1]  # 마지막 run_id가 실제 폴더에 사용됨
+                logging.info(f"KooMeshModifier run_id: {run_id} (총 {len(matches)}개 중 마지막)")
                 return run_id
             else:
-                logging.warning("KooMeshModifier stdout에서 run_id를 찾지 못함")
+                logging.warning("KooMeshModifier stdout에서 run_id를 찾지 못함, 폴더 탐색")
                 # Run_ 폴더를 직접 탐색하여 가장 최근 생성된 것 사용
                 run_dirs = sorted(
                     [d for d in os.listdir(working_dir) if d.startswith("Run_") and os.path.isdir(os.path.join(working_dir, d))],
