@@ -1051,15 +1051,16 @@ RampTime,600
         return True
 
     def _find_input_file(self, run_dir: str, mode: str) -> str:
-        """LS-DYNA 입력 파일 찾기"""
+        """LS-DYNA 입력 파일 찾기 (절대경로 반환)"""
         if mode == "DROP":
-            return "DropSet.k"
+            fname = "DropSet.k"
         elif mode == "IMPACT":
-            return "DropWeightImpactTestSet.k"
+            fname = "DropWeightImpactTestSet.k"
         elif mode == "THERM":
-            return "ThermalSet.k"
+            fname = "ThermalSet.k"
         else:
-            return "SimulationSet.k"
+            fname = "SimulationSet.k"
+        return os.path.join(run_dir, fname)
 
 
 def main():
