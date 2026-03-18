@@ -550,62 +550,76 @@ class CumulativeScenarioRunner:
                     logging.info(f"이미 완료된 step 스킵: {alias} (폴더: {prev_folder})")
                     return True
 
-        # 1. 작업 디렉토리 생성
-        run_id = self._generate_run_id()
-        run_dir = os.path.join(self.output_dir, f"Run_{run_id}")
-        os.makedirs(run_dir, exist_ok=True)
-        os.makedirs(os.path.join(run_dir, "Output"), exist_ok=True)
-        os.makedirs(os.path.join(run_dir, "DynamicRelaxation"), exist_ok=True)
+        # 1. Index 업데이트 (running 상태, run_dir은 KooMeshModifier 실행 후 결정)
+        run_id = None
+        run_dir = None
 
-        # 2. Index 업데이트 (running 상태)
-        self._update_index(alias, {
-            "run_id": run_id,
-            "status": "running",
-            "folder": f"Run_{run_id}",
-            "mode": mode,
-            "condition": condition,
-            "started_at": datetime.now().isoformat(),
-            "prev": self._get_prev_alias(doe_index, step_num)
-        })
-
-        # 3~4. KooMeshModifier (사전 생성 모드이면 복사, 아니면 실행)
+        # 2. KooMeshModifier (사전 생성 모드이면 복사, 아니면 실행)
         if self.skip_koomeshmodifier and self.pregenerated_dir:
-            # Batch 사전 생성 모드: pregenerated 폴더에서 DropSet.k 등을 복사
+            # Batch 사전 생성 모드: Runner가 폴더 생성
+            run_id = self._generate_run_id()
+            run_dir = os.path.join(self.output_dir, f"Run_{run_id}")
+            os.makedirs(run_dir, exist_ok=True)
+            os.makedirs(os.path.join(run_dir, "Output"), exist_ok=True)
+            os.makedirs(os.path.join(run_dir, "DynamicRelaxation"), exist_ok=True)
+            self._update_index(alias, {
+                "run_id": run_id, "status": "running",
+                "folder": f"Run_{run_id}", "mode": mode,
+                "condition": condition,
+                "started_at": datetime.now().isoformat(),
+                "prev": self._get_prev_alias(doe_index, step_num)
+            })
             if not self._copy_pregenerated(doe_index, run_dir, mode):
                 self._update_index(alias, {
-                    "run_id": run_id,
-                    "status": "failed",
-                    "folder": f"Run_{run_id}",
-                    "mode": mode,
+                    "run_id": run_id, "status": "failed",
+                    "folder": f"Run_{run_id}", "mode": mode,
                     "condition": condition,
                     "error": "Pregenerated DropSet.k 복사 실패"
                 })
                 return False
         else:
-            # 일반 모드: KooMeshModifier 설정 파일 생성 + 실행
-            config_file = self._create_step_config(doe_index, step_config, run_dir)
+            # 일반 모드: KooMeshModifier가 Run 폴더 + DropSet.k + Output/ + DynamicRelaxation/ 생성
+            config_file = self._create_step_config(doe_index, step_config)
             if config_file is None:
                 logging.error("Failed to create step config file")
-                self._update_index(alias, {
-                    "run_id": run_id,
-                    "status": "failed",
-                    "folder": f"Run_{run_id}",
-                    "mode": mode,
-                    "condition": condition,
-                    "error": "Config creation failed"
-                })
                 return False
 
-            if not self._run_koomeshmodifier(config_file, run_dir):
+            koomesh_result = self._run_koomeshmodifier(config_file, self.output_dir)
+            if koomesh_result is None:
                 self._update_index(alias, {
-                    "run_id": run_id,
-                    "status": "failed",
-                    "folder": f"Run_{run_id}",
-                    "mode": mode,
-                    "condition": condition,
+                    "run_id": "", "status": "failed",
+                    "folder": "", "mode": mode, "condition": condition,
                     "error": "KooMeshModifier failed"
                 })
                 return False
+
+            run_id = koomesh_result
+            run_dir = os.path.join(self.output_dir, f"Run_{run_id}")
+
+            if not os.path.isdir(run_dir):
+                logging.error(f"KooMeshModifier 완료했으나 Run 폴더 없음: {run_dir}")
+                self._update_index(alias, {
+                    "run_id": run_id, "status": "failed",
+                    "folder": f"Run_{run_id}", "mode": mode,
+                    "condition": condition,
+                    "error": f"Run folder not found: {run_dir}"
+                })
+                return False
+
+            # step_config.txt를 run_dir로 이동 (기록 보존)
+            src_config = config_file
+            dst_config = os.path.join(run_dir, "step_config.txt")
+            if os.path.exists(src_config) and not os.path.exists(dst_config):
+                import shutil
+                shutil.move(src_config, dst_config)
+
+            self._update_index(alias, {
+                "run_id": run_id, "status": "running",
+                "folder": f"Run_{run_id}", "mode": mode,
+                "condition": condition,
+                "started_at": datetime.now().isoformat(),
+                "prev": self._get_prev_alias(doe_index, step_num)
+            })
 
         # 5. LS-DYNA 실행
         input_file = self._find_input_file(run_dir, mode)
@@ -640,7 +654,7 @@ class CumulativeScenarioRunner:
         if step_num < total_steps:
             dti_file = os.path.join(run_dir, "DynamicRelaxation", "dynaintoinitial.txt")
             if os.path.exists(dti_file):
-                if not self._run_koomeshmodifier(dti_file, run_dir):
+                if self._run_koomeshmodifier(dti_file, run_dir) is None:
                     logging.warning("DYNAIN_TO_INITIAL failed, but continuing...")
 
         # 8. Index 업데이트 (completed)
@@ -660,9 +674,8 @@ class CumulativeScenarioRunner:
         logging.info(f"Completed: {alias}")
         return True
 
-    def _create_step_config(self, doe_index: int, step_config: Dict[str, Any],
-                            run_dir: str) -> Optional[str]:
-        """Step별 KooMeshModifier 설정 파일 생성"""
+    def _create_step_config(self, doe_index: int, step_config: Dict[str, Any]) -> Optional[str]:
+        """Step별 KooMeshModifier 설정 파일 생성 (output_dir에 저장)"""
         step_num = step_config["step"]
         mode = step_config["mode"]
         condition = step_config["condition"]
@@ -718,7 +731,7 @@ class CumulativeScenarioRunner:
 
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,False
+*RunDirectoryMode,True,{self.output_dir}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -758,7 +771,7 @@ dt,{dt}
 
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,False
+*RunDirectoryMode,True,{self.output_dir}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -793,7 +806,7 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
 
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,False
+*RunDirectoryMode,True,{self.output_dir}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition} T={target_temp}C
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -812,7 +825,7 @@ RampTime,600
             # 기타 모드는 기본 템플릿
             config_content = f"""*Inputfile
 {model_file}
-*RunDirectoryMode,False
+*RunDirectoryMode,True,{self.output_dir}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
@@ -823,8 +836,8 @@ RampTime,600
 *End
 """
 
-        # 설정 파일 저장
-        config_path = os.path.join(run_dir, f"step_config.txt")
+        # 설정 파일 저장 (output_dir에 임시 저장, KooMeshModifier 실행 후 run_dir로 이동)
+        config_path = os.path.join(self.output_dir, f"step_config_doe{doe_index:03d}_s{step_num:03d}.txt")
         try:
             with open(config_path, 'w', encoding='utf-8') as f:
                 f.write(config_content)
@@ -925,13 +938,19 @@ RampTime,600
             logging.warning(f"Unknown condition: {condition}, using default angles")
             return {"roll": 0, "pitch": 0, "yaw": 0}
 
-    def _run_koomeshmodifier(self, config_file: str, working_dir: str) -> bool:
-        """KooMeshModifier 실행"""
+    def _run_koomeshmodifier(self, config_file: str, working_dir: str) -> Optional[str]:
+        """KooMeshModifier 실행
+
+        Returns:
+            성공 시 run_id (str), 실패 시 None
+            RunDirectoryMode=False거나 run_id 파싱 불가 시 빈 문자열 "" 반환 (성공은 성공)
+        """
         # KooMeshModifier는 Nuitka 바이너리이므로 python3 prefix 없이 직접 실행
         cmd = [self.koomesh_path, config_file]
         # Apptainer 래핑 (설정 시)
         cmd = self.apptainer.wrap_command(cmd, use_lsdyna=False)
         logging.info(f"Running KooMeshModifier: {' '.join(cmd)}")
+        logging.info(f"  working_dir: {working_dir}")
 
         try:
             koomesh_timeout = self.config["execution"].get("timeout_koomeshmodifier_seconds", 604800)
@@ -942,20 +961,45 @@ RampTime,600
                 text=True,
                 timeout=koomesh_timeout
             )
+
+            # stdout/stderr 항상 기록
+            if result.stdout:
+                logging.info(f"KooMeshModifier stdout:\n{result.stdout}")
+            if result.stderr:
+                logging.warning(f"KooMeshModifier stderr:\n{result.stderr}")
+
             if result.returncode != 0:
                 logging.error(f"KooMeshModifier failed (returncode={result.returncode})")
-                logging.error(f"KooMeshModifier stdout:\n{result.stdout}")
-                logging.error(f"KooMeshModifier stderr:\n{result.stderr}")
-                return False
-            logging.info(f"KooMeshModifier completed successfully")
-            logging.debug(f"KooMeshModifier stdout:\n{result.stdout}")
-            return True
+                return None
+
+            # stdout에서 run_id 파싱 ("xxx is generated as run_id")
+            import re
+            match = re.search(r'(\S+)\s+is generated as run_id', result.stdout)
+            if match:
+                run_id = match.group(1)
+                logging.info(f"KooMeshModifier run_id: {run_id}")
+                return run_id
+            else:
+                logging.warning("KooMeshModifier stdout에서 run_id를 찾지 못함")
+                # Run_ 폴더를 직접 탐색하여 가장 최근 생성된 것 사용
+                run_dirs = sorted(
+                    [d for d in os.listdir(working_dir) if d.startswith("Run_") and os.path.isdir(os.path.join(working_dir, d))],
+                    key=lambda d: os.path.getmtime(os.path.join(working_dir, d)),
+                    reverse=True
+                )
+                if run_dirs:
+                    run_id = run_dirs[0].replace("Run_", "", 1)
+                    logging.info(f"KooMeshModifier run_id (폴더 탐색): {run_id}")
+                    return run_id
+                logging.error("KooMeshModifier: Run 폴더도 찾지 못함")
+                return None
+
         except subprocess.TimeoutExpired:
             logging.error("KooMeshModifier timed out")
-            return False
+            return None
         except Exception as e:
             logging.error(f"KooMeshModifier execution error: {e}")
-            return False
+            return None
 
     def _copy_pregenerated(self, doe_index: int, run_dir: str, mode: str) -> bool:
         """사전 생성된 DropSet.k를 pregenerated 디렉토리에서 run_dir로 복사
