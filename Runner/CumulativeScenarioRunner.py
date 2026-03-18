@@ -545,7 +545,7 @@ class CumulativeScenarioRunner:
             prev_run = scenario_runs[alias]
             if prev_run.get("status") == "completed":
                 prev_folder = prev_run.get("folder", "")
-                dynain_path = os.path.join(self.output_dir, prev_folder, "dynain")
+                dynain_path = os.path.join(self.output_dir, prev_folder, "Output", "dynain")
                 if prev_folder and os.path.exists(dynain_path):
                     logging.info(f"이미 완료된 step 스킵: {alias} (폴더: {prev_folder})")
                     return True
@@ -621,11 +621,13 @@ class CumulativeScenarioRunner:
                 "prev": self._get_prev_alias(doe_index, step_num)
             })
 
-        # 5. LS-DYNA 실행
+        # 5. LS-DYNA 실행 (Output/ 폴더에서 실행)
         input_file = self._find_input_file(run_dir, mode)
         timeout = self.config["execution"].get("timeout_per_step_seconds", 604800)
+        output_run_dir = os.path.join(run_dir, "Output")
+        os.makedirs(output_run_dir, exist_ok=True)
 
-        if not self.solver.run(input_file, run_dir, timeout):
+        if not self.solver.run(input_file, output_run_dir, timeout):
             self._update_index(alias, {
                 "run_id": run_id,
                 "status": "failed",
@@ -636,9 +638,9 @@ class CumulativeScenarioRunner:
             })
             return False
 
-        # 6. dynain 생성 대기 (dynain은 run_dir에 직접 생성됨)
+        # 6. dynain 생성 대기 (dynain은 Output/ 폴더에 생성됨)
         dynain_timeout = self.config["execution"].get("timeout_dynain_seconds", 604800)
-        if not self.solver.wait_for_dynain(run_dir, dynain_timeout):
+        if not self.solver.wait_for_dynain(output_run_dir, dynain_timeout):
             self._update_index(alias, {
                 "run_id": run_id,
                 "status": "failed",
