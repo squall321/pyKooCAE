@@ -4634,6 +4634,8 @@ class ElementManager:
         return self.GetBoundaryBoxfromNodes(nodes)        
     
     def GetBoundaryBoxfromNodes(self, nodes):
+        if not nodes:
+            return 0, 0, 0, 0, 0, 0
         coords = np.array([[node.x, node.y, node.z] for node in nodes])
         xmin, ymin, zmin = np.min(coords, axis=0)
         xmax, ymax, zmax = np.max(coords, axis=0)

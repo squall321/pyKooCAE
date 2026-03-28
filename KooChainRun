@@ -14,6 +14,12 @@ import os
 import argparse
 from pathlib import Path
 
+# Slurm 환경 등에서 locale이 C/ASCII일 때 한글 출력 에러 방지
+if sys.stdout.encoding and sys.stdout.encoding.lower() in ('ascii', 'ansi_x3.4-1968'):
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 # Add pyKooCAE to Python path
 SCRIPT_DIR = Path(__file__).parent.resolve()
 sys.path.insert(0, str(SCRIPT_DIR))

@@ -45,7 +45,7 @@ class ApptainerWrapper:
         # APPTAINER_TMPDIR: /tmp 대신 /data 사용 (공간 부족 방지)
         self.apptainer_tmpdir = env.get("apptainer_tmpdir", "/data/tmp")
 
-    def wrap_command(self, cmd: List[str], use_lsdyna: bool = False) -> List[str]:
+    def wrap_command(self, cmd: List[str], use_lsdyna: bool = False, pwd: str = None) -> List[str]:
         """명령어를 apptainer exec로 래핑"""
         if use_lsdyna:
             sif = self.lsdyna_apptainer_sif
@@ -67,6 +67,8 @@ class ApptainerWrapper:
         wrapped = ["apptainer", "exec"]
         if bind:
             wrapped.extend(["--bind", bind])
+        if pwd:
+            wrapped.extend(["--pwd", pwd])
         for key, value in env_vars.items():
             wrapped.extend(["--env", f"{key}={value}"])
         wrapped.append(sif)
@@ -171,7 +173,7 @@ class LSDynaSolverRunner:
                 f"memory={self.memory}"
             ]
             # 단일노드: 기존 방식 (apptainer 안에서 mpirun)
-            cmd = self.apptainer.wrap_command(cmd, use_lsdyna=True)
+            cmd = self.apptainer.wrap_command(cmd, use_lsdyna=True, pwd=working_dir)
         else:
             cmd = [
                 self.solver_path,
@@ -180,7 +182,7 @@ class LSDynaSolverRunner:
                 f"memory={self.memory}"
             ]
             # Apptainer 래핑 (설정 시)
-            cmd = self.apptainer.wrap_command(cmd, use_lsdyna=True)
+            cmd = self.apptainer.wrap_command(cmd, use_lsdyna=True, pwd=working_dir)
 
         logging.info(f"Executing: {' '.join(cmd)}")
         logging.info(f"Working directory: {working_dir}")
@@ -621,7 +623,7 @@ class CumulativeScenarioRunner:
                 "prev": self._get_prev_alias(doe_index, step_num)
             })
 
-        # 5. LS-DYNA 실행 (Output/ 폴더에서 실행)
+        # 5. LS-DYNA 실행 (Output/ 폴더에서 실행 — apptainer --pwd)
         input_file = self._find_input_file(run_dir, mode)
         timeout = self.config["execution"].get("timeout_per_step_seconds", 604800)
         output_run_dir = os.path.join(run_dir, "Output")
@@ -638,7 +640,7 @@ class CumulativeScenarioRunner:
             })
             return False
 
-        # 6. dynain 생성 대기 (dynain은 Output/ 폴더에 생성됨)
+        # 6. dynain 생성 대기 (Output/ 폴더)
         dynain_timeout = self.config["execution"].get("timeout_dynain_seconds", 604800)
         if not self.solver.wait_for_dynain(output_run_dir, dynain_timeout):
             self._update_index(alias, {
@@ -713,6 +715,7 @@ class CumulativeScenarioRunner:
             youngs_modulus = sim_params.get("youngs_modulus", 200000000000)
             poisson_ratio = sim_params.get("poisson_ratio", 0.3)
             sim_height = sim_params.get("height", height)
+            offset_distance = sim_params.get("offset_distance", 0.05)
 
             # drop_surface 설정 (simulation_params에서 읽기, 기본값 제공)
             drop_surface = sim_params.get("drop_surface", {})
@@ -750,7 +753,7 @@ InitialVelocityZ,0
 InitialAngularVelocityX,0
 InitialAngularVelocityY,0
 InitialAngularVelocityZ,0
-OffsetDistance,0.1
+OffsetDistance,{offset_distance}
 Density,{density}
 YoungsModulus,{youngs_modulus}
 PoissonRatio,{poisson_ratio}
@@ -1051,7 +1054,7 @@ RampTime,600
         return True
 
     def _find_input_file(self, run_dir: str, mode: str) -> str:
-        """LS-DYNA 입력 파일 찾기 (절대경로 반환)"""
+        """LS-DYNA 입력 파일 찾기 (절대경로 — cwd가 Output/이므로)"""
         if mode == "DROP":
             fname = "DropSet.k"
         elif mode == "IMPACT":
