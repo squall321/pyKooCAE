@@ -597,7 +597,9 @@ class KooContactManager:
             else:
                 print("only MSTYP = 3 and SSTYPE = 0 is supported in contact graph")
                 continue 
-            newContact["type"] = type(contact).__name__ 
+            newContact["type"] = type(contact).__name__
+            if not partA.elementManager.elements or not partB.elementManager.elements:
+                continue
             boundaryBoxA    = partA.elementManager.GetBoundaryBox()
             boundaryBoxB    = partB.elementManager.GetBoundaryBox()
             newContact["overlap_area"] = overlap_areas_xy_yz_zx(boundaryBoxA, boundaryBoxB)

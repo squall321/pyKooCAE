@@ -155,7 +155,12 @@ class KooDynaImporter():
         self.metaData["model"]["contact_graph"] = {}        
         
         self.metaData["model"]["parts"] = self.partManager.UpdatePartGraph()
-        self.metaData["model"]["contact_graph"], self.metaData["model"]["ptos_contact"], self.metaData["model"]["stop_contact"] = self.contactManager.UpdateContactGraph(self.partManager,self.segmentSetManager)
+        try:
+            self.metaData["model"]["contact_graph"], self.metaData["model"]["ptos_contact"], self.metaData["model"]["stop_contact"] = self.contactManager.UpdateContactGraph(self.partManager,self.segmentSetManager)
+        except Exception as e:
+            print(f"Warning: UpdateContactGraph failed ({e}), skipping contact graph")
+            self.metaData["model"]["ptos_contact"] = {}
+            self.metaData["model"]["stop_contact"] = {}
     
     def ImportMetaDatafromPreviousStep(self, jsonData):
         if "stage" in jsonData:
