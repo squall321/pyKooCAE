@@ -4540,10 +4540,10 @@ class ElementManager:
             #    boundarysorted = tuple(sorted(boundary))
             #    if boundarysorted in unique_boundaries:
             #        original_boundaries.append(boundary)                                 
-            print("Number of unsorted external boundaries: ", len(original_boundaries))
+            print(f"Number of unsorted external boundaries: {len(original_boundaries)} (Part {self.elementManagerID}, {len(self.elements)} elements)")
             return original_boundaries
         else:
-            print("Number of external boundaries: ", len(unique_boundaries))
+            print(f"Number of external boundaries: {len(unique_boundaries)} (Part {self.elementManagerID}, {len(self.elements)} elements)")
             return unique_boundaries
     
     def GetExternalNodes(self):
