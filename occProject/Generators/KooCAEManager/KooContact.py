@@ -1077,15 +1077,20 @@ class KooContactManager:
             if type(contact) in [KooContactAutomaticSingleSurface, KooContactSingleSurface]:
                 if contact.MSTYP == 5 or contact.SSTYP == 5:
                     genContact = contact
+            elif type(contact) == KooContactAutomaticGeneral:
+                genContact = contact
+                print("AUTOMATIC_GENERAL (CID={0}) -> S2S decomposition start".format(cid))
         print("ConvertAss5ToAstsPartPairs for Contact ID: {0}".format(cid))
         print("Calculating Bound Box for all Parts in Contact...")
-                            
+
         if genContact is None:
-            print("No Contact found or Contact is not *CONTACT_AUTOMATIC_SINGLE_SURFACE or *CONTACT_SINGLE_SURFACE with MSTYP=5")
+            print("No Contact found or Contact is not *CONTACT_AUTOMATIC_SINGLE_SURFACE, *CONTACT_SINGLE_SURFACE (MSTYP=5), or *CONTACT_AUTOMATIC_GENERAL")
             return 
         
-        boundBoxDict = {}             
+        boundBoxDict = {}
         for id, part in partManager.parts.items():
+            if not part.elementManager.elements:
+                continue
             minX, maxX, minY, maxY, minZ, maxZ = part.elementManager.GetBoundaryBox()
             xLength = maxX - minX
             yLength = maxY - minY
@@ -1135,10 +1140,12 @@ class KooContactManager:
         OptCardE = genContact.OptCardE
         OptCardF = genContact.OptCardF
         
+        print("Decomposing into {0} S2S contact pairs...".format(len(pairs)))
         for pair in pairs:
             partAID = pair[0]
             partBID = pair[1]
-            print("Found Contact Pair: Part {0} to Part {1}".format(partAID, partBID))
+            partAName = partManager.parts[partAID].name if partAID in partManager.parts else str(partAID)
+            partBName = partManager.parts[partBID].name if partBID in partManager.parts else str(partBID)
             newContact = self.CreateContactAutomaticSurfacetoSurface(partAID, partBID, SSTYP, MSTYP, SBOXID, 0, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
             newContact.OptCardA = OptCardA
             newContact.OptCardB = OptCardB
@@ -1146,12 +1153,13 @@ class KooContactManager:
             newContact.OptCardD = OptCardD
             newContact.OptCardE = OptCardE
             newContact.OptCardF = OptCardF
-            newContact.name = "Contact_{0}_from_{1}_to_{2}".format(newContact.cid, partAID, partBID)
-            
-        print("Removing Original Contact ID: {0}".format(cid))
+            contactName = "S2S_P{0}_{1}_to_P{2}_{3}".format(partAID, partAName.strip(), partBID, partBName.strip())
+            newContact.name = contactName[:70]
+            print("  CID={0}: Part {1}({2}) <-> Part {3}({4})".format(newContact.cid, partAID, partAName.strip(), partBID, partBName.strip()))
 
+        print("Removing Original Contact ID: {0} ({1})".format(cid, type(genContact).__name__))
         self.RemoveContactbyID(cid)
-        print("ConvertAss5ToAstsPartPairs Completed.")
+        print("Contact decomposition completed: {0} pairs created.".format(len(pairs)))
 
     def RemoveDuplicateTiedContacts(self):
         """
