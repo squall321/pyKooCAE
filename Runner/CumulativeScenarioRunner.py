@@ -734,6 +734,36 @@ class CumulativeScenarioRunner:
             d2r_enabled = drop_surface.get("deformable_to_rigid", False)
             d2r_line = "\nDeformableToRigid,True" if d2r_enabled else ""
 
+            # Contact 처리 옵션
+            convert_to_ss = sim_params.get("convert_general_to_single_surface", True)
+            ensure_ss = sim_params.get("ensure_single_surface", False)
+            decompose_general = sim_params.get("decompose_general_contact", False)
+            decompose_margin = sim_params.get("decompose_contact_margin", 1.5)
+            decompose_abs_margin_x = sim_params.get("decompose_contact_absolute_margin_x", 5.0)
+            decompose_abs_margin_y = sim_params.get("decompose_contact_absolute_margin_y", 5.0)
+            decompose_abs_margin_z = sim_params.get("decompose_contact_absolute_margin_z", 0.5)
+            contact_opt_line = ""
+            if not convert_to_ss:
+                contact_opt_line += "\nConvertGeneralToSingleSurface,False"
+            if ensure_ss:
+                contact_opt_line += "\nEnsureSingleSurface,True"
+            if decompose_general:
+                contact_opt_line += "\nDecomposeGeneralContact,True"
+            if decompose_margin != 1.5:
+                contact_opt_line += f"\nDecomposeContactMargin,{decompose_margin}"
+            if decompose_abs_margin_x != 5.0:
+                contact_opt_line += f"\nDecomposeContactAbsoluteMarginX,{decompose_abs_margin_x}"
+            if decompose_abs_margin_y != 5.0:
+                contact_opt_line += f"\nDecomposeContactAbsoluteMarginY,{decompose_abs_margin_y}"
+            if decompose_abs_margin_z != 0.5:
+                contact_opt_line += f"\nDecomposeContactAbsoluteMarginZ,{decompose_abs_margin_z}"
+
+            # 바닥판 접촉 옵션
+            drop_contact = sim_params.get("drop_contact", {})
+            drop_contact_line = ""
+            for key, val in drop_contact.items():
+                drop_contact_line += f"\nDropContact.{key},{val}"
+
             config_content = f"""*Inputfile
 {model_file}
 *RunDirectoryMode,True,{self.output_dir}
@@ -759,7 +789,7 @@ YoungsModulus,{youngs_modulus}
 PoissonRatio,{poisson_ratio}
 tFinal,{tFinal}
 dt,{dt}
-{drop_surface_line}{d2r_line}
+{drop_surface_line}{d2r_line}{contact_opt_line}{drop_contact_line}
 **EndDropAttitude
 *End
 """

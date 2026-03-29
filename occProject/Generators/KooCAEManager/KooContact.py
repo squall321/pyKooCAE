@@ -57,7 +57,7 @@ class KooContact:
             self.MSID += offsetnsid
 
     def SetOptCardA(self,SOFT=0, SOFSCL=0.1, LCIDAB=0, MAXPAR=1.025, SBOPT=2, DEPTH=2, BSORT=100, FRCFRQ=1):
-        self.OptCardA = [SOFT, SOFSCL, LCIDAB, MAXPAR, SBOPT, DEPTH, BSORT, FRCFRQ]
+        self.OptCardA = [int(SOFT), SOFSCL, int(LCIDAB), MAXPAR, int(SBOPT), int(DEPTH), int(BSORT), int(FRCFRQ)]
     
     def SetOptCardB(self,PENMAX=0.0, THKOPT=0, SHLTHK=0, SNLOG=0, ISYM=0, I2D3D=0, SLDTHK=0.0, SLDSTF=0.0):
         self.OptCardB = [PENMAX, THKOPT, SHLTHK, SNLOG, ISYM, I2D3D, SLDTHK, SLDSTF]
@@ -96,19 +96,19 @@ class KooContact:
         DCStr = format(self.DC, ">10")
         VCStr = format(self.VC, ">10")
         VDCStr = format(self.VDC, ">10")
-        PENCHKStr = format(self.PENCHK, ">10")
+        PENCHKStr = format(int(self.PENCHK) if self.PENCHK != "" else 0, ">10")
         BTStr = format(self.BT, ">10")
         DTStr = format(self.DT, ">10")
         keyword += FSStr + FDStr + DCStr + VCStr + VDCStr + PENCHKStr + BTStr + DTStr + "\n"        
         keyword += "$$     SFS       SFM       SST       MST      SFST      SFMT       FSF       VSF\n"
-        SFSStr = format(self.SFS, ">10")
-        SFMStr = format(self.SFM, ">10")
-        SSTStr = format(self.SST, ">10")
-        MSTStr = format(self.MST, ">10")
-        SFSTStr = format(self.SFST, ">10")
-        SFMTStr = format(self.SFMT, ">10")
-        FSFStr = format(self.FSF, ">10")
-        VSFStr = format(self.VSF, ">10")
+        SFSStr = format(self.SFS if self.SFS != "" else 1.0, ">10")
+        SFMStr = format(self.SFM if self.SFM != "" else 1.0, ">10")
+        SSTStr = format(self.SST if self.SST != "" else 0.0, ">10")
+        MSTStr = format(self.MST if self.MST != "" else 0.0, ">10")
+        SFSTStr = format(self.SFST if self.SFST != "" else 1.0, ">10")
+        SFMTStr = format(self.SFMT if self.SFMT != "" else 1.0, ">10")
+        FSFStr = format(self.FSF if self.FSF != "" else 1.0, ">10")
+        VSFStr = format(self.VSF if self.VSF != "" else 1.0, ">10")
         keyword += SFSStr + SFMStr + SSTStr + MSTStr + SFSTStr + SFMTStr + FSFStr + VSFStr + "\n"
 
         return keyword
@@ -227,19 +227,19 @@ class KooContact:
         DCStr = format(self.DC, ">10")
         VCStr = format(self.VC, ">10")
         VDCStr = format(self.VDC, ">10")
-        PENCHKStr = format(self.PENCHK, ">10")
+        PENCHKStr = format(int(self.PENCHK) if self.PENCHK != "" else 0, ">10")
         BTStr = format(self.BT, ">10")
         DTStr = format(self.DT, ">10")
         stream.write(FSStr + FDStr + DCStr + VCStr + VDCStr + PENCHKStr + BTStr + DTStr + "\n")
         stream.write("$$     SFS       SFM       SST       MST      SFST      SFMT       FSF       VSF\n")
-        SFSStr = format(self.SFS, ">10")
-        SFMStr = format(self.SFM, ">10")
-        SSTStr = format(self.SST, ">10")
-        MSTStr = format(self.MST, ">10")
-        SFSTStr = format(self.SFST, ">10")
-        SFMTStr = format(self.SFMT, ">10")
-        FSFStr = format(self.FSF, ">10")
-        VSFStr = format(self.VSF, ">10")
+        SFSStr = format(self.SFS if self.SFS != "" else 1.0, ">10")
+        SFMStr = format(self.SFM if self.SFM != "" else 1.0, ">10")
+        SSTStr = format(self.SST if self.SST != "" else 0.0, ">10")
+        MSTStr = format(self.MST if self.MST != "" else 0.0, ">10")
+        SFSTStr = format(self.SFST if self.SFST != "" else 1.0, ">10")
+        SFMTStr = format(self.SFMT if self.SFMT != "" else 1.0, ">10")
+        FSFStr = format(self.FSF if self.FSF != "" else 1.0, ">10")
+        VSFStr = format(self.VSF if self.VSF != "" else 1.0, ">10")
         stream.write(SFSStr + SFMStr + SSTStr + MSTStr + SFSTStr + SFMTStr + FSFStr + VSFStr + "\n")
     
     def WriteStreamDynaKeywordOptCard(self,stream):
@@ -371,7 +371,7 @@ class KooContactAutomaticSurfacetoSurface(KooContact):
                     
     def WritetoDynaKeyword(self, startID = 0):
         keyword = "*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_ID\n"
-        keyword = super(KooContactAutomaticSurfacetoSurface,self).WritetoDynaKeyword(startID)       
+        keyword += super(KooContactAutomaticSurfacetoSurface,self).WritetoDynaKeyword(startID)
         keyword += self.WritetoDynaKeywordOptCard()
         return keyword      
     
@@ -1070,7 +1070,7 @@ class KooContactManager:
         for key in self.contacts:
             self.contacts[key].WriteStreamDynaKeyword(stream,startID)            
         
-    def ConvertAss5ToAstsPartPairs(self, partManager, cid, marginX = 1.5, marginY = 1.5, marginZ = 1.5):
+    def ConvertAss5ToAstsPartPairs(self, partManager, cid, marginX = 1.5, marginY = 1.5, marginZ = 1.5, absoluteMarginX = 5.0, absoluteMarginY = 5.0, absoluteMarginZ = 0.5):
         genContact = None
         if cid in self.contacts:
             contact = self.contacts[cid]
@@ -1096,12 +1096,15 @@ class KooContactManager:
             yLength = maxY - minY
             zLength = maxZ - minZ
             
-            minX -= xLength * (marginX - 1.0) / 2.0
-            maxX += xLength * (marginX - 1.0) / 2.0
-            minY -= yLength * (marginY - 1.0) / 2.0
-            maxY += yLength * (marginY - 1.0) / 2.0
-            minZ -= zLength * (marginZ - 1.0) / 2.0
-            maxZ += zLength * (marginZ - 1.0) / 2.0
+            expandX = max(xLength * (marginX - 1.0) / 2.0, absoluteMarginX)
+            expandY = max(yLength * (marginY - 1.0) / 2.0, absoluteMarginY)
+            expandZ = max(zLength * (marginZ - 1.0) / 2.0, absoluteMarginZ)
+            minX -= expandX
+            maxX += expandX
+            minY -= expandY
+            maxY += expandY
+            minZ -= expandZ
+            maxZ += expandZ
             
             boundBoxDict[id] =[minX, maxX, minY, maxY, minZ, maxZ]
             print("Part ID: {0}, Bound Box: {1}".format(id, boundBoxDict[id]))
@@ -1140,10 +1143,29 @@ class KooContactManager:
         OptCardE = genContact.OptCardE
         OptCardF = genContact.OptCardF
         
-        print("Decomposing into {0} S2S contact pairs...".format(len(pairs)))
+        # Tied contact 쌍 수집 (이중 구속 방지)
+        tied_types = (KooContactTiedSurfacetoSurface, KooContactTiedSurfacetoSurfaceOffset,
+                      KooContactTiedShellEdgetoSurfaceBeamOffset)
+        tied_pairs = set()
+        for _, contact in self.contacts.items():
+            if isinstance(contact, tied_types):
+                if contact.SSTYP == 3 and contact.MSTYP == 3:
+                    a, b = min(contact.SSID, contact.MSID), max(contact.SSID, contact.MSID)
+                    tied_pairs.add((a, b))
+                else:
+                    print("  Warning: Tied contact CID={0} uses non-part SSTYP={1}/MSTYP={2}, manual check needed".format(
+                        contact.cid, contact.SSTYP, contact.MSTYP))
+        if tied_pairs:
+            print("Tied contact pairs excluded: {0}".format(len(tied_pairs)))
+
+        # Tied 쌍 제외 후 S2S 생성
+        created = 0
         for pair in pairs:
             partAID = pair[0]
             partBID = pair[1]
+            a, b = min(partAID, partBID), max(partAID, partBID)
+            if (a, b) in tied_pairs:
+                continue
             partAName = partManager.parts[partAID].name if partAID in partManager.parts else str(partAID)
             partBName = partManager.parts[partBID].name if partBID in partManager.parts else str(partBID)
             newContact = self.CreateContactAutomaticSurfacetoSurface(partAID, partBID, SSTYP, MSTYP, SBOXID, 0, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
@@ -1156,10 +1178,12 @@ class KooContactManager:
             contactName = "S2S_P{0}_{1}_to_P{2}_{3}".format(partAID, partAName.strip(), partBID, partBName.strip())
             newContact.name = contactName[:70]
             print("  CID={0}: Part {1}({2}) <-> Part {3}({4})".format(newContact.cid, partAID, partAName.strip(), partBID, partBName.strip()))
+            created += 1
 
         print("Removing Original Contact ID: {0} ({1})".format(cid, type(genContact).__name__))
         self.RemoveContactbyID(cid)
-        print("Contact decomposition completed: {0} pairs created.".format(len(pairs)))
+        print("Contact decomposition completed: {0} S2S created ({1} tied excluded from {2} bbox pairs).".format(
+            created, len(pairs) - created, len(pairs)))
 
     def RemoveDuplicateTiedContacts(self):
         """

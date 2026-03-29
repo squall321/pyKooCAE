@@ -1368,6 +1368,37 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "deformabletorigid" in line.lower():
                             svector = line.split(",")
                             curOptions["DeformableToRigid"] = svector[1].strip().lower() == "true"
+                        elif "ensuresinglesurface" in line.lower():
+                            svector = line.split(",")
+                            curOptions["EnsureSingleSurface"] = svector[1].strip().lower() != "false"
+                        elif "convertgeneraltosinglesurf" in line.lower():
+                            svector = line.split(",")
+                            curOptions["ConvertGeneralToSingleSurface"] = svector[1].strip().lower() != "false"
+                        elif "decomposegeneralcontact" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DecomposeGeneralContact"] = svector[1].strip().lower() != "false"
+                        elif "decomposecontactmargin" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DecomposeContactMargin"] = float(svector[1].strip())
+                        elif "decomposecontactabsolutemarginx" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DecomposeContactAbsoluteMarginX"] = float(svector[1].strip())
+                        elif "decomposecontactabsolutemarginy" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DecomposeContactAbsoluteMarginY"] = float(svector[1].strip())
+                        elif "decomposecontactabsolutemarginz" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DecomposeContactAbsoluteMarginZ"] = float(svector[1].strip())
+                        elif "dropcontact." in line.lower():
+                            svector = line.split(",")
+                            key = svector[0].split(".")[1].strip()
+                            val = svector[1].strip()
+                            if "DropContact" not in curOptions:
+                                curOptions["DropContact"] = {}
+                            try:
+                                curOptions["DropContact"][key] = float(val)
+                            except ValueError:
+                                curOptions["DropContact"][key] = val
 
                     self.modeIDOption[curModeID] = curOptions
                 elif "*weakcoupling" in line.lower():
