@@ -645,14 +645,19 @@ class CumulativeScenarioRunner:
             # LS-DYNA 실행 (로컬 디스크)
             solver_success = self.solver.run(os.path.basename(local_input), local_work_dir, timeout)
 
-            # Stage-out: 결과를 NFS로 복사
+            # Stage-out: rsync로 결과를 NFS로 복사 (대용량 안정적 전송)
             if os.path.isdir(local_work_dir):
                 logging.info(f"Stage-out: {local_work_dir} -> {output_run_dir}")
-                for fname in os.listdir(local_work_dir):
-                    src = os.path.join(local_work_dir, fname)
-                    dst = os.path.join(output_run_dir, fname)
-                    if os.path.isfile(src):
-                        shutil.copy2(src, dst)
+                rsync_ret = subprocess.run(
+                    ["rsync", "-a", "--size-only", local_work_dir + "/", output_run_dir + "/"],
+                    capture_output=True, text=True)
+                if rsync_ret.returncode != 0:
+                    logging.warning(f"rsync failed ({rsync_ret.returncode}), fallback to shutil")
+                    for fname in os.listdir(local_work_dir):
+                        src = os.path.join(local_work_dir, fname)
+                        dst = os.path.join(output_run_dir, fname)
+                        if os.path.isfile(src):
+                            shutil.copy2(src, dst)
                 # 로컬 정리
                 shutil.rmtree(local_work_dir, ignore_errors=True)
         else:
