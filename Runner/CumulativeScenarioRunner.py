@@ -42,8 +42,11 @@ class ApptainerWrapper:
         self.lsdyna_apptainer_env = env.get("lsdyna_apptainer_env", {})
         self.apptainer_env = env.get("apptainer_env", {})
         self.nodes_per_job = env.get("nodes_per_job", 1)
-        # APPTAINER_TMPDIR: /tmp 대신 /data 사용 (공간 부족 방지)
-        self.apptainer_tmpdir = env.get("apptainer_tmpdir", "/data/tmp")
+        # APPTAINER_TMPDIR: 노드 로컬 디스크 사용 (NFS 충돌 방지)
+        # Job별 고유 디렉토리로 동시 실행 시 충돌 방지
+        base_tmpdir = env.get("apptainer_tmpdir", "/opt/tmp")
+        job_id = os.environ.get("SLURM_JOB_ID", str(os.getpid()))
+        self.apptainer_tmpdir = os.path.join(base_tmpdir, f"apptainer_job_{job_id}")
 
     def wrap_command(self, cmd: List[str], use_lsdyna: bool = False, pwd: str = None) -> List[str]:
         """명령어를 apptainer exec로 래핑"""
