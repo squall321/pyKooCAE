@@ -329,7 +329,7 @@ def cmd_prepare(args):
 
         # rerun.sh / stop.sh / diagnose.sh / copy.sh 자동 생성
         script_dir = scenario_path.parent
-        _generate_helper_scripts(script_dir, runner_config)
+        _generate_helper_scripts(script_dir, user_config)
 
     except Exception as e:
         print(f"❌ Error: {e}")
