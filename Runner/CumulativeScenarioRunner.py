@@ -191,14 +191,17 @@ class LSDynaSolverRunner:
         logging.info(f"Working directory: {working_dir}")
 
         try:
-            process = subprocess.Popen(
-                cmd,
-                cwd=working_dir,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+            # LS-DYNA 출력을 로그 파일에 실시간 저장
+            log_file = os.path.join(working_dir, "lsdyna_stdout.log")
+            with open(log_file, "w") as flog:
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=working_dir,
+                    stdout=flog,
+                    stderr=subprocess.PIPE
+                )
 
-            stdout, stderr = process.communicate(timeout=timeout)
+                _, stderr = process.communicate(timeout=timeout)
 
             if process.returncode != 0:
                 logging.error(f"LS-DYNA failed with return code {process.returncode}")
