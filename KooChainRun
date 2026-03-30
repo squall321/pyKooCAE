@@ -491,7 +491,70 @@ echo "총 $TOTAL 디렉토리 정리 완료"
     clean_path.write_text(clean_script, encoding="utf-8")
     clean_path.chmod(clean_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    print(f"✅ Helper scripts generated: rerun.sh, stop.sh, diagnose.sh, copy.sh, clean.sh")
+    # copylog.sh 생성 (로그 파일만 빠르게 동기화)
+    copylog_script = f'''#!/bin/bash
+# copylog.sh - 로컬 scratch에서 로그 파일만 NFS로 동기화
+# lsdyna_stdout.log, d3hsp, status.out 등 경량 파일만 가져옴
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+SCRATCH_BASE="{tmpdir}"
+OUTPUT_DIR="{output_dir}"
+JOBS_FILE="$SCRIPT_DIR/jobs.json"
+
+LOG_FILES="lsdyna_stdout.log d3hsp status.out messag glstat"
+
+echo "========================================"
+echo "로그 파일 동기화"
+echo "========================================"
+
+if [ ! -f "$JOBS_FILE" ]; then
+    echo "jobs.json 없음"
+    exit 0
+fi
+
+JOB_IDS=$(python3 -c "
+import json
+d = json.load(open('$JOBS_FILE'))
+for k, v in d.get('jobs', {{}}).items():
+    print(v.get('job_id', ''))
+" 2>/dev/null | grep -v '^$')
+
+NODES=$(squeue -u $USER --format="%N" --noheader 2>/dev/null | sort -u)
+if [ -z "$NODES" ]; then
+    echo "실행 중인 job 없음"
+    exit 0
+fi
+
+for NODE in $NODES; do
+    for JID in $JOB_IDS; do
+        DIRS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$NODE" \\
+            "ls -d $SCRATCH_BASE/apptainer_job_$JID/run_* 2>/dev/null" 2>/dev/null || true)
+        for DIR in $DIRS; do
+            RUN_NAME=$(basename "$DIR")
+            NFS_OUTPUT="$OUTPUT_DIR/$RUN_NAME/Output"
+            mkdir -p "$NFS_OUTPUT"
+            # 로그 파일만 선택적 복사
+            INCLUDE_ARGS=""
+            for F in $LOG_FILES; do
+                INCLUDE_ARGS="$INCLUDE_ARGS --include=$F"
+            done
+            rsync -a $INCLUDE_ARGS --exclude='*' \\
+                -e "ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no" \\
+                "$NODE:$DIR/" "$NFS_OUTPUT/" 2>/dev/null
+            echo "  $NODE:$RUN_NAME -> 로그 동기화 완료"
+        done
+    done
+done
+
+echo ""
+echo "로그 동기화 완료"
+'''
+    copylog_path = script_dir / "copylog.sh"
+    copylog_path.write_text(copylog_script, encoding="utf-8")
+    copylog_path.chmod(copylog_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    print(f"✅ Helper scripts generated: rerun.sh, stop.sh, diagnose.sh, copy.sh, copylog.sh, clean.sh")
 
 
 def cmd_submit(args):
