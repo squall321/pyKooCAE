@@ -626,13 +626,39 @@ class CumulativeScenarioRunner:
                 "prev": self._get_prev_alias(doe_index, step_num)
             })
 
-        # 5. LS-DYNA 실행 (Output/ 폴더에서 실행 — apptainer --pwd)
+        # 5. LS-DYNA 실행 (로컬 디스크 stage-in/out으로 NFS 부하 방지)
         input_file = self._find_input_file(run_dir, mode)
         timeout = self.config["execution"].get("timeout_per_step_seconds", 604800)
         output_run_dir = os.path.join(run_dir, "Output")
         os.makedirs(output_run_dir, exist_ok=True)
 
-        if not self.solver.run(input_file, output_run_dir, timeout):
+        use_local = self.config.get("environment", {}).get("use_local_scratch", True)
+        if use_local and self.apptainer.apptainer_tmpdir:
+            import shutil
+            local_work_dir = os.path.join(self.apptainer.apptainer_tmpdir, f"run_{run_id}")
+            os.makedirs(local_work_dir, exist_ok=True)
+            # Stage-in: 입력 파일을 로컬로 복사
+            local_input = os.path.join(local_work_dir, os.path.basename(input_file))
+            shutil.copy2(input_file, local_input)
+            logging.info(f"Stage-in: {input_file} -> {local_work_dir}")
+
+            # LS-DYNA 실행 (로컬 디스크)
+            solver_success = self.solver.run(os.path.basename(local_input), local_work_dir, timeout)
+
+            # Stage-out: 결과를 NFS로 복사
+            if os.path.isdir(local_work_dir):
+                logging.info(f"Stage-out: {local_work_dir} -> {output_run_dir}")
+                for fname in os.listdir(local_work_dir):
+                    src = os.path.join(local_work_dir, fname)
+                    dst = os.path.join(output_run_dir, fname)
+                    if os.path.isfile(src):
+                        shutil.copy2(src, dst)
+                # 로컬 정리
+                shutil.rmtree(local_work_dir, ignore_errors=True)
+        else:
+            solver_success = self.solver.run(input_file, output_run_dir, timeout)
+
+        if not solver_success:
             self._update_index(alias, {
                 "run_id": run_id,
                 "status": "failed",
