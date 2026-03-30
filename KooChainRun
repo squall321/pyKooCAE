@@ -343,7 +343,7 @@ def _generate_helper_scripts(script_dir: Path, runner_config: dict = None):
     import stat
     scripts = {
         "rerun.sh":   '"$KOOCR" rerun "$SCRIPT_DIR" "$@"',
-        "stop.sh":    '"$KOOCR" stop "$SCRIPT_DIR"',
+        "stop.sh":    '"$KOOCR" stop "$SCRIPT_DIR"\n# 로컬 scratch 정리\nbash "$SCRIPT_DIR/clean.sh" 2>/dev/null || true',
         "diagnose.sh": '"$KOOCR" diagnose "$SCRIPT_DIR"',
     }
     header = (
@@ -429,7 +429,69 @@ echo "========================================"
     copy_path.write_text(copy_script, encoding="utf-8")
     copy_path.chmod(copy_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    print(f"✅ Helper scripts generated: rerun.sh, stop.sh, diagnose.sh, copy.sh")
+    # clean.sh 생성 (로컬 scratch 정리)
+    clean_script = f'''#!/bin/bash
+# clean.sh - 이 프로젝트 job의 로컬 scratch만 정리
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+SCRATCH_BASE="{tmpdir}"
+JOBS_FILE="$SCRIPT_DIR/jobs.json"
+
+echo "========================================"
+echo "로컬 scratch 정리 (이 프로젝트만)"
+echo "========================================"
+echo "Scratch base: $SCRATCH_BASE"
+
+# jobs.json에서 이 프로젝트의 job ID 목록 추출
+if [ ! -f "$JOBS_FILE" ]; then
+    echo "jobs.json 없음"
+    exit 0
+fi
+
+JOB_IDS=$(python3 -c "
+import json
+d = json.load(open('$JOBS_FILE'))
+for k, v in d.get('jobs', {{}}).items():
+    print(v.get('job_id', ''))
+" 2>/dev/null | grep -v '^$')
+
+if [ -z "$JOB_IDS" ]; then
+    echo "정리할 job ID 없음"
+    exit 0
+fi
+
+echo "대상 Job IDs: $(echo $JOB_IDS | tr '\\n' ' ')"
+echo ""
+
+NODES=$(sinfo -N --noheader --format="%N" 2>/dev/null | sort -u)
+if [ -z "$NODES" ]; then
+    NODES=$(squeue -u $USER --format="%N" --noheader 2>/dev/null | sort -u)
+fi
+
+TOTAL=0
+for NODE in $NODES; do
+    for JID in $JOB_IDS; do
+        TARGET="$SCRATCH_BASE/apptainer_job_$JID"
+        EXISTS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$NODE" \\
+            "[ -d $TARGET ] && echo yes || echo no" 2>/dev/null || echo "no")
+        if [ "$EXISTS" = "yes" ]; then
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$NODE" \\
+                "rm -rf $TARGET" 2>/dev/null || true
+            echo "  $NODE: $TARGET 삭제"
+            TOTAL=$((TOTAL + 1))
+        fi
+    done
+done
+
+echo ""
+echo "총 $TOTAL 디렉토리 정리 완료"
+'''
+    clean_path = script_dir / "clean.sh"
+    clean_path.write_text(clean_script, encoding="utf-8")
+    clean_path.chmod(clean_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    print(f"✅ Helper scripts generated: rerun.sh, stop.sh, diagnose.sh, copy.sh, clean.sh")
 
 
 def cmd_submit(args):
