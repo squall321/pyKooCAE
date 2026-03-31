@@ -661,8 +661,11 @@ class CumulativeScenarioRunner:
                         dst = os.path.join(output_run_dir, fname)
                         if os.path.isfile(src):
                             shutil.copy2(src, dst)
-                # 로컬 정리
+                # 로컬 정리 (Run 폴더 + 상위 apptainer_job 폴더)
                 shutil.rmtree(local_work_dir, ignore_errors=True)
+                job_dir = os.path.dirname(local_work_dir)
+                if job_dir and os.path.isdir(job_dir) and not os.listdir(job_dir):
+                    shutil.rmtree(job_dir, ignore_errors=True)
         else:
             solver_success = self.solver.run(input_file, output_run_dir, timeout)
 
