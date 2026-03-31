@@ -668,6 +668,13 @@ class KooContactManager:
         self.contacts[self.maxid] = contact
         return contact
 
+    def CreateContactAutomaticGeneral(self, SSID, MSID,SSTYP,MSTYP,SBOXID,MBOXID,SPR,MPR,FS,FD,DC,VC,VDC,PENCHK,BT,DT,SFS,SFM,SST,MST,SFST,SFMT,FSF,VSF):
+        self.maxid += 1
+        name = "Contact_{0}".format(self.maxid)
+        contact = KooContactAutomaticGeneral(self.maxid, name, SSID, MSID,SSTYP,MSTYP,SBOXID,MBOXID,SPR,MPR,FS,FD,DC,VC,VDC,PENCHK,BT,DT,SFS,SFM,SST,MST,SFST,SFMT,FSF,VSF)
+        self.contacts[self.maxid] = contact
+        return contact
+
     def CreateContactAutomaticSingleSurfacewithID(self,id, name, SSID, MSID,SSTYP,MSTYP,SBOXID,MBOXID,SPR,MPR,FS,FD,DC,VC,VDC,PENCHK,BT,DT,SFS,SFM,SST,MST,SFST,SFMT,FSF,VSF):
         if id > self.maxid:
             self.maxid = id

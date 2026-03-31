@@ -2327,97 +2327,158 @@ class KooDynaAdvancedModification:
                 nsFixed = part.elementManager.CreateImpactBoxwithRoughness(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor2)
                 nodeSetFixed.AddNodesfromDict(nsFixed)
 
-            # 외곽 part만 바닥판 접촉 대상으로 필터링
-            # 전체 모델 bbox 계산
-            allMinX, allMaxX = float('inf'), float('-inf')
-            allMinY, allMaxY = float('inf'), float('-inf')
-            allMinZ, allMaxZ = float('inf'), float('-inf')
-            partBBoxes = {}
-            for pid, p in self.dynaImporter.partManager.parts.items():
-                if pid == part.id or not p.elementManager.elements:
-                    continue
-                pMinX, pMaxX, pMinY, pMaxY, pMinZ, pMaxZ = p.elementManager.GetBoundaryBox()
-                partBBoxes[pid] = (pMinX, pMaxX, pMinY, pMaxY, pMinZ, pMaxZ)
-                allMinX = min(allMinX, pMinX); allMaxX = max(allMaxX, pMaxX)
-                allMinY = min(allMinY, pMinY); allMaxY = max(allMaxY, pMaxY)
-                allMinZ = min(allMinZ, pMinZ); allMaxZ = max(allMaxZ, pMaxZ)
-
-            # 외곽 판별: part bbox가 전체 bbox 경계 ±10%에 걸치면 외곽
-            shellMargin = 0.1
-            xRange = (allMaxX - allMinX) * shellMargin
-            yRange = (allMaxY - allMinY) * shellMargin
-            zRange = (allMaxZ - allMinZ) * shellMargin
-            outerPartIDs = []
-            for pid, (pMinX, pMaxX, pMinY, pMaxY, pMinZ, pMaxZ) in partBBoxes.items():
-                if (pMinX <= allMinX + xRange or pMaxX >= allMaxX - xRange or
-                    pMinY <= allMinY + yRange or pMaxY >= allMaxY - yRange or
-                    pMinZ <= allMinZ + zRange or pMaxZ >= allMaxZ - zRange):
-                    outerPartIDs.append(pid)
-
-            print("Drop contact: {0}/{1} outer parts selected".format(len(outerPartIDs), len(partBBoxes)))
-
-            # Part set 생성 (외곽 part만)
-            if outerPartIDs:
-                dropPartSet = self.dynaImporter.partManager.CreatePartSet(pids=outerPartIDs, name="DropContact_OuterParts")
-                SSID = dropPartSet.psid
-                SSTYP = 2
-            else:
-                SSID = 0
-                SSTYP = 5
-
-            # 바닥판 S2S 접촉 설정 (option에서 읽기, 없으면 디폴트)
+            # 바닥판 접촉 생성
             drop_contact = option.get("DropContact", {})
-            MSID = part.id
-            MSTYP = 3
-            SBOXID = 0
-            MBOXID = 0
-            SPR = 0
-            MPR = 0
-            FS = drop_contact.get("FS", 0.3)
-            FD = drop_contact.get("FD", 0.2)
-            DC = drop_contact.get("DC", 0.0)
-            VC = drop_contact.get("VC", 0.0)
-            VDC = drop_contact.get("VDC", 10.0)
-            PENCHK = int(drop_contact.get("PENCHK", 0))
-            BT = 0.00
-            DT = "1.0000E+20"
-            SFS = drop_contact.get("SFS", 1.0)
-            SFM = drop_contact.get("SFM", 1.0)
-            SST = drop_contact.get("SST", 0.0)
-            MST = drop_contact.get("MST", 0.0)
-            SFST = drop_contact.get("SFST", 1.0)
-            SFMT = drop_contact.get("SFMT", 1.0)
-            FSF = drop_contact.get("FSF", 1.0)
-            VSF = drop_contact.get("VSF", 1.0)
-            surfacetosurfaceContact = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(SSID, MSID, SSTYP, MSTYP, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
-            # OptCardA: SOFT, SOFSCL, LCIDAB, MAXPAR, SBOPT, DEPTH, BSORT, FRCFRQ
-            SOFT = drop_contact.get("SOFT", 2)
-            SOFSCL = drop_contact.get("SOFSCL", 0.1)
-            LCIDAB = drop_contact.get("LCIDAB", 0)
-            MAXPAR = drop_contact.get("MAXPAR", 1.025)
-            SBOPT = drop_contact.get("SBOPT", 3)
-            DEPTH = drop_contact.get("DEPTH", 35)
-            BSORT = drop_contact.get("BSORT", 100)
-            FRCFRQ = drop_contact.get("FRCFRQ", 1)
-            surfacetosurfaceContact.SetOptCardA(SOFT, SOFSCL, LCIDAB, MAXPAR, SBOPT, DEPTH, BSORT, FRCFRQ)
+            dropContactCID = None
 
-            # DeformableToRigid Paired Switch (1-2-3차 충돌 사이 비행 구간에서만 rigid)
-            if option.get("DeformableToRigid", False):
-                cid = surfacetosurfaceContact.cid
+            if not convertToSS and not option.get("DeformableToRigid", False):
+                # GENERAL 유지 + D2R 없음 → 바닥판도 GENERAL이 알아서 잡음, 별도 접촉 불필요
+                print("DROP_ATTITUDE: GENERAL retained, drop surface included in GENERAL contact")
+
+            else:
+                # 외곽 part 필터링 (바닥판 접촉 대상)
+                allMinX, allMaxX = float('inf'), float('-inf')
+                allMinY, allMaxY = float('inf'), float('-inf')
+                allMinZ, allMaxZ = float('inf'), float('-inf')
+                partBBoxes = {}
+                for pid, p in self.dynaImporter.partManager.parts.items():
+                    if pid == part.id or not p.elementManager.elements:
+                        continue
+                    pMinX, pMaxX, pMinY, pMaxY, pMinZ, pMaxZ = p.elementManager.GetBoundaryBox()
+                    partBBoxes[pid] = (pMinX, pMaxX, pMinY, pMaxY, pMinZ, pMaxZ)
+                    allMinX = min(allMinX, pMinX); allMaxX = max(allMaxX, pMaxX)
+                    allMinY = min(allMinY, pMinY); allMaxY = max(allMaxY, pMaxY)
+                    allMinZ = min(allMinZ, pMinZ); allMaxZ = max(allMaxZ, pMaxZ)
+
+                shellMargin = 0.1
+                xRange = (allMaxX - allMinX) * shellMargin
+                yRange = (allMaxY - allMinY) * shellMargin
+                zRange = (allMaxZ - allMinZ) * shellMargin
+                outerPartIDs = []
+                for pid, (pMinX, pMaxX, pMinY, pMaxY, pMinZ, pMaxZ) in partBBoxes.items():
+                    if (pMinX <= allMinX + xRange or pMaxX >= allMaxX - xRange or
+                        pMinY <= allMinY + yRange or pMaxY >= allMaxY - yRange or
+                        pMinZ <= allMinZ + zRange or pMaxZ >= allMaxZ - zRange):
+                        outerPartIDs.append(pid)
+                print("Drop contact: {0}/{1} outer parts selected".format(len(outerPartIDs), len(partBBoxes)))
+
+                if not convertToSS and option.get("DeformableToRigid", False):
+                    # GENERAL 유지 + D2R → 내부 접촉 GENERAL + 바닥판 접촉 GENERAL 분리
+                    # 기존 GENERAL 설정값 가져오기
+                    if general_cids:
+                        orig_general = self.dynaImporter.contactManager.contacts[general_cids[0]]
+                        gen_FS = orig_general.FS
+                        gen_FD = orig_general.FD
+                        gen_DC = orig_general.DC
+                        gen_VC = orig_general.VC
+                        gen_VDC = orig_general.VDC
+                        gen_PENCHK = orig_general.PENCHK
+                        gen_BT = orig_general.BT
+                        gen_DT = orig_general.DT
+                        gen_SFS = orig_general.SFS if orig_general.SFS != "" else 1.0
+                        gen_SFM = orig_general.SFM if orig_general.SFM != "" else 1.0
+                    else:
+                        gen_FS = drop_contact.get("FS", 0.3)
+                        gen_FD = drop_contact.get("FD", 0.2)
+                        gen_DC = 0.0
+                        gen_VC = 0.0
+                        gen_VDC = drop_contact.get("VDC", 10.0)
+                        gen_PENCHK = 0
+                        gen_BT = 0.0
+                        gen_DT = "1.0000E+20"
+                        gen_SFS = 1.0
+                        gen_SFM = 1.0
+
+                    # 기존 GENERAL 제거 → 바닥판 제외 part set으로 내부 접촉 GENERAL 재생성
+                    modelPartSet = self.dynaImporter.partManager.CreatePartSet(pids=existingPartIDs, name="ModelParts_General")
+                    for cid_g in general_cids:
+                        orig_g = self.dynaImporter.contactManager.contacts[cid_g]
+                        internalGeneral = self.dynaImporter.contactManager.CreateContactAutomaticGeneral(
+                            modelPartSet.psid, 0, 2, 0, 0, 0, 0, 0,
+                            gen_FS, gen_FD, gen_DC, gen_VC, gen_VDC,
+                            int(gen_PENCHK), gen_BT, gen_DT,
+                            gen_SFS, gen_SFM, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
+                        internalGeneral.name = "Internal_GENERAL"
+                        # SOFT=1 (GENERAL은 SOFT=2 불가)
+                        internalGeneral.SetOptCardA(1)
+                        # OptCardB~F 복사
+                        if orig_g.OptCardB: internalGeneral.OptCardB = orig_g.OptCardB
+                        if orig_g.OptCardC: internalGeneral.OptCardC = orig_g.OptCardC
+                        if orig_g.OptCardD: internalGeneral.OptCardD = orig_g.OptCardD
+                        if orig_g.OptCardE: internalGeneral.OptCardE = orig_g.OptCardE
+                        if orig_g.OptCardF: internalGeneral.OptCardF = orig_g.OptCardF
+                        self.dynaImporter.contactManager.RemoveContactbyID(cid_g)
+                        print("DROP_ATTITUDE: GENERAL(CID={0}) -> Internal_GENERAL(CID={1}, PartSet, SOFT=1)".format(cid_g, internalGeneral.cid))
+
+                    # 외곽 part vs 바닥판: AUTOMATIC_GENERAL로 생성 (D2R 감시용)
+                    if outerPartIDs:
+                        outerPartSet = self.dynaImporter.partManager.CreatePartSet(pids=outerPartIDs, name="DropContact_OuterParts")
+                        dropGeneral = self.dynaImporter.contactManager.CreateContactAutomaticGeneral(
+                            outerPartSet.psid, part.id, 2, 3, 0, 0, 0, 0,
+                            gen_FS, gen_FD, gen_DC, gen_VC, gen_VDC,
+                            0, 0.0, "1.0000E+20",
+                            1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
+                        dropGeneral.name = "DropSurface_GENERAL"
+                        dropGeneral.SetOptCardA(1)
+                        dropContactCID = dropGeneral.cid
+                        print("DROP_ATTITUDE: Created DropSurface_GENERAL (CID={0}, SOFT=1)".format(dropGeneral.cid))
+
+                else:
+                    # convert_to_ss=true → S2S로 바닥판 접촉 생성
+                    if outerPartIDs:
+                        dropPartSet = self.dynaImporter.partManager.CreatePartSet(pids=outerPartIDs, name="DropContact_OuterParts")
+                        SSID = dropPartSet.psid
+                        SSTYP = 2
+                    else:
+                        SSID = 0
+                        SSTYP = 5
+
+                    MSID = part.id
+                    MSTYP = 3
+                    FS = drop_contact.get("FS", 0.3)
+                    FD = drop_contact.get("FD", 0.2)
+                    DC = drop_contact.get("DC", 0.0)
+                    VC = drop_contact.get("VC", 0.0)
+                    VDC = drop_contact.get("VDC", 10.0)
+                    PENCHK = int(drop_contact.get("PENCHK", 0))
+                    BT = 0.00
+                    DT = "1.0000E+20"
+                    SFS = drop_contact.get("SFS", 1.0)
+                    SFM = drop_contact.get("SFM", 1.0)
+                    SST = drop_contact.get("SST", 0.0)
+                    MST = drop_contact.get("MST", 0.0)
+                    SFST = drop_contact.get("SFST", 1.0)
+                    SFMT = drop_contact.get("SFMT", 1.0)
+                    FSF = drop_contact.get("FSF", 1.0)
+                    VSF = drop_contact.get("VSF", 1.0)
+                    surfacetosurfaceContact = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(
+                        SSID, MSID, SSTYP, MSTYP, 0, 0, 0, 0,
+                        FS, FD, DC, VC, VDC, PENCHK, BT, DT,
+                        SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
+                    SOFT = drop_contact.get("SOFT", 2)
+                    SOFSCL = drop_contact.get("SOFSCL", 0.1)
+                    LCIDAB = drop_contact.get("LCIDAB", 0)
+                    MAXPAR = drop_contact.get("MAXPAR", 1.025)
+                    SBOPT = drop_contact.get("SBOPT", 3)
+                    DEPTH = drop_contact.get("DEPTH", 35)
+                    BSORT = drop_contact.get("BSORT", 100)
+                    FRCFRQ = drop_contact.get("FRCFRQ", 1)
+                    surfacetosurfaceContact.SetOptCardA(SOFT, SOFSCL, LCIDAB, MAXPAR, SBOPT, DEPTH, BSORT, FRCFRQ)
+                    dropContactCID = surfacetosurfaceContact.cid
+
+            # DeformableToRigid Paired Switch
+            if option.get("DeformableToRigid", False) and dropContactCID is not None:
                 d2r_pid_list = [(pid, 0) for pid in existingPartIDs]
                 r2d_pid_list = list(existingPartIDs)
                 # SWSET 20: 접촉력이 !=0 → 0으로 변할 때 D→R (충돌 후 바운싱 시작)
-                #   code=4: 접촉력 변화 감지 (!=0 → 0)
-                #   초기 접촉력=0 상태에서는 "변화"가 아니라 발동 안 함
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
-                    swset=20, code=4, entno=cid, relsw=10, paired=1,
+                    swset=20, code=4, entno=dropContactCID, relsw=10, paired=1,
                     d2r_pids=d2r_pid_list, r2d_pids=[])
                 # SWSET 10: 접촉력이 0 → !=0으로 변할 때 R→D (재충돌 직전)
-                #   code=2: 접촉력 변화 감지 (0 → !=0)
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
-                    swset=10, code=2, entno=cid, relsw=20, paired=-1,
+                    swset=10, code=2, entno=dropContactCID, relsw=20, paired=-1,
                     d2r_pids=[], r2d_pids=r2d_pid_list)
-                print("DROP_ATTITUDE: D2R paired switch configured for {0} model parts (CID={1})".format(len(existingPartIDs), cid))
+                print("DROP_ATTITUDE: D2R paired switch configured for {0} model parts (CID={1})".format(len(existingPartIDs), dropContactCID))
 
             self.dynaImporter.metaData["scenario_mode"] = "DropAttitude"
             self.dynaImporter.metaData["initial_conditions"]["orientation_euler_deg"]["pitch"] = RyOrigin
