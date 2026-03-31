@@ -1,0 +1,7 @@
+$# LS-PrePost command file created by LS-PrePost(R) 2025 R1 (v4.12.8) - 07Aug2025 -64bit-Linux
+$# Created on Mar-31-2026 (21:53:43)
+open keyword "/home/koopark/serviceApptainers/appt313/opt/pyKooCAE/Examples/meshmodifier/ConvertCNRBtoSolid_NonUniform/sample_nonuniform.k"
+Message 1
+Message 0
+partdata readlist 1 
+clearid part

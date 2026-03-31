@@ -4253,6 +4253,352 @@ class KooDynaAdvancedModification:
             
         
         
+    def ConvertCNRBtoSolidCylinder(self, option):
+        """CNRB를 solid hexa 실린더로 변환
+
+        1. CNRB의 노드를 원통좌표로 변환, Z높이별 그룹화
+        2. R*radiusScale 위치에 내/외 링 노드 생성 → hexa 메시
+        3. 기존 노드 → tied contact로 연결
+        4. CNRB 삭제 + center node 삭제
+        """
+        allMode = option.get("ALL", True)
+        E = option.get("E", 200000000000)
+        PR = option.get("PR", 0.3)
+        RHO = option.get("RHO", 7850)
+        radiusScale = option.get("RadiusScale", 0.999)
+        numCircumNodesOpt = int(option.get("NumCircumNodes", 0))  # 0 = auto
+        axisDir = option.get("AxisDirection", "Auto")
+        innerRadiusRatio = option.get("InnerRadiusRatio", 0.3)
+        zTolerance = option.get("ZTolerance", 0.01)  # Z그룹화 허용오차 (mm)
+
+        # 대상 CNRB 수집
+        cnrbList = self.dynaImporter.constrainedManager.constrainedNodalRigidbodyList
+        if allMode:
+            targetIDs = list(cnrbList.keys())
+        else:
+            targetIDs = [int(x) for x in option.get("CNRB_IDs", [])]
+
+        if not targetIDs:
+            print("ConvertCNRBtoSolidCylinder: No CNRB found")
+            return
+
+        # 공통 section/material 생성
+        section = self.dynaImporter.sectionManager.CreateSolidSection("CNRB_Solid", 1)
+        material = self.dynaImporter.matManager.CreateElasticMaterial("CNRB_Material", RHO, E, PR)
+
+        print("ConvertCNRBtoSolidCylinder: {0} CNRBs to convert".format(len(targetIDs)))
+
+        for cnrb_id in targetIDs:
+            if cnrb_id not in cnrbList:
+                print("  CNRB ID {0} not found, skipping".format(cnrb_id))
+                continue
+
+            cnrb = cnrbList[cnrb_id]
+            cnrb_pid = cnrb.pid
+            pnode_id = cnrb.pnode
+            nsid = cnrb.nsid
+
+            # 1. 노드 수집
+            if nsid not in self.dynaImporter.nodeSetManager.nodeSets:
+                print("  CNRB {0}: NodeSet {1} not found, skipping".format(cnrb_id, nsid))
+                continue
+
+            nodeset = self.dynaImporter.nodeSetManager.nodeSets[nsid]
+            nodes = list(nodeset.nodes.values())
+            if len(nodes) < 3:
+                print("  CNRB {0}: Too few nodes ({1}), skipping".format(cnrb_id, len(nodes)))
+                continue
+
+            # 2. 중심점 결정
+            if pnode_id > 0:
+                center_node = self.dynaImporter.nodeManager.FindNodefromID(pnode_id)
+                if center_node is None:
+                    print("  CNRB {0}: PNODE {1} not found, using centroid".format(cnrb_id, pnode_id))
+                    cx = np.mean([n.x for n in nodes])
+                    cy = np.mean([n.y for n in nodes])
+                    cz = np.mean([n.z for n in nodes])
+                else:
+                    cx, cy, cz = center_node.x, center_node.y, center_node.z
+            else:
+                cx = np.mean([n.x for n in nodes])
+                cy = np.mean([n.y for n in nodes])
+                cz = np.mean([n.z for n in nodes])
+                center_node = None
+
+            center = np.array([cx, cy, cz])
+
+            # 3. 축 방향 결정
+            if axisDir == "Auto":
+                # PCA: 노드 분포의 최대 분산 방향 = 축 방향
+                coords = np.array([[n.x - cx, n.y - cy, n.z - cz] for n in nodes])
+                cov = np.cov(coords.T)
+                eigenvalues, eigenvectors = np.linalg.eigh(cov)
+                axis = eigenvectors[:, np.argmax(eigenvalues)]
+                axis = axis / np.linalg.norm(axis)
+            elif axisDir.upper() == "X":
+                axis = np.array([1.0, 0.0, 0.0])
+            elif axisDir.upper() == "Y":
+                axis = np.array([0.0, 1.0, 0.0])
+            else:
+                axis = np.array([0.0, 0.0, 1.0])
+
+            # 4. 원통좌표 변환
+            node_cyl = []  # (node, R, theta, Z_local)
+            for n in nodes:
+                vec = np.array([n.x - cx, n.y - cy, n.z - cz])
+                z_local = np.dot(vec, axis)
+                radial = vec - z_local * axis
+                r = np.linalg.norm(radial)
+                theta = np.arctan2(np.dot(radial, np.cross(axis, [0, 0, 1] if abs(axis[2]) < 0.9 else [1, 0, 0])),
+                                   np.dot(radial, np.cross(np.cross(axis, [0, 0, 1] if abs(axis[2]) < 0.9 else [1, 0, 0]), axis)))
+                node_cyl.append((n, r, theta, z_local))
+
+            # 5. Z높이별 그룹화
+            z_values = sorted(set([round(nc[3] / zTolerance) * zTolerance for nc in node_cyl]))
+            z_groups = {}
+            for z_val in z_values:
+                z_groups[z_val] = []
+            for nc in node_cyl:
+                z_key = min(z_values, key=lambda z: abs(z - nc[3]))
+                z_groups[z_key].append(nc)
+
+            # 빈 그룹 제거
+            z_groups = {k: v for k, v in z_groups.items() if len(v) > 0}
+            z_levels_all = sorted(z_groups.keys())
+
+            if len(z_levels_all) < 2:
+                print("  CNRB {0}: Need at least 2 Z-levels, got {1}, skipping".format(cnrb_id, len(z_levels_all)))
+                continue
+
+            # 5b. R 기반 서브그룹화 → 실린더 체인 구성
+            rTolerance = option.get("RTolerance", 0.5)
+            z_r_clusters = []  # [(z, r_avg, [node_cyl_tuples])]
+            for z in z_levels_all:
+                nodes_at_z = z_groups[z]
+                r_sorted = sorted(nodes_at_z, key=lambda nc: nc[1])
+                # R 클러스터링
+                clusters = [[r_sorted[0]]]
+                for nc in r_sorted[1:]:
+                    if nc[1] - clusters[-1][-1][1] > rTolerance:
+                        clusters.append([nc])
+                    else:
+                        clusters[-1].append(nc)
+                for cluster in clusters:
+                    r_avg = np.mean([nc[1] for nc in cluster])
+                    z_r_clusters.append((z, r_avg, cluster))
+
+            # R값으로 실린더 체인 그룹화 (유사 R끼리 연결)
+            cylinder_chains = {}  # r_key -> [(z, r_avg, [nodes])]
+            for z, r_avg, cluster in z_r_clusters:
+                r_key = round(r_avg / rTolerance) * rTolerance
+                if r_key not in cylinder_chains:
+                    cylinder_chains[r_key] = []
+                cylinder_chains[r_key].append((z, r_avg, cluster))
+
+            for r_key in cylinder_chains:
+                cylinder_chains[r_key].sort(key=lambda x: x[0])
+
+            # 2개 미만 Z레벨인 체인 제거
+            cylinder_chains = {k: v for k, v in cylinder_chains.items() if len(v) >= 2}
+
+            if not cylinder_chains:
+                print("  CNRB {0}: No valid cylinder chains found, skipping".format(cnrb_id))
+                continue
+
+            # 원주 노드 수 결정
+            numCircum = numCircumNodesOpt
+            if numCircum == 0:
+                max_nodes_per_level = max(len(cluster) for _, _, cluster in z_r_clusters)
+                numCircum = max(max_nodes_per_level, 6)
+
+            print("  CNRB {0}: PID={1}, {2} cylinder chain(s), {3} circum nodes, axis=[{4:.3f},{5:.3f},{6:.3f}]".format(
+                cnrb_id, cnrb_pid, len(cylinder_chains), numCircum, axis[0], axis[1], axis[2]))
+            for r_key, chain in cylinder_chains.items():
+                z_range = [c[0] for c in chain]
+                r_vals = [c[1] for c in chain]
+                print("    R~{0:.2f}: Z=[{1:.1f}~{2:.1f}], {3} levels, R_range=[{4:.2f}~{5:.2f}]".format(
+                    r_key, min(z_range), max(z_range), len(chain), min(r_vals), max(r_vals)))
+
+            # 6. O-grid (butterfly mesh) 노드 생성 — 실린더 체인별
+            # 축에 수직인 두 방향 벡터
+            if abs(axis[2]) < 0.9:
+                perp1 = np.cross(axis, [0, 0, 1])
+            else:
+                perp1 = np.cross(axis, [1, 0, 0])
+            perp1 = perp1 / np.linalg.norm(perp1)
+            perp2 = np.cross(axis, perp1)
+            perp2 = perp2 / np.linalg.norm(perp2)
+
+            # N은 4의 배수로 맞춤
+            if numCircum % 4 != 0:
+                numCircum = ((numCircum // 4) + 1) * 4
+            m = numCircum // 4  # 사분면당 세그먼트 수
+
+            core_ratio = innerRadiusRatio  # 코어 사각형 크기 비율
+
+            # 코어 경계 순회 (CCW, 모든 체인에서 공유)
+            boundary_core_segments = []
+            for i in range(m):
+                boundary_core_segments.append(((i, 0), (i + 1, 0)))
+            for j in range(m):
+                boundary_core_segments.append(((m, j), (m, j + 1)))
+            for i in range(m, 0, -1):
+                boundary_core_segments.append(((i, m), (i - 1, m)))
+            for j in range(m, 0, -1):
+                boundary_core_segments.append(((0, j), (0, j - 1)))
+
+            # 7. Part 생성 (CNRB PID 재사용)
+            elemMan = ElementManager(self.dynaImporter.nodeManager, cnrb_pid)
+            newPart = KooPart(self.dynaImporter.nodeManager, elemMan)
+            newPart.SetSection(section)
+            newPart.SetMaterial(material)
+            newPart.SetPartProperty(cnrb_pid, "CNRB_{0}_Solid".format(cnrb_id),
+                                    section.id, material.id, "", "", "", "", "")
+            self.dynaImporter.partManager.AddPart(newPart)
+            self.dynaImporter.partManager.maxID = max(self.dynaImporter.partManager.maxID, cnrb_pid)
+
+            # 8. R_max 기준 전체 O-grid 생성 후 작은 R 구간 바깥 요소 생략
+            # 8a. R 구조 분석
+            all_z_set = set()
+            z_r_max = {}  # 각 Z에서의 최대 R
+            for r_key, chain in cylinder_chains.items():
+                for z, r_avg, _ in chain:
+                    all_z_set.add(z)
+                    if z not in z_r_max or r_avg > z_r_max[z]:
+                        z_r_max[z] = r_avg
+            all_z_levels = sorted(all_z_set)
+
+            R_max_val = max(z_r_max.values())
+            R_min_val_actual = min(z_r_max.values())
+            R_max_outer = R_max_val * radiusScale
+
+            # 반경 방향 링 구조: 코어 → 링1(R_min) → 링2 → ... → 링N(R_max)
+            # 링 수 = R 차이 / 원주 요소 크기
+            elem_size_circum = 2.0 * np.pi * R_min_val_actual / numCircum
+            total_rings = max(1, round((R_max_val - R_min_val_actual * core_ratio) / elem_size_circum))
+            # 각 링의 R 값
+            ring_radii = []
+            for ri in range(total_rings):
+                R_ring = R_min_val_actual * core_ratio * radiusScale + \
+                         (R_max_outer - R_min_val_actual * core_ratio * radiusScale) * (ri + 1) / total_rings
+                ring_radii.append(R_ring)
+
+            theta_offset = 5.0 * np.pi / 4.0
+
+            print("    R_max={0:.3f}, R_min={1:.3f}, {2} radial rings, {3} Z-levels".format(
+                R_max_val, R_min_val_actual, total_rings, len(all_z_levels)))
+
+            # 8b. 전체 노드 생성 (R_max 구조, 모든 Z레벨)
+            core_nodes_by_z = {}
+            ring_nodes_by_z = {}  # z -> [[ring0_nodes], [ring1_nodes], ...]
+
+            for z in all_z_levels:
+                d = R_min_val_actual * core_ratio * radiusScale
+                point_on_axis = center + z * axis
+
+                # 코어 격자
+                core_grid = {}
+                for i in range(m + 1):
+                    for j in range(m + 1):
+                        x_local = -d + 2.0 * d * i / m
+                        y_local = -d + 2.0 * d * j / m
+                        pos = point_on_axis + x_local * perp1 + y_local * perp2
+                        core_grid[(i, j)] = self.dynaImporter.nodeManager.CreateNode(pos[0], pos[1], pos[2])
+                core_nodes_by_z[z] = core_grid
+
+                # 동심 링 노드
+                rings = []
+                for ri in range(total_rings):
+                    R_ring = ring_radii[ri]
+                    ring = []
+                    for k in range(numCircum):
+                        theta = theta_offset + 2.0 * np.pi * k / numCircum
+                        direction = np.cos(theta) * perp1 + np.sin(theta) * perp2
+                        pos = point_on_axis + R_ring * direction
+                        ring.append(self.dynaImporter.nodeManager.CreateNode(pos[0], pos[1], pos[2]))
+                    rings.append(ring)
+                ring_nodes_by_z[z] = rings
+
+            # 8c. Hexa 요소 생성 (Z레이어별, R 범위 체크)
+            total_hex = 0
+            for zi in range(len(all_z_levels) - 1):
+                z_bot = all_z_levels[zi]
+                z_top = all_z_levels[zi + 1]
+                R_local = min(z_r_max.get(z_bot, R_max_val), z_r_max.get(z_top, R_max_val)) * radiusScale
+
+                core_bot = core_nodes_by_z[z_bot]
+                core_top = core_nodes_by_z[z_top]
+
+                # 코어 hexa (항상 생성)
+                for i in range(m):
+                    for j in range(m):
+                        n1 = core_bot[(i, j)]; n2 = core_bot[(i+1, j)]
+                        n3 = core_bot[(i+1, j+1)]; n4 = core_bot[(i, j+1)]
+                        n5 = core_top[(i, j)]; n6 = core_top[(i+1, j)]
+                        n7 = core_top[(i+1, j+1)]; n8 = core_top[(i, j+1)]
+                        newPart.elementManager.CreateHexahedronLinearElement(n1, n2, n3, n4, n5, n6, n7, n8)
+                        total_hex += 1
+
+                # 링 hexa (R_local까지만 생성)
+                for ri in range(total_rings):
+                    if ring_radii[ri] > R_local * 1.01:  # 1% 마진
+                        break  # 이 링부터는 R 초과 → 생략
+
+                    if ri == 0:
+                        # 첫 링: 코어 경계 → 링0
+                        for k in range(numCircum):
+                            k_next = (k + 1) % numCircum
+                            (ci1, cj1), (ci2, cj2) = boundary_core_segments[k]
+                            n1 = ring_nodes_by_z[z_bot][ri][k]
+                            n2 = ring_nodes_by_z[z_bot][ri][k_next]
+                            n3 = core_bot[(ci2, cj2)]
+                            n4 = core_bot[(ci1, cj1)]
+                            n5 = ring_nodes_by_z[z_top][ri][k]
+                            n6 = ring_nodes_by_z[z_top][ri][k_next]
+                            n7 = core_top[(ci2, cj2)]
+                            n8 = core_top[(ci1, cj1)]
+                            newPart.elementManager.CreateHexahedronLinearElement(n1, n2, n3, n4, n5, n6, n7, n8)
+                            total_hex += 1
+                    else:
+                        # ri번째 링: 이전 링 → 현재 링
+                        for k in range(numCircum):
+                            k_next = (k + 1) % numCircum
+                            n1 = ring_nodes_by_z[z_bot][ri][k]
+                            n2 = ring_nodes_by_z[z_bot][ri][k_next]
+                            n3 = ring_nodes_by_z[z_bot][ri-1][k_next]
+                            n4 = ring_nodes_by_z[z_bot][ri-1][k]
+                            n5 = ring_nodes_by_z[z_top][ri][k]
+                            n6 = ring_nodes_by_z[z_top][ri][k_next]
+                            n7 = ring_nodes_by_z[z_top][ri-1][k_next]
+                            n8 = ring_nodes_by_z[z_top][ri-1][k]
+                            newPart.elementManager.CreateHexahedronLinearElement(n1, n2, n3, n4, n5, n6, n7, n8)
+                            total_hex += 1
+
+            print("  Total: {0} hexa elements for CNRB {1}".format(total_hex, cnrb_id))
+
+            # 9. 기존 노드 → node set 생성 + tied contact
+            tieNodeSet = self.dynaImporter.nodeSetManager.CreateNodeSetwithNodes(
+                "CNRB_{0}_TieNodes".format(cnrb_id), 0, 0, 0, 0, "MECH", 0,
+                [n for n in nodes])
+            tiedContact = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(
+                tieNodeSet.sid, cnrb_pid, 4, 3, 0, 0, 0, 0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, "1.0000E+20",
+                1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
+            tiedContact.name = "Tied_CNRB_{0}".format(cnrb_id)[:70]
+            print("  Created TIED_SURFACE_TO_SURFACE_OFFSET (CID={0})".format(tiedContact.cid))
+
+            # 10. CNRB 삭제
+            self.dynaImporter.constrainedManager.RemoveConstrainedNodalRigidbody(cnrb_id)
+            print("  Removed CNRB {0}".format(cnrb_id))
+
+            # 11. Center node 삭제
+            if center_node is not None and pnode_id > 0:
+                self.dynaImporter.nodeManager.RemoveNodefromID(pnode_id)
+                print("  Removed center node {0}".format(pnode_id))
+
+        self.dynaImporter.SyncronizeMaxID()
+        print("ConvertCNRBtoSolidCylinder completed")
+
     def PartMorphing(self, option, subOption):
         for i in option:
             curOption = option[i]        

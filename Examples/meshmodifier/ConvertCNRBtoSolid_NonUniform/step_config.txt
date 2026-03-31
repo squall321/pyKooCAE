@@ -1,0 +1,16 @@
+*Inputfile
+sample_nonuniform.k
+*Mode
+CONVERT_CNRB_TO_SOLID,1
+**ConvertCNRBtoSolid,1
+ALL,True
+E,200000000000
+PR,0.3
+RHO,7850
+RadiusScale,0.999
+NumCircumNodes,0
+AxisDirection,Auto
+InnerRadiusRatio,0.3
+ZTolerance,0.5
+**EndConvertCNRBtoSolid
+*End

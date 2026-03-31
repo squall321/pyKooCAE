@@ -250,6 +250,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "constrained_nodal_rigidbody_to_beam" in svector[0].lower():
                             self.modeList.append("CONSTRAINED_NODAL_RIGIDBODY_TO_BEAM")
                             self.modeIDList.append(int(svector[1]))
+                        elif "convert_cnrb_to_solid" in svector[0].lower():
+                            self.modeList.append("CONVERT_CNRB_TO_SOLID")
+                            self.modeIDList.append(int(svector[1]))
                         elif 'warped_part' in svector[0].lower():
                             self.modeList.append("WARPED_PART")
                             self.modeIDList.append(int(svector[1]))
@@ -760,6 +763,60 @@ class KooMeshModifier(KooSimulationGenerator):
                             curOptions["Height"] = KooDynaFloat(svector[1])
                                                                                         
                     self.modeIDOption[curModeID] = curOptions                            
+
+                elif "**convertcnrbtosolid" in line.lower():
+                    svector = line.split(",")
+                    curModeID = int(svector[1])
+                    curOptions = {}
+                    curOptions["ALL"] = True
+                    curOptions["CNRB_IDs"] = []
+                    curOptions["E"] = 200000000000
+                    curOptions["PR"] = 0.3
+                    curOptions["RHO"] = 7850
+                    curOptions["RadiusScale"] = 0.999
+                    curOptions["NumCircumNodes"] = 0
+                    curOptions["AxisDirection"] = "Auto"
+                    curOptions["InnerRadiusRatio"] = 0.3
+                    curOptions["ZTolerance"] = 0.01
+                    while True:
+                        line = f.readline().strip()
+                        line = line.replace('\n','')
+                        if not line:
+                            break
+                        if "**end" in line.lower():
+                            break
+                        elif "all" in line.lower():
+                            svector = line.split(",")
+                            curOptions["ALL"] = svector[1].strip().lower() != "false"
+                        elif "cnrb_ids" in line.lower():
+                            svector = line.split(",")
+                            curOptions["CNRB_IDs"] = [int(x.strip()) for x in svector[1:] if x.strip()]
+                        elif line.lower().startswith("e,"):
+                            svector = line.split(",")
+                            curOptions["E"] = KooDynaFloat(svector[1])
+                        elif "pr," in line.lower():
+                            svector = line.split(",")
+                            curOptions["PR"] = KooDynaFloat(svector[1])
+                        elif "rho," in line.lower():
+                            svector = line.split(",")
+                            curOptions["RHO"] = KooDynaFloat(svector[1])
+                        elif "radiusscale" in line.lower():
+                            svector = line.split(",")
+                            curOptions["RadiusScale"] = KooDynaFloat(svector[1])
+                        elif "numcircumnodes" in line.lower():
+                            svector = line.split(",")
+                            curOptions["NumCircumNodes"] = KooDynaInt(svector[1])
+                        elif "axisdirection" in line.lower():
+                            svector = line.split(",")
+                            curOptions["AxisDirection"] = svector[1].strip()
+                        elif "innerradiusratio" in line.lower():
+                            svector = line.split(",")
+                            curOptions["InnerRadiusRatio"] = KooDynaFloat(svector[1])
+                        elif "ztolerance" in line.lower():
+                            svector = line.split(",")
+                            curOptions["ZTolerance"] = KooDynaFloat(svector[1])
+
+                    self.modeIDOption[curModeID] = curOptions
 
                 elif "**partmorphing" in line.lower():
                     svector = line.split(",")
@@ -1979,6 +2036,10 @@ class KooMeshModifier(KooSimulationGenerator):
     def GenerateConstrainedNodalRigidBodyToBeam(self, modeid):
         curOption = self.modeIDOption[modeid]
         self.advancedModification.ConstrainedNodalRigidBodyToBeam(curOption)
+
+    def GenerateConvertCNRBtoSolid(self, modeid):
+        curOption = self.modeIDOption[modeid]
+        self.advancedModification.ConvertCNRBtoSolidCylinder(curOption)
    
     def GenerateWarpedPart(self, modeid):
         curOption = self.modeIDOption[modeid]
@@ -2239,6 +2300,9 @@ class KooMeshModifier(KooSimulationGenerator):
             elif mode == "CONSTRAINED_NODAL_RIGIDBODY_TO_BEAM":
                 self.GenerateConstrainedNodalRigidBodyToBeam(modeid)
                 additionalword += "_crb"
+            elif mode == "CONVERT_CNRB_TO_SOLID":
+                self.GenerateConvertCNRBtoSolid(modeid)
+                additionalword += "_cnrb2solid"
             elif mode == "WARPED_PART":
                 self.GenerateWarpedPart(modeid)
                 additionalword += "_warp"

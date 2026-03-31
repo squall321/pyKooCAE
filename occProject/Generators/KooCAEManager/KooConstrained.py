@@ -431,6 +431,10 @@ class KooConstrainedManager:
         cnrb = KooConstrainedNodalRigidbody(cnsid, name,pid, cid, nsid, pnode, iprt, drflag, rrflag)
         self.constrainedNodalRigidbodyList[cnsid] = cnrb
         
+    def RemoveConstrainedNodalRigidbody(self, cnrb_id):
+        if cnrb_id in self.constrainedNodalRigidbodyList:
+            del self.constrainedNodalRigidbodyList[cnrb_id]
+
     def CreateConstrainedInterpolation(self, icid, dnid, ddof=123456, cidd="", ityp=0, idnsw=1, fgm=0, inid = [], idof = [], twghtx = [], twghty = [], twghtz = [], rwghtx = [], rwghty = [], rwghtz = []):
         self.maxICID = max(self.maxICID, icid)
         ci = KooConstrainedInterpolation(icid, dnid, ddof, cidd, ityp, idnsw, fgm, inid, idof, twghtx, twghty, twghtz, rwghtx, rwghty, rwghtz)
