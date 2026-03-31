@@ -431,19 +431,16 @@ echo "========================================"
 
     # clean.sh 생성 (로컬 scratch 정리)
     clean_script = f'''#!/bin/bash
-# clean.sh - 이 프로젝트 job의 로컬 scratch만 정리
-set -e
-
+# clean.sh - 이 프로젝트 job의 로컬 scratch만 정리 (병렬)
 SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
 SCRATCH_BASE="{tmpdir}"
 JOBS_FILE="$SCRIPT_DIR/jobs.json"
+MAX_PARALLEL=${{1:-50}}
 
 echo "========================================"
-echo "로컬 scratch 정리 (이 프로젝트만)"
+echo "로컬 scratch 정리 (병렬, 최대 $MAX_PARALLEL)"
 echo "========================================"
-echo "Scratch base: $SCRATCH_BASE"
 
-# jobs.json에서 이 프로젝트의 job ID 목록 추출
 if [ ! -f "$JOBS_FILE" ]; then
     echo "jobs.json 없음"
     exit 0
@@ -461,31 +458,28 @@ if [ -z "$JOB_IDS" ]; then
     exit 0
 fi
 
-echo "대상 Job IDs: $(echo $JOB_IDS | tr '\\n' ' ')"
-echo ""
+# 삭제 대상 경로 목록 생성
+RM_TARGETS=""
+for JID in $JOB_IDS; do
+    RM_TARGETS="$RM_TARGETS $SCRATCH_BASE/apptainer_job_$JID"
+done
 
 NODES=$(sinfo -N --noheader --format="%N" 2>/dev/null | sort -u)
 if [ -z "$NODES" ]; then
     NODES=$(squeue -u $USER --format="%N" --noheader 2>/dev/null | sort -u)
 fi
 
-TOTAL=0
-for NODE in $NODES; do
-    for JID in $JOB_IDS; do
-        TARGET="$SCRATCH_BASE/apptainer_job_$JID"
-        EXISTS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$NODE" \\
-            "[ -d $TARGET ] && echo yes || echo no" 2>/dev/null || echo "no")
-        if [ "$EXISTS" = "yes" ]; then
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$NODE" \\
-                "rm -rf $TARGET" 2>/dev/null || true
-            echo "  $NODE: $TARGET 삭제"
-            TOTAL=$((TOTAL + 1))
-        fi
-    done
-done
+NODE_COUNT=$(echo "$NODES" | wc -w)
+echo "대상 노드: $NODE_COUNT개"
+echo ""
+
+# 모든 노드에 병렬로 rm -rf 실행
+echo "$NODES" | tr ' ' '\\n' | xargs -P $MAX_PARALLEL -I {{}} \\
+    ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes {{}} \\
+    "rm -rf $RM_TARGETS 2>/dev/null; echo '  {{}}: done'" 2>/dev/null
 
 echo ""
-echo "총 $TOTAL 디렉토리 정리 완료"
+echo "정리 완료"
 '''
     clean_path = script_dir / "clean.sh"
     clean_path.write_text(clean_script, encoding="utf-8")
