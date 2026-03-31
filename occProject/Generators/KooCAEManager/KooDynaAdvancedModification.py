@@ -2401,18 +2401,21 @@ class KooDynaAdvancedModification:
             FRCFRQ = drop_contact.get("FRCFRQ", 1)
             surfacetosurfaceContact.SetOptCardA(SOFT, SOFSCL, LCIDAB, MAXPAR, SBOPT, DEPTH, BSORT, FRCFRQ)
 
-            # DeformableToRigid Paired Switch
+            # DeformableToRigid Paired Switch (스마트폰 part를 D2R/R2D)
             if option.get("DeformableToRigid", False):
                 cid = surfacetosurfaceContact.cid
-                wall_pid = part.id
-                # SWSET 20: contact force=0 → D2R (first)
+                # 바닥판 제외 전체 part를 D2R 대상으로
+                d2r_pid_list = [(pid, 0) for pid in existingPartIDs]
+                r2d_pid_list = list(existingPartIDs)
+                # SWSET 20: contact force=0 (비행 중) → 스마트폰 D→R (dt 증가)
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
                     swset=20, code=2, entno=cid, relsw=10, paired=1,
-                    d2r_pids=[(wall_pid, 0)], r2d_pids=[])
-                # SWSET 10: contact force!=0 → R2D (second)
+                    d2r_pids=d2r_pid_list, r2d_pids=[])
+                # SWSET 10: contact force!=0 (충돌 시작) → 스마트폰 R→D (정밀 해석)
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
                     swset=10, code=4, entno=cid, relsw=20, paired=-1,
-                    d2r_pids=[], r2d_pids=[wall_pid])
+                    d2r_pids=[], r2d_pids=r2d_pid_list)
+                print("DROP_ATTITUDE: D2R/R2D configured for {0} model parts (CID={1})".format(len(existingPartIDs), cid))
 
             self.dynaImporter.metaData["scenario_mode"] = "DropAttitude"
             self.dynaImporter.metaData["initial_conditions"]["orientation_euler_deg"]["pitch"] = RyOrigin
