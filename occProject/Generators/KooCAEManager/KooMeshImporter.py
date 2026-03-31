@@ -472,6 +472,10 @@ class KooDynaImporter():
         print("Initial Imported")
         self.importConstrained()
         print("Constrained Imported")
+        # CNRB PID와 partManager.maxID 동기화 (ID 충돌 방지)
+        if self.constrainedManager.maxCNRBID > self.partManager.maxID:
+            self.partManager.maxID = self.constrainedManager.maxCNRBID
+            print(f"  Part maxID synced with CNRB: {self.partManager.maxID}")
         self.importAdditional()
         print("Additional Imported")
         print("Import Completed")
