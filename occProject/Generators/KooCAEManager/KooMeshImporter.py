@@ -1317,6 +1317,8 @@ class KooDynaImporter():
             self.keywordInterpreted["CONTROL_TIMESTEP"] = True
         if "CONTROL_HOURGLASS" in dynaKeyword:
             self.keywordInterpreted["CONTROL_HOURGLASS"] = True
+        if "CONTROL_ACCURACY" in dynaKeyword:
+            self.keywordInterpreted["CONTROL_ACCURACY"] = True
         if "CONTROL_DYNAMIC_RELAXATION" in dynaKeyword:
             self.keywordInterpreted["CONTROL_DYNAMIC_RELAXATION"] = True
         if "CONTROL_ENERGY" in dynaKeyword:
@@ -1345,6 +1347,10 @@ class KooDynaImporter():
         if "CONTROL_HOURGLASS" in dynaKeyword:
             controlHourglassKeyword : ControlHourglass = dynaKeyword["CONTROL_HOURGLASS"]
             control = controlHourglassKeyword.getControlHourglass()
+            self.controlManager.SetControlfromDyna(control)
+        if "CONTROL_ACCURACY" in dynaKeyword:
+            controlAccuracyKeyword = dynaKeyword["CONTROL_ACCURACY"]
+            control = controlAccuracyKeyword.getControlAccuracy()
             self.controlManager.SetControlfromDyna(control)
         if "CONTROL_DYNAMIC_RELAXATION" in dynaKeyword:
             controlDynamicRelaxationKeyword : ControlDynamicRelaxation = dynaKeyword["CONTROL_DYNAMIC_RELAXATION"]

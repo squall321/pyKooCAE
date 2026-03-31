@@ -2989,6 +2989,12 @@ class ControlAccuracy(DynaKeyword):
     def IACC(self):
         return self.parameters[0][3]
     
+    def getControlAccuracy(self):
+        parameter = []
+        parameter.append("*CONTROL_ACCURACY")
+        parameter.append(self.parameters[0])
+        return parameter
+
     def write(self, stream):
         stream.write("*CONTROL_ACCURACY\n")
         stream.write("$$     OSU       INN    PIDOSU      IACC\n")

@@ -554,6 +554,32 @@ class KooControlHourglass:
         stream.write(format(self.QH, ">10.3f"))
         stream.write("\n")
         
+class KooControlAccuracy:
+    def __init__(self, OSU=0, INN=2, PIDOSU=0, IACC=0):
+        self.OSU = OSU
+        self.INN = INN
+        self.PIDOSU = PIDOSU
+        self.IACC = IACC
+
+    def GenerateDynaKeyword(self):
+        keyword = "*CONTROL_ACCURACY\n"
+        keyword += "$$     OSU       INN    PIDOSU      IACC\n"
+        keyword += format(self.OSU, ">10")
+        keyword += format(self.INN, ">10")
+        keyword += format(self.PIDOSU, ">10")
+        keyword += format(self.IACC, ">10")
+        keyword += "\n"
+        return keyword
+
+    def WriteStreamDynaKeyword(self, stream):
+        stream.write("*CONTROL_ACCURACY\n")
+        stream.write("$$     OSU       INN    PIDOSU      IACC\n")
+        stream.write(format(self.OSU, ">10"))
+        stream.write(format(self.INN, ">10"))
+        stream.write(format(self.PIDOSU, ">10"))
+        stream.write(format(self.IACC, ">10"))
+        stream.write("\n")
+
 class KooControlDynamicRelaxation:
     def __init__(self, NRCYCK=250,DRTOL = 0.001, DRFCRT = 0.995, DRTERM = 1.0E99, TSSFDR = 0.0, IRELAL = 0, EDTTL = 0.0, IDRFLG = 0):
         self.NRCYCK = NRCYCK
@@ -831,7 +857,8 @@ class KooControlManager:
         self.controlContact = None
         self.controlMppIONodump = None
         self.controlDynamicRelaxation = None
-        
+        self.controlAccuracy = None
+
     def clear(self):
         self.controlOutput = None
         self.controlShell = None
@@ -844,6 +871,7 @@ class KooControlManager:
         self.controlContact = None
         self.controlMppIONodump = None
         self.controlDynamicRelaxation = None
+        self.controlAccuracy = None
 
     def OverwritefromControlManager(self, controlManager : KooControlManager):
         if controlManager.controlOutput is not None:
@@ -868,6 +896,8 @@ class KooControlManager:
             self.controlMppIONodump = controlManager.controlMppIONodump
         if controlManager.controlDynamicRelaxation is not None:
             self.controlDynamicRelaxation = controlManager.controlDynamicRelaxation
+        if controlManager.controlAccuracy is not None:
+            self.controlAccuracy = controlManager.controlAccuracy
 
     def SetControlBulkViscosity(self,Q1=1.5, Q2=0.06, TYPE=1, BTYPE=0, TSTYPE=0):
         self.controlBulkViscosity : KooControlBulkViscosity = KooControlBulkViscosity()
@@ -897,7 +927,10 @@ class KooControlManager:
         self.controlDynamicRelaxation = KooControlDynamicRelaxation(NRCYCK,DRTOL,DRFCRT,DRTERM,TSSFDR,IRELAL,EDTTL,IDRFLG)
         
     def SetControlEnergy(self,HGEN=1,RWEN=2,SLNTEN=1,RYLEN=1,IRGEN=2,MATEN=1):
-        self.controlenergy = KooControlEnergy(HGEN,RWEN,SLNTEN,RYLEN,IRGEN,MATEN)        
+        self.controlenergy = KooControlEnergy(HGEN,RWEN,SLNTEN,RYLEN,IRGEN,MATEN)
+
+    def SetControlAccuracy(self, OSU=0, INN=2, PIDOSU=0, IACC=0):
+        self.controlAccuracy = KooControlAccuracy(OSU, INN, PIDOSU, IACC)
     
     def SetControlContact(self, SLSFAC=0.1, RWPNAL=0.0, ISLCHK=1, SHLTHK=0, PENOPT=1, THKCHG=0, ORIEN=1, ENMASS=0, USRSTR=0, USRFRC=0, NSBCS=100, INTERM=0, XPENE=4.0, SSTHK=0, ECDT=0, TIEDPRJ=0, SFRIC=0.0, DFRIC=0.0, EDC=0.0, VFC=0.0, TH=0.0, TH_SF=0.0, PEN_SF=0.0, PTSCL=1.0, IGNORE=0, FRCENG=0, SKIPRWG=0, OUTSEG=0, SPOTSTP=0, SPOTDEL=0, SPOTHIN=0.0, ISYM=0, NSEROD=0, RWGAPS=0, RWGDTH=0.0, RWKSF=1.0, ICOV=0, SWRADF=0.0, ITHOFF=0, SHLEDG=0, PSTIFF=0, ITHCNT=0, TDCNOF=0, FTALL=0, UNUSED="", SHLTRW=0.0, IGACTC=0):
         self.controlContact = KooControlContact(SLSFAC, RWPNAL, ISLCHK, SHLTHK, PENOPT, THKCHG, ORIEN, ENMASS, USRSTR, USRFRC, NSBCS, INTERM, XPENE, SSTHK, ECDT, TIEDPRJ, SFRIC, DFRIC, EDC, VFC, TH, TH_SF, PEN_SF, PTSCL, IGNORE, FRCENG, SKIPRWG, OUTSEG, SPOTSTP, SPOTDEL, SPOTHIN, ISYM, NSEROD, RWGAPS, RWGDTH, RWKSF, ICOV, SWRADF, ITHOFF, SHLEDG, PSTIFF, ITHCNT, TDCNOF, FTALL, UNUSED, SHLTRW, IGACTC)
@@ -1133,6 +1166,13 @@ class KooControlManager:
             self.controlHourglass = KooControlHourglass()
             self.controlHourglass.IHQ = KooDynaInt(parameter[0])
             self.controlHourglass.QH = KooDynaFloat(parameter[1])
+        elif controlKeyword[0] == "*CONTROL_ACCURACY":
+            parameter = controlKeyword[1]
+            self.controlAccuracy = KooControlAccuracy()
+            self.controlAccuracy.OSU = KooDynaInt(parameter[0], 0)
+            self.controlAccuracy.INN = KooDynaInt(parameter[1], 2)
+            self.controlAccuracy.PIDOSU = KooDynaInt(parameter[2], 0)
+            self.controlAccuracy.IACC = KooDynaInt(parameter[3], 0)
         elif controlKeyword[0] == "*CONTROL_ENERGY":
             parameter = controlKeyword[1]
             if len(parameter[0]) == 0:
@@ -1244,6 +1284,8 @@ class KooControlManager:
             self.controlMppIONodump.WriteStreamDynaKeyword(stream)
         if self.controlDynamicRelaxation != None:
             self.controlDynamicRelaxation.WriteStreamDynaKeyword(stream)
+        if self.controlAccuracy != None:
+            self.controlAccuracy.WriteStreamDynaKeyword(stream)
     
     def GenerateDynaKeyword(self):
         keyword = ""
