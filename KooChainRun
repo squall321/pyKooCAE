@@ -49,7 +49,7 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         """
     )
 
-    parser.add_argument('--version', action='version', version='KooChainRun 1.0.0')
+    parser.add_argument('--version', action='version', version='KooChainRun 1.1.0')
 
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
