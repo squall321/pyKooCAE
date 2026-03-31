@@ -2571,9 +2571,10 @@ class KooDynaAdvancedModification:
                         f.write("*RemovePartbyID,")
                         f.write(str(part.id))
                         f.write("\n")
-                        f.write("*RemoveContactbyID,")
-                        f.write(str(surfacetosurfaceContact.cid))
-                        f.write("\n")
+                        if dropContactCID is not None:
+                            f.write("*RemoveContactbyID,")
+                            f.write(str(dropContactCID))
+                            f.write("\n")
                         f.write("**EndDynainToInitial\n")
                         f.write("*End\n")
 
