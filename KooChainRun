@@ -343,7 +343,7 @@ def _generate_helper_scripts(script_dir: Path, runner_config: dict = None):
     import stat
     scripts = {
         "rerun.sh":   '"$KOOCR" rerun "$SCRIPT_DIR" "$@"',
-        "stop.sh":    '"$KOOCR" stop "$SCRIPT_DIR"\n# 로컬 scratch 정리\nbash "$SCRIPT_DIR/clean.sh" 2>/dev/null || true',
+        "stop.sh":    '"$KOOCR" stop "$SCRIPT_DIR"',
         "diagnose.sh": '"$KOOCR" diagnose "$SCRIPT_DIR"',
     }
     header = (
