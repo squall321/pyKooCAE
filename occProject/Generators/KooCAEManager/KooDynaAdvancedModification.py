@@ -2276,8 +2276,11 @@ class KooDynaAdvancedModification:
                         contact_g.FSF if contact_g.FSF != "" else 1.0,
                         contact_g.VSF if contact_g.VSF != "" else 1.0)
                     ss.SetOptCardA(SOFT_opt, SOFSCL_opt, 0, 1.025, SBOPT_opt, DEPTH_opt, BSORT_opt, FRCFRQ_opt)
+                    if contact_g.OptCardB:
+                        ss.OptCardB = contact_g.OptCardB
+                    else:
+                        ss.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
                     ss.name = "SS_from_GENERAL_CID{0}".format(cid_g)
-                    if contact_g.OptCardB: ss.OptCardB = contact_g.OptCardB
                     if contact_g.OptCardC: ss.OptCardC = contact_g.OptCardC
                     if contact_g.OptCardD: ss.OptCardD = contact_g.OptCardD
                     if contact_g.OptCardE: ss.OptCardE = contact_g.OptCardE
@@ -2312,6 +2315,7 @@ class KooDynaAdvancedModification:
                         0, 0.0, 1.0E20,
                         1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
                     ss.SetOptCardA(SOFT_opt, SOFSCL_opt, 0, 1.025, SBOPT_opt, DEPTH_opt, BSORT_opt, FRCFRQ_opt)
+                    ss.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
                     ss.name = "SS_AllParts_Auto"
                     print("DROP_ATTITUDE: No GENERAL/SS found -> Created SINGLE_SURFACE(CID={0}, SOFT={1}) with {2} parts".format(
                         ss.cid, SOFT_opt, len(allPartIDs)))
@@ -2330,6 +2334,24 @@ class KooDynaAdvancedModification:
             # 바닥판 접촉 생성
             drop_contact = option.get("DropContact", {})
             dropContactCID = None
+
+            # OptCardA/B 공통 파라미터
+            opt_SOFT = int(drop_contact.get("SOFT", 1))
+            opt_SOFSCL = drop_contact.get("SOFSCL", 0.1)
+            opt_LCIDAB = int(drop_contact.get("LCIDAB", 0))
+            opt_MAXPAR = drop_contact.get("MAXPAR", 1.025)
+            opt_SBOPT = int(drop_contact.get("SBOPT", 0))
+            opt_DEPTH = int(drop_contact.get("DEPTH", 0))
+            opt_BSORT = int(drop_contact.get("BSORT", 100))
+            opt_FRCFRQ = int(drop_contact.get("FRCFRQ", 1))
+            opt_PENMAX = drop_contact.get("PENMAX", 0.0)
+            opt_THKOPT = int(drop_contact.get("THKOPT", 1))
+            opt_SHLTHK = int(drop_contact.get("SHLTHK", 1))
+            opt_SNLOG = int(drop_contact.get("SNLOG", 0))
+            opt_ISYM = int(drop_contact.get("ISYM", 0))
+            opt_I2D3D = int(drop_contact.get("I2D3D", 0))
+            opt_SLDTHK = drop_contact.get("SLDTHK", 1.0)
+            opt_SLDSTF = drop_contact.get("SLDSTF", 0.0)
 
             if not convertToSS and not option.get("DeformableToRigid", False):
                 # GENERAL 유지 + D2R 없음 → 바닥판도 GENERAL이 알아서 잡음, 별도 접촉 불필요
@@ -2383,7 +2405,7 @@ class KooDynaAdvancedModification:
                         gen_DC = 0.0
                         gen_VC = 0.0
                         gen_VDC = drop_contact.get("VDC", 10.0)
-                        gen_PENCHK = 0
+                        gen_PENCHK = 1
                         gen_BT = 0.0
                         gen_DT = "1.0000E+20"
                         gen_SFS = 1.0
@@ -2399,8 +2421,8 @@ class KooDynaAdvancedModification:
                             int(gen_PENCHK), gen_BT, gen_DT,
                             gen_SFS, gen_SFM, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
                         internalGeneral.name = "Internal_GENERAL"
-                        # SOFT=1 (GENERAL은 SOFT=2 불가)
-                        internalGeneral.SetOptCardA(1)
+                        internalGeneral.SetOptCardA(opt_SOFT if opt_SOFT != 2 else 1, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
+                        internalGeneral.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
                         # OptCardB~F 복사
                         if orig_g.OptCardB: internalGeneral.OptCardB = orig_g.OptCardB
                         if orig_g.OptCardC: internalGeneral.OptCardC = orig_g.OptCardC
@@ -2419,7 +2441,8 @@ class KooDynaAdvancedModification:
                             0, 0.0, "1.0000E+20",
                             1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
                         dropGeneral.name = "DropSurface_GENERAL"
-                        dropGeneral.SetOptCardA(1)
+                        dropGeneral.SetOptCardA(opt_SOFT if opt_SOFT != 2 else 1, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
+                        dropGeneral.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
                         dropContactCID = dropGeneral.cid
                         print("DROP_ATTITUDE: Created DropSurface_GENERAL (CID={0}, SOFT=1)".format(dropGeneral.cid))
 
@@ -2440,7 +2463,7 @@ class KooDynaAdvancedModification:
                     DC = drop_contact.get("DC", 0.0)
                     VC = drop_contact.get("VC", 0.0)
                     VDC = drop_contact.get("VDC", 10.0)
-                    PENCHK = int(drop_contact.get("PENCHK", 0))
+                    PENCHK = int(drop_contact.get("PENCHK", 1))
                     BT = 0.00
                     DT = "1.0000E+20"
                     SFS = drop_contact.get("SFS", 1.0)
@@ -2464,6 +2487,7 @@ class KooDynaAdvancedModification:
                     BSORT = drop_contact.get("BSORT", 100)
                     FRCFRQ = drop_contact.get("FRCFRQ", 1)
                     surfacetosurfaceContact.SetOptCardA(SOFT, SOFSCL, LCIDAB, MAXPAR, SBOPT, DEPTH, BSORT, FRCFRQ)
+                    surfacetosurfaceContact.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
                     dropContactCID = surfacetosurfaceContact.cid
 
             # DeformableToRigid Paired Switch
