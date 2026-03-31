@@ -2401,21 +2401,23 @@ class KooDynaAdvancedModification:
             FRCFRQ = drop_contact.get("FRCFRQ", 1)
             surfacetosurfaceContact.SetOptCardA(SOFT, SOFSCL, LCIDAB, MAXPAR, SBOPT, DEPTH, BSORT, FRCFRQ)
 
-            # DeformableToRigid Paired Switch (스마트폰 part를 D2R/R2D)
+            # DeformableToRigid Paired Switch (1-2-3차 충돌 사이 비행 구간에서만 rigid)
             if option.get("DeformableToRigid", False):
                 cid = surfacetosurfaceContact.cid
-                # 바닥판 제외 전체 part를 D2R 대상으로
                 d2r_pid_list = [(pid, 0) for pid in existingPartIDs]
                 r2d_pid_list = list(existingPartIDs)
-                # SWSET 20: contact force=0 (비행 중) → 스마트폰 D→R (dt 증가)
+                # SWSET 20: 접촉력이 !=0 → 0으로 변할 때 D→R (충돌 후 바운싱 시작)
+                #   code=4: 접촉력 변화 감지 (!=0 → 0)
+                #   초기 접촉력=0 상태에서는 "변화"가 아니라 발동 안 함
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
-                    swset=20, code=2, entno=cid, relsw=10, paired=1,
+                    swset=20, code=4, entno=cid, relsw=10, paired=1,
                     d2r_pids=d2r_pid_list, r2d_pids=[])
-                # SWSET 10: contact force!=0 (충돌 시작) → 스마트폰 R→D (정밀 해석)
+                # SWSET 10: 접촉력이 0 → !=0으로 변할 때 R→D (재충돌 직전)
+                #   code=2: 접촉력 변화 감지 (0 → !=0)
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
-                    swset=10, code=4, entno=cid, relsw=20, paired=-1,
+                    swset=10, code=2, entno=cid, relsw=20, paired=-1,
                     d2r_pids=[], r2d_pids=r2d_pid_list)
-                print("DROP_ATTITUDE: D2R/R2D configured for {0} model parts (CID={1})".format(len(existingPartIDs), cid))
+                print("DROP_ATTITUDE: D2R paired switch configured for {0} model parts (CID={1})".format(len(existingPartIDs), cid))
 
             self.dynaImporter.metaData["scenario_mode"] = "DropAttitude"
             self.dynaImporter.metaData["initial_conditions"]["orientation_euler_deg"]["pitch"] = RyOrigin
