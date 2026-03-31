@@ -638,7 +638,7 @@ class CumulativeScenarioRunner:
         use_local = self.config.get("environment", {}).get("use_local_scratch", True)
         if use_local and self.apptainer.apptainer_tmpdir:
             import shutil
-            local_work_dir = os.path.join(self.apptainer.apptainer_tmpdir, f"run_{run_id}")
+            local_work_dir = os.path.join(self.apptainer.apptainer_tmpdir, f"Run_{run_id}")
             os.makedirs(local_work_dir, exist_ok=True)
             # Stage-in: 입력 파일을 로컬로 복사
             local_input = os.path.join(local_work_dir, os.path.basename(input_file))

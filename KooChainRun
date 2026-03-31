@@ -403,7 +403,7 @@ ENTRIES=""
 for NODE in $NODES; do
     echo "노드 탐색: $NODE"
     DIRS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$NODE" \\
-        "find $SCRATCH_BASE/apptainer_job_*/run_* -maxdepth 0 -type d 2>/dev/null" 2>/dev/null || true)
+        "find $SCRATCH_BASE/apptainer_job_*/Run_* -maxdepth 0 -type d 2>/dev/null" 2>/dev/null || true)
     for DIR in $DIRS; do
         echo "  발견: $NODE:$DIR"
         ENTRIES="$ENTRIES $NODE:$DIR"
@@ -529,7 +529,7 @@ fi
 for NODE in $NODES; do
     for JID in $JOB_IDS; do
         DIRS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$NODE" \\
-            "ls -d $SCRATCH_BASE/apptainer_job_$JID/run_* 2>/dev/null" 2>/dev/null || true)
+            "ls -d $SCRATCH_BASE/apptainer_job_$JID/Run_* 2>/dev/null" 2>/dev/null || true)
         for DIR in $DIRS; do
             RUN_NAME=$(basename "$DIR")
             NFS_OUTPUT="$OUTPUT_DIR/$RUN_NAME/Output"
