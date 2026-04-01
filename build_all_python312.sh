@@ -112,6 +112,7 @@ echo ""
         --include-module=Runner.NodeOccupancyMonitor \
         --include-module=Runner.DirectInputWorkflow \
         --include-module=Runner.ImpactPositionSource \
+        --include-module=Runner.StepConfigBuilder \
         --jobs=8 \
         --show-progress
 

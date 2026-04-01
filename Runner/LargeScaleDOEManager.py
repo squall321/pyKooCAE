@@ -257,9 +257,11 @@ class LargeScaleDOEManager:
         # step_config.txt 생성 (공통 모듈 사용)
         angle = job_metadata.get("angle", {"roll": 0, "pitch": 0, "yaw": 0})
         template = job_metadata.get("template", "")
-        model_file = self.environment.get("model_file", template)
+        model_file = self.environment.get("model_file") or \
+                     self.runner_config.get("project", {}).get("model_file") or \
+                     template or ""
         if not model_file:
-            model_file = self.runner_config.get("project", {}).get("model_file", "")
+            print(f"  Warning: model_file not found for DOE {doe_index}, step_config may be invalid")
 
         sim_params = self.runner_config.get("simulation_params", {})
 
@@ -280,6 +282,18 @@ class LargeScaleDOEManager:
             step_config_path = os.path.join(step_dir, "step_config.txt")
             with open(step_config_path, 'w', encoding='utf-8') as scf:
                 scf.write(step_config_content)
+
+            # Step 2+: dynaintoinitial.txt도 사전 생성
+            if step_number > 1:
+                from Runner.StepConfigBuilder import build_dynain_to_initial_config
+                prev_dynain = f"../Step{step_number-1:03d}/dynain"
+                dti_content = build_dynain_to_initial_config(
+                    model_file=model_file,
+                    dynain_path=prev_dynain,
+                )
+                dti_path = os.path.join(step_dir, "dynaintoinitial.txt")
+                with open(dti_path, 'w', encoding='utf-8') as dtif:
+                    dtif.write(dti_content)
         except Exception as e:
             print(f"  Warning: step_config.txt generation failed for DOE {doe_index}: {e}")
 
@@ -552,10 +566,12 @@ class LargeScaleDOEManager:
                 f.write('mkdir -p $SCRATCH_DIR\n')
                 f.write('echo "Scratch 디렉토리: $SCRATCH_DIR"\n')
                 f.write("\n")
-                f.write('# 메타데이터 + 모델 파일 복사\n')
+                f.write('# 메타데이터 + config 파일 복사\n')
                 f.write('cp $ORIG_STEP_DIR/metadata.json $SCRATCH_DIR/\n')
+                f.write('cp $ORIG_STEP_DIR/step_config.txt $SCRATCH_DIR/ 2>/dev/null || true\n')
+                f.write('cp $ORIG_STEP_DIR/dynaintoinitial.txt $SCRATCH_DIR/ 2>/dev/null || true\n')
                 f.write(f'cp {self.project_dir}/$RUNID/metadata.json $SCRATCH_DIR/../ 2>/dev/null || true\n')
-                f.write('echo "메타데이터 복사 완료"\n')
+                f.write('echo "메타데이터/config 복사 완료"\n')
                 f.write("\n")
 
                 if step_number > 1:
@@ -658,24 +674,16 @@ class LargeScaleDOEManager:
                 f.write('fi\n')
                 f.write("\n")
 
-                f.write("# dynaintoinitial.txt 생성\n")
-                f.write('cat > dynaintoinitial.txt << EOF\n')
-                f.write('*Inputfile\n')
-                f.write('placeholder.k\n')
-                f.write('*Mode\n')
-                f.write('DYNAIN_TO_INITIAL,1\n')
-                f.write('**DynainToInitial,1\n')
-                f.write('*DynainPath,$PREV_DYNAIN\n')
-                f.write('*IncludeStress,True\n')
-                f.write('*RemoveDynamicRelaxation,True\n')
-                f.write('*MovetoOriginAutomatic,True\n')
-                f.write('**EndDynainToInitial\n')
-                f.write('*End\n')
-                f.write('EOF\n')
+                f.write("# dynaintoinitial.txt 확인 (사전 생성됨)\n")
+                f.write('DTI_TXT="$STEP_DIR/dynaintoinitial.txt"\n')
+                f.write('if [ ! -f "$DTI_TXT" ]; then\n')
+                f.write('    echo "dynaintoinitial.txt not found: $DTI_TXT"\n')
+                f.write('    exit 1\n')
+                f.write('fi\n')
                 f.write("\n")
 
                 f.write("# DYNAIN_TO_INITIAL 실행\n")
-                km_cmd = self.wrap_with_apptainer(f'{self.koomeshmodifier_path} --input="dynaintoinitial.txt"')
+                km_cmd = self.wrap_with_apptainer(f'{self.koomeshmodifier_path} --input="$DTI_TXT"')
                 f.write(f"{km_cmd}\n")
                 f.write("\n")
 
