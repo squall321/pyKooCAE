@@ -487,9 +487,10 @@ class LargeScaleDOEManager:
             if dependency_job_id:
                 f.write(f"#SBATCH --dependency=afterok:{dependency_job_id}\n")
 
-            # APPTAINER_TMPDIR 설정
+            # APPTAINER_TMPDIR 설정 (job별 격리)
             if self.apptainer_tmpdir:
-                f.write(f"\nexport APPTAINER_TMPDIR={self.apptainer_tmpdir}\n")
+                f.write(f"\nexport APPTAINER_TMPDIR={self.apptainer_tmpdir}/apptainer_job_${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}\n")
+                f.write("mkdir -p $APPTAINER_TMPDIR\n")
 
             f.write("\n")
             f.write("# ====================================================================\n")
