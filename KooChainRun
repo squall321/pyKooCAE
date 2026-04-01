@@ -868,6 +868,9 @@ def _submit_cumulative(args, config_path):
     print(f"Project:    {project_name}")
     print(f"DOE count:  {doe_count}")
     print(f"Total jobs: {doe_count}")
+    if doe_count < args.nodes * args.jobs_per_node:
+        print(f"  Note: DOE count ({doe_count}) < requested parallel slots ({args.nodes * args.jobs_per_node})")
+        print(f"         Extra nodes will be idle.")
     print()
 
     # slurm 스크립트 디렉토리 생성
