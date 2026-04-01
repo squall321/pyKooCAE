@@ -743,96 +743,22 @@ class CumulativeScenarioRunner:
 
         if mode == "DROP":
             # 낙하 시뮬레이션 설정
+            from Runner.StepConfigBuilder import build_drop_attitude_config
             euler = self._get_doe_euler(doe_index, step_num, condition)
-            height = params.get("height_mm", 1500)
-            surface = params.get("surface", "steelPlate")
-
-            # simulation_params에서 값 가져오기 (기본값 제공)
             sim_params = self.config.get("simulation_params", {})
-            tFinal = sim_params.get("tFinal", 0.005)
-            dt = sim_params.get("dt", 0.000001)
-            density = sim_params.get("density", 7850)
-            youngs_modulus = sim_params.get("youngs_modulus", 200000000000)
-            poisson_ratio = sim_params.get("poisson_ratio", 0.3)
-            sim_height = sim_params.get("height", height)
-            offset_distance = sim_params.get("offset_distance", 0.05)
 
-            # drop_surface 설정 (simulation_params에서 읽기, 기본값 제공)
-            drop_surface = sim_params.get("drop_surface", {})
-            ds_type = drop_surface.get("type", "Plane")
-            ds_size = drop_surface.get("size", [300, 300, 20])
-            ds_mesh = drop_surface.get("mesh", [30, 30, 2])
-            drop_surface_line = f"DropSurface,{ds_type},{ds_size[0]},{ds_size[1]},{ds_size[2]},{ds_mesh[0]},{ds_mesh[1]},{ds_mesh[2]}"
-            if ds_type == "PlanewithRoughness":
-                roughness = drop_surface.get("roughness_mode", "Random")
-                r_max = drop_surface.get("r_max", 0.0)
-                sf1 = drop_surface.get("shape_factor", 0.0)
-                sf2 = drop_surface.get("shape_factor2", sf1)
-                drop_surface_line += f",{roughness},{r_max},{sf1},{sf2}"
-
-            # DeformableToRigid 옵션
-            d2r_enabled = drop_surface.get("deformable_to_rigid", False)
-            d2r_line = "\nDeformableToRigid,True" if d2r_enabled else ""
-
-            # Contact 처리 옵션
-            convert_to_ss = sim_params.get("convert_general_to_single_surface", True)
-            ensure_ss = sim_params.get("ensure_single_surface", False)
-            decompose_general = sim_params.get("decompose_general_contact", False)
-            decompose_margin = sim_params.get("decompose_contact_margin", 1.5)
-            decompose_abs_margin_x = sim_params.get("decompose_contact_absolute_margin_x", 5.0)
-            decompose_abs_margin_y = sim_params.get("decompose_contact_absolute_margin_y", 5.0)
-            decompose_abs_margin_z = sim_params.get("decompose_contact_absolute_margin_z", 0.5)
-            contact_opt_line = ""
-            if not convert_to_ss:
-                contact_opt_line += "\nConvertGeneralToSingleSurface,False"
-            if ensure_ss:
-                contact_opt_line += "\nEnsureSingleSurface,True"
-            if decompose_general:
-                contact_opt_line += "\nDecomposeGeneralContact,True"
-            if decompose_margin != 1.5:
-                contact_opt_line += f"\nDecomposeContactMargin,{decompose_margin}"
-            if decompose_abs_margin_x != 5.0:
-                contact_opt_line += f"\nDecomposeContactAbsoluteMarginX,{decompose_abs_margin_x}"
-            if decompose_abs_margin_y != 5.0:
-                contact_opt_line += f"\nDecomposeContactAbsoluteMarginY,{decompose_abs_margin_y}"
-            if decompose_abs_margin_z != 0.5:
-                contact_opt_line += f"\nDecomposeContactAbsoluteMarginZ,{decompose_abs_margin_z}"
-
-            # 바닥판 접촉 옵션
-            drop_contact = sim_params.get("drop_contact", {})
-            drop_contact_line = ""
-            for key, val in drop_contact.items():
-                drop_contact_line += f"\nDropContact.{key},{val}"
-
-            config_content = f"""*Inputfile
-{model_file}
-*RunDirectoryMode,True,{self.output_dir}
-*Info,{project},Step{step_num}
-*Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
-*Creator,automation,auto@system.com,CAE,AUTO
-*Mode
-DROP_ATTITUDE,1
-**DropAttitude,1
-EulerRolling,{euler['roll']}
-EulerPitching,{euler['pitch']}
-EulerYawing,{euler['yaw']}
-Height,{sim_height}
-InitialVelocityX,0
-InitialVelocityY,0
-InitialVelocityZ,0
-InitialAngularVelocityX,0
-InitialAngularVelocityY,0
-InitialAngularVelocityZ,0
-OffsetDistance,{offset_distance}
-Density,{density}
-YoungsModulus,{youngs_modulus}
-PoissonRatio,{poisson_ratio}
-tFinal,{tFinal}
-dt,{dt}
-{drop_surface_line}{d2r_line}{contact_opt_line}{drop_contact_line}
-**EndDropAttitude
-*End
-"""
+            config_content = build_drop_attitude_config(
+                model_file=model_file,
+                output_dir=self.output_dir,
+                project=project,
+                doe_index=doe_index,
+                step_num=step_num,
+                mode=mode,
+                condition=condition,
+                euler=euler,
+                sim_params=sim_params,
+                run_directory_mode=True,
+            )
 
         elif mode == "IMPACT":
             # 충격 위치 DOE 설정
