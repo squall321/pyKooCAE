@@ -11426,15 +11426,19 @@ class DynaManager():
                 else:
                     curLines.append(line)
 
-        # include 파일 재귀 읽기
+        # include 파일 처리
         for curFile in includedList:
             include_path = curFile.strip()
-            # 상대경로 → 절대경로 변환
             if not os.path.isabs(include_path):
                 include_path = os.path.join(os.path.dirname(path), include_path)
             if os.path.exists(include_path):
                 self._include_files.append(include_path)
-                self.ReadKeywordsfromFile(include_path, lines_with_asterisk, keyword_dict)
+                if not getattr(self, 'preserve_includes', False):
+                    # 인라인 모드: 재귀적으로 읽기
+                    self.ReadKeywordsfromFile(include_path, lines_with_asterisk, keyword_dict)
+                else:
+                    # 보존 모드: include 파일은 읽지 않고 경로만 추적
+                    print(f"  Include preserved (not inlined): {os.path.basename(include_path)}")
             else:
                 print(f"Warning: Include file not found: {include_path}")
 

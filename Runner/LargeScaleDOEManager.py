@@ -566,12 +566,13 @@ class LargeScaleDOEManager:
                 f.write('mkdir -p $SCRATCH_DIR\n')
                 f.write('echo "Scratch 디렉토리: $SCRATCH_DIR"\n')
                 f.write("\n")
-                f.write('# 메타데이터 + config 파일 복사\n')
+                f.write('# 메타데이터 + config + include 파일 복사\n')
                 f.write('cp $ORIG_STEP_DIR/metadata.json $SCRATCH_DIR/\n')
                 f.write('cp $ORIG_STEP_DIR/step_config.txt $SCRATCH_DIR/ 2>/dev/null || true\n')
                 f.write('cp $ORIG_STEP_DIR/dynaintoinitial.txt $SCRATCH_DIR/ 2>/dev/null || true\n')
+                f.write('cp $ORIG_STEP_DIR/*.k $SCRATCH_DIR/ 2>/dev/null || true\n')
                 f.write(f'cp {self.project_dir}/$RUNID/metadata.json $SCRATCH_DIR/../ 2>/dev/null || true\n')
-                f.write('echo "메타데이터/config 복사 완료"\n')
+                f.write('echo "메타데이터/config/include 복사 완료"\n')
                 f.write("\n")
 
                 if step_number > 1:

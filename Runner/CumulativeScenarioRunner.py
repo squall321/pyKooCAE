@@ -640,9 +640,33 @@ class CumulativeScenarioRunner:
             import shutil
             local_work_dir = os.path.join(self.apptainer.apptainer_tmpdir, f"Run_{run_id}")
             os.makedirs(local_work_dir, exist_ok=True)
-            # Stage-in: 입력 파일을 로컬로 복사
+            # Stage-in: 입력 파일 + include 파일을 로컬로 복사
             local_input = os.path.join(local_work_dir, os.path.basename(input_file))
             shutil.copy2(input_file, local_input)
+            # include 파일 복사
+            try:
+                from KooCAEManager.KooIncludeManager import KooIncludeManager
+                inc_mgr = KooIncludeManager(input_file)
+                inc_mgr.CopyTo(local_work_dir)
+            except Exception as e:
+                logging.debug(f"Include scan skipped: {e}")
+            # additional_files 복사
+            additional_files = self.config.get("environment", {}).get("additional_files", [])
+            additional_dirs = self.config.get("environment", {}).get("additional_dirs", [])
+            model_dir = os.path.dirname(self.config["project"]["model_file"])
+            for af in additional_files:
+                af_path = af if os.path.isabs(af) else os.path.join(model_dir, af)
+                import glob as _glob
+                for matched in _glob.glob(af_path):
+                    dst = os.path.join(local_work_dir, os.path.basename(matched))
+                    if not os.path.exists(dst):
+                        shutil.copy2(matched, dst)
+            for ad in additional_dirs:
+                ad_path = ad if os.path.isabs(ad) else os.path.join(model_dir, ad)
+                if os.path.isdir(ad_path):
+                    dst_dir = os.path.join(local_work_dir, os.path.basename(ad_path))
+                    if not os.path.exists(dst_dir):
+                        shutil.copytree(ad_path, dst_dir)
             logging.info(f"Stage-in: {input_file} -> {local_work_dir}")
 
             # LS-DYNA 실행 (로컬 디스크)

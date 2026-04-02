@@ -871,6 +871,29 @@ def _submit_cumulative(args, config_path):
     if doe_count < args.nodes * args.jobs_per_node:
         print(f"  Note: DOE count ({doe_count}) < requested parallel slots ({args.nodes * args.jobs_per_node})")
         print(f"         Extra nodes will be idle.")
+
+    # include 파일 검증
+    try:
+        sys.path.insert(0, str(Path(__file__).parent / "occProject" / "Generators"))
+        sys.path.insert(0, str(Path(__file__).parent / "occProject" / "Generators" / "KooCAEManager"))
+        from KooIncludeManager import KooIncludeManager
+        inc_mgr = KooIncludeManager(model_file)
+        inc_files = inc_mgr.Scan()
+        if inc_files:
+            print(f"Include files: {len(inc_files)}")
+            for f in inc_files:
+                print(f"  {Path(f).name}")
+        missing = inc_mgr.Validate()
+        if missing:
+            print(f"  WARNING: Missing include files: {[Path(f).name for f in missing]}")
+    except Exception:
+        pass  # include 검증 실패해도 제출은 계속
+
+    # additional_files 확인
+    additional = env.get("additional_files", [])
+    if additional:
+        print(f"Additional files: {additional}")
+
     print()
 
     # slurm 스크립트 디렉토리 생성
