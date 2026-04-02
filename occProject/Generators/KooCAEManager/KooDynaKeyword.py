@@ -12,9 +12,10 @@ def process_entry(entry):
     
 class DynaKeyword():
 
-    def __init__(self, name): 
+    def __init__(self, name):
         self.name = name
-        self.parameters = []        
+        self.parameters = []
+        self.source_file = None  # 이 키워드가 읽힌 파일 경로 (include 보존용)        
     
     def addParameter(self, parameter):
         self.parameters.append(parameter)
@@ -11364,6 +11365,10 @@ class DynaManager():
         self.currentDirectory = os.getcwd()
         self.inputFile = ""
         self.dynaKeywordMan = None
+        self.preserve_includes = False  # True면 *INCLUDE 구조 보존
+        self._include_sources = {}      # 키워드별 source_file 목록
+        self._include_files = []        # include 파일 절대경로 목록
+        self._main_file = ""            # 메인 파일 절대경로
         pass
     
     def SetInputPath(self, path):
@@ -11373,24 +11378,35 @@ class DynaManager():
         #remain file name and ext only
         self.inputFile = os.path.basename(path)
     
-    def ReadKeywordsfromFile(self, path, lines_with_asterisk, keyword_dict):        
+    def ReadKeywordsfromFile(self, path, lines_with_asterisk, keyword_dict):
         curLines = []
         latest_keyword = ""
         includedList = []
         empty_Keywords = []
-        with open(path, 'r') as file:            
-            
+
+        # include 파일 목록 추적 (source_file 태깅용)
+        if not hasattr(self, '_include_sources'):
+            self._include_sources = {}
+            self._include_files = []
+            self._main_file = path
+
+        with open(path, 'r') as file:
+
             for line in file:
                 # Check if the line starts with an asterisk
                 if line.startswith('*'):
                     if latest_keyword == 'INCLUDE':
-                        includedList = curLines
+                        includedList.extend(curLines)  # 덮어쓰기가 아닌 추가
                     line = line.split(' ')[0]
                     lines_with_asterisk.append(line[1:].strip())
                     if len(curLines) > 0:
                         if latest_keyword not in keyword_dict:
                             keyword_dict[latest_keyword] = []
                         keyword_dict[latest_keyword].append(curLines)
+                        # source_file 태깅
+                        if latest_keyword not in self._include_sources:
+                            self._include_sources[latest_keyword] = []
+                        self._include_sources[latest_keyword].append(path)
                     elif latest_keyword == "CONTROL_MPP_IO_NODUMP":
                         pass
                     elif latest_keyword == "":
@@ -11402,16 +11418,25 @@ class DynaManager():
                         empty_Keywords.append(latest_keyword)
 
 
-                        
-                    curLines = [] 
-                    
+                    curLines = []
+
                     latest_keyword = line[1:].strip()
                 elif line.startswith('$'):
                     continue
                 else:
                     curLines.append(line)
+
+        # include 파일 재귀 읽기
         for curFile in includedList:
-            self.ReadKeywordsfromFile(curFile.strip(), lines_with_asterisk, keyword_dict)
+            include_path = curFile.strip()
+            # 상대경로 → 절대경로 변환
+            if not os.path.isabs(include_path):
+                include_path = os.path.join(os.path.dirname(path), include_path)
+            if os.path.exists(include_path):
+                self._include_files.append(include_path)
+                self.ReadKeywordsfromFile(include_path, lines_with_asterisk, keyword_dict)
+            else:
+                print(f"Warning: Include file not found: {include_path}")
 
         for keyword in empty_Keywords:
             lines_with_asterisk.remove(keyword)
@@ -14528,8 +14553,10 @@ class DynaManager():
                 while "SET_SOLID_TITLE" in lines_with_asterisk:
                     lines_with_asterisk.remove("SET_SOLID_TITLE")
             print("Set Keywords Read Complete")
-            while "INCLUDE" in lines_with_asterisk:
-                lines_with_asterisk.remove("INCLUDE")
+            # INCLUDE: preserve_includes=True면 유지, False면 제거
+            if not getattr(self, 'preserve_includes', False):
+                while "INCLUDE" in lines_with_asterisk:
+                    lines_with_asterisk.remove("INCLUDE")
             while "KEYWORD" in lines_with_asterisk:
                 lines_with_asterisk.remove("KEYWORD")
             while "END" in lines_with_asterisk:

@@ -362,6 +362,10 @@ class KooDynaImporter():
         outFilePath = os.path.join(folderPath, fileNamewithoutext + "_dump.k")
         self.dynaManager.ReadInputFile(outFilePath,writeLog)
         self.keywordInterpreted = self.dynaManager.keywordInterpreted
+        # include 정보 저장
+        self._include_sources = getattr(self.dynaManager, '_include_sources', {})
+        self._include_files = getattr(self.dynaManager, '_include_files', [])
+        self._main_file = getattr(self.dynaManager, '_main_file', filePath)
     
     def SyncronizeMaxID(self):
         self.SyncronizeMaxEID()
