@@ -1,223 +1,265 @@
-# PLAN: Include File Handling + IGA Keyword Support (v4 Final)
+# PLAN: Include File Handling + IGA Keyword Support (v5 Final)
 
 ## 핵심 원칙
 
 - `*INCLUDE`는 같은 폴더 상대경로
-- 읽기는 인라인 (include 안의 키워드도 접근 가능)
-- 출력 시 **source_file 태깅**으로 원본 소속 추적 → include 파일 분리 출력
-- include 파일은 원본 복사, 메인 파일만 수정
+- 메인 파일: 완전 파싱 (FE 키워드 수정 가능)
+- Include 파일: 별도 importer로 로드 (내부 키워드 접근 가능)
+- 출력 시 메인/include 분리 보존
+- `*PARAMETER_LOCAL` (`&id` 등) 해석 or graceful skip
 
 ---
 
 ## 아키텍처
 
 ```
-읽기 (현재 동작 유지):
-  main.k 읽기 → 키워드 A, B, C         (source: main.k)
-  *INCLUDE iga_p1.k → 키워드 D, E      (source: iga_p1.k)
-  *INCLUDE iga_p2.k → 키워드 F, G      (source: iga_p2.k)
-  → 모든 키워드가 메모리에 인라인 (접촉 분해 등 가능)
-
-수정:
-  키워드 A 수정, 키워드 H 추가          (source: main.k)
-  키워드 D~G는 수정 안 함              (source 유지)
-
-출력 (preserve_includes=True):
-  DropSet.k:
-    수정된 A, B, C, H
-    *INCLUDE iga_p1.k
-    *INCLUDE iga_p2.k
-  iga_p1.k: 원본 복사 (D, E 그대로)
-  iga_p2.k: 원본 복사 (F, G 그대로)
+IncludeManager("main.k")
+├── main_importer: KooDynaImporter     ← 메인 파일 완전 파싱
+│   ├── partManager (메인 parts)
+│   ├── contactManager (접촉 분해 등)
+│   └── controlManager (CONTROL 카드)
+│
+├── includes:
+│   ├── "iga_p1.k": KooDynaImporter   ← include 별도 파싱
+│   │   ├── partManager (IGA parts)
+│   │   ├── matManager (IGA materials)
+│   │   └── passthroughKeywords (IGA_3D_NURBS_XYZ 등)
+│   └── "iga_p2.k": KooDynaImporter
+│       └── ...
+│
+└── 출력:
+    ├── main_output.k  (메인 키워드 + *INCLUDE 문)
+    ├── iga_p1.k       (수정 or 원본)
+    └── iga_p2.k       (수정 or 원본)
 ```
 
 ---
 
-## Phase 1: Source File 태깅
+## Phase 1: PARAMETER_LOCAL 처리
 
-**파일**: `KooCAEManager/KooDynaKeyword.py`
+**문제**: include 파일에 `*PARAMETER_LOCAL`로 `&id`, `&mid` 등 변수 정의 → `int('&id')` 에러
 
-### 1a. 읽기 시 태깅
+**해결 방안**:
 
-`ReadKeywordsfromFile`에서 각 키워드에 source_file 기록:
-
+### 1a. 파라미터 해석기
 ```python
-def ReadKeywordsfromFile(self, path, ...):
-    current_source = path  # 현재 읽고 있는 파일
-    ...
-    for keyword in parsed_keywords:
-        keyword.source_file = current_source  # 태깅
-    ...
-    # *INCLUDE 발견 시 재귀 호출 (source_file이 include 파일로 바뀜)
-    for include_file in include_list:
-        self.ReadKeywordsfromFile(include_file, ...)  # 자동으로 태깅
+class ParameterResolver:
+    def __init__(self):
+        self.params = {}  # {"id": 1, "mid": 2, ...}
+
+    def ParseParameterLocal(self, lines):
+        # *PARAMETER_LOCAL 블록에서 변수=값 추출
+
+    def Resolve(self, value_str) -> str:
+        # "&id" → "1" (해석된 값 반환)
+        # "123" → "123" (일반 값은 그대로)
 ```
 
-### 1b. 메인 파일 vs include 파일 구분
-
+### 1b. KooDynaKeyword에 적용
 ```python
-class DynaKeyword:
-    source_file = None  # 기본값: None (하위 호환)
+# 파싱 시 &변수를 만나면 ParameterResolver로 치환
+if value.startswith('&'):
+    value = param_resolver.Resolve(value)
 ```
 
-기존 코드는 source_file을 무시하므로 하위 호환성 유지.
+### 1c. Fallback: Passthrough
+파라미터 해석 실패 시 해당 키워드를 PassthroughKeyword로 저장 (에러 대신 원문 보존)
 
 ---
 
-## Phase 2: IncludeManager
+## Phase 2: IncludeManager 확장
 
-**파일**: `KooCAEManager/KooIncludeManager.py` (신규)
+**파일**: `KooCAEManager/KooIncludeManager.py`
 
 ```python
 class KooIncludeManager:
     def __init__(self, main_file_path):
-        self.main_file = main_file_path
-        self.base_dir = os.path.dirname(main_file_path)
-        self.include_files = []   # 상대 파일명 목록
-        self.visited = set()      # 순환 참조 방지
+        self.main_file = os.path.abspath(main_file_path)
+        self.base_dir = os.path.dirname(self.main_file)
+        self.include_files = []          # 절대경로 목록
+        self.include_importers = {}      # {basename: KooDynaImporter}
+        self.main_importer = None        # 메인 파일 importer
 
     def Scan(self):
-        # main_file에서 *INCLUDE 줄 추출 (재귀, 순환 감지)
-        # include 파일 안의 *INCLUDE도 재귀 스캔
+        # *INCLUDE 파일 목록 추출 (재귀, 순환 감지)
+
+    def LoadMain(self, preserve_includes=True):
+        # 메인 파일 파싱 (include는 스킵)
+        self.main_importer = KooDynaImporter()
+        self.main_importer.dynaManager.preserve_includes = True
+        self.main_importer.importDynaFile(self.main_file)
+        self.main_importer.importKeywordstoManager()
+
+    def LoadInclude(self, include_basename):
+        # 특정 include 파일을 별도 importer로 파싱
+        # PARAMETER_LOCAL 해석 적용
+        inc_path = os.path.join(self.base_dir, include_basename)
+        imp = KooDynaImporter()
+        imp.importDynaFile(inc_path)
+        imp.importKeywordstoManager()
+        self.include_importers[include_basename] = imp
+
+    def LoadAllIncludes(self):
+        # 모든 include 파일을 별도 파싱
+        for inc_path in self.include_files:
+            self.LoadInclude(os.path.basename(inc_path))
+
+    def GetIncludeImporter(self, basename) -> KooDynaImporter:
+        return self.include_importers.get(basename)
+
+    def WriteMain(self, output_dir):
+        # 메인 파일 출력 + *INCLUDE 문 + include 파일 복사/출력
 
     def CopyTo(self, target_dir):
-        # include 파일을 target_dir로 복사 (같은 폴더에 flat)
+        # include 파일을 target_dir로 복사
 
     def Validate(self) -> list[str]:
-        # 누락 파일 목록 반환
+        # 누락 파일 목록
+```
 
-    def GetAllFiles(self) -> list[str]:
-        # 메인 + include 전체 절대경로
+**사용 예**:
+```python
+mgr = KooIncludeManager("model.k")
+mgr.Scan()
+mgr.LoadMain()
+
+# 메인 파일 접촉 분해
+mgr.main_importer.contactManager.ConvertAss5ToAstsPartPairs(...)
+
+# include 파일 내부 접근
+mgr.LoadInclude("iga_p1.k")
+iga_parts = mgr.include_importers["iga_p1.k"].partManager
+print(iga_parts.parts)  # IGA part 정보 접근
+
+# 출력
+mgr.WriteMain("output/")  # main + *INCLUDE + include 파일
 ```
 
 ---
 
 ## Phase 3: INCLUDE 보존 출력
 
-**파일**: `KooCAEManager/KooMeshImporter.py`, `KooDynaKeyword.py`
+### 3a. 읽기
+- 메인 파일: `preserve_includes=True` → include 내용 인라인 안 함
+- Include 파일: 별도 `LoadInclude()`로 독립 파싱
 
-### 3a. 출력 시 source_file 기반 분리
-
+### 3b. 출력
 ```python
-def WriteStreamDynaKeyword(self, stream, preserve_includes=True):
-    if preserve_includes:
-        include_sources = set()  # include 파일 목록 수집
-
-        for keyword in all_keywords:
-            if keyword.source_file and keyword.source_file != self.main_file:
-                include_sources.add(keyword.source_file)
-                continue  # include 소속 키워드는 메인 출력에서 스킵
-            keyword.write(stream)  # 메인 소속만 출력
-
+def WriteMain(self, output_dir):
+    # 1. 메인 파일 출력 (FE 키워드만)
+    main_output = os.path.join(output_dir, "DropSet.k")
+    with open(main_output, 'w') as f:
+        f.write("*KEYWORD\n")
+        f.write(self.main_importer.WriteStreamDynaKeyword())
         # *INCLUDE 문 출력
-        for include_file in include_sources:
-            stream.write("*INCLUDE\n")
-            stream.write(f" {os.path.basename(include_file)}\n")
-    else:
-        # 기존 동작: 전부 인라인
-        for keyword in all_keywords:
-            keyword.write(stream)
+        for inc_file in self.include_files:
+            f.write("*INCLUDE\n")
+            f.write(f" {os.path.basename(inc_file)}\n")
+        f.write("*END\n")
+
+    # 2. include 파일 처리
+    for inc_file in self.include_files:
+        basename = os.path.basename(inc_file)
+        if basename in self.include_importers:
+            # 수정된 include → 새로 출력
+            imp = self.include_importers[basename]
+            out_path = os.path.join(output_dir, basename)
+            with open(out_path, 'w') as f:
+                f.write(imp.WriteStreamDynaKeyword())
+        else:
+            # 미수정 include → 원본 복사
+            shutil.copy2(inc_file, os.path.join(output_dir, basename))
 ```
-
-### 3b. include 파일 원본 복사
-
-KooMeshModifier가 출력할 때:
-```python
-if preserve_includes:
-    include_mgr = KooIncludeManager(input_file)
-    include_mgr.CopyTo(output_dir)  # include 파일 원본 복사
-```
-
-### 3c. 옵션
-
-- `preserve_includes=True` (기본): include 구조 보존
-- `*MergeIncludes,True`: 전부 인라인 (기존 동작)
 
 ---
 
 ## Phase 4: IGA Passthrough 파서
 
-**파일**: `KooCAEManager/KooPassthroughKeyword.py` (신규)
-
-```python
-class PassthroughKeyword(DynaKeyword):
-    """미지원 키워드를 원문 그대로 저장/출력"""
-    def __init__(self, keyword_name):
-        super().__init__(keyword_name)
-        self.raw_lines = []
-
-    def parse(self, raw_text):
-        self.raw_lines = raw_text
-
-    def write(self, stream):
-        stream.write(f"*{self.keyword_name}\n")
-        for line in self.raw_lines:
-            stream.write(line)
-            if not line.endswith('\n'):
-                stream.write('\n')
-```
+**파일**: `KooCAEManager/KooPassthroughKeyword.py` (이미 구현)
 
 **등록 대상**:
 - `IGA_SOLID`, `IGA_3D_NURBS_XYZ`, `IGA_DEV_VOLUME_XYZ`
 - `IGA_DEV_STABILIZATION`, `IGA_REFINE_SOLID`, `SECTION_IGA_SOLID`
 
 **용도**:
-- preserve_includes=True: include 파일이 원본 복사되므로 passthrough 불필요
-- preserve_includes=False (인라인 모드): passthrough가 IGA 키워드를 보존
+- include 파일을 `LoadInclude()`로 파싱할 때, IGA 키워드를 passthrough로 보존
+- 파라미터 해석 후에도 IGA 데이터 원문 유지
 
 ---
 
 ## Phase 5: Stage-in/out + additional_files
 
-### 5a. Stage-in include 복사
-
-**CumulativeScenarioRunner**:
+### 5a. Stage-in (이미 구현)
 ```python
-shutil.copy2(input_file, local_input)
-mgr = KooIncludeManager(input_file)
-mgr.CopyTo(local_work_dir)
+# CumulativeScenarioRunner
+inc_mgr = KooIncludeManager(input_file)
+inc_mgr.CopyTo(local_work_dir)  # include 파일 복사
+# + additional_files 복사
 ```
 
-**LargeScaleDOEManager**:
-- `create_runid_directory()`에서 include 사전 복사
-- scratch 모드: include도 scratch에 복사
-
-### 5b. additional_files
-
-**scenario.json**:
+### 5b. additional_files (이미 구현)
 ```json
 {
   "environment": {
-    "additional_files": ["thermal_input.k", "em_coupling.k"],
-    "additional_dirs": ["include_files/"]
+    "additional_files": ["thermal.k", "em.k"],
+    "additional_dirs": ["includes/"]
   }
 }
 ```
 
-- Stage-in: additional_files도 같은 폴더에 복사
-- additional_files 내 `*INCLUDE`도 재귀 스캔
+### 5c. 제출 시 검증 (이미 구현)
+```
+KooChainRun submit 시:
+  Include files: 2
+    iga_p1.k
+    iga_p2.k
+  WARNING: Missing include files: [...]  (있으면)
+```
 
-### 5c. 제출 시 검증
+---
 
-`KooChainRun submit`에서:
+## Phase 6: KooMeshModifier 연동
+
+### 6a. preserve_includes 옵션
+
+KooMeshModifier step_config에서:
+```
+*PreserveIncludes,True       ← 기본값
+*MergeIncludes,True          ← 인라인 모드 (기존 동작)
+```
+
+### 6b. KooMeshModifier 내부
+
 ```python
-mgr = KooIncludeManager(model_file)
-missing = mgr.Validate()
-if missing:
-    print(f"Warning: missing include files: {missing}")
+# KooMeshModifier.py
+if preserve_includes:
+    mgr = KooIncludeManager(input_file)
+    mgr.Scan()
+    mgr.LoadMain()
+    # 수정 작업은 mgr.main_importer에 대해
+    advMod = KooDynaAdvancedModification(mgr.main_importer)
+    advMod.DropAttitude(...)
+    # 출력
+    mgr.WriteMain(output_dir)
+else:
+    # 기존 동작: 전부 인라인
+    importer = KooDynaImporter()
+    importer.importDynaFile(input_file)
+    ...
 ```
 
 ---
 
 ## 구현 순서
 
-| 순서 | Phase | 내용 | 규모 |
-|------|-------|------|------|
-| 1 | Phase 1 | source_file 태깅 | 소 |
-| 2 | Phase 2 | IncludeManager | 소 |
-| 3 | Phase 3 | INCLUDE 보존 출력 | 중 |
-| 4 | Phase 4 | IGA Passthrough | 소 |
-| 5 | Phase 5 | Stage-in + additional_files | 중 |
+| 순서 | Phase | 내용 | 규모 | 상태 |
+|------|-------|------|------|------|
+| 1 | Phase 1a | ParameterResolver | 중 | 미구현 |
+| 2 | Phase 2 | IncludeManager 확장 (LoadInclude) | 중 | 부분 구현 |
+| 3 | Phase 3 | INCLUDE 보존 출력 (WriteMain) | 중 | 부분 구현 |
+| 4 | Phase 4 | IGA Passthrough 등록 | 소 | 클래스 구현, 등록 미완 |
+| 5 | Phase 5 | Stage-in + additional_files | 소 | ✅ 구현 |
+| 6 | Phase 6 | KooMeshModifier 연동 | 중 | 미구현 |
 
 ---
 
@@ -225,15 +267,15 @@ if missing:
 
 | 파일 | 변경 |
 |------|------|
-| **신규** `KooCAEManager/KooIncludeManager.py` | Include 스캔/복사/검증 |
-| **신규** `KooCAEManager/KooPassthroughKeyword.py` | 범용 Passthrough 클래스 |
-| `KooCAEManager/KooDynaKeyword.py` | source_file 태깅, INCLUDE 보존 |
-| `KooCAEManager/KooMeshImporter.py` | preserve_includes 출력, passthrough 저장 |
-| `Runner/CumulativeScenarioRunner.py` | stage-in include 복사 |
-| `Runner/LargeScaleDOEManager.py` | include 사전 복사 |
-| `Runner/StepConfigBuilder.py` | additional_files 반영 |
-| `KooChainRun` | additional_files, 제출 시 검증 |
-| `KooMeshModifier.py` | preserve_includes 옵션 |
+| **신규** `KooCAEManager/KooParameterResolver.py` | PARAMETER_LOCAL 해석 |
+| `KooCAEManager/KooIncludeManager.py` | LoadMain/LoadInclude/WriteMain 추가 |
+| `KooCAEManager/KooPassthroughKeyword.py` | 이미 구현 |
+| `KooCAEManager/KooDynaKeyword.py` | source_file 태깅, preserve_includes |
+| `KooCAEManager/KooMeshImporter.py` | passthrough 키워드 등록/출력 |
+| `Runner/CumulativeScenarioRunner.py` | stage-in include 복사 (구현됨) |
+| `Runner/LargeScaleDOEManager.py` | scratch include 복사 (구현됨) |
+| `KooChainRun` | include 검증 (구현됨) |
+| `KooMeshModifier.py` | preserve_includes 모드 분기 |
 
 ---
 
@@ -241,19 +283,21 @@ if missing:
 
 | 테스트 | 검증 |
 |--------|------|
-| source_file 태깅 | import 후 각 키워드의 source_file 확인 |
-| INCLUDE 보존 출력 | `iga_multipid_result.k` → 수정 → `*INCLUDE` 유지 + 파일 분리 |
-| IGA 보존 | include 안 IGA 키워드가 원본과 동일 |
-| 인라인 모드 | `MergeIncludes=True` → 단일 파일 + IGA passthrough |
-| Stage-in | include 파일이 scratch에 복사됨 |
-| 순환 참조 | A→B→A 감지 |
-| additional_files | 커플링 입력 2개 → 둘 다 stage-in |
+| IGA 예제 preserve | `iga_multipid_result.k` → LoadMain → WriteMain → *INCLUDE 유지 |
+| IGA include 접근 | LoadInclude → partManager 접근 가능 |
+| PARAMETER_LOCAL | `&id` → 실제 값으로 치환 |
+| Passthrough | IGA_3D_NURBS_XYZ 원문 보존 |
+| 수정된 include 출력 | include 파트 수정 → 새 파일로 출력 |
+| 미수정 include | 원본 복사 |
+| Stage-in | include + additional_files 로컬 복사 |
+| DROP_ATTITUDE + IGA | IGA 모델 낙하 시뮬 → IGA 보존 + 접촉 추가 |
 
 ---
 
 ## 호환성
 
-- include 없는 모델: 기존과 완전 동일 (source_file=None → 무시)
-- 기본 모드: include 보존
+- include 없는 모델: 기존과 완전 동일
+- `preserve_includes=True` 기본: include 구조 보존
 - `*MergeIncludes,True`: 기존 인라인 동작
-- IGA passthrough: 인라인 시에만 필요, 보존 시 원본 복사
+- PARAMETER_LOCAL 없는 include: 정상 파싱
+- PARAMETER_LOCAL 있는 include: 해석 후 파싱, 실패 시 passthrough
