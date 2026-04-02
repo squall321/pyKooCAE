@@ -2061,8 +2061,23 @@ class KooDynaImporter():
         self.initialManager.WriteStreamDynaKeyword(stream,0)
         self.constrainedManager.WriteStreamDynaKeyword(stream,0)
         self.additionalManager.WriteStreamDynaKeyword(stream)
+
+        # include 처리
+        if hasattr(self, '_include_files') and self._include_files:
+            if getattr(self.dynaManager, 'preserve_includes', False):
+                # 보존 모드: *INCLUDE 문 출력
+                for inc_file in self._include_files:
+                    stream.write("*INCLUDE\n")
+                    stream.write(f" {os.path.basename(inc_file)}\n")
+            else:
+                # 인라인 모드: IGA passthrough 내용 출력
+                for entry in getattr(self.dynaManager, '_include_passthrough_data', []):
+                    stream.write(entry["content"])
+                    if not entry["content"].endswith('\n'):
+                        stream.write('\n')
+
         return stream.getvalue()
-        
+
     def WriteStreamBaseKeyword(self, exclude_nodeset_sids=None, exclude_d2r=True):
         """베이스 모델 직렬화 (FastDOE용). nodeSetFixed와 D2R을 제외."""
         stream = StringIO()

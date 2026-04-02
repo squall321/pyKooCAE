@@ -11369,6 +11369,7 @@ class DynaManager():
         self._include_sources = {}      # 키워드별 source_file 목록
         self._include_files = []        # include 파일 절대경로 목록
         self._main_file = ""            # 메인 파일 절대경로
+        self._include_passthrough_data = []  # IGA include passthrough 데이터
         pass
     
     def SetInputPath(self, path):
@@ -11390,9 +11391,33 @@ class DynaManager():
             self._include_files = []
             self._main_file = path
 
-        with open(path, 'r') as file:
+        # 파일 읽기 (PARAMETER_LOCAL이 있으면 &변수 치환)
+        with open(path, 'r', errors='replace') as f:
+            raw_lines = f.readlines()
 
-            for line in file:
+        # *PARAMETER_LOCAL 해석 + &변수 치환
+        try:
+            from KooCAEManager.KooParameterResolver import ParameterResolver
+            resolver = ParameterResolver()
+            in_param = False
+            param_lines = []
+            for line in raw_lines:
+                if line.strip().upper().startswith('*PARAMETER_LOCAL'):
+                    in_param = True
+                    continue
+                if in_param:
+                    if line.startswith('*'):
+                        in_param = False
+                    elif not line.startswith('$'):
+                        param_lines.append(line)
+            if param_lines:
+                resolver.ParseParameterLocal(param_lines)
+                if resolver.HasParams():
+                    raw_lines = [resolver.ResolveAll(line) for line in raw_lines]
+        except Exception:
+            pass  # 파라미터 해석 실패 시 원본 유지
+
+        for line in raw_lines:
                 # Check if the line starts with an asterisk
                 if line.startswith('*'):
                     if latest_keyword == 'INCLUDE':
@@ -11433,12 +11458,27 @@ class DynaManager():
                 include_path = os.path.join(os.path.dirname(path), include_path)
             if os.path.exists(include_path):
                 self._include_files.append(include_path)
-                if not getattr(self, 'preserve_includes', False):
-                    # 인라인 모드: 재귀적으로 읽기
-                    self.ReadKeywordsfromFile(include_path, lines_with_asterisk, keyword_dict)
-                else:
+                if getattr(self, 'preserve_includes', False):
                     # 보존 모드: include 파일은 읽지 않고 경로만 추적
                     print(f"  Include preserved (not inlined): {os.path.basename(include_path)}")
+                else:
+                    # 인라인 모드: IGA 키워드 포함 여부 확인
+                    with open(include_path, 'r', errors='replace') as inc_f:
+                        inc_content = inc_f.read()
+                    has_iga = any(kw in inc_content for kw in
+                                 ['*IGA_', '*SECTION_IGA_', '*PARAMETER_LOCAL'])
+                    if has_iga:
+                        # IGA include → 전체를 passthrough로 보존
+                        if "_INCLUDE_PASSTHROUGH" not in keyword_dict:
+                            keyword_dict["_INCLUDE_PASSTHROUGH"] = []
+                        entry = {"file": include_path, "content": inc_content}
+                        keyword_dict["_INCLUDE_PASSTHROUGH"].append(entry)
+                        self._include_passthrough_data.append(entry)
+                        lines_with_asterisk.append("_INCLUDE_PASSTHROUGH")
+                        print(f"  Include passthrough (IGA): {os.path.basename(include_path)}")
+                    else:
+                        # 일반 include → 재귀적으로 읽기
+                        self.ReadKeywordsfromFile(include_path, lines_with_asterisk, keyword_dict)
             else:
                 print(f"Warning: Include file not found: {include_path}")
 
@@ -14557,6 +14597,35 @@ class DynaManager():
                 while "SET_SOLID_TITLE" in lines_with_asterisk:
                     lines_with_asterisk.remove("SET_SOLID_TITLE")
             print("Set Keywords Read Complete")
+
+            # IGA 등 미지원 키워드 → PassthroughKeyword로 보존
+            try:
+                from KooCAEManager.KooPassthroughKeyword import PassthroughKeyword
+                iga_keywords = ["IGA_SOLID", "IGA_3D_NURBS_XYZ", "IGA_DEV_VOLUME_XYZ",
+                                "IGA_DEV_STABILIZATION", "IGA_REFINE_SOLID",
+                                "SECTION_IGA_SOLID", "PARAMETER_LOCAL"]
+                for iga_kw in iga_keywords:
+                    if iga_kw in lines_with_asterisk and iga_kw in keyword_dict:
+                        pt = PassthroughKeyword(iga_kw)
+                        pt.parse(keyword_dict[iga_kw])
+                        dynaKeywordMan.addKeyword(pt)
+                        while iga_kw in lines_with_asterisk:
+                            lines_with_asterisk.remove(iga_kw)
+                print("IGA/Passthrough Keywords Read Complete")
+            except Exception as e:
+                print(f"Warning: Passthrough keyword registration failed: {e}")
+
+            # IGA include passthrough 출력
+            if "_INCLUDE_PASSTHROUGH" in keyword_dict:
+                for entry in keyword_dict["_INCLUDE_PASSTHROUGH"]:
+                    inc_file = entry["file"]
+                    file.write(f"$$ --- Include passthrough: {os.path.basename(inc_file)} ---\n")
+                    file.write(entry["content"])
+                    if not entry["content"].endswith('\n'):
+                        file.write('\n')
+                while "_INCLUDE_PASSTHROUGH" in lines_with_asterisk:
+                    lines_with_asterisk.remove("_INCLUDE_PASSTHROUGH")
+
             # INCLUDE: preserve_includes=True면 유지, False면 제거
             if not getattr(self, 'preserve_includes', False):
                 while "INCLUDE" in lines_with_asterisk:

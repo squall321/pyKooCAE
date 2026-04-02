@@ -385,7 +385,10 @@ class KooMeshManagerGMSH(KooMeshManager):
         sys.exit()
 
     def SetPath(self, path):
-        self.path = path
+        self.path = os.path.normpath(path)
+        # 디렉토리가 없으면 생성 (gmsh 경로 탐색에 필요)
+        if not os.path.exists(self.path):
+            os.makedirs(self.path)
         if sys.platform.startswith("win"):
             # find gmsh.exe in the path
             winCandidates = [
@@ -402,7 +405,7 @@ class KooMeshManagerGMSH(KooMeshManager):
             print("gmsh.exe not found")
             sys.exit()
         else:
-            self.gmshPath = self._find_linux_gmsh(path)
+            self.gmshPath = self._find_linux_gmsh(self.path)
     
     def ImportMSHFile(self, fileName, maxNID = 0, maxEID = 0,delX=0.0,delY=0.0,delZ=0.0,scaleX=1.0,scaleY=1.0,scaleZ=1.0):
         mshFilePath = join(self.path, fileName)
@@ -1121,7 +1124,381 @@ class KooMeshManagerGMSH(KooMeshManager):
     def mesh_shape_structured(self, ptList, meshSize, elementinThickness, maxNID = 0, maxEID = 0):
         pass
 
-        
+    def mesh_conformal_extrude_hexa(self, bodyParams, cylinderParams, meshSize,
+                                     numElemThick, maxNID=0, maxEID=0,
+                                     boxParams=None, nOwnCylinders=0):
+        """
+        2D BooleanFragments + Extrude로 conformal hexa 생성.
+        실린더/박스와 본체가 공유 엣지에서 conformal하게 메쉬됨.
+
+        bodyParams: dict {x, y, z, xLen, yLen, thickness}
+        cylinderParams: list of (cx, cy, r) — own + adjacent 전체
+        nOwnCylinders: int — 자기 층 실린더 개수 (meshSize cap에만 사용)
+        boxParams: list of (bx, by, bxLen, byLen) — 내부 사각형 영역
+        """
+        if boxParams is None:
+            boxParams = []
+
+        # 균일 밀도: meshSize 기준, ±20% 범위
+        # 자기 층 실린더가 있을 때만 meshSize를 R로 cap → 실린더당 ~4개 요소
+        # 인접 층 실린더는 BooleanFragments에만 포함, meshSize에는 영향 없음
+        effectiveMeshSize = meshSize
+        if nOwnCylinders > 0:
+            ownCylParams = cylinderParams[:nOwnCylinders]
+            minR = min(r for _, _, r in ownCylParams)
+            if effectiveMeshSize > minR:
+                effectiveMeshSize = minR
+        meshSizeMin = effectiveMeshSize * 0.8
+        meshSizeMax = effectiveMeshSize * 1.2
+
+        geo = 'SetFactory("OpenCASCADE");\n'
+        geo += 'Mesh.CharacteristicLengthMin = {0};\n'.format(meshSizeMin)
+        geo += 'Mesh.CharacteristicLengthMax = {0};\n'.format(meshSizeMax)
+        geo += 'Mesh.MeshSizeFromCurvature = 0;\n'
+        geo += 'Mesh.MeshSizeExtendFromBoundary = 0;\n\n'
+
+        bx = bodyParams["x"]
+        by = bodyParams["y"]
+        bz = bodyParams["z"]
+        bxLen = bodyParams["xLen"]
+        byLen = bodyParams["yLen"]
+        bThick = bodyParams["thickness"]
+
+        # 본체 사각형 (Surface ID = 1)
+        geo += 'Rectangle(1) = {{{0}, {1}, {2}, {3}, {4}}};\n\n'.format(
+            bx, by, bz, bxLen, byLen)
+
+        # 실린더 원들 (Disk ID = 2, 3, ...)
+        nCyl = len(cylinderParams)
+        surfID = 2
+        for i, (cx, cy, r) in enumerate(cylinderParams):
+            geo += 'Disk({0}) = {{{1}, {2}, {3}, {4}}};\n'.format(
+                surfID + i, cx, cy, bz, r)
+
+        # 내부 박스 사각형들 (Rectangle ID = nCyl+2, ...)
+        nBox = len(boxParams)
+        boxStartID = surfID + nCyl
+        for i, (rbx, rby, rbxLen, rbyLen) in enumerate(boxParams):
+            geo += 'Rectangle({0}) = {{{1}, {2}, {3}, {4}, {5}}};\n'.format(
+                boxStartID + i, rbx, rby, bz, rbxLen, rbyLen)
+
+        # BooleanFragments (conformal 핵심)
+        nFragments = nCyl + nBox
+        if nFragments > 0:
+            fragIds = ",".join(str(surfID + i) for i in range(nFragments))
+            geo += '\nBooleanFragments{{ Surface{{1}}; Delete; }}{{ Surface{{{0}}}; Delete; }}\n'.format(fragIds)
+
+        # Recombine → Quad 메쉬
+        geo += '\nMesh.Algorithm = 8;  // Frontal-Delaunay for Quads\n'
+        geo += 'Mesh.RecombineAll = 1;\n'
+        geo += 'Mesh.SubdivisionAlgorithm = 2;  // All Quads\n'
+
+        # Extrude → Hexa
+        geo += '\nExtrude {{0, 0, {0}}} {{\n'.format(bThick)
+        geo += '  Surface{:}; Layers{' + str(numElemThick) + '}; Recombine;\n'
+        geo += '}\n'
+
+        # GEO 파일 저장 (경로 정규화)
+        normPath = os.path.normpath(self.path)
+        geomFilePath = os.path.join(normPath, self.geoFileName)
+        if not os.path.exists(normPath):
+            os.makedirs(normPath)
+        with open(geomFilePath, "w") as f:
+            f.write(geo)
+
+        # Gmsh 실행
+        gmshOutputFilePath = os.path.join(normPath, self.gmshOutputFileName)
+        command = '{0} -setnumber General.Verbosity 0 "{1}" -3 -o "{2}" -format msh'.format(
+            self.gmshPath, geomFilePath, gmshOutputFilePath)
+        print(command)
+        gmsh_success = os.system(command)
+
+        if os.path.isfile(gmshOutputFilePath):
+            # STL export (시각화용)
+            outputFilePath = os.path.join(normPath, self.outputFileName)
+            command = '{0} "{1}" -format stl -save -o "{2}" -nopopup'.format(
+                self.gmshPath, gmshOutputFilePath, outputFilePath)
+            print(command)
+            os.system(command)
+            outputFilePath = outputFilePath.replace(".\\", "")
+            self.shape = read_stl_file(outputFilePath)
+
+            # MSH import
+            self.mshImporter.import_msh_file(gmshOutputFilePath)
+            self.mshImporter.UpdateManager(maxNID, maxEID, 3)
+            self.type = "Solid"
+            name = os.path.basename(self.geoFileName).replace(".geo", "")
+            self.section = self.sectionMan.CreateSolidSection(name)
+            self.part.SetSectionID(self.sectionMan.maxid)
+            return self.shape
+        else:
+            print("Gmsh conformal mesh generation failed. Check gmsh is in PATH.")
+            return None
+
+    def mesh_tetra_buffer(self, bottomNodeMan, topNodeMan,
+                          zBottom, zTop, bufferBox,
+                          maxNID=0, maxEID=0):
+        """
+        버퍼가 정의된 층(bufferBox) 전체를 tetra로 채움.
+        - bufferBox 영역: bottom 층 전체 면적
+        - 인접 층(top)이 있는 영역: top 층 노드 사용
+        - 인접 층이 없는 외곽: bottom 노드를 zTop으로 투영한 새 노드 생성
+        """
+        from scipy.spatial import Delaunay
+        import numpy as np
+
+        xMin, yMin, xMax, yMax = bufferBox
+        tol = 1e-6
+        thickness = zTop - zBottom
+
+        # 1. 아래 층 상면 노드 수집 (bufferBox 전체)
+        bottomNodeList = []
+        bottomXYmap = {}  # (x_round, y_round) -> node
+        for nid, node in bottomNodeMan.nodes.items():
+            if abs(node.z - zBottom) < tol:
+                if xMin - tol <= node.x <= xMax + tol and yMin - tol <= node.y <= yMax + tol:
+                    bottomNodeList.append(node)
+                    key = (round(node.x, 8), round(node.y, 8))
+                    bottomXYmap[key] = node
+
+        # 2. 위 층 하면 노드 수집 (있는 영역만)
+        topNodeList = []
+        topXY = set()
+        for nid, node in topNodeMan.nodes.items():
+            if abs(node.z - zTop) < tol:
+                if xMin - tol <= node.x <= xMax + tol and yMin - tol <= node.y <= yMax + tol:
+                    topNodeList.append(node)
+                    topXY.add((round(node.x, 8), round(node.y, 8)))
+
+        # 3. 외곽 영역: top 층이 없는 bottom 노드 → zTop으로 투영
+        curNID = maxNID
+        projectedTopList = []
+        for key, bNode in bottomXYmap.items():
+            if key not in topXY:
+                curNID += 1
+                newNode = self.nodeMan.AddNodewithID(curNID, bNode.x, bNode.y, zTop)
+                projectedTopList.append(newNode)
+
+        nBottom = len(bottomNodeList)
+        nTop = len(topNodeList)
+        nProj = len(projectedTopList)
+        allTopList = topNodeList + projectedTopList
+
+        print("Buffer: {0} bottom(z={1}), {2} top(z={3}), {4} projected top".format(
+            nBottom, zBottom, nTop, zTop, nProj))
+
+        if nBottom < 3:
+            print("Not enough boundary nodes for buffer mesh")
+            return None
+
+        # 4. 중간 평면 노드 생성 (전체 XY 합집합)
+        zMid = (zBottom + zTop) / 2.0
+        allXY = set(bottomXYmap.keys()) | topXY
+        midNodeList = []
+        for xy in allXY:
+            curNID += 1
+            newNode = self.nodeMan.AddNodewithID(curNID, xy[0], xy[1], zMid)
+            midNodeList.append(newNode)
+        nMid = len(midNodeList)
+
+        nTotal = nBottom + nMid + len(allTopList)
+        print("Buffer: {0} mid(z={1:.4f}), total={2} points".format(
+            nMid, zMid, nTotal))
+
+        # 5. Z-스케일링
+        xyExtent = max(xMax - xMin, yMax - yMin)
+        zScale = xyExtent / thickness if thickness > 0 and xyExtent > 0 else 1.0
+
+        # 6. 3D 점 배열 (bottom + mid + allTop)
+        points3D = np.zeros((nTotal, 3))
+        nodeDict = {}
+
+        idx = 0
+        for node in bottomNodeList:
+            points3D[idx] = [node.x, node.y, (node.z - zBottom) * zScale]
+            nodeDict[idx] = node
+            idx += 1
+        for node in midNodeList:
+            points3D[idx] = [node.x, node.y, (node.z - zBottom) * zScale]
+            nodeDict[idx] = node
+            idx += 1
+        for node in allTopList:
+            points3D[idx] = [node.x, node.y, (node.z - zBottom) * zScale]
+            nodeDict[idx] = node
+            idx += 1
+
+        # 7. 3D Delaunay (z-jitter로 co-planar degeneracy 방지)
+        jitter = np.random.uniform(-1e-6, 1e-6, nTotal) * zScale
+        points3D[:, 2] += jitter
+        tri = Delaunay(points3D)
+        print("Delaunay done: {0} simplices".format(len(tri.simplices)))
+
+        # 8. 유효 tetra 필터링 + 체적/방향 체크 (numpy 벡터 연산)
+        simplices = tri.simplices  # (nSimplex, 4)
+
+        # 원본 좌표로 z범위 체크 (스케일링 안 된 좌표)
+        origZ = np.zeros(nTotal)
+        for i, node in nodeDict.items():
+            origZ[i] = node.z
+
+        # z범위 필터링: 모든 꼭짓점의 z가 [zBottom-tol, zTop+tol] 범위 내
+        simpZ = origZ[simplices]  # (nSimplex, 4)
+        zMask = (simpZ.min(axis=1) >= zBottom - tol) & (simpZ.max(axis=1) <= zTop + tol)
+        validSimp = simplices[zMask]
+        print("After z-filter: {0} simplices".format(len(validSimp)))
+
+        # 원본 좌표로 체적 계산
+        origCoords = np.zeros((nTotal, 3))
+        for i, node in nodeDict.items():
+            origCoords[i] = [node.x, node.y, node.z]
+
+        p0 = origCoords[validSimp[:, 0]]
+        p1 = origCoords[validSimp[:, 1]]
+        p2 = origCoords[validSimp[:, 2]]
+        p3 = origCoords[validSimp[:, 3]]
+
+        a = p1 - p0
+        b = p2 - p0
+        c = p3 - p0
+        signedVol = (a[:, 0]*(b[:, 1]*c[:, 2] - b[:, 2]*c[:, 1])
+                    - a[:, 1]*(b[:, 0]*c[:, 2] - b[:, 2]*c[:, 0])
+                    + a[:, 2]*(b[:, 0]*c[:, 1] - b[:, 1]*c[:, 0])) / 6.0
+
+        minVol = thickness * 1e-10
+        volMask = np.abs(signedVol) >= minVol
+        degenerateCount = int(np.sum(~volMask))
+
+        finalSimp = validSimp[volMask]
+        finalVol = signedVol[volMask]
+        print("After vol-filter: {0} valid, {1} degenerate".format(len(finalSimp), degenerateCount))
+
+        # element 추가
+        curEID = maxEID
+        validCount = 0
+        for i in range(len(finalSimp)):
+            n0, n1, n2, n3 = finalSimp[i]
+            nd0, nd1, nd2, nd3 = nodeDict[n0], nodeDict[n1], nodeDict[n2], nodeDict[n3]
+            curEID += 1
+            if finalVol[i] < 0:
+                self.elementMan.AddTetrahedronLinearElement(curEID, nd0, nd2, nd1, nd3)
+            else:
+                self.elementMan.AddTetrahedronLinearElement(curEID, nd0, nd1, nd2, nd3)
+            validCount += 1
+
+        self.type = "Solid"
+        name = self.geoFileName.replace(".geo", "")
+        self.section = self.sectionMan.CreateSolidSection(name)
+        self.part.SetSectionID(self.sectionMan.maxid)
+        self.shape = None
+
+        print("Buffer mesh: {0} valid tetra, {1} degenerate removed (of {2} total)".format(
+            validCount, degenerateCount, len(tri.simplices)))
+        return True
+
+    @staticmethod
+    def extract_face_msh(inputMshFile, outputMshFile, targetZ, tol=1e-6):
+        """
+        MSH 4.1 파일에서 특정 z좌표의 2D surface 요소를 추출하여 별도 MSH 파일로 저장.
+        Buffer mesh 생성 시 Merge하여 boundary constraint로 사용.
+        """
+        with open(inputMshFile, 'r') as f:
+            content = f.read()
+
+        # --- Parse Nodes ---
+        nstart = content.find('$Nodes')
+        nend = content.find('$EndNodes')
+        node_section = content[nstart:nend].split('\n')
+        # line 1: numEntityBlocks numNodes minTag maxTag
+        header = node_section[1].split()
+        numEntityBlocks = int(header[0])
+
+        all_nodes = {}  # id -> (x, y, z)
+        i = 2
+        while i < len(node_section):
+            parts = node_section[i].split()
+            if len(parts) < 4:
+                i += 1
+                continue
+            entityDim, entityTag, parametric, numNodesInBlock = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
+            # Read node tags
+            node_tags = []
+            for j in range(numNodesInBlock):
+                i += 1
+                node_tags.append(int(node_section[i].strip()))
+            # Read node coordinates
+            for j in range(numNodesInBlock):
+                i += 1
+                coords = node_section[i].split()
+                x, y, z = float(coords[0]), float(coords[1]), float(coords[2])
+                all_nodes[node_tags[j]] = (x, y, z)
+            i += 1
+
+        # --- Find nodes at targetZ ---
+        face_node_ids = set()
+        for nid, (x, y, z) in all_nodes.items():
+            if abs(z - targetZ) < tol:
+                face_node_ids.add(nid)
+
+        if len(face_node_ids) == 0:
+            print("No nodes found at z={0}".format(targetZ))
+            return False
+
+        # --- Parse Elements, find 2D elements using only face nodes ---
+        estart = content.find('$Elements')
+        eend = content.find('$EndElements')
+        elem_section = content[estart:eend].split('\n')
+
+        face_elements = []  # (elemTag, node1, node2, node3, node4)
+        i = 2
+        while i < len(elem_section):
+            parts = elem_section[i].split()
+            if len(parts) < 4:
+                i += 1
+                continue
+            entityDim, entityTag, elemType, numElemsInBlock = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
+            for j in range(numElemsInBlock):
+                i += 1
+                eparts = elem_section[i].split()
+                if entityDim == 2:  # 2D surface elements
+                    elemTag = int(eparts[0])
+                    enodes = [int(x) for x in eparts[1:]]
+                    if all(n in face_node_ids for n in enodes):
+                        face_elements.append((elemTag, elemType, enodes))
+            i += 1
+
+        if len(face_elements) == 0:
+            print("No face elements found at z={0}".format(targetZ))
+            return False
+
+        # --- Collect used nodes ---
+        used_node_ids = set()
+        for (etag, etype, enodes) in face_elements:
+            for n in enodes:
+                used_node_ids.add(n)
+
+        # --- Write output MSH 2.2 (simpler, better Merge support) ---
+        with open(outputMshFile, 'w') as f:
+            f.write('$MeshFormat\n2.2 0 8\n$EndMeshFormat\n')
+            # Nodes
+            sorted_nodes = sorted(used_node_ids)
+            f.write('$Nodes\n')
+            f.write('{0}\n'.format(len(sorted_nodes)))
+            for nid in sorted_nodes:
+                x, y, z = all_nodes[nid]
+                f.write('{0} {1:.15e} {2:.15e} {3:.15e}\n'.format(nid, x, y, z))
+            f.write('$EndNodes\n')
+            # Elements
+            f.write('$Elements\n')
+            f.write('{0}\n'.format(len(face_elements)))
+            for idx, (etag, etype, enodes) in enumerate(face_elements):
+                node_str = ' '.join(str(n) for n in enodes)
+                f.write('{0} {1} 0 {2}\n'.format(idx + 1, etype, node_str))
+            f.write('$EndElements\n')
+
+        print("Extracted {0} face elements ({1} nodes) at z={2} -> {3}".format(
+            len(face_elements), len(used_node_ids), targetZ, outputMshFile))
+        return True
+
     def GetMaxIDs(self):
         maxNID = self.nodeMan.maxID
         maxEID = self.elementMan.maxID
