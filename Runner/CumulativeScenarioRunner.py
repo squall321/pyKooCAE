@@ -30,6 +30,33 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 
+def _flock_with_timeout(fd, operation, timeout=120):
+    """fcntl.flock with timeout — NFS stale lock 무한 대기 방지
+
+    Args:
+        fd: file descriptor
+        operation: fcntl.LOCK_SH, fcntl.LOCK_EX, fcntl.LOCK_UN
+        timeout: 최대 대기 시간 (초), 기본 120초
+
+    Raises:
+        TimeoutError: timeout 초 내에 lock 획득 실패
+    """
+    if operation == fcntl.LOCK_UN:
+        fcntl.flock(fd, operation)
+        return
+    deadline = time.time() + timeout
+    while True:
+        try:
+            fcntl.flock(fd, operation | fcntl.LOCK_NB)
+            return  # lock 획득 성공
+        except (BlockingIOError, OSError):
+            if time.time() >= deadline:
+                raise TimeoutError(
+                    f"flock 획득 실패 (timeout={timeout}s). "
+                    f"NFS stale lock 가능성 — lock 파일 삭제 후 재시도 필요")
+            time.sleep(1)
+
+
 class ApptainerWrapper:
     """Apptainer 컨테이너 래핑 유틸리티"""
 
@@ -108,6 +135,37 @@ class ApptainerWrapper:
             args.extend(["--env", f"{key}={value}"])
         args.append(sif)
         return args
+
+    def cleanup_after_exec(self):
+        """apptainer exec 후 orphan squashfuse 및 stale mount 정리"""
+        import subprocess as _sp
+        user = os.environ.get("USER", os.environ.get("LOGNAME", ""))
+
+        # 1. orphan squashfuse 프로세스 정리
+        try:
+            _sp.run(["pkill", "-u", user, "-f", "squashfuse"],
+                    capture_output=True, timeout=5)
+        except Exception:
+            pass
+
+        # 2. stale FUSE mount lazy unmount (APPTAINER_TMPDIR 하위)
+        try:
+            result = _sp.run(["findmnt", "-n", "-o", "TARGET", "-t", "fuse.squashfuse"],
+                             capture_output=True, text=True, timeout=5)
+            for mount in result.stdout.strip().splitlines():
+                if self.apptainer_tmpdir in mount or "/tmp" in mount:
+                    _sp.run(["fusermount", "-uz", mount], capture_output=True, timeout=5)
+        except Exception:
+            pass
+
+    def cleanup_tmpdir(self):
+        """APPTAINER_TMPDIR 정리 (stage-out 완료 후 호출)"""
+        if self.apptainer_tmpdir and os.path.isdir(self.apptainer_tmpdir):
+            try:
+                import shutil
+                shutil.rmtree(self.apptainer_tmpdir, ignore_errors=True)
+            except Exception:
+                pass
 
 
 class LSDynaSolverRunner:
@@ -203,9 +261,20 @@ class LSDynaSolverRunner:
 
                 _, stderr = process.communicate(timeout=timeout)
 
+            # Apptainer 컨테이너 정리 대기 (squashfuse unmount, sandbox 정리)
+            time.sleep(5)
+            self.apptainer.cleanup_after_exec()
+
             if process.returncode != 0:
+                _stderr_str = stderr.decode('utf-8', errors='ignore')
+                # Apptainer squashfuse cleanup 메시지 필터
+                _stderr_filtered = "\n".join(
+                    l for l in _stderr_str.splitlines()
+                    if not any(k in l for k in ('squashfuse', 'cleanup error', 'fuse: reading device'))
+                )
                 logging.error(f"LS-DYNA failed with return code {process.returncode}")
-                logging.error(f"stderr: {stderr.decode('utf-8', errors='ignore')}")
+                if _stderr_filtered.strip():
+                    logging.error(f"stderr: {_stderr_filtered}")
                 return False
 
             return True
@@ -268,7 +337,13 @@ class CumulativeScenarioRunner:
         self.koomesh_path = self.config["environment"]["koomeshmodifier_path"]
         self.output_dir = self.config["project"]["output_dir"]
         self.index_file = self.config["project"]["index_file"]
-        self.checkpoint_file = self.config["execution"]["checkpoint_file"]
+        # --doe N 모드: DOE별 개별 checkpoint (동시 write 경합 방지)
+        base_checkpoint = self.config["execution"]["checkpoint_file"]
+        if doe_filter is not None:
+            cp_dir = os.path.dirname(base_checkpoint)
+            self.checkpoint_file = os.path.join(cp_dir, f"checkpoint_doe_{doe_filter:03d}.json")
+        else:
+            self.checkpoint_file = base_checkpoint
 
         self._setup_logging()
         self._load_checkpoint()
@@ -277,7 +352,11 @@ class CumulativeScenarioRunner:
     def _setup_logging(self):
         """로깅 설정"""
         os.makedirs(self.output_dir, exist_ok=True)
-        log_file = os.path.join(self.output_dir, "runner.log")
+        # --doe N 모드: DOE별 개별 로그 파일 (동시 write 경합 방지)
+        if self.doe_filter is not None:
+            log_file = os.path.join(self.output_dir, f"runner_doe_{self.doe_filter:03d}.log")
+        else:
+            log_file = os.path.join(self.output_dir, "runner.log")
 
         logging.basicConfig(
             level=logging.INFO,
@@ -308,7 +387,9 @@ class CumulativeScenarioRunner:
                         self.checkpoint = json.load(bf)
                     return
                 logging.warning(f"checkpoint.json 손상, 백업 없음. 초기화합니다: {e}")
-        else:
+
+        # 위 경로에서 self.checkpoint가 설정되지 않은 경우 (빈 파일, 손상+백업없음 등) 초기화
+        if not hasattr(self, 'checkpoint') or self.checkpoint is None:
             self.checkpoint = {
                 "scenario_id": self.config["scenario"]["id"],
                 "current_doe": 1,
@@ -342,36 +423,85 @@ class CumulativeScenarioRunner:
             raise
 
     def _load_index(self):
-        """simulation_index.json 로드 (파일 잠금 사용)"""
+        """simulation_index.json 로드 (double-checked locking + stale lock 복구)
+        - 정상 경로: LOCK_SH로 동시 읽기 허용
+        - 파일 없거나 손상 시: LOCK_EX로 재획득 후 단독 초기화/복구
+        - NFS stale lock 시: lock 파일 삭제 후 재시도
+        """
         lock_file = self.index_file + ".lock"
-        with open(lock_file, 'w') as lf:
-            fcntl.flock(lf, fcntl.LOCK_EX)  # 배타적 잠금
+
+        for attempt in range(2):  # stale lock 복구 시 최대 1회 재시도
+            try:
+                return self._load_index_locked(lock_file)
+            except TimeoutError:
+                if attempt == 0:
+                    logging.warning(
+                        f"NFS stale lock 감지: {lock_file} — "
+                        f"노드 장애로 인한 잔존 lock 가능성. lock 파일 삭제 후 재시도")
+                    try:
+                        os.unlink(lock_file)
+                    except OSError:
+                        pass
+                else:
+                    logging.error(f"lock 재시도 실패. lock 없이 index 직접 읽기 시도")
+                    # 최후 수단: lock 없이 직접 읽기
+                    if os.path.exists(self.index_file):
+                        try:
+                            with open(self.index_file, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            if content.strip():
+                                self.index = json.loads(content)
+                                return
+                        except (json.JSONDecodeError, OSError):
+                            pass
+                    self.index = self._init_index()
+
+    def _load_index_locked(self, lock_file):
+        """_load_index 내부: flock 사용 읽기"""
+        # 1단계: LOCK_SH로 빠른 읽기 시도
+        with open(lock_file, 'a') as lf:
+            _flock_with_timeout(lf, fcntl.LOCK_SH)
             try:
                 if os.path.exists(self.index_file):
-                    with open(self.index_file, 'r', encoding='utf-8') as f:
-                        content = f.read()
+                    try:
+                        with open(self.index_file, 'r', encoding='utf-8') as f:
+                            content = f.read()
                         if content.strip():
-                            try:
-                                self.index = json.loads(content)
-                            except json.JSONDecodeError as e:
-                                # 백업에서 복구 시도
-                                backup = self.index_file + ".bak"
-                                if os.path.exists(backup):
-                                    logging.warning(f"simulation_index.json 손상, 백업에서 복구: {e}")
-                                    with open(backup, 'r', encoding='utf-8') as bf:
-                                        self.index = json.load(bf)
-                                else:
-                                    logging.warning(f"simulation_index.json 손상, 초기화: {e}")
-                                    self.index = self._init_index()
-                                self._save_index_unlocked()
-                        else:
-                            self.index = self._init_index()
-                            self._save_index_unlocked()
-                else:
-                    self.index = self._init_index()
-                    self._save_index_unlocked()
+                            self.index = json.loads(content)
+                            return  # 정상 읽기 성공, EX 불필요
+                    except (json.JSONDecodeError, OSError):
+                        pass  # 손상 → 2단계로
             finally:
-                fcntl.flock(lf, fcntl.LOCK_UN)
+                _flock_with_timeout(lf, fcntl.LOCK_UN)
+
+        # 2단계: 파일 없거나 손상 → LOCK_EX로 단독 초기화/복구
+        with open(lock_file, 'a') as lf:
+            _flock_with_timeout(lf, fcntl.LOCK_EX)
+            try:
+                # EX 획득 후 재확인 (다른 잡이 먼저 초기화했을 수 있음)
+                if os.path.exists(self.index_file):
+                    try:
+                        with open(self.index_file, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        if content.strip():
+                            self.index = json.loads(content)
+                            return  # 다른 잡이 이미 초기화함
+                    except json.JSONDecodeError as e:
+                        backup = self.index_file + ".bak"
+                        if os.path.exists(backup):
+                            logging.warning(f"simulation_index.json 손상, 백업에서 복구: {e}")
+                            with open(backup, 'r', encoding='utf-8') as bf:
+                                self.index = json.load(bf)
+                        else:
+                            logging.warning(f"simulation_index.json 손상, 초기화: {e}")
+                            self.index = self._init_index()
+                        self._save_index_unlocked()
+                        return
+                # 파일 없음 → 초기화
+                self.index = self._init_index()
+                self._save_index_unlocked()
+            finally:
+                _flock_with_timeout(lf, fcntl.LOCK_UN)
 
     def _init_index(self) -> Dict[str, Any]:
         """simulation_index.json 초기화"""
@@ -416,18 +546,51 @@ class CumulativeScenarioRunner:
     def _save_index(self):
         """simulation_index.json 저장 (파일 잠금 + atomic write)"""
         lock_file = self.index_file + ".lock"
-        with open(lock_file, 'w') as lf:
-            fcntl.flock(lf, fcntl.LOCK_EX)  # 배타적 잠금
+        with open(lock_file, 'a') as lf:  # 'a': NFS truncate 경합 방지
+            _flock_with_timeout(lf, fcntl.LOCK_EX)
             try:
                 self._save_index_unlocked()
             finally:
-                fcntl.flock(lf, fcntl.LOCK_UN)
+                _flock_with_timeout(lf, fcntl.LOCK_UN)
 
     def _update_index(self, alias: str, run_info: Dict[str, Any]):
-        """simulation_index.json 업데이트"""
-        scenario = self.index["scenarios"][0]
-        scenario["runs"][alias] = run_info
-        self._save_index()
+        """simulation_index.json 업데이트 (lock 내 re-read + 머지로 lost update 방지)
+        NFS stale lock 시 lock 파일 삭제 후 재시도"""
+        lock_file = self.index_file + ".lock"
+        for attempt in range(2):
+            try:
+                self._update_index_locked(lock_file, alias, run_info)
+                return
+            except TimeoutError:
+                if attempt == 0:
+                    logging.warning(f"_update_index: NFS stale lock 감지 — lock 파일 삭제 후 재시도")
+                    try:
+                        os.unlink(lock_file)
+                    except OSError:
+                        pass
+                else:
+                    logging.error(f"_update_index: lock 재시도 실패. lock 없이 직접 쓰기")
+                    self.index["scenarios"][0]["runs"][alias] = run_info
+                    self._save_index_unlocked()
+
+    def _update_index_locked(self, lock_file, alias, run_info):
+        """_update_index 내부: flock 사용 업데이트"""
+        with open(lock_file, 'a') as lf:  # 'a': NFS truncate 경합 방지
+            _flock_with_timeout(lf, fcntl.LOCK_EX)
+            try:
+                # 최신 파일 재읽기: 다른 DOE 잡이 쓴 내용을 반영
+                if os.path.exists(self.index_file):
+                    try:
+                        with open(self.index_file, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                            if content.strip():
+                                self.index = json.loads(content)
+                    except (json.JSONDecodeError, OSError):
+                        pass  # 손상 시 self.index 그대로 유지
+                self.index["scenarios"][0]["runs"][alias] = run_info
+                self._save_index_unlocked()
+            finally:
+                _flock_with_timeout(lf, fcntl.LOCK_UN)
 
     def _generate_run_id(self) -> str:
         """Run ID 생성"""
@@ -446,7 +609,21 @@ class CumulativeScenarioRunner:
         if step <= 1:
             return None
         prev_step = self.config["scenario"]["steps"][step - 2]  # 0-indexed
-        return self._generate_alias(doe_index, step - 1, prev_step["mode"], prev_step["condition"])
+        prev_mode = prev_step["mode"]
+
+        # DOE별 실제 condition 조회 (doe_angles / doe_positions)
+        doe_key = str(doe_index)
+        prev_step_key = str(step - 1)
+        doe_angles = self.config.get("scenario", {}).get("doe_angles", {})
+        doe_positions = self.config.get("scenario", {}).get("doe_positions", {})
+        if doe_key in doe_positions and prev_step_key in doe_positions[doe_key]:
+            prev_condition = doe_positions[doe_key][prev_step_key].get("position_name", prev_step["condition"])
+        elif doe_key in doe_angles and prev_step_key in doe_angles[doe_key]:
+            prev_condition = doe_angles[doe_key][prev_step_key].get("angle_name", prev_step["condition"])
+        else:
+            prev_condition = prev_step["condition"]
+
+        return self._generate_alias(doe_index, step - 1, prev_mode, prev_condition)
 
     def _get_prev_run_dir(self, doe_index: int, step: int) -> Optional[str]:
         """이전 step의 결과 폴더 반환"""
@@ -511,6 +688,7 @@ class CumulativeScenarioRunner:
                     if not success:
                         logging.error(f"All retries failed for DOE {doe}, Step {step_num}")
                         self._save_checkpoint(doe, step_num)
+                        self._update_scenario_status()  # 실패 시에도 시나리오 status 집계
                         return False
 
                 self._save_checkpoint(doe, step_num + 1)
@@ -518,14 +696,59 @@ class CumulativeScenarioRunner:
             # DOE 완료, 다음 DOE 준비
             self._save_checkpoint(doe + 1, 1)
 
-        # 시나리오 완료
-        self.index["scenarios"][0]["status"] = "completed"
-        self._save_index()
+        self._update_scenario_status()
 
-        logging.info("\n" + "=" * 60)
-        logging.info("All scenarios completed successfully!")
-        logging.info("=" * 60)
+        if self.index["scenarios"][0]["status"] == "completed":
+            logging.info("\n" + "=" * 60)
+            logging.info("All scenarios completed successfully!")
+            logging.info("=" * 60)
+
+        # Apptainer tmpdir 명시적 정리 (orphan squashfuse/sandbox 방지)
+        try:
+            tmpdir = self.apptainer.apptainer_tmpdir
+            if tmpdir and os.path.isdir(tmpdir):
+                logging.info(f"Apptainer tmpdir 정리: {tmpdir}")
+                shutil.rmtree(tmpdir, ignore_errors=True)
+        except Exception:
+            pass
+
         return True
+
+    def _update_scenario_status(self):
+        """시나리오 status 집계 (lock 내 re-read 후 실제 결과 기반 판정)"""
+        lock_file = self.index_file + ".lock"
+        try:
+            with open(lock_file, 'a') as lf:
+                _flock_with_timeout(lf, fcntl.LOCK_EX)
+                try:
+                    if os.path.exists(self.index_file):
+                        try:
+                            with open(self.index_file, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                                if content.strip():
+                                    self.index = json.loads(content)
+                        except (json.JSONDecodeError, OSError):
+                            pass
+                    scenario_data = self.index["scenarios"][0]
+                    runs = scenario_data.get("runs", {})
+                    expected = scenario_data.get("total_runs", 0)
+                    n_completed = sum(1 for r in runs.values() if r.get("status") == "completed")
+                    n_failed = sum(1 for r in runs.values() if r.get("status") == "failed")
+                    n_running = sum(1 for r in runs.values() if r.get("status") == "running")
+                    if expected > 0 and n_completed == expected:
+                        scenario_data["status"] = "completed"
+                    elif n_failed > 0:
+                        scenario_data["status"] = "partial_failed"
+                        logging.warning(
+                            f"Scenario status: {n_completed} completed, {n_failed} failed, "
+                            f"{n_running} running / {expected} total")
+                    else:
+                        scenario_data["status"] = "in_progress"
+                    self._save_index_unlocked()
+                finally:
+                    _flock_with_timeout(lf, fcntl.LOCK_UN)
+        except TimeoutError:
+            logging.warning("_update_scenario_status: flock timeout — status 업데이트 생략")
 
     def run_single_step(self, doe_index: int, step_config: Dict[str, Any]) -> bool:
         """단일 Step 실행"""
@@ -590,6 +813,11 @@ class CumulativeScenarioRunner:
             config_file = self._create_step_config(doe_index, step_config)
             if config_file is None:
                 logging.error("Failed to create step config file")
+                self._update_index(alias, {
+                    "run_id": "", "status": "failed",
+                    "folder": "", "mode": mode, "condition": condition,
+                    "error": "step config file creation failed"
+                })
                 return False
 
             koomesh_result = self._run_koomeshmodifier(config_file, self.output_dir)
@@ -672,19 +900,34 @@ class CumulativeScenarioRunner:
             # LS-DYNA 실행 (로컬 디스크)
             solver_success = self.solver.run(os.path.basename(local_input), local_work_dir, timeout)
 
-            # Stage-out: rsync로 결과를 NFS로 복사 (대용량 안정적 전송)
+            # Stage-out: rsync로 결과를 NFS로 복사 (flock 직렬화: 동시 burst 방지)
             if os.path.isdir(local_work_dir):
-                logging.info(f"Stage-out: {local_work_dir} -> {output_run_dir}")
-                rsync_ret = subprocess.run(
-                    ["rsync", "-a", "--size-only", local_work_dir + "/", output_run_dir + "/"],
-                    capture_output=True, text=True)
-                if rsync_ret.returncode != 0:
-                    logging.warning(f"rsync failed ({rsync_ret.returncode}), fallback to shutil")
-                    for fname in os.listdir(local_work_dir):
-                        src = os.path.join(local_work_dir, fname)
-                        dst = os.path.join(output_run_dir, fname)
-                        if os.path.isfile(src):
-                            shutil.copy2(src, dst)
+                stage_lock_file = os.path.join(self.output_dir, ".stage_out.lock")
+                logging.info(f"Stage-out 순서 대기 중... (DOE {doe_index})")
+                with open(stage_lock_file, 'a') as _stage_lf:
+                    _flock_with_timeout(_stage_lf, fcntl.LOCK_EX)
+                    try:
+                        logging.info(f"Stage-out: {local_work_dir} -> {output_run_dir}")
+                        rsync_ret = subprocess.run(
+                            ["rsync", "-a", "--size-only", local_work_dir + "/", output_run_dir + "/"],
+                            capture_output=True, text=True)
+                        if rsync_ret.returncode != 0:
+                            logging.warning(f"rsync failed ({rsync_ret.returncode}), fallback to shutil")
+                            for fname in os.listdir(local_work_dir):
+                                src = os.path.join(local_work_dir, fname)
+                                dst = os.path.join(output_run_dir, fname)
+                                if os.path.isfile(src):
+                                    shutil.copy2(src, dst)
+                                elif os.path.isdir(src):
+                                    dst_dir = os.path.join(output_run_dir, fname)
+                                    if not os.path.exists(dst_dir):
+                                        shutil.copytree(src, dst_dir)
+                                    else:
+                                        for sub in os.listdir(src):
+                                            shutil.copy2(os.path.join(src, sub), os.path.join(dst_dir, sub))
+                        logging.info(f"Stage-out 완료: DOE {doe_index}")
+                    finally:
+                        _flock_with_timeout(_stage_lf, fcntl.LOCK_UN)
                 # 로컬 정리 (Run 폴더 + 상위 apptainer_job 폴더)
                 shutil.rmtree(local_work_dir, ignore_errors=True)
                 job_dir = os.path.dirname(local_work_dir)
@@ -758,6 +1001,9 @@ class CumulativeScenarioRunner:
             prev_output = os.path.join(self.output_dir, prev_run_dir, "DynamicRelaxation")
             model_file = os.path.join(prev_output, "DropSet_dti.k")
             if not os.path.exists(model_file):
+                logging.warning(
+                    f"DYNAIN_TO_INITIAL 결과 파일 없음 (DYNAIN_TO_INITIAL 실패 가능성): "
+                    f"{model_file} — 원본 모델 파일로 fallback (결과 부정확 가능)")
                 model_file = self.config["project"]["model_file"]
         else:
             model_file = self.config["project"]["model_file"]
@@ -987,11 +1233,19 @@ RampTime,600
                 timeout=koomesh_timeout
             )
 
+            # Apptainer 컨테이너 정리
+            time.sleep(3)
+            self.apptainer.cleanup_after_exec()
+
             # stdout/stderr 항상 기록
             if result.stdout:
                 logging.info(f"KooMeshModifier stdout:\n{result.stdout}")
             if result.stderr:
-                logging.warning(f"KooMeshModifier stderr:\n{result.stderr}")
+                # Apptainer squashfuse cleanup 메시지 필터 (정상 종료 시 발생하는 무해한 경고)
+                _stderr_lines = [l for l in result.stderr.strip().splitlines()
+                                 if not any(k in l for k in ('squashfuse', 'cleanup error', 'fuse: reading device'))]
+                if _stderr_lines:
+                    logging.warning(f"KooMeshModifier stderr:\n" + "\n".join(_stderr_lines))
 
             if result.returncode != 0:
                 logging.error(f"KooMeshModifier failed (returncode={result.returncode})")

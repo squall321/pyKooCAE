@@ -332,7 +332,11 @@ class PackageUserdefined:
                             elif svector[0] == "NumberofElementinThickness":
                                 numberofElementinThickness = int(svector[1])
                                 layer.SetNumberofElementinThickness(numberofElementinThickness)
-                                print("NumberofElementinThickness: ",numberofElementinThickness)                                    
+                                print("NumberofElementinThickness: ",numberofElementinThickness)
+                            elif svector[0] == "ConformalBufferThickness":
+                                conformalBufferThickness = float(svector[1])
+                                layer.SetConformalBufferThickness(conformalBufferThickness)
+                                print("ConformalBufferThickness: ", conformalBufferThickness)
                             elif svector[0] == "Thickness":
                                 thickness = float(svector[1])
                                 layer.SetThickness(thickness)
@@ -484,6 +488,10 @@ class PackageUserdefined:
                                 numberofElementinThickness = int(svector[1])
                                 layer.SetNumberofElementinThickness(numberofElementinThickness)
                                 print("NumberofElementinThickness: ",numberofElementinThickness)
+                            elif svector[0] == "ConformalBufferThickness":
+                                conformalBufferThickness = float(svector[1])
+                                layer.SetConformalBufferThickness(conformalBufferThickness)
+                                print("ConformalBufferThickness: ", conformalBufferThickness)
                             elif svector[0] == "MaterialID":
                                 layerMatID = int(svector[1])
                             elif svector[0] == "Thickness":
@@ -492,7 +500,7 @@ class PackageUserdefined:
                                 totalThickness += thickness
                                 curZLoc += thickness
                                 print("Thickness: ",thickness)
-                            
+
                             elif svector[0] == "BoxWarpage":
                                 x = float(svector[1])
                                 y = float(svector[2])
@@ -579,6 +587,10 @@ class PackageUserdefined:
                                 numberofElementinThickness = int(svector[1])
                                 layer.SetNumberofElementinThickness(numberofElementinThickness)
                                 print("NumberofElementinThickness: ",numberofElementinThickness)
+                            elif svector[0] == "ConformalBufferThickness":
+                                conformalBufferThickness = float(svector[1])
+                                layer.SetConformalBufferThickness(conformalBufferThickness)
+                                print("ConformalBufferThickness: ", conformalBufferThickness)
                             elif svector[0] == "Thickness":
                                 thickness = float(svector[1])
                                 layer.SetThickness(thickness)
@@ -1907,8 +1919,20 @@ class PackageUserdefined:
                         else:
                             partpsidtopidMap[curpsid].append(curpid)
                         partpidtolayernumMap[curpid] = ith
+                    for i in range(len(layer.conformalMeshList)):
+                        conformalMesh : KooMeshManagerGMSH = layer.conformalMeshList[i]
+                        curpid = maxPartID + conformalMesh.part.id
+                        partMan.AddPartfromKooPart(curpid, conformalMesh.part)
+                        partpidtolayernumMap[curpid] = ith
             maxPartID = partMan.maxID
             ith = ith + 1
+
+        # Buffer mesh parts 등록
+        for bufferMesh in self.bufferMeshList:
+            curpid = maxPartID + bufferMesh.part.id
+            partMan.AddPartfromKooPart(curpid, bufferMesh.part)
+            maxPartID = partMan.maxID
+
         self.partMan = partMan
         self.partPSIDtoPartID = partpsidtopidMap
         
@@ -2598,7 +2622,10 @@ class PackageUserdefined:
             #nelem = 0
             if self.nodeManager == None:
                 self.CombineNodeManager()
-            #nodeMan.MergeNodes(1.0e-9)
+            # Buffer-layer 경계면 노드 merge (conformal 보장)
+            if len(self.bufferMeshList) > 0:
+                print("Merging boundary nodes for conformal buffer...")
+                self.nodeManager.MergeNodes(1.0e-6)
             addString = self.nodeManager.WritetoDynaKeyword(0)
             f.write(addString)
                                                     
@@ -2737,8 +2764,9 @@ class PackageUserdefined:
 
     def GenerateShapeList(self,maxNID=0,maxEID=0,maxPID=0,maxSID=0,maxMID=0, maxNSID=0 ):
         self.shapeList = []
-        i = 0 
-        
+        self.bufferMeshList = []
+        i = 0
+
         meshGenerationMode = False        
 
         for layer in self.layerList:  
@@ -2805,13 +2833,32 @@ class PackageUserdefined:
                     
                 maxNID, maxEID, maxPID, maxSID, maxMID, maxNSID = layer.GetMaxIDs()
                 
-            elif type(layer) == PackageLayerDefined:           
-                layer : PackageLayerDefined = layer         
+            elif type(layer) == PackageLayerDefined:
+                layer : PackageLayerDefined = layer
                 layer.ith = layerith
                 if layer.meshGenerationMode:
                     layer.materialManager = self.materialManager
-                    layer.sectionManager = self.sectionManager        
+                    layer.sectionManager = self.sectionManager
                     layer.nodesetManager = self.nodeSetManager
+
+                # ConformalHexa: 인접 층 실린더 footprint 전달
+                if layer.meshType == "ConformalHexa":
+                    adjCyls = []
+                    layerIdx = self.layerList.index(layer)
+                    # 이전 층 (아래)
+                    if layerIdx > 0:
+                        prevLayer = self.layerList[layerIdx - 1]
+                        if type(prevLayer) == PackageLayerDefined and hasattr(prevLayer, 'cylinderList'):
+                            for cyl in prevLayer.cylinderList:
+                                adjCyls.append((cyl[0] + prevLayer.posX, cyl[1] + prevLayer.posY, cyl[2]))
+                    # 다음 층 (위)
+                    if layerIdx < len(self.layerList) - 1:
+                        nextLayer = self.layerList[layerIdx + 1]
+                        if type(nextLayer) == PackageLayerDefined and hasattr(nextLayer, 'cylinderList'):
+                            for cyl in nextLayer.cylinderList:
+                                adjCyls.append((cyl[0] + nextLayer.posX, cyl[1] + nextLayer.posY, cyl[2]))
+                    layer.adjacentCylinderParams = adjCyls
+
                 layer.SetMaxIDs(maxNID,maxEID,maxPID,maxSID,maxMID,maxNSID)
                 layer.GenerateShape()  
                         
@@ -2847,10 +2894,10 @@ class PackageUserdefined:
                         self.shapeList.append(mshShapes.shape)
                     for shieldcanShapes in layer.shieldCanMeshList:
                         self.shapeList.append(shieldcanShapes.shape)
-                    
-                            
-                            
-                            
+                    for conformalMesh in layer.conformalMeshList:
+                        if conformalMesh.shape is not None:
+                            self.shapeList.append(conformalMesh.shape)
+
                 else:
                     
                     if layer.shape != None:           
@@ -2887,12 +2934,116 @@ class PackageUserdefined:
                         self.shapeList.append(shieldCanShapes)
 
                 maxNID, maxEID, maxPID, maxSID, maxMID, maxNSID = layer.GetMaxIDs()
-        
+
+        # --- Tetra Buffer 생성 (ConformalHexa 모드) ---
+        # 모든 ConformalHexa 층을 수집하고, 인접 쌍에서
+        # 한쪽이라도 실린더/박스가 없는 사각형 층이면 buffer 생성
+        allConformalLayers = []
+        for layer in self.layerList:
+            if type(layer) == PackageLayerDefined:
+                if layer.meshType == "ConformalHexa":
+                    allConformalLayers.append(layer)
+
+        if len(allConformalLayers) > 1:
+            for idx in range(len(allConformalLayers) - 1):
+                bottomLayer = allConformalLayers[idx]
+                topLayer = allConformalLayers[idx + 1]
+
+                # 한쪽이라도 실린더/박스가 없는 순수 사각형이어야 buffer 생성
+                bottomHasGeom = len(bottomLayer.cylinderList) > 0
+                topHasGeom = len(topLayer.cylinderList) > 0
+                if bottomHasGeom and topHasGeom:
+                    print("Skipping buffer between '{0}' and '{1}': both have cylinders".format(
+                        bottomLayer.name, topLayer.name))
+                    continue
+
+                # buffer 두께: 사각형 층의 conformalBufferThickness 사용
+                if not bottomHasGeom and bottomLayer.conformalBufferThickness > 0:
+                    bufferThickness = bottomLayer.conformalBufferThickness
+                elif not topHasGeom and topLayer.conformalBufferThickness > 0:
+                    bufferThickness = topLayer.conformalBufferThickness
+                else:
+                    # 둘 다 사각형이면 둘 중 큰 값 사용
+                    bt = bottomLayer.conformalBufferThickness
+                    tt = topLayer.conformalBufferThickness
+                    bufferThickness = max(bt, tt)
+                    if bufferThickness <= 0:
+                        continue
+
+                # Z 좌표: buffer는 사각형 층의 core 상/하면과 인접 층 사이
+                # 아래층 상면 ~ 위층 하면 사이의 전체 gap을 tetra로 채움
+                bottomTopZ = bottomLayer.posZ + bottomLayer.thickness
+                topBottomZ = topLayer.posZ
+                bufferThick = topBottomZ - bottomTopZ
+
+                # conformalBufferThickness로 core가 줄어든 경우 gap이 생김
+                if hasattr(bottomLayer, 'conformalCoreZ') and hasattr(bottomLayer, 'conformalCoreThickness'):
+                    bottomTopZ = bottomLayer.conformalCoreZ + bottomLayer.conformalCoreThickness
+                if hasattr(topLayer, 'conformalCoreZ'):
+                    topBottomZ = topLayer.conformalCoreZ
+                bufferThick = topBottomZ - bottomTopZ
+
+                if bufferThick <= 0:
+                    print("Warning: no gap between layer {0} and {1}, skipping buffer".format(
+                        bottomLayer.name, topLayer.name))
+                    continue
+
+                print("Tetra Buffer: {0} -> {1}, thickness={2:.4f}".format(
+                    bottomLayer.name, topLayer.name, bufferThick))
+
+                bufferMeshManager = KooMeshManagerGMSH(
+                    sectionMan=self.sectionManager,
+                    materialMan=self.materialManager,
+                    nodeSetMan=self.nodeSetManager
+                )
+                bufferMeshPath = bottomLayer.meshPath
+                bufferMeshManager.SetPath(bufferMeshPath)
+                bufferMeshManager.SetName("Buffer_{0}_{1}".format(bottomLayer.name, topLayer.name))
+
+                # buffer가 정의된 층(사각형 층)의 전체 영역을 커버
+                # bufferLayer: conformalBufferThickness가 정의된 층
+                if not bottomHasGeom and bottomLayer.conformalBufferThickness > 0:
+                    bufferLayer = bottomLayer
+                else:
+                    bufferLayer = topLayer
+
+                bfLeftX = bufferLayer.posX - bufferLayer.xLength / 2.0
+                bfLeftY = bufferLayer.posY - bufferLayer.yLength / 2.0
+                bufferBox = (bfLeftX, bfLeftY,
+                             bfLeftX + bufferLayer.xLength,
+                             bfLeftY + bufferLayer.yLength)
+
+                # 인접 층의 NodeManager에서 경계면 노드 직접 전달
+                bottomNodeMan = bottomLayer.conformalMeshList[0].nodeMan if len(bottomLayer.conformalMeshList) > 0 else None
+                topNodeMan = topLayer.conformalMeshList[0].nodeMan if len(topLayer.conformalMeshList) > 0 else None
+
+                if bottomNodeMan is None or topNodeMan is None:
+                    print("Warning: missing conformal mesh NodeManager, skipping buffer")
+                    continue
+
+                result = bufferMeshManager.mesh_tetra_buffer(
+                    bottomNodeMan=bottomNodeMan,
+                    topNodeMan=topNodeMan,
+                    zBottom=bottomTopZ,
+                    zTop=topBottomZ,
+                    bufferBox=bufferBox,
+                    maxNID=maxNID,
+                    maxEID=maxEID
+                )
+
+                if result is not None:
+                    maxNID, maxEID = bufferMeshManager.GetMaxIDs()
+                    maxPID = maxPID + 1
+                    bufferMeshManager.part.SetID(maxPID)
+                    # shape=None (프로그래밍 방식이므로 STL 없음), shapeList에는 추가하지 않음
+                    self.bufferMeshList.append(bufferMeshManager)
+                    meshGenerationMode = True
+
         if meshGenerationMode:
-            self.TransformedMeshShapeList()            
-        
-        shapeList = self.TransformedShapeList()        
-        
+            self.TransformedMeshShapeList()
+
+        shapeList = self.TransformedShapeList()
+
         return shapeList
     
     def GetCombinedTransform(self):
@@ -3043,7 +3194,10 @@ class PackageUserdefined:
                     for i in range(len(layer.shieldCanMeshList)):
                         part = layer.shieldCanMeshList[i].part
                         partList.append(part)
-                        
+                    for i in range(len(layer.conformalMeshList)):
+                        part = layer.conformalMeshList[i].part
+                        partList.append(part)
+
                     for i in range(len(partList)):
                         part = partList[i]
                         nodes = part.elementManager.GetElementNodes()
@@ -3055,6 +3209,19 @@ class PackageUserdefined:
                             part.elementManager.SetMirrorConnectivityXZPlane()
                         if isTop == False:
                             part.elementManager.SetMirrorConnectivityXYPlane()
+
+        # Buffer mesh도 transform 적용
+        for bufferMesh in self.bufferMeshList:
+            part = bufferMesh.part
+            nodes = part.elementManager.GetElementNodes()
+            for nid in nodes:
+                nodes[nid].Transform(combinedTrsf)
+            if isYZPlaneMirrorMode:
+                part.elementManager.SetMirrorConnectivityYZPlane()
+            if isXZPlaneMirrorMode:
+                part.elementManager.SetMirrorConnectivityXZPlane()
+            if isTop == False:
+                part.elementManager.SetMirrorConnectivityXYPlane()
 
     def ExportPackage(self):
 

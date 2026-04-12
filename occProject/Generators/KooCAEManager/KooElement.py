@@ -10,6 +10,23 @@ from collections import Counter
 from KooCAEManager.KooNode import Node, NodeManager
 from KooCAEManager.KooOperator import *
 
+
+def _format_mass8(value: float) -> str:
+    """*ELEMENT_MASS 8자리 고정폭 포맷.
+    기본: 8.2e (예: 1.23e+05). 음수/3자리 지수로 8자를 넘으면
+    mantissa 자릿수를 줄여 8자 안에 맞춘다.
+    """
+    s = format(value, "8.2e")
+    if len(s) <= 8:
+        return s
+    s = format(value, ".1e")
+    if len(s) <= 8:
+        return s
+    # 극단값: 지수만 표기
+    s = format(value, ".0e")
+    return s[:8]
+
+
 class Element:
     def __init__(self,id=0):
         self.id = id
@@ -143,10 +160,12 @@ class PointElement(Element):
     def __init__(self,id,nodes = None, massElemType= None):
         super(PointElement,self).__init__(id)
         self.nodes = nodes
-        self.mass = 0.0 
+        self.mass = 0.0
         self.massX = 0.0
         self.massY = 0.0
         self.massZ = 0.0
+        # 루트 elementManager에 저장될 때 원본 PID 보존 (0이면 caller의 pid 사용)
+        self.pid = 0
 
         if massElemType != None:
             if nodes != None:
@@ -4108,40 +4127,43 @@ class ElementManager:
     def WritetoDynaKeywordPoint(self, pid, startNID, startEID):
         dynaString = ""
         if self.GetNumberofPointElements() > 0:
-            i = 0 
+            i = 0
             for key in self.elements:
                 element : PointElement = self.elements[key]
                 if element.type == "POINT":
                     # mass characters exponent has 8 characters
-                    i = i + 1 
+                    i = i + 1
                     if i == 1:
                         dynaString += "*ELEMENT_MASS\n"
-                    massStr = format(element.mass, "8.2e")                    
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{str(massStr):>8}{str(pid):>8}\n"
+                    massStr = _format_mass8(element.mass)
+                    ePid = getattr(element, "pid", 0) or pid
+                    formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{massStr:>8}{str(ePid):>8}\n"
                     dynaString += formatString
-            i = 0 
+            i = 0
             for key in self.elements:
                 element : PointElement = self.elements[key]
-                if element.type == "POINT_NSET":                    
-                    i = i + 1 
+                if element.type == "POINT_NSET":
+                    i = i + 1
                     if i == 1:
                         dynaString += "*ELEMENT_MASS_NODE_SET\n"
-                    massStr = format(element.mass, "8.2e")                    
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{str(massStr):>8}{str(pid):>8}\n"
+                    massStr = _format_mass8(element.mass)
+                    ePid = getattr(element, "pid", 0) or pid
+                    formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{massStr:>8}{str(ePid):>8}\n"
                     dynaString += formatString
         return dynaString
 
     def WriteStreamDynaKeywordPoint(self, stream, pid, startNID, startEID):
         if self.GetNumberofPointElements() > 0:
-            i = 0 
+            i = 0
             for key in self.elements:
                 element : PointElement = self.elements[key]
                 if element.type == "POINT":
                     i = i + 1
                     if i == 1:
                         stream.write("*ELEMENT_MASS\n")
-                    massStr = format(element.mass, "8.2e")
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{str(massStr):>8}{str(pid):>8}\n"
+                    massStr = _format_mass8(element.mass)
+                    ePid = getattr(element, "pid", 0) or pid
+                    formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{massStr:>8}{str(ePid):>8}\n"
                     stream.write(formatString)
             i = 0
             for key in self.elements:
@@ -4150,8 +4172,9 @@ class ElementManager:
                     i = i + 1
                     if i == 1:
                         stream.write("*ELEMENT_MASS_NODE_SET\n")
-                    massStr = format(element.mass, "8.2e")
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{str(massStr):>8}{str(pid):>8}\n"
+                    massStr = _format_mass8(element.mass)
+                    ePid = getattr(element, "pid", 0) or pid
+                    formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{massStr:>8}{str(ePid):>8}\n"
                     stream.write(formatString)
                     
             

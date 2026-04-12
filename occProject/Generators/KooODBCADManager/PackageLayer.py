@@ -53,6 +53,7 @@ from OCC.Core.GC import GC_MakeArcOfCircle, GC_MakeSegment
 
 
 from OCC.Core.STEPControl import STEPControl_Reader
+from OCC.Core.BRepTools import breptools_Write
 
 from shapely.geometry import Polygon
 from KooCAEManager.KooNode import NodeManager, NodeSetManager
@@ -100,6 +101,7 @@ class PackageLayer:
         self.meshGenerationType = "Solid"
         self.geomGenerationType = "Solid"
         self.meshType = "Hexa"
+        self.conformalBufferThickness = 0.0
         self.maxNID = 0
         self.maxEID = 0 
         self.maxPID = 0 
@@ -168,6 +170,8 @@ class PackageLayer:
     def SetMeshPath(self,meshPath):
         self.meshGenerationMode = True
         self.meshPath = os.getcwd() + "\\" + meshPath
+        if not sys.platform.startswith("win"):
+            self.meshPath = self.meshPath.replace("\\", "/")
         pass
 
     def SetMeshGenerationType(self,meshGenerationType):
@@ -198,6 +202,9 @@ class PackageLayer:
         self.meshGenerationMode = True
         self.numberofElementinThickness = numberofElementinThickness
         pass
+
+    def SetConformalBufferThickness(self, conformalBufferThickness):
+        self.conformalBufferThickness = conformalBufferThickness
 
 class PackageLayerDefined(PackageLayer):
     def __init__(self,name="",x=0.0,y=0.0,z=0.0,xLength=-1.0,yLength=-1.0,thickness=1.0, secMan : KooSectionManager = None, matMan : KooMaterialManager = None, nSetMan : NodeSetManager = None):
@@ -283,6 +290,8 @@ class PackageLayerDefined(PackageLayer):
         self.polynomialSweepMeshList = []     
         self.shieldCanMeshList = []   
         self.packageMesh = None
+        self.conformalMeshList = []
+        self.adjacentCylinderParams = []  # 인접 층 실린더 footprint (cx, cy, r)
 
         self.cylinderMeshMatIDList = [] 
         self.boxMeshMatIDList = []
@@ -374,8 +383,28 @@ class PackageLayerDefined(PackageLayer):
         pass
 
     def GenerateCylinderShapes(self):
-        self.cylinderShapeList = [] 
-        curi = 0 
+        self.cylinderShapeList = []
+        print("  GenerateCylinderShapes: {0} cylinders defined for layer {1}".format(
+            len(self.cylinderList), self.name))
+        # ConformalHexa 모드: shape만 생성하고 개별 mesh는 SKIP
+        # (GenerateConformalMesh()에서 통합 conformal mesh 생성)
+        if self.meshType == "ConformalHexa":
+            for cylinder in self.cylinderList:
+                x = cylinder[0] + self.posX
+                y = cylinder[1] + self.posY
+                z = self.posZ
+                r = cylinder[2]
+                center = gp_Pnt(x, y, z)
+                normal = gp_Dir(0, 0, 1)
+                circle_geom = gp_Circ(gp_Ax2(center, normal), r)
+                circle_edge = BRepBuilderAPI_MakeEdge(circle_geom).Edge()
+                circle_wire = BRepBuilderAPI_MakeWire(circle_edge).Wire()
+                circle_face = BRepBuilderAPI_MakeFace(circle_wire).Face()
+                cylinder_shape = BRepPrimAPI_MakePrism(circle_face, gp_Vec(0, 0, self.thickness)).Shape()
+                self.cylinderShapeList.append(cylinder_shape)
+            return
+
+        curi = 0
         for cylinder in self.cylinderList:
             curpsid = self.cylinderpsidList[curi]
             curi = curi + 1
@@ -432,6 +461,8 @@ class PackageLayerDefined(PackageLayer):
                         meshManager.part.SetMaterialbyID(self.materialManager,matID)
                 self.cylinderMeshList.append(meshManager)
                 self.cylinderMeshpsidList.append(curpsid)
+        print("  GenerateCylinderShapes done: {0} shapes created for layer {1}".format(
+            len(self.cylinderShapeList), self.name))
 
     def GenerateSTLShape(self):
         self.stlShapeList = []
@@ -563,8 +594,22 @@ class PackageLayerDefined(PackageLayer):
         pass
 
     def GenerateBoxShape(self):
-        self.boxShapeList = [] 
-        curi = 0 
+        self.boxShapeList = []
+        # ConformalHexa 모드: shape만 생성하고 개별 mesh는 SKIP
+        # (GenerateConformalMesh()에서 BooleanFragments로 통합 처리)
+        if self.meshType == "ConformalHexa":
+            for box in self.boxList:
+                x = box[0] + self.posX
+                y = box[1] + self.posY
+                z = self.posZ
+                xLength = box[2]
+                yLength = box[3]
+                thickness = self.thickness
+                box_shape = BRepPrimAPI_MakeBox(gp_Pnt(x, y, z), xLength, yLength, thickness).Shape()
+                self.boxShapeList.append(box_shape)
+            return
+
+        curi = 0
         for box in self.boxList:
             curpsid = self.boxpsidList[curi]
             curi = curi + 1
@@ -2824,10 +2869,256 @@ class PackageLayerDefined(PackageLayer):
             
             
 
+    def GenerateConformalMesh(self):
+        """레이어 내 conformal hexa mesh 생성 (ConformalHexa 모드 전용)"""
+        print("Generating Conformal Hexa Mesh for layer: " + self.name)
+
+        # 자체 실린더 위치/반지름 목록
+        cylinderParams = []
+        for cyl in self.cylinderList:
+            x = cyl[0] + self.posX
+            y = cyl[1] + self.posY
+            r = cyl[2]
+            cylinderParams.append((x, y, r))
+
+        # 인접 층 실린더 footprint (BooleanFragments에 포함)
+        adjCylParams = list(self.adjacentCylinderParams)
+
+        # 본체 영역 (buffer 고려)
+        bufferT = self.conformalBufferThickness
+        coreThickness = self.thickness - 2.0 * bufferT
+        if coreThickness <= 0:
+            # buffer가 너무 크면 전체 두께 사용 (buffer 무시)
+            print("Warning: conformalBufferThickness too large, ignoring buffer")
+            bufferT = 0.0
+            coreThickness = self.thickness
+
+        leftBottomX = self.posX - self.xLength / 2.0
+        leftBottomY = self.posY - self.yLength / 2.0
+        coreZ = self.posZ + bufferT
+
+        bodyParams = {
+            "x": leftBottomX,
+            "y": leftBottomY,
+            "z": coreZ,
+            "xLen": self.xLength,
+            "yLen": self.yLength,
+            "thickness": coreThickness,
+        }
+
+        meshManager = KooMeshManagerGMSH(
+            sectionMan=self.sectionManager,
+            materialMan=self.materialManager,
+            nodeSetMan=self.nodesetManager
+        )
+        meshManager.SetPath(self.meshPath)
+        meshManager.SetName("{0}_ConformalMesh".format(self.name))
+
+        # 자체 박스 영역 목록 (BooleanFragments에 포함)
+        boxFragParams = []
+        for box in self.boxList:
+            bx = box[0] + self.posX
+            by = box[1] + self.posY
+            bxLen = box[2]
+            byLen = box[3]
+            boxFragParams.append((bx, by, bxLen, byLen))
+
+        # BooleanFragments에 자체 실린더 + 인접 층 실린더 + 박스 모두 포함
+        allCylParams = cylinderParams + adjCylParams
+        if len(adjCylParams) > 0:
+            print("  Including {0} adjacent cylinder footprints".format(len(adjCylParams)))
+        if len(boxFragParams) > 0:
+            print("  Including {0} box regions in BooleanFragments".format(len(boxFragParams)))
+        meshManager.mesh_conformal_extrude_hexa(
+            bodyParams, allCylParams,
+            self.meshSizeInPlane,
+            self.numberofElementinThickness,
+            self.maxNID, self.maxEID,
+            boxParams=boxFragParams,
+            nOwnCylinders=len(cylinderParams)
+        )
+
+        self.maxNID, self.maxEID = meshManager.GetMaxIDs()
+        self.maxPID = self.maxPID + 1
+        meshManager.part.SetID(self.maxPID)
+        if self.packageMeshMatID != -1:
+            meshManager.part.SetMaterialID(self.packageMeshMatID)
+
+        # 실린더/박스 영역 요소를 별도 파트로 분리 (numpy 벡터 연산으로 고속 처리)
+        import numpy as np
+
+        # centroid 좌표를 한 번만 계산
+        elemItems = list(meshManager.elementMan.elements.items())
+        nElem = len(elemItems)
+        eids = np.array([eid for eid, _ in elemItems])
+        centroids = np.zeros((nElem, 2), dtype=np.float64)
+        for i, (eid, elem) in enumerate(elemItems):
+            cx, cy, cz = elem.GetCenterPoint()
+            centroids[i, 0] = cx
+            centroids[i, 1] = cy
+
+        # 1) 실린더 영역 (청크 처리로 메모리 절약)
+        if len(cylinderParams) > 0:
+            cylArr = np.array(cylinderParams, dtype=np.float64)  # (nCyl, 3): x, y, r
+            CHUNK = 200  # 실린더 200개씩 처리
+            inCyl = np.zeros(len(centroids), dtype=bool)
+            for ci in range(0, len(cylArr), CHUNK):
+                chunk = cylArr[ci:ci+CHUNK]
+                diff = centroids[:, np.newaxis, :] - chunk[np.newaxis, :, :2]
+                dist2 = diff[:, :, 0]**2 + diff[:, :, 1]**2
+                r2 = chunk[:, 2]**2
+                inCyl |= np.any(dist2 <= r2[np.newaxis, :], axis=1)
+            cylEIDs = eids[inCyl].tolist()
+
+            if len(cylEIDs) > 0:
+                cylMeshManager = KooMeshManagerGMSH(
+                    sectionMan=self.sectionManager,
+                    materialMan=self.materialManager,
+                    nodeSetMan=self.nodesetManager
+                )
+                cylMeshManager.SetPath(self.meshPath)
+                cylMeshManager.SetName("{0}_CylinderMesh".format(self.name))
+                cylMeshManager.type = "Solid"
+                self.sectionManager.CreateSolidSection(
+                    "{0}_CylinderMesh".format(self.name))
+                cylMeshManager.part.SetSectionID(self.sectionManager.maxid)
+
+                for eid in cylEIDs:
+                    cylMeshManager.elementMan.AddElement(
+                        meshManager.elementMan.elements[eid])
+                meshManager.elementMan.RemoveElements(cylEIDs)
+
+                self.maxPID = self.maxPID + 1
+                cylMeshManager.part.SetID(self.maxPID)
+                cylMatID = self.cylinderList[0][3] if len(self.cylinderList[0]) > 3 else -1
+                if cylMatID != -1:
+                    cylMeshManager.part.SetMaterialID(cylMatID)
+                self.conformalMeshList.append(cylMeshManager)
+                print("  Cylinder elements separated: {0} cylinder, {1} body".format(
+                    len(cylEIDs), len(meshManager.elementMan.elements)))
+
+                # centroid 배열에서 분리된 요소 제거
+                remainMask = ~inCyl
+                centroids = centroids[remainMask]
+                eids = eids[remainMask]
+
+        # 2) 인접 층 실린더 footprint 영역 (청크 처리)
+        if len(adjCylParams) > 0:
+            adjArr = np.array(adjCylParams, dtype=np.float64)  # (nAdj, 3): x, y, r
+            CHUNK = 200
+            inAdj = np.zeros(len(centroids), dtype=bool)
+            for ci in range(0, len(adjArr), CHUNK):
+                chunk = adjArr[ci:ci+CHUNK]
+                diff = centroids[:, np.newaxis, :] - chunk[np.newaxis, :, :2]
+                dist2 = diff[:, :, 0]**2 + diff[:, :, 1]**2
+                r2 = chunk[:, 2]**2
+                inAdj |= np.any(dist2 <= r2[np.newaxis, :], axis=1)
+            adjCylEIDs = eids[inAdj].tolist()
+
+            if len(adjCylEIDs) > 0:
+                adjCylMeshManager = KooMeshManagerGMSH(
+                    sectionMan=self.sectionManager,
+                    materialMan=self.materialManager,
+                    nodeSetMan=self.nodesetManager
+                )
+                adjCylMeshManager.SetPath(self.meshPath)
+                adjCylMeshManager.SetName("{0}_AdjCylinderMesh".format(self.name))
+                adjCylMeshManager.type = "Solid"
+                self.sectionManager.CreateSolidSection(
+                    "{0}_AdjCylinderMesh".format(self.name))
+                adjCylMeshManager.part.SetSectionID(self.sectionManager.maxid)
+
+                for eid in adjCylEIDs:
+                    adjCylMeshManager.elementMan.AddElement(
+                        meshManager.elementMan.elements[eid])
+                meshManager.elementMan.RemoveElements(adjCylEIDs)
+
+                self.maxPID = self.maxPID + 1
+                adjCylMeshManager.part.SetID(self.maxPID)
+                self.conformalMeshList.append(adjCylMeshManager)
+                print("  Adjacent cylinder footprint elements separated: {0} adj, {1} body".format(
+                    len(adjCylEIDs), len(meshManager.elementMan.elements)))
+
+                # centroid 배열에서 분리된 요소 제거
+                remainMask = ~inAdj
+                centroids = centroids[remainMask]
+                eids = eids[remainMask]
+
+        # 3) 박스 영역 (각 박스별 별도 파트)
+        if len(self.boxList) > 0:
+            # 박스 좌표를 절대좌표로 변환
+            boxParams = []
+            for box in self.boxList:
+                bx = box[0] + self.posX
+                by = box[1] + self.posY
+                bxLen = box[2]
+                byLen = box[3]
+                bMatID = box[4] if len(box) > 4 else -1
+                boxParams.append((bx, by, bxLen, byLen, bMatID))
+
+            for bi, (bx, by, bxLen, byLen, bMatID) in enumerate(boxParams):
+                boxEIDs = []
+                for eid, elem in meshManager.elementMan.elements.items():
+                    cx, cy, cz = elem.GetCenterPoint()
+                    if bx <= cx <= bx + bxLen and by <= cy <= by + byLen:
+                        boxEIDs.append(eid)
+
+                if len(boxEIDs) > 0:
+                    boxMeshManager = KooMeshManagerGMSH(
+                        sectionMan=self.sectionManager,
+                        materialMan=self.materialManager,
+                        nodeSetMan=self.nodesetManager
+                    )
+                    boxMeshManager.SetPath(self.meshPath)
+                    boxMeshManager.SetName("{0}_BoxMesh{1}".format(self.name, bi))
+                    boxMeshManager.type = "Solid"
+                    self.sectionManager.CreateSolidSection(
+                        "{0}_BoxMesh{1}".format(self.name, bi))
+                    boxMeshManager.part.SetSectionID(self.sectionManager.maxid)
+
+                    for eid in boxEIDs:
+                        boxMeshManager.elementMan.AddElement(
+                            meshManager.elementMan.elements[eid])
+                    meshManager.elementMan.RemoveElements(boxEIDs)
+
+                    self.maxPID = self.maxPID + 1
+                    boxMeshManager.part.SetID(self.maxPID)
+                    if bMatID != -1:
+                        boxMeshManager.part.SetMaterialID(bMatID)
+                    self.conformalMeshList.append(boxMeshManager)
+                    print("  Box {0} elements separated: {1} box, {2} body".format(
+                        bi, len(boxEIDs), len(meshManager.elementMan.elements)))
+
+        # body(=meshManager)를 conformalMeshList[0]에 배치 (buffer가 [0].nodeMan 사용)
+        self.conformalMeshList.insert(0, meshManager)
+
+        # 상면/하면 brep 저장 (tetra buffer 연결용)
+        if bufferT > 0:
+            from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeBox
+            topFace = BRepPrimAPI_MakeBox(
+                gp_Pnt(leftBottomX, leftBottomY, coreZ + coreThickness),
+                self.xLength, self.yLength, 0.001
+            ).Shape()
+            bottomFace = BRepPrimAPI_MakeBox(
+                gp_Pnt(leftBottomX, leftBottomY, coreZ - 0.001),
+                self.xLength, self.yLength, 0.001
+            ).Shape()
+            normMeshPath = os.path.normpath(self.meshPath)
+            topBrepPath = os.path.join(normMeshPath, "{0}_topface.brep".format(self.name))
+            bottomBrepPath = os.path.join(normMeshPath, "{0}_bottomface.brep".format(self.name))
+            breptools_Write(topFace, topBrepPath)
+            breptools_Write(bottomFace, bottomBrepPath)
+            self.conformalTopBrepPath = topBrepPath
+            self.conformalBottomBrepPath = bottomBrepPath
+            self.conformalCoreZ = coreZ
+            self.conformalCoreThickness = coreThickness
+
+        print("Conformal Hexa Mesh generated for layer: " + self.name)
+
     def GenerateShape(self):
-        print("Generate Shape of PackageLayerDefined")                        
+        print("Generate Shape of PackageLayerDefined")
         self.GenerateRectangleTubeShape()
-        print("Rectangle Tube Shape Generated")        
+        print("Rectangle Tube Shape Generated")
         self.GenerateRectangleCircleCutShape()
         print("Rectangle Circle Cut Shape Generated")        
         self.GenerateRectangleFilletCutShape()
@@ -2918,14 +3209,18 @@ class PackageLayerDefined(PackageLayer):
                 i += 1
                 print("Image Shape " + str(i) + " Appended")
                 
-            for cylinder_shape in self.cylinderShapeList:
-                L2.Append(cylinder_shape)
-                i += 1
-                print("Cylinder Shape " + str(i) + " Appended")
-            for box_shape in self.boxShapeList:
-                L2.Append(box_shape)
-                i += 1
-                print("Box Shape " + str(i) + " Appended")
+            if self.meshType != "ConformalHexa":
+                for cylinder_shape in self.cylinderShapeList:
+                    L2.Append(cylinder_shape)
+                    i += 1
+                    print("Cylinder Shape " + str(i) + " Appended")
+                for box_shape in self.boxShapeList:
+                    L2.Append(box_shape)
+                    i += 1
+                    print("Box Shape " + str(i) + " Appended")
+            else:
+                print("ConformalHexa: skipping cylinder/box Boolean Cut ({0} cyl, {1} box)".format(
+                    len(self.cylinderShapeList), len(self.boxShapeList)))
             for shieldCan_shape in self.shieldCanShapeList:
                 L2.Append(shieldCan_shape)
                 i += 1
@@ -2954,7 +3249,12 @@ class PackageLayerDefined(PackageLayer):
                 else:
                     print("Cut Success")
                     self.shape = cut.Shape()
-            if self.meshGenerationMode:
+            if self.meshGenerationMode and self.meshType == "ConformalHexa":
+                # ConformalHexa: Boolean Cut 결과의 독립 mesh 대신
+                # GenerateConformalMesh()로 통합 conformal mesh 생성
+                self.GenerateConformalMesh()
+            elif self.meshGenerationMode:
+                # 기존 방식: cut된 본체를 독립적으로 tetra 메쉬
                 meshManager = KooMeshManagerGMSH(sectionMan=self.sectionManager,materialMan=self.materialManager, nodeSetMan=self.nodesetManager)
                 meshManager.SetPath(self.meshPath)
                 meshManager.SetName("{0}_PackageMesh".format(self.name))
@@ -2966,5 +3266,5 @@ class PackageLayerDefined(PackageLayer):
                     meshManager.part.SetMaterialID(self.packageMeshMatID)
 
                 self.packageMesh = meshManager
-            
+
         return self.shape

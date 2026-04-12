@@ -9384,15 +9384,15 @@ class Part(DynaKeyword):
     def parse(self, part_keywords):
         for i in range(len(part_keywords)):
             partith = part_keywords[i]
-            parameterMatrix = [] 
-            for j in range(0,len(partith),2):
+            parameterMatrix = []
+            # 한 *PART 블록 아래 (name, data) 쌍이 여러 번 반복될 수 있음
+            # 홀수 줄(손상된 파일)인 경우 마지막 외톨이 줄은 스킵
+            for j in range(0, len(partith) - 1, 2):
                 parameterList = []
-                #parameters = partith[j].parse_whole([80])
-                parameters = self.parse_whole(partith[j], [80])
-                parameterList.append(parameters)
-                #parameters = partith[j+1].parse_whole([10, 10, 10, 10, 10, 10, 10, 10])
-                parameters = self.parse_whole(partith[j+1], [10, 10, 10, 10, 10, 10, 10, 10])
-                parameterList.append(parameters)
+                name_params = self.parse_whole(partith[j], [80])
+                parameterList.append(name_params)
+                data_params = self.parse_whole(partith[j + 1], [10, 10, 10, 10, 10, 10, 10, 10])
+                parameterList.append(data_params)
                 parameterMatrix.append(parameterList)
             self.parameters.append(parameterMatrix)
     
@@ -10185,11 +10185,12 @@ class SectionSolid(DynaKeyword):
         super(SectionSolid,self).__init__("SECTION_SOLID")
 
     def parse(self, section_solid_keywords):
+        # 한 *SECTION_SOLID 블록 아래 여러 section 카드가 이어질 수 있음
         for i in range(len(section_solid_keywords)):
-            parameterList = []
-            parameters = self.parse_whole(section_solid_keywords[i][0], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            self.parameters.append(parameterList)
+            block = section_solid_keywords[i]
+            for j in range(len(block)):
+                parameters = self.parse_whole(block[j], [10, 10, 10, 10, 10, 10, 10, 10])
+                self.parameters.append([parameters])
 
     def AddSectionSolid(self, secid, elform, aet, cohoff, gaskett):
         parameterList = []     
@@ -10233,15 +10234,15 @@ class SectionSolid(DynaKeyword):
 class SectionSolidTitle(DynaKeyword):
     def __init__(self):
         super(SectionSolidTitle,self).__init__("SECTION_SOLID_TITLE")
-    
+
     def parse(self, section_solid_keywords):
+        # 한 *SECTION_SOLID_TITLE 블록 아래 (name, data) 쌍이 여러 번 이어질 수 있음
         for i in range(len(section_solid_keywords)):
-            parameterList = []
-            parameters = self.parse_whole(section_solid_keywords[i][0], [80])
-            parameterList.append(parameters)
-            parameters = self.parse_whole(section_solid_keywords[i][1], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            self.parameters.append(parameterList)
+            block = section_solid_keywords[i]
+            for j in range(0, len(block) - 1, 2):
+                name_params = self.parse_whole(block[j], [80])
+                data_params = self.parse_whole(block[j + 1], [10, 10, 10, 10, 10, 10, 10, 10])
+                self.parameters.append([name_params, data_params])
 
     def AddSectionSolidTitle(self, name, secid, elform, aet, cohoff, gaskett):
         parameterList = []
@@ -10292,15 +10293,15 @@ class SectionSolidTitle(DynaKeyword):
 class SectionSolidPeri(DynaKeyword):
     def __init__(self):
         super(SectionSolidPeri,self).__init__("SECTION_SOLID_PERI")
-    
+
     def parse(self, section_solid_keywords):
+        # 한 *SECTION_SOLID_PERI 블록 아래 (card1, card2) 쌍이 여러 번 이어질 수 있음
         for i in range(len(section_solid_keywords)):
-            parameterList = []
-            parameters = self.parse_whole(section_solid_keywords[i][0], [10, 10])
-            parameterList.append(parameters)
-            parameters = self.parse_whole(section_solid_keywords[i][1], [10, 10])
-            parameterList.append(parameters)
-            self.parameters.append(parameterList)
+            block = section_solid_keywords[i]
+            for j in range(0, len(block) - 1, 2):
+                card1 = self.parse_whole(block[j], [10, 10])
+                card2 = self.parse_whole(block[j + 1], [10, 10])
+                self.parameters.append([card1, card2])
             
     def AddSectionSolid(self, secid, elform, dr, ptype):
         parameterList = []
@@ -10347,17 +10348,16 @@ class SectionSolidPeri(DynaKeyword):
 class SectionSolidPeriTitle(DynaKeyword):
     def __init__(self):
         super(SectionSolidPeriTitle,self).__init__("SECTION_SOLID_PERI_TITLE")
-    
+
     def parse(self, section_solid_keywords):
+        # 한 *SECTION_SOLID_PERI_TITLE 블록 아래 (name, card1, card2) 3연이 여러 번 이어질 수 있음
         for i in range(len(section_solid_keywords)):
-            parameterList = []
-            parameters = self.parse_whole(section_solid_keywords[i][0], [80])
-            parameterList.append(parameters)
-            parameters = self.parse_whole(section_solid_keywords[i][1], [10, 10])
-            parameterList.append(parameters)
-            parameters = self.parse_whole(section_solid_keywords[i][2], [10, 10])
-            parameterList.append(parameters)
-            self.parameters.append(parameterList)
+            block = section_solid_keywords[i]
+            for j in range(0, len(block) - 2, 3):
+                name_params = self.parse_whole(block[j], [80])
+                card1 = self.parse_whole(block[j + 1], [10, 10])
+                card2 = self.parse_whole(block[j + 2], [10, 10])
+                self.parameters.append([name_params, card1, card2])
             
     def AddSectionSolid(self, name, secid, elform, dr, ptype):
         parameterList = []

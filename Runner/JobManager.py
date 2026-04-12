@@ -83,6 +83,8 @@ class JobManager:
             if result.returncode == 0 and result.stdout.strip():
                 # sacct는 여러 줄 반환 가능 (batch step 등), 첫 줄 사용
                 state = result.stdout.strip().split('\n')[0].strip()
+                # "CANCELLED by 1000" → "CANCELLED" 정규화 (sacct가 사유 텍스트 붙임)
+                state = state.split()[0]
                 return state
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
@@ -106,7 +108,18 @@ class JobManager:
         total_steps = runner_config["scenario"]["total_steps"]
         step_config = runner_config["scenario"]["steps"][step_num - 1]
         mode = step_config["mode"]
-        condition = step_config["condition"]
+        # DOE별 실제 condition 조회 (doe_angles / doe_positions)
+        doe_key = str(doe_index)
+        step_key = str(step_num)
+        scenario = runner_config.get("scenario", {})
+        doe_angles = scenario.get("doe_angles", {})
+        doe_positions = scenario.get("doe_positions", {})
+        if doe_key in doe_positions and step_key in doe_positions[doe_key]:
+            condition = doe_positions[doe_key][step_key].get("position_name", step_config["condition"])
+        elif doe_key in doe_angles and step_key in doe_angles[doe_key]:
+            condition = doe_angles[doe_key][step_key].get("angle_name", step_config["condition"])
+        else:
+            condition = step_config["condition"]
         return f"{project}_CUM{total_steps:03d}_DOE{doe_index:03d}_S{step_num:03d}_{mode}_{condition}"
 
     def _load_simulation_index(self, runner_config: dict) -> dict:
@@ -333,15 +346,17 @@ class JobManager:
                 status = run_info.get("status", "not_found")
 
                 if status == "completed":
-                    # 실제 출력 파일 존재 확인
                     run_folder = run_info.get("folder", "")
-                    if run_folder:
-                        dynain_path = os.path.join(output_dir, run_folder, "dynain")
+                    if run_folder and step_num < total_steps:
+                        # 중간 스텝: dynain 존재 확인 (다음 스텝 입력 필요)
+                        # dynain은 Run_xxx/Output/dynain에 생성됨
+                        dynain_path = os.path.join(output_dir, run_folder, "Output", "dynain")
                         if os.path.exists(dynain_path):
                             steps_completed += 1
                         else:
                             steps_failed += 1
                     else:
+                        # 마지막 스텝 또는 폴더 없음: index status 신뢰
                         steps_completed += 1
                 elif status == "failed":
                     steps_failed += 1
@@ -381,8 +396,13 @@ class JobManager:
     # 핵심 기능: resubmit_does
     # ========================================================================
 
-    def resubmit_does(self, doe_indices: List[int]) -> Dict[int, str]:
-        """특정 DOE만 재제출 (기존 slurm script 재활용)"""
+    def resubmit_does(self, doe_indices: List[int], exclude_nodes: List[str] = None) -> Dict[int, str]:
+        """특정 DOE만 재제출 (기존 slurm script 재활용)
+
+        Args:
+            doe_indices: 재제출할 DOE ��덱스 목록
+            exclude_nodes: 제외��� 노드 목록 (sbatch --exclude에 전달)
+        """
         jobs_data = self.load_jobs()
         runner_config = self.load_runner_config()
         output_dir = runner_config["project"]["output_dir"]
@@ -402,10 +422,15 @@ class JobManager:
                 print(f"  DOE {doe_idx:3d}: slurm script 없음 ({script_path})")
                 continue
 
-            # sbatch 재제출
+            # sbatch 재제출 (실패 노드 제외)
+            sbatch_cmd = ["sbatch"]
+            if exclude_nodes:
+                sbatch_cmd.extend(["--exclude", ",".join(exclude_nodes)])
+            sbatch_cmd.append(script_path)
+
             try:
                 result = subprocess.run(
-                    ["sbatch", script_path],
+                    sbatch_cmd,
                     capture_output=True, text=True
                 )
                 if result.returncode == 0:

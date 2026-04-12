@@ -2233,25 +2233,54 @@ class KooPartManager():
             print("Part Constrained ID does not exist")            
 
     def AddMassElementsfromDyna(self, parametersMass, mode = "MASS"):
-        for i in range(len(parametersMass)):
-            parameters = parametersMass[i][0]
-            eid = int(parameters[0])            
-            nid = int(parameters[1])
-            mass = float(parameters[2])
-            pid = int(parameters[3])
-            if pid in self.parts:
-                part : KooPart = self.parts[pid]                
-                if mode == "MASS":
-                    node = part.nodeManager.FindNodefromID(nid)
-                    part.elementManager.AddPointElement(eid, node, mass)
-                elif mode == "MASS_NODE_SET":
-                    part.elementManager.AddPointElement(eid, nid, mass)
-            else:
-                if mode == "MASS":
-                    node = self.nodeManager.FindNodefromID(nid)
-                    self.elementManager.AddPointElement(eid, node, mass)
+        # parametersMass = [블록][행][컬럼]  (블록 하나의 *ELEMENT_MASS 아래 여러 행 가능)
+        for block in parametersMass:
+            for parameters in block:
+                if parameters is None or len(parameters) < 4:
+                    continue
+                try:
+                    eid = int(parameters[0])
+                    nid = int(parameters[1])
+                    mass = float(parameters[2])
+                    pid = int(parameters[3])
+                except (ValueError, IndexError):
+                    continue
+
+                # part lookup: parts / partsRigid / constrainedParts 모두 확인
+                target_part = None
+                if pid in self.parts:
+                    target_part = self.parts[pid]
+                elif pid in self.partsRigid:
+                    target_part = self.partsRigid[pid]
+                elif pid in self.constrainedParts:
+                    target_part = self.constrainedParts[pid]
+
+                if target_part is not None and hasattr(target_part, 'elementManager'):
+                    if mode == "MASS":
+                        node = target_part.nodeManager.FindNodefromID(nid)
+                        if node is None:
+                            # part에 없으면 글로벌 nodeManager에서 재탐색
+                            node = self.nodeManager.FindNodefromID(nid)
+                        if node is None:
+                            print(f"[WARNING] *ELEMENT_MASS eid={eid} nid={nid} 노드 미발견 — 스킵")
+                            continue
+                        pe = target_part.elementManager.AddPointElement(eid, node, mass)
+                    else:  # MASS_NODE_SET
+                        pe = target_part.elementManager.AddPointElement(eid, nid, mass)
+                    if pe is not None:
+                        pe.pid = pid
                 else:
-                    self.elementManager.AddPointElement(eid, nid, mass)
+                    # 루트 elementManager 폴백 — 원본 pid 보존 (write 시 pid=0 방지)
+                    if mode == "MASS":
+                        node = self.nodeManager.FindNodefromID(nid)
+                        if node is None:
+                            print(f"[WARNING] *ELEMENT_MASS eid={eid} nid={nid} 노드 미발견 — 스킵")
+                            continue
+                        pe = self.elementManager.AddPointElement(eid, node, mass)
+                    else:
+                        pe = self.elementManager.AddPointElement(eid, nid, mass)
+                    if pe is not None:
+                        pe.pid = pid
                 
     
     def AddBeamElementsfromDyna(self, parametersBeam):

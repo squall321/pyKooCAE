@@ -15,10 +15,13 @@ import argparse
 from pathlib import Path
 
 # Slurm 환경 등에서 locale이 C/ASCII일 때 한글 출력 에러 방지
-if sys.stdout.encoding and sys.stdout.encoding.lower() in ('ascii', 'ansi_x3.4-1968'):
-    import io
+import io
+_enc = (sys.stdout.encoding or '').lower()
+if not _enc or _enc in ('ascii', 'ansi_x3.4-1968', 'us-ascii', 'c'):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+# 환경변수로도 강제
+os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 
 # Add pyKooCAE to Python path
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -127,6 +130,12 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         '--data-root',
         default='/data',
         help='Root directory for execution (default: /data)'
+    )
+    submit_parser.add_argument(
+        '--sequential',
+        action='store_true',
+        help='Sequential mode: 노드당 1개 잡, 잡 안에서 여러 DOE 순차 실행. '
+             '--nodes 수만큼 잡 생성 (기본: DOE당 1잡)'
     )
 
     # ========================================================================
@@ -248,6 +257,29 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         default=None,
         help='특정 DOE만 재실행 (콤마 구분, 예: 1,3,7)'
     )
+    rerun_parser.add_argument(
+        '--exclude-nodes',
+        type=str,
+        default=None,
+        help='제외할 노드 (콤마 구분, 예: node07,node12). '
+             '"auto"로 설정하면 이전 실패 노드 자동 감지 및 제외'
+    )
+    rerun_parser.add_argument(
+        '--sequential',
+        action='store_true',
+        help='남은 DOE를 노드에 분배하여 배치 잡으로 실행 (submit --sequential과 동일)'
+    )
+    rerun_parser.add_argument(
+        '--nodes',
+        type=int,
+        default=None,
+        help='--sequential 모드에서 사용할 노드 수 (기본: 살아있는 노드 자동 감지)'
+    )
+    rerun_parser.add_argument(
+        '--cleanup-stale',
+        action='store_true',
+        help='재실행 전 중단된 DOE의 이전 Run 디렉토리 자동 삭제 (기본: 안 함)'
+    )
 
     # ========================================================================
     # KooChainRun diagnose: 실패 DOE 원인 진단
@@ -325,6 +357,15 @@ def cmd_prepare(args):
         # Save runner_config.json
         designer.save_runner_config(runner_config, str(output_path))
 
+        # output_dir + slurm_scripts 미리 생성 (NFS 전파 시간 확보)
+        with open(str(output_path), 'r', encoding='utf-8') as _f:
+            _rc = json.load(_f)
+        _output_dir = _rc.get("project", {}).get("output_dir", "")
+        if _output_dir:
+            _slurm_dir = Path(_output_dir) / "slurm_scripts"
+            _slurm_dir.mkdir(parents=True, exist_ok=True)
+            print(f"  Output dir: {_output_dir}")
+
         print(f"✅ Successfully generated: {output_path}")
 
         # rerun.sh / stop.sh / diagnose.sh / copy.sh 자동 생성
@@ -343,8 +384,8 @@ def _generate_helper_scripts(script_dir: Path, runner_config: dict = None):
     import stat
     scripts = {
         "rerun.sh":   '"$KOOCR" rerun "$SCRIPT_DIR" "$@"',
-        "stop.sh":    '"$KOOCR" stop "$SCRIPT_DIR"',
-        "diagnose.sh": '"$KOOCR" diagnose "$SCRIPT_DIR"',
+        "stop.sh":    'if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then "$KOOCR" stop --help; exit; fi\n"$KOOCR" stop "$SCRIPT_DIR" "$@"\n"$SCRIPT_DIR/kill_dyna.sh"',
+        "diagnose.sh": 'if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then "$KOOCR" diagnose --help; exit; fi\n"$KOOCR" diagnose "$SCRIPT_DIR" "$@"',
     }
     header = (
         '#!/bin/bash\n'
@@ -365,12 +406,37 @@ def _generate_helper_scripts(script_dir: Path, runner_config: dict = None):
 
     copy_script = f'''#!/bin/bash
 # copy.sh - 로컬 scratch에서 NFS Output으로 결과 동기화
-# 용량 동일한 파일은 스킵, 5스레드 병렬로 NFS burst 방지
+# 기본: 이 프로젝트의 job만 복사 (jobs.json 기반)
+# --all: 모든 scratch 결과 복사
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRATCH_BASE="{tmpdir}"
 OUTPUT_DIR="{output_dir}"
-MAX_THREADS=${{1:-5}}
+JOBS_FILE="$SCRIPT_DIR/jobs.json"
+MAX_THREADS=5
+ALL_MODE=false
+
+# --help 처리
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    echo "사용법: copy.sh [OPTIONS] [N]"
+    echo ""
+    echo "로컬 scratch에서 NFS Output으로 결과 동기화"
+    echo ""
+    echo "OPTIONS:"
+    echo "  --all      모든 scratch 결과 복사 (기본: 이 프로젝트 job만)"
+    echo "  N          최대 병렬 스레드 수 (기본: 5)"
+    echo "  --help     이 도움말 표시"
+    exit 0
+fi
+
+# 인자 파싱
+for arg in "$@"; do
+    case "$arg" in
+        --all) ALL_MODE=true ;;
+        [0-9]*) MAX_THREADS=$arg ;;
+    esac
+done
 
 echo "========================================"
 echo "로컬 scratch -> NFS Output 동기화"
@@ -378,11 +444,30 @@ echo "========================================"
 echo "Scratch base: $SCRATCH_BASE"
 echo "Output: $OUTPUT_DIR"
 echo "스레드: $MAX_THREADS"
+echo "모드: $([ "$ALL_MODE" = true ] && echo '전체 (--all)' || echo '이 프로젝트만')"
 echo ""
 
+# 이 프로젝트의 job ID 목록 수집
+JOB_IDS=""
+if [ "$ALL_MODE" = false ] && [ -f "$JOBS_FILE" ]; then
+    JOB_IDS=$(python3 -c "
+import json
+with open('$JOBS_FILE') as f:
+    data = json.load(f)
+for v in data.get('jobs', {{}}).values():
+    print(v.get('job_id', ''))
+" 2>/dev/null | sort -u | grep -v '^$')
+fi
+
+if [ "$ALL_MODE" = false ] && [ -z "$JOB_IDS" ]; then
+    echo "jobs.json에서 job ID를 찾을 수 없음. --all 옵션을 사용하세요."
+    exit 1
+fi
+
+# 노드 목록: 실행 중인 잡 기준
 NODES=$(squeue -u $USER --format="%N" --noheader 2>/dev/null | sort -u)
 if [ -z "$NODES" ]; then
-    echo "실행 중인 job 없음"
+    echo "실행 중인 job 없음. 이미 종료된 경우 노드에 직접 접근하세요."
     exit 0
 fi
 
@@ -402,8 +487,19 @@ export OUTPUT_DIR
 ENTRIES=""
 for NODE in $NODES; do
     echo "노드 탐색: $NODE"
-    DIRS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$NODE" \\
-        "find $SCRATCH_BASE/apptainer_job_*/Run_* -maxdepth 0 -type d 2>/dev/null" 2>/dev/null || true)
+    if [ "$ALL_MODE" = true ]; then
+        # 전체 모드: 모든 apptainer_job 하위 Run 폴더
+        DIRS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$NODE" \\
+            "find $SCRATCH_BASE/apptainer_job_*/Run_* -maxdepth 0 -type d 2>/dev/null" 2>/dev/null || true)
+    else
+        # 프로젝트 모드: 이 프로젝트의 job ID만
+        FIND_PATTERN=""
+        for JID in $JOB_IDS; do
+            FIND_PATTERN="$FIND_PATTERN $SCRATCH_BASE/apptainer_job_$JID/Run_*"
+        done
+        DIRS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$NODE" \\
+            "ls -d $FIND_PATTERN 2>/dev/null" 2>/dev/null || true)
+    fi
     for DIR in $DIRS; do
         echo "  발견: $NODE:$DIR"
         ENTRIES="$ENTRIES $NODE:$DIR"
@@ -431,38 +527,63 @@ echo "========================================"
 
     # clean.sh 생성 (로컬 scratch 정리)
     clean_script = f'''#!/bin/bash
-# clean.sh - 이 프로젝트 job의 로컬 scratch만 정리 (병렬)
+# clean.sh - 로컬 scratch 정리 (병렬)
+# 기본: 이 프로젝트의 job만 정리 (jobs.json 기반)
+# --all: 모든 apptainer_job_* 정리
 SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
 SCRATCH_BASE="{tmpdir}"
 JOBS_FILE="$SCRIPT_DIR/jobs.json"
-MAX_PARALLEL=${{1:-50}}
+MAX_PARALLEL=50
+ALL_MODE=false
 
-echo "========================================"
-echo "로컬 scratch 정리 (병렬, 최대 $MAX_PARALLEL)"
-echo "========================================"
-
-if [ ! -f "$JOBS_FILE" ]; then
-    echo "jobs.json 없음"
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    echo "사용법: clean.sh [OPTIONS] [N]"
+    echo ""
+    echo "로컬 scratch 디렉토리 정리 (계산노드에서 병렬 실행)"
+    echo ""
+    echo "OPTIONS:"
+    echo "  --all      모든 apptainer_job_* 정리 (기본: 이 프로젝트 job만)"
+    echo "  N          최대 병렬 실행 수 (기본: 50)"
+    echo "  --help     이 도움말 표시"
     exit 0
 fi
 
-JOB_IDS=$(python3 -c "
+for arg in "$@"; do
+    case "$arg" in
+        --all) ALL_MODE=true ;;
+        [0-9]*) MAX_PARALLEL=$arg ;;
+    esac
+done
+
+echo "========================================"
+echo "로컬 scratch 정리 (병렬, 최대 $MAX_PARALLEL)"
+echo "모드: $([ "$ALL_MODE" = true ] && echo '전체 (--all)' || echo '이 프로젝트만')"
+echo "========================================"
+
+if [ "$ALL_MODE" = true ]; then
+    RM_TARGETS="$SCRATCH_BASE/apptainer_job_*"
+else
+    if [ ! -f "$JOBS_FILE" ]; then
+        echo "jobs.json 없음. --all 옵션을 사용하세요."
+        exit 0
+    fi
+    JOB_IDS=$(python3 -c "
 import json
 d = json.load(open('$JOBS_FILE'))
 for k, v in d.get('jobs', {{}}).items():
     print(v.get('job_id', ''))
 " 2>/dev/null | grep -v '^$')
 
-if [ -z "$JOB_IDS" ]; then
-    echo "정리할 job ID 없음"
-    exit 0
-fi
+    if [ -z "$JOB_IDS" ]; then
+        echo "정리할 job ID 없음"
+        exit 0
+    fi
 
-# 삭제 대상 경로 목록 생성
-RM_TARGETS=""
-for JID in $JOB_IDS; do
-    RM_TARGETS="$RM_TARGETS $SCRATCH_BASE/apptainer_job_$JID"
-done
+    RM_TARGETS=""
+    for JID in $JOB_IDS; do
+        RM_TARGETS="$RM_TARGETS $SCRATCH_BASE/apptainer_job_$JID"
+    done
+fi
 
 NODES=$(sinfo -N --noheader --format="%N" 2>/dev/null | sort -u)
 if [ -z "$NODES" ]; then
@@ -495,6 +616,16 @@ SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
 SCRATCH_BASE="{tmpdir}"
 OUTPUT_DIR="{output_dir}"
 JOBS_FILE="$SCRIPT_DIR/jobs.json"
+
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    echo "사용법: copylog.sh"
+    echo ""
+    echo "로컬 scratch에서 LS-DYNA 로그 파일만 NFS로 동기화 (경량)"
+    echo "실행 중인 잡의 진행 상황을 확인할 때 사용"
+    echo ""
+    echo "  --help     이 도움말 표시"
+    exit 0
+fi
 
 LOG_FILES="lsdyna_stdout.log d3hsp status.out messag glstat"
 
@@ -548,7 +679,80 @@ echo "로그 동기화 완료"
     copylog_path.write_text(copylog_script, encoding="utf-8")
     copylog_path.chmod(copylog_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    print(f"✅ Helper scripts generated: rerun.sh, stop.sh, diagnose.sh, copy.sh, copylog.sh, clean.sh")
+    # kill_dyna.sh 생성 (계산노드의 LS-DYNA 좀비 프로세스 정리)
+    kill_dyna_script = f'''#!/bin/bash
+# kill_dyna.sh - 이 프로젝트에서 사용된 노드의 LS-DYNA 프로세스 강제 종료
+# lstc_qrun이 등록되어 있다고 가정
+# stop.sh에서 자동 호출됨. 단독 실행도 가능.
+SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+JOBS_FILE="$SCRIPT_DIR/jobs.json"
+
+echo "========================================"
+echo "LS-DYNA 프로세스 정리"
+echo "========================================"
+
+# 이 프로젝트에서 사용된 노드 수집 (sacct + squeue)
+NODES=""
+
+# 1. squeue에서 현재 실행 중인 노드
+if [ -f "$JOBS_FILE" ]; then
+    JOB_IDS=$(python3 -c "
+import json
+d = json.load(open('$JOBS_FILE'))
+for v in d.get('jobs', {{}}).values():
+    jid = v.get('job_id', '')
+    if jid: print(jid)
+" 2>/dev/null | sort -u | grep -v '^$')
+
+    for JID in $JOB_IDS; do
+        N=$(squeue -j "$JID" --noheader --format="%N" 2>/dev/null | tr ',' '\\n')
+        NODES="$NODES $N"
+    done
+
+    # 2. sacct에서 이미 완료된 잡의 노드
+    if [ -n "$JOB_IDS" ]; then
+        JID_LIST=$(echo "$JOB_IDS" | tr '\\n' ',' | sed 's/,$//')
+        N=$(sacct -j "$JID_LIST" --noheader --format=NodeList --parsable2 2>/dev/null | tr '|,' '\\n')
+        NODES="$NODES $N"
+    fi
+fi
+
+# 중복 제거 + 빈 줄 제거
+NODES=$(echo "$NODES" | tr ' ' '\\n' | sort -u | grep -v '^$')
+
+if [ -z "$NODES" ]; then
+    echo "대상 노드 없음"
+    exit 0
+fi
+
+NODE_COUNT=$(echo "$NODES" | wc -l)
+echo "대상 노드: $NODE_COUNT개"
+echo ""
+
+for NODE in $NODES; do
+    echo "  $NODE:"
+    # 1. lstc_qrun으로 등록된 LS-DYNA 잡 종료
+    ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes "$NODE" \\
+        "lstc_qrun -k all 2>/dev/null; echo '    lstc_qrun -k all done'" 2>/dev/null || echo "    lstc_qrun 실패 (미설치 또는 접근 불가)"
+
+    # 2. 남은 lsdyna/mpirun 프로세스 강제 종료
+    ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes "$NODE" \\
+        "pkill -u $(whoami) -f 'lsdyna|mpp_s|mpp_d|ls-dyna' 2>/dev/null; \\
+         pkill -u $(whoami) -f 'mpirun.*lsdyna\\|mpirun.*mpp' 2>/dev/null; \\
+         pkill -u $(whoami) -f 'squashfuse' 2>/dev/null; \\
+         echo '    프로세스 정리 완료'" 2>/dev/null || echo "    프로세스 정리 실패"
+done
+
+echo ""
+echo "========================================"
+echo "LS-DYNA 프로세스 정리 완료"
+echo "========================================"
+'''
+    kill_dyna_path = script_dir / "kill_dyna.sh"
+    kill_dyna_path.write_text(kill_dyna_script, encoding="utf-8")
+    kill_dyna_path.chmod(kill_dyna_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    print(f"✅ Helper scripts generated: rerun.sh, stop.sh, diagnose.sh, copy.sh, copylog.sh, clean.sh, kill_dyna.sh")
 
 
 def cmd_submit(args):
@@ -811,6 +1015,7 @@ def _submit_cumulative(args, config_path):
     import json
     import subprocess
     import shutil
+    import time
     from datetime import datetime
 
     print("=" * 80)
@@ -837,12 +1042,39 @@ def _submit_cumulative(args, config_path):
     memory = args.memory or env.get("memory", "64G")
     partition = args.partition if args.partition != 'normal' else env.get("partition", "normal")
     time_limit = args.time_limit if args.time_limit != '24:00:00' else env.get("time_limit", "24:00:00")
+
+    # 파티션 최대 시간 확인 → time_limit 자동 cap
+    try:
+        _part_info = subprocess.run(
+            ["sinfo", "-p", partition, "-h", "-o", "%l"],
+            capture_output=True, text=True, timeout=5
+        )
+        if _part_info.returncode == 0 and _part_info.stdout.strip():
+            _pmax = _part_info.stdout.strip().split("\n")[0].strip()
+            if _pmax.upper() != "UNLIMITED":
+                # time_limit → 초
+                _tl = time_limit.split(":")
+                _tl_sec = int(_tl[0]) * 3600 + int(_tl[1]) * 60 + int(_tl[2])
+                # partition max → 초 (D-HH:MM:SS 또는 HH:MM:SS)
+                _pm = _pmax.split("-")
+                _pm_sec = int(_pm[0]) * 86400 if len(_pm) == 2 else 0
+                _hms = (_pm[1] if len(_pm) == 2 else _pm[0]).split(":")
+                _pm_sec += int(_hms[0]) * 3600 + int(_hms[1]) * 60 + int(_hms[2])
+                if _tl_sec > _pm_sec:
+                    print(f"  time_limit {time_limit} > partition max {_pmax} → cap to {_pmax}")
+                    time_limit = _pmax
+    except Exception:
+        pass
+
     ncpu = args.ncpu_per_job if args.ncpu_per_job is not None else env.get("ncpu", 16)
 
     # apptainer_tmpdir 읽기
     apptainer_tmpdir = env.get("apptainer_tmpdir") or \
                        env.get("apptainer_env", {}).get("APPTAINER_TMPDIR") or \
                        env.get("lsdyna_apptainer_env", {}).get("APPTAINER_TMPDIR")
+
+    # 잡 시작 stagger (동시 완료 방지): 기본 300초 (0이면 비활성)
+    job_stagger_seconds = env.get("job_stagger_seconds", 300)
 
     # scratch_run 설정
     scratch_cfg = env.get("scratch_run", {})
@@ -872,6 +1104,57 @@ def _submit_cumulative(args, config_path):
         print(f"  Note: DOE count ({doe_count}) < requested parallel slots ({args.nodes * args.jobs_per_node})")
         print(f"         Extra nodes will be idle.")
 
+    # 노드 Health Check: idle 상태지만 실제로 응답 불가한 노드 자동 감지
+    # SSH 기반 병렬 점검 (srun 대비: Slurm 리소스 미사용, 대규모 노드에서 빠름)
+    dead_nodes = []
+    try:
+        sinfo_result = subprocess.run(
+            ["sinfo", "-N", "-h", "-p", partition, "-t", "idle,mix,alloc", "-o", "%N"],
+            capture_output=True, text=True, timeout=10
+        )
+        if sinfo_result.returncode == 0:
+            idle_nodes = list(set(
+                n.strip() for n in sinfo_result.stdout.strip().split("\n") if n.strip()
+            ))
+            if idle_nodes:
+                print(f"\nNode Health Check ({len(idle_nodes)} nodes, SSH parallel)...")
+                # 병렬 SSH ping: 모든 노드에 동시 요청
+                ssh_procs = {}
+                for node in idle_nodes:
+                    try:
+                        p = subprocess.Popen(
+                            ["ssh", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
+                             "-o", "BatchMode=yes", node, "hostname"],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                        )
+                        ssh_procs[node] = p
+                    except Exception:
+                        dead_nodes.append(node)
+
+                # 결과 수집 (최대 10초 대기)
+                for node, p in ssh_procs.items():
+                    try:
+                        p.communicate(timeout=10)
+                        if p.returncode != 0:
+                            dead_nodes.append(node)
+                            print(f"  {node}: UNREACHABLE — auto exclude")
+                    except subprocess.TimeoutExpired:
+                        p.kill()
+                        p.communicate()
+                        dead_nodes.append(node)
+                        print(f"  {node}: TIMEOUT — auto exclude")
+
+                if not dead_nodes:
+                    print(f"  All {len(idle_nodes)} nodes OK")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass  # sinfo/ssh 불가 시 skip
+
+    exclude_line = ""
+    if dead_nodes:
+        exclude_str = ",".join(sorted(set(dead_nodes)))
+        print(f"\n  Excluding {len(dead_nodes)} dead nodes: {exclude_str}")
+        exclude_line = f"#SBATCH --exclude={exclude_str}"
+
     # include 파일 검증
     try:
         sys.path.insert(0, str(Path(__file__).parent / "occProject" / "Generators"))
@@ -900,6 +1183,11 @@ def _submit_cumulative(args, config_path):
     slurm_dir = Path(output_dir) / "slurm_scripts"
     slurm_dir.mkdir(parents=True, exist_ok=True)
 
+    # NFS 캐시 동기화: 계산노드에서 디렉토리가 즉시 보이도록 보장
+    _nfs_sync = slurm_dir / ".nfs_sync"
+    _nfs_sync.write_text(str(time.time()), encoding='utf-8')
+    _nfs_sync.unlink(missing_ok=True)
+
     # jobs.json 준비 (기존 파일 백업)
     jobs_file = config_path.parent / "jobs.json"
     if jobs_file.exists():
@@ -915,6 +1203,9 @@ def _submit_cumulative(args, config_path):
         "batch_koomeshmodifier": batch_koomesh,
         "jobs": {}
     }
+    # 즉시 빈 jobs.json 생성 (submit 중 crash 시에도 파일 존재 보장)
+    with open(jobs_file, 'w', encoding='utf-8') as jf:
+        json.dump(jobs_data, jf, indent=2, ensure_ascii=False)
 
     submitted_jobs = []
 
@@ -934,6 +1225,10 @@ def _submit_cumulative(args, config_path):
 
     # DOE별 sbatch 스크립트 생성
     doe_scripts = {}  # doe_idx → script_path
+    exclusive = env.get("exclusive", True)  # 기본: 노드 독점 (잡 경합 방지)
+    exclusive_line = "#SBATCH --exclusive" if exclusive else ""
+    job_memory = "0" if exclusive else memory  # exclusive 시 전체 메모리 사용
+
     for doe_idx in range(1, doe_count + 1):
         job_name = f"{project_name}_DOE{doe_idx:03d}"
         script_path = slurm_dir / f"run_doe_{doe_idx:03d}.sh"
@@ -945,10 +1240,13 @@ def _submit_cumulative(args, config_path):
 #SBATCH --nodes=1
 #SBATCH --ntasks={ncpu}
 #SBATCH --cpus-per-task=1
-#SBATCH --mem={memory}
+#SBATCH --mem={job_memory}
 #SBATCH --time={time_limit}
 #SBATCH --output={log_path}
 #SBATCH --error={log_path}
+#SBATCH --requeue
+{exclusive_line}
+{exclude_line}
 """
 
         if scratch_enabled:
@@ -965,6 +1263,12 @@ echo "Pre-generated 파일 복사 완료: $PREGENERATED_DIR"
             else:
                 run_cmd_resolved = f"{kcr_path} run $SCRATCH_DIR/runner_config.json --doe {doe_idx}"
 
+            stagger_block = (
+                f"STAGGER=$((RANDOM % {job_stagger_seconds}))\n"
+                f"echo \"시작 지연: ${{STAGGER}}초 (최대 {job_stagger_seconds}초)\"\n"
+                f"sleep $STAGGER\n"
+            ) if job_stagger_seconds > 0 else ""
+
             script_content = sbatch_header + f"""{apptainer_tmpdir_line}
 
 echo "========================================"
@@ -974,7 +1278,21 @@ echo "Node: $(hostname)"
 echo "Start: $(date)"
 echo "========================================"
 
-# ---- Scratch 설정 ----
+# ---- 노드 상태 점검 (readonly/장애 노드 즉시 탈출) ----
+HEALTH_CHECK_DIR={output_dir}/.node_health_$$
+if ! mkdir -p "$HEALTH_CHECK_DIR" 2>/dev/null; then
+    echo "ERROR: 출력 디렉토리 쓰기 불가 (readonly/NFS 장애): {output_dir}"
+    exit 1
+fi
+rmdir "$HEALTH_CHECK_DIR" 2>/dev/null
+
+# ---- orphan Apptainer 프로세스 정리 ----
+pkill -u $(whoami) -f "squashfuse.*apptainer" 2>/dev/null || true
+
+# ---- stale lock 파일 정리 (10분 이상) ----
+find {output_dir} -name "*.lock" -mmin +10 -delete 2>/dev/null || true
+
+{stagger_block}# ---- Scratch 설정 ----
 SCRATCH_DIR={scratch_base}/$SLURM_JOB_ID/DOE_{doe_idx:03d}
 ORIG_OUTPUT_DIR={output_dir}
 EXIT_CODE=1
@@ -1010,11 +1328,17 @@ cleanup() {{
     echo "결과 복사: scratch → 원본 위치"
     echo "========================================"
 
-    # Run_ 폴더 복사
+    # Run_ 폴더 복사 (순차 전송: flock으로 1개씩 직렬화)
     if ls $SCRATCH_DIR/output/Run_* 1>/dev/null 2>&1; then
         mkdir -p $ORIG_OUTPUT_DIR
-        rsync -a $SCRATCH_DIR/output/Run_*/ $ORIG_OUTPUT_DIR/ 2>/dev/null || \\
-            cp -r $SCRATCH_DIR/output/Run_* $ORIG_OUTPUT_DIR/ 2>/dev/null || true
+        echo "rsync 순서 대기 중... DOE {doe_idx}"
+        (
+            flock -x 200
+            echo "rsync 시작: DOE {doe_idx} ($(date))"
+            rsync -a $SCRATCH_DIR/output/Run_*/ $ORIG_OUTPUT_DIR/ 2>/dev/null || \\
+                cp -r $SCRATCH_DIR/output/Run_* $ORIG_OUTPUT_DIR/ 2>/dev/null || true
+            echo "rsync 완료: DOE {doe_idx} ($(date))"
+        ) 200>{output_dir}/.rsync_transfer.lock
         echo "Run 폴더 복사 완료"
     fi
 
@@ -1051,6 +1375,12 @@ exit $EXIT_CODE
             else:
                 run_cmd_final = f"{kcr_path} run {config_path} --doe {doe_idx}"
 
+            stagger_block = (
+                f"STAGGER=$((RANDOM % {job_stagger_seconds}))\n"
+                f"echo \"시작 지연: ${{STAGGER}}초 (최대 {job_stagger_seconds}초)\"\n"
+                f"sleep $STAGGER\n"
+            ) if job_stagger_seconds > 0 else ""
+
             script_content = sbatch_header + f"""{apptainer_tmpdir_line}
 
 echo "========================================"
@@ -1059,6 +1389,36 @@ echo "DOE: {doe_idx}/{doe_count}"
 echo "Node: $(hostname)"
 echo "Start: $(date)"
 echo "========================================"
+
+# ---- 노드 상태 점검 (readonly/장애 노드 즉시 탈출) ----
+HEALTH_CHECK_DIR={output_dir}/.node_health_$$
+if ! mkdir -p "$HEALTH_CHECK_DIR" 2>/dev/null; then
+    echo "ERROR: 출력 디렉토리 쓰기 불가 (readonly/NFS 장애): {output_dir}"
+    echo "이 노드에서 실행할 수 없습니다. exit 1 → Slurm이 다른 노드로 재배정"
+    exit 1
+fi
+rmdir "$HEALTH_CHECK_DIR" 2>/dev/null
+
+# ---- orphan Apptainer 프로세스 정리 ----
+pkill -u $(whoami) -f "squashfuse.*apptainer" 2>/dev/null || true
+
+# ---- stale lock 파일 정리 (생성 후 10분 이상 된 lock) ----
+find {output_dir} -name "*.lock" -mmin +10 -delete 2>/dev/null || true
+
+{stagger_block}# ---- NFS 가용성 확인 ----
+NFS_CHECK_RETRIES=10
+NFS_CHECK_INTERVAL=30
+for i in $(seq 1 $NFS_CHECK_RETRIES); do
+    if [ -f "{config_path}" ]; then
+        break
+    fi
+    echo "NFS 응답 대기 중... ($i/$NFS_CHECK_RETRIES, $(date))"
+    sleep $NFS_CHECK_INTERVAL
+done
+if [ ! -f "{config_path}" ]; then
+    echo "ERROR: NFS에서 runner_config.json을 찾을 수 없습니다: {config_path}"
+    exit 1
+fi
 
 {run_cmd_final}
 
@@ -1072,7 +1432,7 @@ echo "========================================"
 exit $EXIT_CODE
 """
 
-        with open(script_path, 'w') as f:
+        with open(script_path, 'w', encoding='utf-8') as f:
             f.write(script_content)
         os.chmod(str(script_path), 0o755)
         doe_scripts[doe_idx] = script_path
@@ -1175,9 +1535,192 @@ exit $EXIT_CODE
             proc.wait()
         print(f"\n  KooMeshModifier 종료 (exit code: {proc.returncode})")
 
+    elif getattr(args, 'sequential', False):
+        # ==============================================================
+        # Sequential 모드: 노드당 1잡, 잡 안에서 여러 DOE 순차 실행
+        # ==============================================================
+        if scratch_enabled:
+            print("  WARNING: --sequential + scratch_run 조합은 현재 미지원.")
+            print("           scratch 설정을 무시하고 non-scratch 모드로 실행합니다.")
+            scratch_enabled = False
+
+        num_nodes = args.nodes
+        print("-" * 60)
+        print(f"Slurm Job 제출 (sequential mode: {num_nodes} nodes)")
+        print("-" * 60)
+
+        # DOE를 노드 수만큼 분배 (round-robin)
+        node_doe_map = {n: [] for n in range(num_nodes)}
+        for doe_idx in range(1, doe_count + 1):
+            node_idx = (doe_idx - 1) % num_nodes
+            node_doe_map[node_idx].append(doe_idx)
+
+        for node_idx, doe_list in node_doe_map.items():
+            print(f"  Node slot {node_idx:2d}: DOE {doe_list[0]}~{doe_list[-1]} ({len(doe_list)}개)")
+
+        print()
+
+        # sequential time_limit: DOE 수에 비례하여 자동 확장
+        max_does_per_node = max(len(v) for v in node_doe_map.values())
+
+        def _multiply_time_limit(tl_str, multiplier):
+            """HH:MM:SS 형식 time_limit을 multiplier배로 확장"""
+            parts = tl_str.split(":")
+            total_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+            total_sec *= multiplier
+            h = int(total_sec // 3600)
+            m = int((total_sec % 3600) // 60)
+            s = int(total_sec % 60)
+            return f"{h}:{m:02d}:{s:02d}"
+
+        seq_time_limit = _multiply_time_limit(time_limit, max_does_per_node)
+
+        # 파티션 최대 시간 조회 → 초과 시 cap
+        try:
+            part_info = subprocess.run(
+                ["sinfo", "-p", partition, "-h", "-o", "%l"],
+                capture_output=True, text=True, timeout=5
+            )
+            if part_info.returncode == 0 and part_info.stdout.strip():
+                partition_max = part_info.stdout.strip().split("\n")[0].strip()
+                # UNLIMITED 처리
+                if partition_max.upper() != "UNLIMITED":
+                    # 파티션 최대를 초 단위로 변환
+                    pm_parts = partition_max.split("-")  # D-HH:MM:SS 또는 HH:MM:SS
+                    if len(pm_parts) == 2:
+                        pm_sec = int(pm_parts[0]) * 86400
+                        hms = pm_parts[1].split(":")
+                    else:
+                        pm_sec = 0
+                        hms = pm_parts[0].split(":")
+                    pm_sec += int(hms[0]) * 3600 + int(hms[1]) * 60 + int(hms[2])
+
+                    # seq_time_limit을 초 단위로 변환
+                    stl_parts = seq_time_limit.split(":")
+                    stl_sec = int(stl_parts[0]) * 3600 + int(stl_parts[1]) * 60 + int(stl_parts[2])
+
+                    if stl_sec > pm_sec:
+                        seq_time_limit = partition_max
+                        print(f"  Time limit: {time_limit} x {max_does_per_node} DOEs 초과 → 파티션 최대 {partition_max}로 cap")
+                    else:
+                        print(f"  Time limit: {time_limit} x {max_does_per_node} DOEs = {seq_time_limit}")
+                else:
+                    print(f"  Time limit: {time_limit} x {max_does_per_node} DOEs = {seq_time_limit}")
+        except Exception:
+            print(f"  Time limit: {time_limit} x {max_does_per_node} DOEs = {seq_time_limit}")
+
+        print()
+
+        # 각 노드 슬롯에 대해 sequential 스크립트 생성 + 제출
+        for node_idx in range(num_nodes):
+            doe_list = node_doe_map[node_idx]
+            if not doe_list:
+                continue
+
+            job_name = f"{project_name}_SEQ{node_idx:03d}"
+            script_path = slurm_dir / f"run_seq_{node_idx:03d}.sh"
+            log_path = slurm_dir / f"seq_{node_idx:03d}_%j.log"
+
+            seq_mem = "0" if exclusive else memory  # exclusive 시 전체 메모리
+
+            seq_sbatch_header = f"""#!/bin/bash
+#SBATCH --job-name={job_name}
+#SBATCH --partition={partition}
+#SBATCH --nodes=1
+#SBATCH --ntasks={ncpu}
+#SBATCH --cpus-per-task=1
+#SBATCH --mem={seq_mem}
+#SBATCH --time={seq_time_limit}
+#SBATCH --output={log_path}
+#SBATCH --error={log_path}
+#SBATCH --requeue
+{exclusive_line}
+{exclude_line}
+"""
+            # DOE 실행 명령 목록 생성
+            doe_run_cmds = ""
+            for doe_idx in doe_list:
+                doe_run_cmds += f"""
+echo "========================================"
+echo "DOE {doe_idx}/{doe_count} (sequential slot {node_idx})"
+echo "Start: $(date)"
+echo "========================================"
+{kcr_path} run {config_path} --doe {doe_idx}
+DOE_EXIT=$?
+if [ $DOE_EXIT -ne 0 ]; then
+    echo "DOE {doe_idx} failed (exit=$DOE_EXIT), continuing to next DOE..."
+    # Apptainer orphan 정리 (실패 DOE가 남긴 프로세스)
+    pkill -u $(whoami) -f "squashfuse.*apptainer" 2>/dev/null || true
+    sleep 3
+fi
+echo "DOE {doe_idx} exit code: $DOE_EXIT"
+echo ""
+"""
+
+            script_content = seq_sbatch_header + f"""{apptainer_tmpdir_line}
+
+echo "========================================"
+echo "Sequential Job: {job_name}"
+echo "Node: $(hostname)"
+echo "DOEs: {doe_list[0]}~{doe_list[-1]} ({len(doe_list)}ea)"
+echo "Start: $(date)"
+echo "========================================"
+
+# ---- Node health check ----
+HEALTH_CHECK_DIR={output_dir}/.node_health_$$
+if ! mkdir -p "$HEALTH_CHECK_DIR" 2>/dev/null; then
+    echo "ERROR: output dir not writable: {output_dir}"
+    exit 1
+fi
+rmdir "$HEALTH_CHECK_DIR" 2>/dev/null
+
+# ---- orphan Apptainer cleanup ----
+pkill -u $(whoami) -f "squashfuse.*apptainer" 2>/dev/null || true
+
+# ---- stale lock cleanup (>10min) ----
+find {output_dir} -name "*.lock" -mmin +10 -delete 2>/dev/null || true
+
+{doe_run_cmds}
+
+echo "========================================"
+echo "Sequential Job Done: $(date)"
+echo "========================================"
+"""
+
+            with open(script_path, 'w', encoding='utf-8') as f:
+                f.write(script_content)
+            os.chmod(str(script_path), 0o755)
+
+            # 제출
+            try:
+                result = subprocess.run(
+                    ["sbatch", str(script_path)],
+                    capture_output=True, text=True
+                )
+                if result.returncode == 0:
+                    job_id = result.stdout.strip().split()[-1]
+                    submitted_jobs.append((node_idx, job_id))
+                    print(f"  Slot {node_idx:2d}: submitted (job {job_id}) — DOE {doe_list[0]}~{doe_list[-1]}")
+                    # jobs.json에 각 DOE 기록
+                    for doe_idx in doe_list:
+                        jobs_data["jobs"][str(doe_idx)] = {
+                            "job_id": job_id,
+                            "job_name": job_name,
+                            "status": "submitted",
+                            "submitted_at": datetime.now().isoformat(),
+                            "script_path": str(script_path),
+                            "sequential_slot": node_idx
+                        }
+                    with open(jobs_file, 'w', encoding='utf-8') as jf:
+                        json.dump(jobs_data, jf, indent=2, ensure_ascii=False)
+                else:
+                    print(f"  Slot {node_idx:2d}: FAILED - {result.stderr.strip()}")
+            except FileNotFoundError:
+                print(f"  Slot {node_idx:2d}: FAILED - sbatch not found")
+
     else:
         # ==============================================================
-        # 일반 모드: 모든 DOE 즉시 제출
+        # 일반 모드: 모든 DOE 즉시 제출 (DOE당 1잡)
         # ==============================================================
         print("-" * 60)
         print("Slurm Job 제출")
@@ -1190,19 +1733,23 @@ exit $EXIT_CODE
                     print("  sbatch 실행 불가. 중단합니다.")
                     sys.exit(1)
 
+    seq_mode = getattr(args, 'sequential', False)
     print()
     print("=" * 80)
-    print(f"Submitted {len(submitted_jobs)}/{doe_count} DOE jobs")
+    if seq_mode:
+        print(f"Submitted {len(submitted_jobs)} sequential jobs ({doe_count} DOEs across {args.nodes} nodes)")
+    else:
+        print(f"Submitted {len(submitted_jobs)}/{doe_count} DOE jobs")
     if scratch_enabled:
-        print(f"  모드: Scratch Run (base: {scratch_base})")
+        print(f"  Mode: Scratch Run (base: {scratch_base})")
     if batch_koomesh:
-        print(f"  모드: Batch KooMeshModifier (pregenerated: {pregenerated_dir})")
+        print(f"  Mode: Batch KooMeshModifier (pregenerated: {pregenerated_dir})")
     print("=" * 80)
-    print(f"  Job ID 저장: {jobs_file}")
+    print(f"  Job ID: {jobs_file}")
     print()
     print("Next steps:")
     print(f"  Check status:    squeue -u $USER")
-    print(f"  Check logs:      ls {slurm_dir}/doe_*.log")
+    print(f"  Check logs:      ls {slurm_dir}/*.log")
     print(f"  Cancel all:      KooChainRun stop {config_path.parent}")
     print(f"  Rerun failed:    KooChainRun rerun {config_path.parent}")
     print(f"  Diagnose:        KooChainRun diagnose {config_path.parent}")
@@ -1351,8 +1898,273 @@ def cmd_stop(args):
     print(f"취소: {cancelled}개 / 이미 종료: {already}개 / 실패: {errors}개")
 
 
+def _rerun_sequential(manager, target_does, exclude_list, args):
+    """남은 DOE를 노드에 분배하여 sequential 배치 잡으로 재제출"""
+    import json
+    import subprocess
+    import tempfile
+    from datetime import datetime
+
+    runner_config = manager.load_runner_config()
+    env = runner_config.get("environment", {})
+    project_name = runner_config["project"]["name"]
+    output_dir = runner_config["project"]["output_dir"]
+    doe_count = runner_config["scenario"]["doe_count"]
+
+    kcr_path = env.get("koochainrun_path", "KooChainRun")
+    apptainer_tmpdir = env.get("apptainer_tmpdir")
+    apptainer_tmpdir_line = f"export APPTAINER_TMPDIR={apptainer_tmpdir}" if apptainer_tmpdir else "# APPTAINER_TMPDIR not configured"
+
+    partition = env.get("partition", "normal")
+    ncpu = env.get("ncpu", 16)
+    memory = env.get("memory", "64G")
+    time_limit = env.get("time_limit", "24:00:00")
+    exclusive = env.get("exclusive", True)
+
+    # 노드 수 결정
+    num_nodes = args.nodes
+    if num_nodes is None:
+        # 자동 감지: 해당 파티션의 idle 노드 수
+        try:
+            result = subprocess.run(
+                ["sinfo", "-p", partition, "-h", "-t", "idle,mix", "-o", "%N"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                # 노드 리스트 파싱 (예: "node[001-004]" → 4)
+                try:
+                    node_out = subprocess.run(
+                        ["scontrol", "show", "hostnames", result.stdout.strip()],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if node_out.returncode == 0:
+                        nodes_avail = [n for n in node_out.stdout.strip().split("\n") if n]
+                        if exclude_list:
+                            nodes_avail = [n for n in nodes_avail if n not in exclude_list]
+                        num_nodes = len(nodes_avail)
+                except (subprocess.TimeoutExpired, FileNotFoundError):
+                    pass
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        if not num_nodes or num_nodes < 1:
+            num_nodes = 1
+        print(f"  자동 감지된 노드 수: {num_nodes}")
+
+    if num_nodes > len(target_does):
+        num_nodes = len(target_does)
+
+    print(f"Sequential rerun: {len(target_does)} DOE를 {num_nodes}개 노드에 분배")
+
+    # target_does를 노드에 round-robin 분배
+    node_doe_map = {n: [] for n in range(num_nodes)}
+    for i, doe_idx in enumerate(sorted(target_does)):
+        node_doe_map[i % num_nodes].append(doe_idx)
+
+    for node_idx, doe_list in node_doe_map.items():
+        print(f"  Slot {node_idx}: {len(doe_list)} DOEs (DOE {doe_list[0]}~{doe_list[-1]})")
+
+    # time_limit: DOE 수에 비례 확장
+    max_does_per_node = max(len(v) for v in node_doe_map.values())
+
+    def _multiply_tl(tl_str, multiplier):
+        parts = tl_str.split(":")
+        total_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        total_sec *= multiplier
+        h = int(total_sec // 3600)
+        m = int((total_sec % 3600) // 60)
+        s = int(total_sec % 60)
+        return f"{h}:{m:02d}:{s:02d}"
+
+    seq_time_limit = _multiply_tl(time_limit, max_does_per_node)
+
+    # 파티션 최대 cap
+    try:
+        part_info = subprocess.run(
+            ["sinfo", "-p", partition, "-h", "-o", "%l"],
+            capture_output=True, text=True, timeout=5
+        )
+        if part_info.returncode == 0 and part_info.stdout.strip():
+            partition_max = part_info.stdout.strip().split("\n")[0].strip()
+            if partition_max.upper() != "UNLIMITED":
+                pm_parts = partition_max.split("-")
+                if len(pm_parts) == 2:
+                    pm_sec = int(pm_parts[0]) * 86400
+                    hms = pm_parts[1].split(":")
+                else:
+                    pm_sec = 0
+                    hms = pm_parts[0].split(":")
+                pm_sec += int(hms[0]) * 3600 + int(hms[1]) * 60 + int(hms[2])
+
+                stl_parts = seq_time_limit.split(":")
+                stl_sec = int(stl_parts[0]) * 3600 + int(stl_parts[1]) * 60 + int(stl_parts[2])
+
+                if stl_sec > pm_sec:
+                    seq_time_limit = partition_max
+                    print(f"  Time limit cap: {partition_max}")
+    except Exception:
+        pass
+
+    # exclude_line 생성
+    exclude_line = ""
+    if exclude_list:
+        exclude_line = f"#SBATCH --exclude={','.join(exclude_list)}"
+    exclusive_line = "#SBATCH --exclusive" if exclusive else ""
+    seq_mem = "0" if exclusive else memory
+
+    # runner_config 경로 찾기
+    test_dir = Path(args.test_dir).resolve()
+    config_candidates = [test_dir / "runner_config.json"]
+    config_path = None
+    for c in config_candidates:
+        if c.exists():
+            config_path = str(c)
+            break
+    if config_path is None:
+        print(f"  ERROR: runner_config.json not found in {test_dir}")
+        return
+
+    slurm_dir = Path(output_dir) / "slurm_scripts"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+
+    # jobs.json 로드
+    jobs_file = test_dir / "jobs.json"
+    if jobs_file.exists():
+        try:
+            with open(jobs_file, 'r', encoding='utf-8') as f:
+                jobs_data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            jobs_data = {"project_name": project_name, "jobs": {}}
+    else:
+        jobs_data = {"project_name": project_name, "jobs": {}}
+    jobs_data.setdefault("jobs", {})
+
+    # 각 슬롯 스크립트 생성 + 제출
+    rerun_count = int(datetime.now().strftime("%H%M%S"))
+    submitted_jobs = 0
+    for node_idx in range(num_nodes):
+        doe_list = node_doe_map[node_idx]
+        if not doe_list:
+            continue
+
+        job_name = f"{project_name}_RSEQ{node_idx:03d}"
+        script_path = slurm_dir / f"rerun_seq_{rerun_count}_{node_idx:03d}.sh"
+        log_path = slurm_dir / f"rerun_seq_{rerun_count}_{node_idx:03d}_%j.log"
+
+        header = f"""#!/bin/bash
+#SBATCH --job-name={job_name}
+#SBATCH --partition={partition}
+#SBATCH --nodes=1
+#SBATCH --ntasks={ncpu}
+#SBATCH --cpus-per-task=1
+#SBATCH --mem={seq_mem}
+#SBATCH --time={seq_time_limit}
+#SBATCH --output={log_path}
+#SBATCH --error={log_path}
+#SBATCH --requeue
+{exclusive_line}
+{exclude_line}
+"""
+
+        doe_cmds = ""
+        for doe_idx in doe_list:
+            doe_cmds += f"""
+echo "========================================"
+echo "DOE {doe_idx}/{doe_count} (rerun slot {node_idx})"
+echo "Start: $(date)"
+echo "========================================"
+{kcr_path} run {config_path} --doe {doe_idx}
+DOE_EXIT=$?
+if [ $DOE_EXIT -ne 0 ]; then
+    echo "DOE {doe_idx} failed (exit=$DOE_EXIT), continuing..."
+    pkill -u $(whoami) -f "squashfuse.*apptainer" 2>/dev/null || true
+    sleep 3
+fi
+echo "DOE {doe_idx} exit code: $DOE_EXIT"
+echo ""
+"""
+
+        script_content = header + f"""{apptainer_tmpdir_line}
+
+echo "========================================"
+echo "Rerun Sequential Job: {job_name}"
+echo "Node: $(hostname)"
+echo "DOEs: {len(doe_list)}ea"
+echo "Start: $(date)"
+echo "========================================"
+
+HEALTH_CHECK_DIR={output_dir}/.node_health_$$
+if ! mkdir -p "$HEALTH_CHECK_DIR" 2>/dev/null; then
+    echo "ERROR: output dir not writable: {output_dir}"
+    exit 1
+fi
+rmdir "$HEALTH_CHECK_DIR" 2>/dev/null
+
+pkill -u $(whoami) -f "squashfuse.*apptainer" 2>/dev/null || true
+find {output_dir} -name "*.lock" -mmin +10 -delete 2>/dev/null || true
+
+# 시작 지연: 슬롯별 분산 (NFS burst 방지)
+STAGGER=$((RANDOM % 60 + {node_idx * 10}))
+echo "시작 지연: ${{STAGGER}}초 (슬롯 {node_idx})"
+sleep $STAGGER
+
+{doe_cmds}
+
+echo "========================================"
+echo "Rerun Sequential Done: $(date)"
+echo "========================================"
+"""
+        try:
+            with open(script_path, 'w', encoding='utf-8') as f:
+                f.write(script_content)
+            os.chmod(str(script_path), 0o755)
+        except OSError as e:
+            print(f"  Slot {node_idx}: 스크립트 생성 실패: {e}")
+            continue
+
+        try:
+            result = subprocess.run(
+                ["sbatch", str(script_path)],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode == 0:
+                job_id = result.stdout.strip().split()[-1]
+                print(f"  Slot {node_idx:2d}: submitted (job {job_id}) — {len(doe_list)} DOEs")
+                for doe_idx in doe_list:
+                    jobs_data["jobs"][str(doe_idx)] = {
+                        "job_id": job_id,
+                        "job_name": job_name,
+                        "status": "resubmitted",
+                        "submitted_at": datetime.now().isoformat(),
+                        "script_path": str(script_path),
+                        "sequential_slot": node_idx,
+                        "rerun": True
+                    }
+                submitted_jobs += 1
+            else:
+                print(f"  Slot {node_idx:2d}: FAILED - {result.stderr.strip()}")
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            print(f"  Slot {node_idx:2d}: FAILED - {e}")
+
+    # jobs.json 저장 (atomic write: tmpfile → rename)
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=str(test_dir), suffix=".tmp")
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(jobs_data, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, str(jobs_file))
+    except OSError as e:
+        print(f"  경고: jobs.json 저장 실패: {e}")
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    print(f"\n재제출 완료: {submitted_jobs}개 슬롯 / {len(target_does)} DOEs")
+    if exclude_list:
+        print(f"제외 노드: {exclude_list}")
+
+
 def cmd_rerun(args):
     """실패/미완료 DOE만 재실행"""
+    import json
+    import subprocess
     from Runner.JobManager import JobManager
 
     test_dir = Path(args.test_dir).resolve()
@@ -1410,13 +2222,70 @@ def cmd_rerun(args):
 
     print(f"재실행 대상: {len(target_does)}개 - DOE {target_does}")
 
+    # 실패 노드 제외 처리
+    exclude_nodes_arg = getattr(args, 'exclude_nodes', None)
+    exclude_nodes = set()
+
+    if exclude_nodes_arg == "auto":
+        # sacct에서 FAILED/NODE_FAIL 잡의 노드 자동 감지
+        print("\n실패 노드 자동 감지 중...")
+        try:
+            failed_job_ids = []
+            for doe_idx, info in status_map.items():
+                jid = info.get("job_id")
+                if jid and info["status"] in ("failed", "killed", "not_started"):
+                    # CANCELLED는 사용자가 직접 취소한 것 — 노드 문제 아님, 제외
+                    slurm_st = info.get("slurm_state", "")
+                    if slurm_st == "CANCELLED":
+                        continue
+                    failed_job_ids.append(str(jid))
+            if failed_job_ids:
+                sacct_result = subprocess.run(
+                    ["sacct", "-j", ",".join(failed_job_ids),
+                     "--format=NodeList", "--noheader", "--parsable2"],
+                    capture_output=True, text=True, timeout=30
+                )
+                if sacct_result.returncode == 0:
+                    for line in sacct_result.stdout.strip().split("\n"):
+                        node = line.strip()
+                        if node and node != "None assigned":
+                            exclude_nodes.add(node)
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            print("  sacct 실행 불가 — 노드 자동 감지 생략")
+
+        # Slurm down/drain 노드도 추가
+        try:
+            sinfo_result = subprocess.run(
+                ["sinfo", "-N", "-h", "-t", "down,drain,drng", "-o", "%N"],
+                capture_output=True, text=True, timeout=10
+            )
+            if sinfo_result.returncode == 0:
+                for line in sinfo_result.stdout.strip().split("\n"):
+                    node = line.strip()
+                    if node:
+                        exclude_nodes.add(node)
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        if exclude_nodes:
+            print(f"  제외 노드: {sorted(exclude_nodes)}")
+        else:
+            print("  제외할 노드 없음")
+
+    elif exclude_nodes_arg:
+        exclude_nodes = set(n.strip() for n in exclude_nodes_arg.split(","))
+        print(f"\n수동 제외 노드: {sorted(exclude_nodes)}")
+
     if args.dry_run:
         print("\n[DRY-RUN] 실제 제출하지 않습니다.")
         return
 
     if not args.force:
         try:
-            reply = input(f"\n{len(target_does)}개 DOE를 재제출하시겠습니까? (y/n): ")
+            if getattr(args, 'sequential', False):
+                reply = input(f"\n{len(target_does)}개 DOE를 sequential 모드로 재제출하시겠습니까? (y/n): ")
+            else:
+                reply = input(f"\n{len(target_does)}개 DOE를 재제출하시겠습니까? (y/n): ")
             if reply.lower() != 'y':
                 print("취소됨")
                 return
@@ -1424,10 +2293,44 @@ def cmd_rerun(args):
             print("비대화형 모드 - --force 옵션을 사용하세요")
             return
 
+    # --cleanup-stale: 중단된 DOE들의 이전 Run 디렉토리 삭제
+    if getattr(args, 'cleanup_stale', False):
+        import shutil as _shutil
+        runner_config = manager.load_runner_config()
+        output_dir = runner_config["project"]["output_dir"]
+        total_steps = runner_config["scenario"]["total_steps"]
+        sim_index = manager._load_simulation_index(runner_config)
+        runs = sim_index.get("scenarios", [{}])[0].get("runs", {})
+        removed_count = 0
+        for doe_idx in target_does:
+            for step_num in range(1, total_steps + 1):
+                alias = manager._generate_alias(runner_config, doe_idx, step_num)
+                run_info = runs.get(alias, {})
+                if run_info.get("status") != "completed":
+                    folder = run_info.get("folder", "")
+                    if folder:
+                        run_path = os.path.join(output_dir, folder)
+                        if os.path.isdir(run_path):
+                            try:
+                                _shutil.rmtree(run_path)
+                                removed_count += 1
+                            except OSError as e:
+                                print(f"  경고: {run_path} 삭제 실패: {e}")
+        if removed_count > 0:
+            print(f"\n중단된 Run 디렉토리 {removed_count}개 삭제 완료")
+
     print()
-    results = manager.resubmit_does(target_does)
-    print()
-    print(f"재제출 완료: {len(results)}개")
+    exclude_list = sorted(exclude_nodes) if exclude_nodes else None
+
+    # --sequential 모드: submit의 sequential 로직 재사용
+    if getattr(args, 'sequential', False):
+        from Runner.JobManager import JobManager as _JM  # noqa: F401
+        _rerun_sequential(manager, target_does, exclude_list, args)
+    else:
+        results = manager.resubmit_does(target_does, exclude_nodes=exclude_list)
+        print(f"재제출 완료: {len(results)}개")
+        if exclude_list:
+            print(f"제외 노드: {exclude_list}")
 
 
 def cmd_diagnose(args):

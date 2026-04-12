@@ -675,37 +675,52 @@ class KooDynaImporter():
         else:
             elementSolidKeyword = None
         if modePart == "PART":
+            def _part_int_or_blank(field, default=0):
+                """PART 필드를 int로 변환. 공백이면 default 반환."""
+                if field is None:
+                    return default
+                s = str(field).strip()
+                if not s:
+                    return default
+                try:
+                    return int(s)
+                except ValueError:
+                    return default
+
+            def _part_int_or_empty(field):
+                """PART 옵션 필드를 int로 변환. 공백이면 빈 문자열 반환 (write 시 빈칸)."""
+                if field is None:
+                    return ""
+                s = str(field).strip()
+                if not s:
+                    return ""
+                try:
+                    return int(s)
+                except ValueError:
+                    return ""
+
             parts = partKeyword.getPartList()
             for part in parts:
-                name = str(part[0]).lstrip()                
-                id = int(part[1])
+                if len(part) < 9:
+                    print(f"[WARNING] *PART 필드 수 부족 ({len(part)}/9) — 스킵: {part}")
+                    continue
+                name = str(part[0]).lstrip()
+                id = _part_int_or_blank(part[1], 0)
+                if id == 0:
+                    print(f"[WARNING] *PART PID 파싱 실패 — 스킵: {part}")
+                    continue
                 if id > maxID:
                     maxID = id
-                secid = int(part[2])
-                mid = int(part[3].lstrip())
-                if len(part[4].lstrip()) > 0:
-                    eosid = int(part[4])
-                else:
-                    eosid = ""
-                if len(part[5].lstrip()) > 0:
-                    hgid = int(part[5])
-                else:
-                    hgid = ""
-                if len(part[6].lstrip()) > 0:
-                    grav = int(part[6])
-                else:
-                    grav = ""
-                if len(part[7].lstrip()) > 0:
-                    adpopt = int(part[7])
-                else:
-                    adpopt = ""
-                if len(part[8].lstrip()) > 0:
-                    tmid = int(part[8])
-                else:
-                    tmid = ""
+                secid = _part_int_or_blank(part[2], 0)
+                mid = _part_int_or_blank(part[3], 0)
+                eosid = _part_int_or_empty(part[4])
+                hgid = _part_int_or_empty(part[5])
+                grav = _part_int_or_empty(part[6])
+                adpopt = _part_int_or_empty(part[7])
+                tmid = _part_int_or_empty(part[8])
                 elementManager = ElementManager(self.nodeManager,id)
                 self.partManager.CreatePart(id, name, secid, mid, eosid, hgid, grav, adpopt, tmid, self.nodeManager,elementManager)
-                self.elementManager[id] = elementManager        
+                self.elementManager[id] = elementManager
         if modePartComposite == "PART_COMPOSITE":
             parts = partCompositeKeyword.getPartList()
             for part in parts:

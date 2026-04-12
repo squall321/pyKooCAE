@@ -749,160 +749,173 @@ class KooBoundaryNodeManager:
         self.boundaries = {}
     
     def AddBoundaryNodefromDyna(self, dynaBoundaryNode, nodeManager, nodeSetManager):
-        if dynaBoundaryNode[0] == "*BOUNDARY_PZEPOT":
+        # 공통 헬퍼: 라인 구조 유효성 + 안전 파싱
+        def _line_valid(line, min_len=1):
+            if line is None:
+                return False
+            if not isinstance(line, (list, tuple)):
+                return False
+            if len(line) < min_len:
+                return False
+            # 완전 빈 라인(모든 필드가 공백/None)은 무효
+            return any((f is not None and str(f).strip() != "") for f in line)
+
+        def _fget(line, idx, default=""):
+            if line is None or idx >= len(line):
+                return default
+            v = line[idx]
+            return v if v is not None else default
+
+        def _ki(line, idx, default=0):
+            return KooDynaInt(str(_fget(line, idx, "")), default)
+
+        def _kf(line, idx, default=0.0):
+            return KooDynaFloat(str(_fget(line, idx, "")), default)
+
+        def _get_node_or_none(nid):
+            if nid in nodeManager.nodes:
+                return nodeManager.nodes[nid]
+            if nid != 0:
+                print(f"[WARNING] BOUNDARY 참조 노드 미발견 nid={nid} — 스킵")
+            return None
+
+        def _get_nset_or_none(nsid):
+            if nsid in nodeSetManager.nodeSets:
+                return nodeSetManager.nodeSets[nsid]
+            if nsid != 0:
+                print(f"[WARNING] BOUNDARY 참조 노드셋 미발견 nsid={nsid} — 스킵")
+            return None
+
+        # dynaBoundaryNode 자체가 비어있거나 헤더 없는 경우 방어
+        if not dynaBoundaryNode or len(dynaBoundaryNode) == 0:
+            return
+        header = dynaBoundaryNode[0]
+
+        if header == "*BOUNDARY_PZEPOT":
             for i in range(1, len(dynaBoundaryNode)):
                 parameters = dynaBoundaryNode[i]
-                bid = KooDynaInt(parameters[0])
-                nsid = KooDynaInt(parameters[1])
-                lcid = KooDynaInt(parameters[2])
-                sf = KooDynaFloat(parameters[3])
-                
+                if not _line_valid(parameters, min_len=4):
+                    continue
+                bid = _ki(parameters, 0)
+                nsid = _ki(parameters, 1)
+                lcid = _ki(parameters, 2)
+                sf = _kf(parameters, 3)
                 boundary = KooBoundaryPZEPOT(bid,nsid,lcid,sf)
                 self.AddBoundary(boundary)
-                
-        elif dynaBoundaryNode[0] == "*BOUNDARY_SPC_NODE":
-            
+
+        elif header == "*BOUNDARY_SPC_NODE":
             boundary = self.CreateBoundarySPCNodes()
             for i in range(1,len(dynaBoundaryNode)):
                 dynaBoundary = dynaBoundaryNode[i]
-                nid = int(dynaBoundary[0])
-                cid = int(dynaBoundary[1])
-                dofx = int(dynaBoundary[2])
-                dofy = int(dynaBoundary[3])
-                dofz = int(dynaBoundary[4])
-                dofrx = int(dynaBoundary[5])
-                dofry = int(dynaBoundary[6])
-                dofrz = int(dynaBoundary[7])
-                node = nodeManager.nodes[nid]
+                if not _line_valid(dynaBoundary, min_len=1):
+                    continue
+                nid = _ki(dynaBoundary, 0)
+                if nid == 0:
+                    continue
+                cid = _ki(dynaBoundary, 1)
+                dofx = _ki(dynaBoundary, 2)
+                dofy = _ki(dynaBoundary, 3)
+                dofz = _ki(dynaBoundary, 4)
+                dofrx = _ki(dynaBoundary, 5)
+                dofry = _ki(dynaBoundary, 6)
+                dofrz = _ki(dynaBoundary, 7)
+                node = _get_node_or_none(nid)
+                if node is None:
+                    continue
                 boundary.AddNode(node)
                 boundary.AddCoordinate(cid)
                 boundary.AddDOF(dofx,dofy,dofz,dofrx,dofry,dofrz)
-        elif dynaBoundaryNode[0] == "*BOUNDARY_SPC_NODE_ID":
+
+        elif header == "*BOUNDARY_SPC_NODE_ID":
+            if len(dynaBoundaryNode) < 3:
+                return
             parameters = dynaBoundaryNode[1]
-            id = int(parameters[0])
-            name = parameters[1]
+            if not _line_valid(parameters, min_len=1):
+                return
+            id_ = _ki(parameters, 0)
+            name = _fget(parameters, 1, "SPC_NODE_ID")
             secondLine = dynaBoundaryNode[2]
-            if len(secondLine[0]) == 0:
-                secondLine[0] = "0"
-            if len(secondLine[1]) == 0:
-                secondLine[1] = "0"
-            if len(secondLine[2]) == 0:
-                secondLine[2] = "0"
-            if len(secondLine[3]) == 0:
-                secondLine[3] = "0"
-            if len(secondLine[4]) == 0:
-                secondLine[4] = "0"
-            if len(secondLine[5]) == 0:
-                secondLine[5] = "0"
-            if len(secondLine[6]) == 0:
-                secondLine[6] = "0"
-            if len(secondLine[7]) == 0:
-                secondLine[7] = "0"
-            nid = int(secondLine[0])
-            cid = int(secondLine[1])
-            dofx = int(secondLine[2])
-            dofy = int(secondLine[3])   
-            dofz = int(secondLine[4])
-            dofrx = int(secondLine[5])
-            dofry = int(secondLine[6])
-            dofrz = int(secondLine[7])
-            node = nodeManager.nodes[nid]
+            if not _line_valid(secondLine, min_len=1):
+                return
+            nid = _ki(secondLine, 0)
+            if nid == 0:
+                return
+            cid = _ki(secondLine, 1)
+            dofx = _ki(secondLine, 2)
+            dofy = _ki(secondLine, 3)
+            dofz = _ki(secondLine, 4)
+            dofrx = _ki(secondLine, 5)
+            dofry = _ki(secondLine, 6)
+            dofrz = _ki(secondLine, 7)
+            node = _get_node_or_none(nid)
+            if node is None:
+                return
             self.CreateBoundarySPCNode(node,cid,dofx,dofy,dofz,dofrx,dofry,dofrz,name)
-            
-            
-            
-        if dynaBoundaryNode[0] == "*BOUNDARY_SPC_SET":
-            parameters = dynaBoundaryNode[1]
-            firstLine = parameters
-            if len(firstLine[0]) == 0:
-                firstLine[0] = "0"
-            if len(firstLine[1]) == 0:
-                firstLine[1] = "0"
-            if len(firstLine[2]) == 0:
-                firstLine[2] = "0"
-            if len(firstLine[3]) == 0:
-                firstLine[3] = "0"
-            if len(firstLine[4]) == 0:
-                firstLine[4] = "0"
-            if len(firstLine[5]) == 0:
-                firstLine[5] = "0"
-            if len(firstLine[6]) == 0:
-                firstLine[6] = "0"
-            if len(firstLine[7]) == 0:
-                firstLine[7] = "0"
-            nsid = int(firstLine[0])
-            cid = int(firstLine[1])
-            dofx = int(firstLine[2])
-            dofy = int(firstLine[3])
-            dofz = int(firstLine[4])
-            dofrx = int(firstLine[5])
-            dofry = int(firstLine[6])
-            dofrz = int(firstLine[7])
-            nset = nodeSetManager.nodeSets[nsid]
+
+        elif header == "*BOUNDARY_SPC_SET":
+            if len(dynaBoundaryNode) < 2:
+                return
+            firstLine = dynaBoundaryNode[1]
+            if not _line_valid(firstLine, min_len=1):
+                return
+            nsid = _ki(firstLine, 0)
+            cid = _ki(firstLine, 1)
+            dofx = _ki(firstLine, 2)
+            dofy = _ki(firstLine, 3)
+            dofz = _ki(firstLine, 4)
+            dofrx = _ki(firstLine, 5)
+            dofry = _ki(firstLine, 6)
+            dofrz = _ki(firstLine, 7)
+            nset = _get_nset_or_none(nsid)
+            if nset is None:
+                return
             self.CreateBoundarySPCNodeSet(nset,cid,dofx,dofy,dofz,dofrx,dofry,dofrz)
-        if dynaBoundaryNode[0] == "*BOUNDARY_SPC_SET_ID":
+
+        elif header == "*BOUNDARY_SPC_SET_ID":
+            if len(dynaBoundaryNode) < 3:
+                return
             parameters = dynaBoundaryNode[1]
-            bid = int(parameters[0])
-            name = parameters[1]
+            if not _line_valid(parameters, min_len=1):
+                return
+            bid = _ki(parameters, 0)
+            name = _fget(parameters, 1, "SPC_SET_ID")
             secondLine = dynaBoundaryNode[2]
-             
-            if len(secondLine[0]) == 0:
-                secondLine[0] = "0"
-            if len(secondLine[1]) == 0:
-                secondLine[1] = "0"
-            if len(secondLine[2]) == 0:
-                secondLine[2] = "0"
-            if len(secondLine[3]) == 0:
-                secondLine[3] = "0"
-            if len(secondLine[4]) == 0:
-                secondLine[4] = "0"
-            if len(secondLine[5]) == 0:
-                secondLine[5] = "0"
-            if len(secondLine[6]) == 0:
-                secondLine[6] = "0"
-            if len(secondLine[7]) == 0:
-                secondLine[7] = "0"
-            nsid = int(secondLine[0])
-            cid = int(secondLine[1])
-            dofx = int(secondLine[2])
-            dofy = int(secondLine[3])
-            dofz = int(secondLine[4])
-            dofrx = int(secondLine[5])
-            dofry = int(secondLine[6])
-            dofrz = int(secondLine[7])
-            nset = nodeSetManager.nodeSets[nsid]
+            if not _line_valid(secondLine, min_len=1):
+                return
+            nsid = _ki(secondLine, 0)
+            cid = _ki(secondLine, 1)
+            dofx = _ki(secondLine, 2)
+            dofy = _ki(secondLine, 3)
+            dofz = _ki(secondLine, 4)
+            dofrx = _ki(secondLine, 5)
+            dofry = _ki(secondLine, 6)
+            dofrz = _ki(secondLine, 7)
+            nset = _get_nset_or_none(nsid)
+            if nset is None:
+                return
             self.CreateBoundarySPCNodeSetwithID(bid,name,nset,cid,dofx,dofy,dofz,dofrx,dofry,dofrz)
-          
-        if dynaBoundaryNode[0] == "*BOUNDARY_PRESCRIBED_MOTION_NODE":   
-            parameters = dynaBoundaryNode[1]
+
+        elif header == "*BOUNDARY_PRESCRIBED_MOTION_NODE":
             boundary = self.CreateBoundaryPrescribedMotionNode()
-            for i in range(2,len(dynaBoundaryNode)):
+            # 이전 코드는 [2:]부터 순회해서 [1]을 놓치는 구조였음 — [1:]로 통일
+            for i in range(1, len(dynaBoundaryNode)):
                 firstLine = dynaBoundaryNode[i]
-                if len(firstLine[0].strip()) == 0:
-                    firstLine[0] = "0"
-                if len(firstLine[1].strip()) == 0:
-                    firstLine[1] = "0"
-                if len(firstLine[2].strip()) == 0:
-                    firstLine[2] = "0"
-                if len(firstLine[3].strip()) == 0:                
-                    firstLine[3] = "0"                    
-                if len(firstLine[4].strip()) == 0:
-                    firstLine[4] = "1.0"
-                if len(firstLine[5].strip()) == 0:
-                    firstLine[5] = "0"
-                if len(firstLine[6].strip()) == 0:
-                    firstLine[6] = "1.0E28"
-                if len(firstLine[7].strip()) == 0:
-                    firstLine[7] = "0.0"
-                typeid = int(firstLine[0])
-                dof = int(firstLine[1])
-                vad = int(firstLine[2])
-                lcid = int(firstLine[3])
-                sf = float(firstLine[4])
-                vid = int(firstLine[5])
-                death = float(firstLine[6])
-                birth = float(firstLine[7])
-                boundary.AddNode(nodeManager.nodes[typeid])
+                if not _line_valid(firstLine, min_len=1):
+                    continue
+                typeid = _ki(firstLine, 0)
+                if typeid == 0:
+                    continue
+                dof = _ki(firstLine, 1)
+                vad = _ki(firstLine, 2)
+                lcid = _ki(firstLine, 3)
+                sf = _kf(firstLine, 4, 1.0)
+                vid = _ki(firstLine, 5)
+                death = _kf(firstLine, 6, 1.0E28)
+                birth = _kf(firstLine, 7, 0.0)
+                node = _get_node_or_none(typeid)
+                if node is None:
+                    continue
+                boundary.AddNode(node)
                 boundary.AddDOF(dof)
                 boundary.AddVAD(vad)
                 boundary.AddLCID(lcid)
@@ -910,54 +923,79 @@ class KooBoundaryNodeManager:
                 boundary.AddVID(vid)
                 boundary.AddDeath(death)
                 boundary.AddBirth(birth)
-        elif dynaBoundaryNode[0] == "*BOUNDARY_PRESCRIBED_MOTION_NODE_ID":
-            parameters = dynaBoundaryNode[1]
-            firstLine = parameters
-            bid = int(firstLine[0])
-            name = firstLine[1]
-            parameters = dynaBoundaryNode[2]
-            secondLine = parameters
-            typeid = int(secondLine[0])
-            dof = int(secondLine[1])
-            vad = int(secondLine[2])
-            lcid = int(secondLine[3])
-            sf = float(secondLine[4])
-            vid = int(secondLine[5])
-            death = float(secondLine[6])
-            birth = float(secondLine[7])
-            node = nodeManager.nodes[typeid]
+
+        elif header == "*BOUNDARY_PRESCRIBED_MOTION_NODE_ID":
+            if len(dynaBoundaryNode) < 3:
+                return
+            firstLine = dynaBoundaryNode[1]
+            if not _line_valid(firstLine, min_len=1):
+                return
+            bid = _ki(firstLine, 0)
+            name = _fget(firstLine, 1, "PMNODE_ID")
+            secondLine = dynaBoundaryNode[2]
+            if not _line_valid(secondLine, min_len=1):
+                return
+            typeid = _ki(secondLine, 0)
+            if typeid == 0:
+                return
+            dof = _ki(secondLine, 1)
+            vad = _ki(secondLine, 2)
+            lcid = _ki(secondLine, 3)
+            sf = _kf(secondLine, 4, 1.0)
+            vid = _ki(secondLine, 5)
+            death = _kf(secondLine, 6, 1.0E28)
+            birth = _kf(secondLine, 7, 0.0)
+            node = _get_node_or_none(typeid)
+            if node is None:
+                return
             self.CreateBoundaryPrescribedMotionNodewithID(bid,name,node,dof,vad,lcid,sf,vid,death,birth)
-           
-        elif dynaBoundaryNode[0] == "*BOUNDARY_PRESCRIBED_MOTION_RIGID":
-            parameters = dynaBoundaryNode[1]
-            firstLine = parameters
-            typeid = int(firstLine[0])
-            dof = int(firstLine[1])
-            vad = int(firstLine[2])
-            lcid = int(firstLine[3])
-            sf = float(firstLine[4])
-            vid = int(firstLine[5])
-            death = float(firstLine[6])
-            birth = float(firstLine[7])
-            node = nodeManager.nodes[typeid]
-            name = "PrescribedMotionNode" + str(typeid)          
+
+        elif header == "*BOUNDARY_PRESCRIBED_MOTION_RIGID":
+            if len(dynaBoundaryNode) < 2:
+                return
+            firstLine = dynaBoundaryNode[1]
+            if not _line_valid(firstLine, min_len=1):
+                return
+            typeid = _ki(firstLine, 0)
+            if typeid == 0:
+                return
+            dof = _ki(firstLine, 1)
+            vad = _ki(firstLine, 2)
+            lcid = _ki(firstLine, 3)
+            sf = _kf(firstLine, 4, 1.0)
+            vid = _ki(firstLine, 5)
+            death = _kf(firstLine, 6, 1.0E28)
+            birth = _kf(firstLine, 7, 0.0)
+            node = _get_node_or_none(typeid)
+            if node is None:
+                return
+            name = "PrescribedMotionNode" + str(typeid)
             self.CreateBoundaryPrescribedMotionRigid(node,dof,vad,lcid,sf,vid,death,birth,name)
-        elif dynaBoundaryNode[0] == "*BOUNDARY_PRESCRIBED_MOTION_RIGID_ID":
-            parameters = dynaBoundaryNode[1]
-            firstLine = parameters
-            bid = int(firstLine[0])
-            name = firstLine[1]
-            parameters = dynaBoundaryNode[2]
-            secondLine = parameters
-            typeid = int(secondLine[0]) 
-            dof = int(secondLine[1])
-            vad = int(secondLine[2])
-            lcid = int(secondLine[3])
-            sf = float(secondLine[4])
-            vid = int(secondLine[5])
-            death = float(secondLine[6])
-            birth = float(secondLine[7])
-            node = nodeManager.nodes[typeid]
+
+        elif header == "*BOUNDARY_PRESCRIBED_MOTION_RIGID_ID":
+            if len(dynaBoundaryNode) < 3:
+                return
+            firstLine = dynaBoundaryNode[1]
+            if not _line_valid(firstLine, min_len=1):
+                return
+            bid = _ki(firstLine, 0)
+            name = _fget(firstLine, 1, "PMRIGID_ID")
+            secondLine = dynaBoundaryNode[2]
+            if not _line_valid(secondLine, min_len=1):
+                return
+            typeid = _ki(secondLine, 0)
+            if typeid == 0:
+                return
+            dof = _ki(secondLine, 1)
+            vad = _ki(secondLine, 2)
+            lcid = _ki(secondLine, 3)
+            sf = _kf(secondLine, 4, 1.0)
+            vid = _ki(secondLine, 5)
+            death = _kf(secondLine, 6, 1.0E28)
+            birth = _kf(secondLine, 7, 0.0)
+            node = _get_node_or_none(typeid)
+            if node is None:
+                return
             self.CreateBoundaryPrescribedMotionRigidwithID(bid,name,node,dof,vad,lcid,sf,vid,death,birth)
                 
     
