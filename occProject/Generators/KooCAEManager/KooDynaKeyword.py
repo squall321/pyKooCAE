@@ -4135,11 +4135,12 @@ class DampingPartMass(DynaKeyword):
     
     def parse(self, lines):
         for i in range(len(lines)):
-            parameters = [] 
+            parameters = []
             parameters.append(self.parse_whole(lines[i][0], [10, 10, 10, 10]))
             if len(parameters[0]) == 4:
-                FLAG = int(parameters[0][3])
-                if FLAG == 1:                    
+                flag_str = parameters[0][3].strip()
+                FLAG = int(float(flag_str)) if flag_str else 0
+                if FLAG == 1 and len(lines[i]) > 1:
                     parameters.append(self.parse_whole(lines[i][1], [10, 10, 10, 10, 10, 10]))
             self.parameters.append(parameters)
     
@@ -4168,7 +4169,8 @@ class DampingPartMass(DynaKeyword):
             if len(curParameter) == 4:
                 if len(curParameter[3]) == 0:
                     continue
-                FLAG = int(curParameter[3])
+                flag_str = str(curParameter[3]).strip()
+                FLAG = int(float(flag_str)) if flag_str else 0
                 if FLAG == 1:
                     stream.write("$$     STX       STY       STZ       SRX       SRY       SRZ\n")
                     curParameter = parameter[1]
@@ -4183,12 +4185,16 @@ class DampingPartMassSet(DynaKeyword):
         
     def parse(self, lines):
         for i in range(len(lines)):
-            parameters = [] 
+            if not lines[i] or len(lines[i]) == 0:
+                continue
+            parameters = []
             parameters.append(self.parse_whole(lines[i][0], [10, 10, 10, 10]))
             if len(parameters[0]) == 4:
-                FLAG = int(parameters[0][3])
-                if FLAG == 1:                    
-                    parameters.append(self.parse_whole(lines[i][1], [10, 10, 10, 10]))
+                # FLAG가 "1.0" 등 실수 형태로 올 수 있음 → float 경유 int 변환
+                flag_str = parameters[0][3].strip()
+                FLAG = int(float(flag_str)) if flag_str else 0
+                if FLAG == 1 and len(lines[i]) > 1:
+                    parameters.append(self.parse_whole(lines[i][1], [10, 10, 10, 10, 10, 10]))
             self.parameters.append(parameters)
     
     def getDampingPartMassSet(self):
@@ -4213,9 +4219,10 @@ class DampingPartMassSet(DynaKeyword):
                 stream.write(formatted_elements)
             stream.write("\n")
             if len(curParameter) == 4:
-                if len(curParameter[3]) == 0:
+                flag_str = str(curParameter[3]).strip()
+                if not flag_str:
                     continue
-                FLAG = int(curParameter[3])
+                FLAG = int(float(flag_str))
                 if FLAG == 1:
                     stream.write("$$     STX       STY       STZ       SRX       SRY       SRZ\n")
                     curParameter = parameter[1]
@@ -4260,9 +4267,9 @@ class DampingPartStiffnessSet(DynaKeyword):
         
     def parse(self, lines):
         for i in range(len(lines)):
-            parameters = []
             parameters = self.parse_whole(lines[i][0], [10, 10])
-    
+            self.parameters.append(parameters)
+
     def getDampingPartStiffnessSet(self):
         dampingList = []
         for i in range(len(self.parameters)):

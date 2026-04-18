@@ -3566,25 +3566,92 @@ class KooDynaAdvancedModification:
                 tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
                 
             
-            if len(locX) > 1:
-                modifiedKeyword = "_MODE_DS"
-                if impactorType.lower() == "cylinder":
-                    modifiedKeyword += "_CYL_"
-                    modifiedKeyword += format(dimension[0], '.3e')
-                elif impactorType.lower() == "sphere":
-                    modifiedKeyword += "_SPH_"
-                    modifiedKeyword += format(dimension[0], '.3e')
-                modifiedKeyword += "_LOCX_" + format(locX[i], '.3e')
-                modifiedKeyword += "_LOCY_" + format(locY[i], '.3e')
-                modifiedKeyword += "_VX_" + format(Vx, '.3e')
-                modifiedKeyword += "_VY_" + format(Vy, '.3e')
-                modifiedKeyword += "_VZ_" + format(Vz, '.3e')
-                modifiedKeyword += "_H_" + format(height, '.3e')
-                modifiedKeyword = modifiedKeyword.strip()
-                if use_fast_mode:
-                    self._WriteFastModifiedFile(filePath, modifiedKeyword, cached_base, base_state)
+            # ── 출력: DropAttitude와 동일한 Run 폴더 구조 ──
+            self.dynaImporter.metaData["scenario_mode"] = "DropWeightImpactTest"
+            fileName = os.path.basename(filePath)
+
+            if self.runDirectoryMode:
+                # runDirectoryMode: Run_{run_id}/ 폴더 + Output/ + DynamicRelaxation/
+                if "runid" in option and len(option["runid"]) > i:
+                    run_id = str(option["runid"][i])
                 else:
-                    self.WriteModifiedFile(filePath, modifiedKeyword)
+                    run_id = self.dynaImporter.GenerateRunID()
+
+                if len(self.runDirectoryPath) == 0:
+                    modifiedKeyword = os.path.join(filePath.replace(".k", ""), "Run_" + run_id)
+                elif self.runDirectoryPath[0] == "/":
+                    modifiedKeyword = os.path.join(self.runDirectoryPath, "Run_" + run_id)
+                else:
+                    path = os.getcwd()
+                    modifiedKeyword = os.path.join(path, self.runDirectoryPath, "Run_" + run_id)
+
+                folderPath = modifiedKeyword
+                if not os.path.exists(folderPath):
+                    os.makedirs(folderPath)
+                outputFolderPath = os.path.join(folderPath, "Output")
+                if not os.path.exists(outputFolderPath):
+                    os.makedirs(outputFolderPath)
+                dynamicRelaxPath = os.path.join(folderPath, "DynamicRelaxation")
+                if not os.path.exists(dynamicRelaxPath):
+                    os.makedirs(dynamicRelaxPath)
+
+                if len(self.runDirectoryPath) == 0:
+                    modifiedKeyword = os.path.join(modifiedKeyword, fileName)
+                else:
+                    modifiedKeyword = os.path.join(modifiedKeyword, "DropWeightImpactTestSet")
+                modifiedKeyword = modifiedKeyword.strip()
+
+                if use_fast_mode:
+                    self._WriteFastModifiedFile(modifiedKeyword, "", cached_base, base_state, True)
+                else:
+                    self.WriteModifiedFile(modifiedKeyword, "", True)
+
+                # dynaintoinitial.txt 생성 (누적 해석용)
+                dynainPath = os.path.join(outputFolderPath, "dynain")
+                dynaintoinitialPath = os.path.join(dynamicRelaxPath, "dynaintoinitial.txt")
+                with open(dynaintoinitialPath, "w") as f:
+                    f.write("*Inputfile\n")
+                    f.write("DropWeightImpactTestSet.k\n")
+                    f.write("*Mode\n")
+                    f.write("DYNAIN_TO_INITIAL,1\n")
+                    f.write("**DynainPath,")
+                    f.write(dynainPath)
+                    f.write("\n")
+                    f.write("*IncludeStress,True\n")
+                    f.write("*RemoveDynamicRelaxation,True\n")
+                    f.write("*MovetoOriginAutomatic,True\n")
+                    f.write("*RemovePartbyID,")
+                    f.write(str(impactorPart.id))
+                    f.write("\n")
+                    f.write("**EndDynainToInitial\n")
+                    f.write("*End\n")
+
+                print(f"DropWeightImpactTest {i+1}/{len(locX)} Created (Run_{run_id})")
+                # DOE 완료 표시 파일 생성 (polling용)
+                done_file = os.path.join(folderPath, ".done")
+                with open(done_file, "w") as df:
+                    df.write("done")
+            else:
+                # 기존 방식: suffix 붙여서 단일 파일 출력
+                if len(locX) > 1:
+                    modifiedKeyword = "_MODE_DS"
+                    if impactorType.lower() == "cylinder":
+                        modifiedKeyword += "_CYL_"
+                        modifiedKeyword += format(dimension[0], '.3e')
+                    elif impactorType.lower() == "sphere":
+                        modifiedKeyword += "_SPH_"
+                        modifiedKeyword += format(dimension[0], '.3e')
+                    modifiedKeyword += "_LOCX_" + format(locX[i], '.3e')
+                    modifiedKeyword += "_LOCY_" + format(locY[i], '.3e')
+                    modifiedKeyword += "_VX_" + format(Vx, '.3e')
+                    modifiedKeyword += "_VY_" + format(Vy, '.3e')
+                    modifiedKeyword += "_VZ_" + format(Vz, '.3e')
+                    modifiedKeyword += "_H_" + format(height, '.3e')
+                    modifiedKeyword = modifiedKeyword.strip()
+                    if use_fast_mode:
+                        self._WriteFastModifiedFile(filePath, modifiedKeyword, cached_base, base_state)
+                    else:
+                        self.WriteModifiedFile(filePath, modifiedKeyword)
 
     def DropWeightImpactTestbyPart(self, option, filePath):
         if "TFinal" in option:

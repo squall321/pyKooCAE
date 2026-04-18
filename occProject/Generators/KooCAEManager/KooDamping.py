@@ -274,49 +274,36 @@ class KooDampingManager:
             self.CreateDampingPartStiffnessSet(psid, coef)
             
         elif dampingKeyword[0] == "*DAMPING_PART_MASS" or dampingKeyword[0] == "*DAMPING_PART_MASS_SET":
+            if len(dampingKeyword) < 2:
+                return
             keyword = dampingKeyword[1]
-            if len(keyword[0]) == 0:
-                keyword[0] = "0"
-            if len(keyword[1]) == 0:
-                keyword[1] = "0"
-            if len(keyword[2]) == 0:
-                keyword[2] = "0.0"
-            if len(keyword[3]) == 0:
-                keyword[3] = "0"
-                
-            pid = KooDynaInt(keyword[0])
-            lcid = KooDynaInt(keyword[1])
-            sf = KooDynaFloat(keyword[2])
-            flag = KooDynaInt(keyword[3])
-            if flag == 1:
-                keyword = dampingKeyword[2]
-                if len(keyword[0]) == 0:
-                    keyword[0] = "0.0"
-                if len(keyword[1]) == 0:
-                    keyword[1] = "0.0"
-                if len(keyword[2]) == 0:
-                    keyword[2] = "0.0"
-                if len(keyword[3]) == 0:
-                    keyword[3] = "0.0"
-                if len(keyword[4]) == 0:
-                    keyword[4] = "0.0"
-                if len(keyword[5]) == 0:
-                    keyword[5] = "0.0"
-                
-                STX = KooDynaFloat(keyword[0])
-                STY = KooDynaFloat(keyword[1])
-                STZ = KooDynaFloat(keyword[2])
-                SRX = KooDynaFloat(keyword[3])
-                SRY = KooDynaFloat(keyword[4])
-                SRZ = KooDynaFloat(keyword[5])
-            else:
-                STX = 0.0
-                STY = 0.0
-                STZ = 0.0
-                SRX = 0.0
-                SRY = 0.0
-                SRZ = 0.0
-            
+            # 필드 수 부족 방어: 최소 PID만 있어도 진행 (나머지 기본값)
+            def _kw_get(idx, default="0"):
+                if idx >= len(keyword):
+                    return default
+                return keyword[idx] if str(keyword[idx]).strip() else default
+
+            pid = KooDynaInt(_kw_get(0, "0"))
+            lcid = KooDynaInt(_kw_get(1, "0"))
+            sf = KooDynaFloat(_kw_get(2, "0.0"))
+            # FLAG가 "1.0" 등 실수 형태일 수 있음
+            flag_str = str(_kw_get(3, "0")).strip()
+            flag = int(float(flag_str)) if flag_str else 0
+
+            STX = STY = STZ = SRX = SRY = SRZ = 0.0
+            if flag == 1 and len(dampingKeyword) >= 3:
+                kw2 = dampingKeyword[2]
+                def _kw2_get(idx, default="0.0"):
+                    if idx >= len(kw2):
+                        return default
+                    return kw2[idx] if str(kw2[idx]).strip() else default
+                STX = KooDynaFloat(_kw2_get(0))
+                STY = KooDynaFloat(_kw2_get(1))
+                STZ = KooDynaFloat(_kw2_get(2))
+                SRX = KooDynaFloat(_kw2_get(3))
+                SRY = KooDynaFloat(_kw2_get(4))
+                SRZ = KooDynaFloat(_kw2_get(5))
+
             if dampingKeyword[0] == "*DAMPING_PART_MASS":
                 self.CreateDampingPartMass(pid, lcid, sf, flag, STX, STY, STZ, SRX, SRY, SRZ)
             elif dampingKeyword[0] == "*DAMPING_PART_MASS_SET":
