@@ -1286,7 +1286,11 @@ class KooControlManager:
             self.controlDynamicRelaxation.WriteStreamDynaKeyword(stream)
         if self.controlAccuracy != None:
             self.controlAccuracy.WriteStreamDynaKeyword(stream)
-    
+        if self.controlShell is not None:
+            self.controlShell.WriteStreamDynaKeyword(stream)
+        if self.controlSolid is not None:
+            self.controlSolid.WriteStreamDynaKeyword(stream)
+
     def GenerateDynaKeyword(self):
         keyword = ""
         keyword += self.controlOutput.GenerateDynaKeyword()
@@ -1298,6 +1302,12 @@ class KooControlManager:
         keyword += self.controlContact.GenerateDynaKeyword()
         keyword += self.controlMppIONodump.GenerateDynaKeyword()
         keyword += self.controlDynamicRelaxation.GenerateDynaKeyword()
-        
+        if self.controlAccuracy is not None:
+            keyword += self.controlAccuracy.GenerateDynaKeyword()
+        if self.controlShell is not None:
+            keyword += self.controlShell.GenerateDynaKeyword()
+        if self.controlSolid is not None:
+            keyword += self.controlSolid.GenerateDynaKeyword()
+
         return keyword
         
