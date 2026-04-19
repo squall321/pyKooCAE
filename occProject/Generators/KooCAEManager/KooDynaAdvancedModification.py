@@ -3589,8 +3589,189 @@ class KooDynaAdvancedModification:
                 tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
                 
             
-            # ── 출력: DropAttitude와 동일한 Run 폴더 구조 ──
+            # ── Phase 1 메타데이터: impactor, energy, location, doe ──
             self.dynaImporter.metaData["scenario_mode"] = "DropWeightImpactTest"
+
+            # 1. impactor
+            impactor_num_elements = len(impactorPart.elementManager.elements)
+            if impactorType.lower() == "sphere":
+                impactor_volume = (4.0 / 3.0) * np.pi * dimension[0] ** 3
+                contact_shape = "point"
+                contact_radius = 0.0
+                dim_dict = {"radius": dimension[0]}
+            elif impactorType.lower() == "cylinder":
+                # 근사 체적: front cylinder + back cylinder
+                impactor_volume = (np.pi * dimension[0]**2 * dimension[2] +
+                                   np.pi * dimension[4]**2 * dimension[3])
+                contact_shape = "flat_circle"
+                contact_radius = dimension[0]
+                dim_dict = {"front_radius": dimension[0], "outer_radius": dimension[1],
+                            "front_height": dimension[2], "back_height": dimension[3],
+                            "back_radius": dimension[4]}
+                impactor_num_elements += len(impactFrontPart.elementManager.elements)
+            else:
+                impactor_volume = 0.0
+                contact_shape = "unknown"
+                contact_radius = 0.0
+                dim_dict = {"values": dimension}
+
+            impactor_mass = rhoImpactor * impactor_volume
+            self.dynaImporter.metaData["impactor"] = {
+                "type": impactorType,
+                "dimensions": dim_dict,
+                "contact_shape": contact_shape,
+                "contact_radius": contact_radius,
+                "mass": impactor_mass,
+                "density": rhoImpactor,
+                "youngs_modulus": EImpactor,
+                "poisson_ratio": nuImpactor,
+                "num_elements": impactor_num_elements,
+                "mesh_size": meshSize,
+            }
+
+            # 2. energy
+            speed = np.sqrt(velocity[0]**2 + velocity[1]**2 + velocity[2]**2)
+            kinetic_energy = 0.5 * impactor_mass * speed**2
+            g = 9810.0 if height > 100 else 9.81
+            equivalent_height = kinetic_energy / (impactor_mass * g) if impactor_mass > 0 else 0.0
+            momentum = impactor_mass * speed
+            self.dynaImporter.metaData["energy"] = {
+                "drop_height": height,
+                "initial_velocity": [velocity[0], velocity[1], velocity[2]],
+                "speed": speed,
+                "kinetic_energy": kinetic_energy,
+                "equivalent_height": equivalent_height,
+                "momentum": momentum,
+            }
+
+            # 3. location + parts_in_radius
+            impact_z = zMax + (dimension[0] + offset_distance if impactorType.lower() == "sphere" else offset_distance)
+            # 반경별 파트 분석 (1R ~ 4R)
+            if impactorType.lower() == "sphere":
+                ref_radius = dimension[0]
+            elif impactorType.lower() == "cylinder":
+                ref_radius = dimension[0]  # front_radius
+            else:
+                ref_radius = 1.0
+            if ref_radius <= 0:
+                ref_radius = 1.0
+
+            parts_in_radius = {}
+            impact_xy = np.array([locX[i], locY[i]])
+            for mult in [1, 2, 3, 4]:
+                r = ref_radius * mult
+                pids_in_r = []
+                pnames_in_r = []
+                elem_count = 0
+                for pid, p in self.dynaImporter.partManager.parts.items():
+                    # 충격체/벽면/댐핑빔 파트 제외
+                    if pid in (impactorPart.id, wallPart.id, beamPart.id):
+                        continue
+                    if impactorType.lower() == "cylinder" and pid == impactFrontPart.id:
+                        continue
+                    if not p.elementManager.elements:
+                        continue
+                    # 파트 바운딩 박스 중심과 충격점 XY 거리
+                    try:
+                        pMinX, pMaxX, pMinY, pMaxY, pMinZ, pMaxZ = p.elementManager.GetBoundaryBox()
+                        p_center = np.array([(pMinX + pMaxX) / 2.0, (pMinY + pMaxY) / 2.0])
+                        dist_xy = np.linalg.norm(p_center - impact_xy)
+                        p_half_diag = np.sqrt((pMaxX - pMinX)**2 + (pMaxY - pMinY)**2) / 2.0
+                        # 파트 범위가 반경 r 내에 겹치면 포함
+                        if dist_xy - p_half_diag <= r:
+                            pids_in_r.append(pid)
+                            pnames_in_r.append(getattr(p, 'name', f'Part_{pid}'))
+                            elem_count += len(p.elementManager.elements)
+                    except Exception:
+                        continue
+                parts_in_radius[f"{mult}R"] = {
+                    "radius": r,
+                    "part_ids": pids_in_r,
+                    "part_names": pnames_in_r,
+                    "element_count": elem_count,
+                }
+
+            self.dynaImporter.metaData["location"] = {
+                "x": locX[i],
+                "y": locY[i],
+                "z": impact_z,
+                "specimen_z_max": zMax,
+                "offset_distance": offset_distance,
+                "impact_direction": [0, 0, -1],
+                "parts_in_radius": parts_in_radius,
+            }
+
+            # 4. doe
+            self.dynaImporter.metaData["doe"] = {
+                "index": i + 1,
+                "total_count": len(locX),
+            }
+
+            # 5. simulation
+            self.dynaImporter.metaData["simulation"] = {
+                "tFinal": tfinal,
+                "dt": dt,
+                "generation_mode": option.get("GenerationMode", "DampingSpring"),
+                "contact": {
+                    "type": "AUTOMATIC_SURFACE_TO_SURFACE",
+                    "SOFT": opt_SOFT,
+                    "SOFSCL": opt_SOFSCL,
+                    "SBOPT": opt_SBOPT,
+                    "DEPTH": opt_DEPTH,
+                    "SLDTHK": opt_SLDTHK,
+                    "THKOPT": opt_THKOPT,
+                    "SHLTHK": opt_SHLTHK,
+                },
+            }
+
+            # 6. support (벽면)
+            self.dynaImporter.metaData["support"] = {
+                "wall_location": [locX[i], locY[i], zMin],
+                "wall_dimensions": [xLength, yLength, zLength],
+                "wall_mesh": [numX, numY, numZ],
+                "wall_material": "rigid",
+                "wall_density": rhoWall,
+                "wall_youngs_modulus": EWall,
+                "wall_poisson_ratio": nuWall,
+                "wall_part_id": wallPart.id,
+            }
+
+            # 7. boundary (경계 조건)
+            self.dynaImporter.metaData["boundary"] = {
+                "stress_wave_distance": stressWaveDistance,
+                "damping_beam": {
+                    "enabled": stressWaveDistance > 0,
+                    "dimensions": list(dimensionDamper),
+                    "density": rhoDamp,
+                    "youngs_modulus": EDamp,
+                    "poisson_ratio": nuDamp,
+                    "part_id": beamPart.id,
+                },
+            }
+
+            # 8. specimen (시편 개요)
+            specimen_parts = []
+            specimen_elements = 0
+            specimen_nodes = len(self.dynaImporter.nodeManager.nodes)
+            exclude_pids = {impactorPart.id, wallPart.id, beamPart.id}
+            if impactorType.lower() == "cylinder":
+                exclude_pids.add(impactFrontPart.id)
+            for pid, p in self.dynaImporter.partManager.parts.items():
+                if pid not in exclude_pids and p.elementManager.elements:
+                    specimen_parts.append({"id": pid, "name": getattr(p, 'name', f'Part_{pid}'),
+                                           "elements": len(p.elementManager.elements)})
+                    specimen_elements += len(p.elementManager.elements)
+            self.dynaImporter.metaData["specimen"] = {
+                "total_parts": len(specimen_parts),
+                "total_nodes": specimen_nodes,
+                "total_elements": specimen_elements,
+                "bounding_box": [boundaryBox[0], boundaryBox[1], boundaryBox[2],
+                                 boundaryBox[3], boundaryBox[4], boundaryBox[5]],
+                "parts": specimen_parts,
+                "model_file": os.path.basename(filePath),
+            }
+
+            # ── 출력: DropAttitude와 동일한 Run 폴더 구조 ──
             fileName = os.path.basename(filePath)
 
             if self.runDirectoryMode:
