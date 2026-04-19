@@ -2350,7 +2350,7 @@ class KooDynaAdvancedModification:
             opt_SNLOG = int(drop_contact.get("SNLOG", 0))
             opt_ISYM = int(drop_contact.get("ISYM", 0))
             opt_I2D3D = int(drop_contact.get("I2D3D", 0))
-            opt_SLDTHK = drop_contact.get("SLDTHK", 1.0)
+            opt_SLDTHK = drop_contact.get("SLDTHK", 0.0)
             opt_SLDSTF = drop_contact.get("SLDSTF", 0.0)
 
             if not convertToSS and not option.get("DeformableToRigid", False):
@@ -3247,31 +3247,51 @@ class KooDynaAdvancedModification:
         numX = 10
         numY = 10
         numZ = 10
+
+        # DropContact 옵션 (DropAttitude와 동일 구조)
+        drop_contact = option.get("DropContact", {})
         SSID = 0
-       
         SSTYP = 5
         MSTYP = 3
         SBOXID = 0
         MBOXID = 0
         SPR = 0
         MPR = 0
-        FS = 0.0
-        FD = 0.0
-        DC = 0.0
-        VC = 0.0
-        VDC = 0.0
-        PENCHK = 0
+        FS = drop_contact.get("FS", 0.3)
+        FD = drop_contact.get("FD", 0.2)
+        DC = drop_contact.get("DC", 0.0)
+        VC = drop_contact.get("VC", 0.0)
+        VDC = drop_contact.get("VDC", 10.0)
+        PENCHK = int(drop_contact.get("PENCHK", 1))
         BT = 0.00
         DT = 1.00000E20
-        SFS = ""
-        SFM = ""
-        SST = ""
-        MST = ""
-        SFST = ""
-        SFMT = ""
-        FSF = ""
-        VSF = ""  
-        
+        SFS = drop_contact.get("SFS", 1.0)
+        SFM = drop_contact.get("SFM", 1.0)
+        SST = drop_contact.get("SST", 0.0)
+        MST = drop_contact.get("MST", 0.0)
+        SFST = drop_contact.get("SFST", 1.0)
+        SFMT = drop_contact.get("SFMT", 1.0)
+        FSF = drop_contact.get("FSF", 1.0)
+        VSF = drop_contact.get("VSF", 1.0)
+
+        # OptCardA/B 옵션
+        opt_SOFT = int(drop_contact.get("SOFT", 2))
+        opt_SOFSCL = drop_contact.get("SOFSCL", 0.1)
+        opt_LCIDAB = int(drop_contact.get("LCIDAB", 0))
+        opt_MAXPAR = drop_contact.get("MAXPAR", 1.025)
+        opt_SBOPT = int(drop_contact.get("SBOPT", 3))
+        opt_DEPTH = int(drop_contact.get("DEPTH", 35))
+        opt_BSORT = int(drop_contact.get("BSORT", 100))
+        opt_FRCFRQ = int(drop_contact.get("FRCFRQ", 1))
+        opt_PENMAX = drop_contact.get("PENMAX", 0.0)
+        opt_THKOPT = int(drop_contact.get("THKOPT", 1))
+        opt_SHLTHK = int(drop_contact.get("SHLTHK", 1))
+        opt_SNLOG = int(drop_contact.get("SNLOG", 0))
+        opt_ISYM = int(drop_contact.get("ISYM", 0))
+        opt_I2D3D = int(drop_contact.get("I2D3D", 0))
+        opt_SLDTHK = drop_contact.get("SLDTHK", 0.0)
+        opt_SLDSTF = drop_contact.get("SLDSTF", 0.0)
+
         # Generate Part Set
         partSet : PartSet = self.dynaImporter.partManager.CreatePartSet(name="Dynamic Relaxation Set")
         for pid, part in self.dynaImporter.partManager.parts.items():
@@ -3548,18 +3568,21 @@ class KooDynaAdvancedModification:
             wallPart.elementManager.CreateImpactBox(wallLocation,zDir, xDir,xLength,yLength,zLength,numX,numY,numZ)                                
             MSID = wallPart.id        
             SSID = 0
-            contactWalltoObjects = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(SSID, MSID, SSTYP, MSTYP, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)                    
-            contactWalltoObjects.SetOptCardA(2)
+            contactWalltoObjects = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(SSID, MSID, SSTYP, MSTYP, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
+            contactWalltoObjects.SetOptCardA(opt_SOFT, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
+            contactWalltoObjects.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
             initV = self.dynaImporter.initialManager.CreateInitialVelocityGeneration(impactorPart.id, 2, 0, velocity[0], velocity[1], velocity[2])
-            
+
             if impactorType.lower() == "sphere":
                 MSID = impactorPart.id
                 contactImpactortoObjects = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(SSID, MSID, SSTYP, MSTYP, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
-                contactImpactortoObjects.SetOptCardA(2)
+                contactImpactortoObjects.SetOptCardA(opt_SOFT, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
+                contactImpactortoObjects.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
             elif impactorType.lower() == "cylinder":
                 MSID = impactFrontPart.id
                 contactImpactortoObjects = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(SSID, MSID, SSTYP, MSTYP, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
-                contactImpactortoObjects.SetOptCardA(2)
+                contactImpactortoObjects.SetOptCardA(opt_SOFT, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
+                contactImpactortoObjects.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
                 initVFront = self.dynaImporter.initialManager.CreateInitialVelocityGeneration(impactFrontPart.id, 2, 0, velocity[0], velocity[1], velocity[2])            
                 MSID = impactorPart.id
                 SSID = impactFrontPart.id            
