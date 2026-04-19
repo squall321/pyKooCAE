@@ -249,6 +249,7 @@ class KooControlShell:
         if self.INTPERR == "":
             self.INTPERR = "          "
         keyword += format(self.INTPERR, ">10")
+        keyword += "\n"
         keyword += "$$  DRCMTH   LISPSID    NLOCDT\n"
         keyword += format(self.DRCMTH, ">10")
         keyword += format(self.LISPSID, ">10")
@@ -304,10 +305,12 @@ class KooControlShell:
         if self.INTPERR == "":
             self.INTPERR = "          "
         stream.write(format(self.INTPERR, ">10"))
-        stream.write("$  DRCMTH   LISPSID    NLOCDT\n")
+        stream.write("\n")
+        stream.write("$$  DRCMTH   LISPSID    NLOCDT\n")
         stream.write(format(self.DRCMTH, ">10"))
         stream.write(format(self.LISPSID, ">10"))
         stream.write(format(self.NLOCDT, ">10"))
+        stream.write("\n")
 
 class KooControlSolid:
     def __init__(self):
@@ -335,6 +338,17 @@ class KooControlSolid:
     def AddtoDynaKeyword(self, keyword : ControlSolid):
         keyword.SetControlSolid(self.ESORT, self.FMATRX, self.NIPTETS, self.SWLOCL, self.PSFAIL, self.T10JTOL, self.ICOH, self.TET13K, self.PM1, self.PM2, self.PM3, self.PM4, self.PM5, self.PM6, self.PM7, self.PM8, self.PM9, self.PM10, self.TET13V, self.RINRT)
     
+    def _has_pm_data(self):
+        """PM1~PM10에 유효 데이터가 있는지 확인"""
+        return any(str(v).strip() != "" and str(v).strip() != "0"
+                   for v in [self.PM1, self.PM2, self.PM3, self.PM4, self.PM5,
+                             self.PM6, self.PM7, self.PM8, self.PM9, self.PM10])
+
+    def _has_tet13v_data(self):
+        """TET13V/RINRT에 유효 데이터가 있는지 확인"""
+        return (str(self.TET13V).strip() not in ("", "0") or
+                str(self.RINRT).strip() not in ("", "0"))
+
     def GenerateDynaKeyword(self):
         keyword = "*CONTROL_SOLID\n"
         keyword += "$$     ESORT    FMATRX   NIPTETS    SWLOCL    PSFAIL   T10JTOL      ICOH     TET13K\n"
@@ -347,24 +361,26 @@ class KooControlSolid:
         keyword += format(self.ICOH, ">10")
         keyword += format(self.TET13K, ">10")
         keyword += "\n"
-        keyword += "$$   PM1     PM2     PM3     PM4     PM5     PM6     PM7     PM8     PM9    PM10\n"
-        keyword += format(self.PM1, ">8")
-        keyword += format(self.PM2, ">8")
-        keyword += format(self.PM3, ">8")
-        keyword += format(self.PM4, ">8")
-        keyword += format(self.PM5, ">8")
-        keyword += format(self.PM6, ">8")
-        keyword += format(self.PM7, ">8")
-        keyword += format(self.PM8, ">8")
-        keyword += format(self.PM9, ">8")
-        keyword += format(self.PM10, ">8")
-        keyword += "\n"
-        keyword += "$$  TET13V     RINRT\n"
-        keyword += format(self.TET13V, ">10")
-        keyword += format(self.RINRT, ">10")
-        keyword += "\n"
+        if self._has_pm_data():
+            keyword += "$$   PM1     PM2     PM3     PM4     PM5     PM6     PM7     PM8     PM9    PM10\n"
+            keyword += format(self.PM1, ">8")
+            keyword += format(self.PM2, ">8")
+            keyword += format(self.PM3, ">8")
+            keyword += format(self.PM4, ">8")
+            keyword += format(self.PM5, ">8")
+            keyword += format(self.PM6, ">8")
+            keyword += format(self.PM7, ">8")
+            keyword += format(self.PM8, ">8")
+            keyword += format(self.PM9, ">8")
+            keyword += format(self.PM10, ">8")
+            keyword += "\n"
+        if self._has_tet13v_data():
+            keyword += "$$  TET13V     RINRT\n"
+            keyword += format(self.TET13V, ">10")
+            keyword += format(self.RINRT, ">10")
+            keyword += "\n"
         return keyword
-    
+
     def WriteStreamDynaKeyword(self, stream):
         stream.write("*CONTROL_SOLID\n")
         stream.write("$$     ESORT    FMATRX   NIPTETS    SWLOCL    PSFAIL   T10JTOL      ICOH     TET13K\n")
@@ -377,22 +393,24 @@ class KooControlSolid:
         stream.write(format(self.ICOH, ">10"))
         stream.write(format(self.TET13K, ">10"))
         stream.write("\n")
-        stream.write("$$   PM1     PM2     PM3     PM4     PM5     PM6     PM7     PM8     PM9    PM10\n")
-        stream.write(format(self.PM1, ">8"))
-        stream.write(format(self.PM2, ">8"))
-        stream.write(format(self.PM3, ">8"))
-        stream.write(format(self.PM4, ">8"))
-        stream.write(format(self.PM5, ">8"))
-        stream.write(format(self.PM6, ">8"))
-        stream.write(format(self.PM7, ">8"))
-        stream.write(format(self.PM8, ">8"))
-        stream.write(format(self.PM9, ">8"))
-        stream.write(format(self.PM10, ">8"))
-        stream.write("\n")
-        stream.write("$$  TET13V     RINRT\n")
-        stream.write(format(self.TET13V, ">10"))
-        stream.write(format(self.RINRT, ">10"))
-        stream.write("\n")                            
+        if self._has_pm_data():
+            stream.write("$$   PM1     PM2     PM3     PM4     PM5     PM6     PM7     PM8     PM9    PM10\n")
+            stream.write(format(self.PM1, ">8"))
+            stream.write(format(self.PM2, ">8"))
+            stream.write(format(self.PM3, ">8"))
+            stream.write(format(self.PM4, ">8"))
+            stream.write(format(self.PM5, ">8"))
+            stream.write(format(self.PM6, ">8"))
+            stream.write(format(self.PM7, ">8"))
+            stream.write(format(self.PM8, ">8"))
+            stream.write(format(self.PM9, ">8"))
+            stream.write(format(self.PM10, ">8"))
+            stream.write("\n")
+        if self._has_tet13v_data():
+            stream.write("$$  TET13V     RINRT\n")
+            stream.write(format(self.TET13V, ">10"))
+            stream.write(format(self.RINRT, ">10"))
+            stream.write("\n")                            
     
 
 class KooControlBulkViscosity:
