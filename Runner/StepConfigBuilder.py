@@ -65,6 +65,7 @@ def build_drop_attitude_config(
     convert_to_ss = sim_params.get("convert_general_to_single_surface", True)
     ensure_ss = sim_params.get("ensure_single_surface", False)
     decompose_general = sim_params.get("decompose_general_contact", False)
+    robust_contact = sim_params.get("robust_contact", False)
     decompose_margin = sim_params.get("decompose_contact_margin", 1.5)
     decompose_abs_margin_x = sim_params.get("decompose_contact_absolute_margin_x", 5.0)
     decompose_abs_margin_y = sim_params.get("decompose_contact_absolute_margin_y", 5.0)
@@ -84,6 +85,8 @@ def build_drop_attitude_config(
         contact_opt_line += f"\nDecomposeContactAbsoluteMarginY,{decompose_abs_margin_y}"
     if decompose_abs_margin_z != 0.5:
         contact_opt_line += f"\nDecomposeContactAbsoluteMarginZ,{decompose_abs_margin_z}"
+    if robust_contact:
+        contact_opt_line += "\nRobustContact,True"
 
     # 바닥판 접촉 옵션
     drop_contact = sim_params.get("drop_contact", {})

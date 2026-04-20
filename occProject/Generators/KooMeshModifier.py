@@ -1425,6 +1425,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "deformabletorigid" in line.lower():
                             svector = line.split(",")
                             curOptions["DeformableToRigid"] = svector[1].strip().lower() == "true"
+                        elif "robustcontact" in line.lower():
+                            svector = line.split(",")
+                            curOptions["RobustContact"] = svector[1].strip().lower() != "false"
                         elif "ensuresinglesurface" in line.lower():
                             svector = line.split(",")
                             curOptions["EnsureSingleSurface"] = svector[1].strip().lower() != "false"

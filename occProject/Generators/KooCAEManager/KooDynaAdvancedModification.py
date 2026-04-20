@@ -2257,6 +2257,8 @@ class KooDynaAdvancedModification:
             existingPartIDs = [pid for pid, p in self.dynaImporter.partManager.parts.items()
                                if p.elementManager.elements]
 
+            robust_contact = option.get("RobustContact", False)
+
             if convertToSS and not decomposeGeneral and general_cids:
                 # GENERAL → SINGLE_SURFACE(SOFT=2) 변환 (바닥판 제외 part set)
                 modelPartSet = self.dynaImporter.partManager.CreatePartSet(pids=existingPartIDs, name="ModelParts_SS")
@@ -2319,6 +2321,12 @@ class KooDynaAdvancedModification:
                     ss.name = "SS_AllParts_Auto"
                     print("DROP_ATTITUDE: No GENERAL/SS found -> Created SINGLE_SURFACE(CID={0}, SOFT={1}) with {2} parts".format(
                         ss.cid, SOFT_opt, len(allPartIDs)))
+
+            # RobustContact: Tied 쌍을 SINGLE_SURFACE에서 제외 + 중복 Tied 제거
+            if robust_contact:
+                n_excl = self.dynaImporter.contactManager.BuildExclusionsFromTied()
+                n_dup = self.dynaImporter.contactManager.RemoveDuplicateTiedContacts()
+                print(f"DROP_ATTITUDE: RobustContact — {n_excl} exclusion 쌍, {n_dup} 중복 Tied 제거")
 
             part = self.dynaImporter.partManager.AddSolidPart(self.dynaImporter.nodeManager, None, section, material)
             if not use_fast_mode:

@@ -3776,22 +3776,25 @@ class ControlShell(DynaKeyword):
         super(ControlShell,self).__init__("CONTROL_SHELL")
            
     def parse(self, lines):
-        #parameters = lines[0][0].parse_whole([10, 10, 10, 10, 10, 10, 10, 10])
+        # Card 1 (필수): WRPANG, ESORT, IRNXX, ISTUPD, THEORY, BWC, MITER, PROJ
         parameters = self.parse_whole(lines[0][0], [10, 10, 10, 10, 10, 10, 10, 10])
         self.parameters.append(parameters)
-        #parameters = lines[0][1].parse_whole([10, 10, 10, 10, 10])
-        if len(lines[0])>1:
+        # Card 2 (옵션): ROTASCL, INTGRD, LAMSHT, CSTYP6, THSHEL
+        if len(lines[0]) > 1:
             parameters = self.parse_whole(lines[0][1], [10, 10, 10, 10, 10])
             self.parameters.append(parameters)
-        if len(lines[0])>2:
+        # Card 3 (옵션): PSTUPD, SIDT4TU, CNTCO, ITSFLG, IRQUAD, W-MODE, STRETCH, ICRQ
+        if len(lines[0]) > 2:
             parameters = self.parse_whole(lines[0][2], [10, 10, 10, 10, 10, 10, 10, 10])
-            self.parameters.append(parameters)            
-        
-        if len(lines[0])>3:
+            self.parameters.append(parameters)
+        # Card 4 (옵션): NFAIL1, NFAIL4, PSNFAIL, KEEPCS, DELFR, DRCPSID, DRCPRM, INTPERR
+        if len(lines[0]) > 3:
             parameters = self.parse_whole(lines[0][3], [10, 10, 10, 10, 10, 10, 10, 10])
             self.parameters.append(parameters)
-        if len(lines[0])>4:
-            parameters = self.parse_whole(lines[0][4], [10, 10, 10])
+        # Card 5 (옵션): DRCMTH, LISPSID, NLOCDT, ISWSHL
+        if len(lines[0]) > 4:
+            parameters = self.parse_whole(lines[0][4], [10, 10, 10, 10])
+            self.parameters.append(parameters)
             
     def SetControlShell(self, WRPANG, ESORT, IRNXX, ISTUPD, THEORY, BWC, MITER, PROJ, ROTASCL, INTGRD, LAMSHT, CSTYP6, THSHEL,PSSTUPD,SIDT4TU,CNTCO,ITSFLG,IRQUAD,W_MODE,STRETCH,ICRQ,NFAIL1,NFAIL4,PSNFAIL,KEEPCS,DELFR,DRCPSID,DRCPRM,INTPERR,DRCMTH,LISPSID,NLOCDT):
         self.parameters = []

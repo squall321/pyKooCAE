@@ -560,11 +560,13 @@ class KooContactAddWear:
 
 class KooContactManager:
     def __init__(self):
-        self.maxid = 0 
+        self.maxid = 0
         self.contacts = {}
         self.tmpContacts = {}
         self.rigidContacts = {}
         self.contactsAddWear = {}
+        # *CONTACT_EXCLUSION: {contact_cid: [(ssid, msid), ...]}
+        self.exclusions = {}
         
     def UpdateContactGraph(self, partManager, segManager):
         contactGraph = {} 
@@ -641,6 +643,8 @@ class KooContactManager:
             self.rigidContacts[key] = value
         for key, value in contactManager.contactsAddWear.items():
             self.contactsAddWear[key] = value
+        for key, value in contactManager.exclusions.items():
+            self.exclusions[key] = value
 
     def CreateContactAddWear(self, cid, wtype, p1, p2, p3, p4=0.0, p5=0.0, p6=0.0):
         contact = KooContactAddWear(cid, wtype, p1, p2, p3, p4, p5, p6)
@@ -1071,12 +1075,92 @@ class KooContactManager:
         keyword = ""
         for key in self.contacts:
             keyword += self.contacts[key].WritetoDynaKeyword(startID)
+        # *CONTACT_EXCLUDE_INTERACTION 출력
+        for ceid, excl_data in self.exclusions.items():
+            if not excl_data.get("pairs"):
+                continue
+            keyword += "*CONTACT_EXCLUDE_INTERACTION\n"
+            keyword += f"$$    CEID       CID\n"
+            keyword += f"{excl_data['ceid']:>10}{excl_data['cid']:>10}\n"
+            for sida, sidb, typea, typeb in excl_data["pairs"]:
+                keyword += f"{sida:>10}{sidb:>10}{typea:>10}{typeb:>10}\n"
         return keyword
-    
+
     def WriteStreamDynaKeyword(self, stream, startID):
         for key in self.contacts:
-            self.contacts[key].WriteStreamDynaKeyword(stream,startID)            
-        
+            self.contacts[key].WriteStreamDynaKeyword(stream, startID)
+        # *CONTACT_EXCLUDE_INTERACTION 출력
+        for ceid, excl_data in self.exclusions.items():
+            if not excl_data.get("pairs"):
+                continue
+            stream.write("*CONTACT_EXCLUDE_INTERACTION\n")
+            stream.write(f"$$    CEID       CID\n")
+            stream.write(f"{excl_data['ceid']:>10}{excl_data['cid']:>10}\n")
+            for sida, sidb, typea, typeb in excl_data["pairs"]:
+                stream.write(f"{sida:>10}{sidb:>10}{typea:>10}{typeb:>10}\n")
+
+    def AddExcludeInteraction(self, ceid, contact_cid, sida, sidb, typea=3, typeb=3):
+        """*CONTACT_EXCLUDE_INTERACTION 등록.
+        Args:
+            ceid: CEID (exclusion ID)
+            contact_cid: CID (대상 접촉 ID)
+            sida, sidb: 제외 대상 Set/Part ID
+            typea, typeb: 0=segment set, 1=shell elem set, 2=part set, 3=part ID
+        """
+        if ceid not in self.exclusions:
+            self.exclusions[ceid] = {"ceid": ceid, "cid": contact_cid, "pairs": []}
+        self.exclusions[ceid]["pairs"].append((sida, sidb, typea, typeb))
+
+    def BuildExclusionsFromTied(self, target_cid=None):
+        """Tied 접촉에서 파트 쌍을 수집하여 *CONTACT_EXCLUDE_INTERACTION 자동 생성.
+
+        SOFT=2 접촉에서만 사용 가능. TYPEA=3, TYPEB=3 (Part ID 직접).
+
+        Args:
+            target_cid: 제외 대상 접촉 CID (None이면 가장 최근 SINGLE_SURFACE)
+
+        Returns:
+            생성된 exclusion 쌍 수
+        """
+        tied_types = (KooContactTiedSurfacetoSurface, KooContactTiedSurfacetoSurfaceOffset,
+                      KooContactTiedShellEdgetoSurfaceBeamOffset)
+        tied_pairs = []
+        for _, contact in self.contacts.items():
+            if isinstance(contact, tied_types):
+                if contact.SSTYP == 3 and contact.MSTYP == 3:
+                    tied_pairs.append((contact.SSID, contact.MSID))
+
+        if not tied_pairs:
+            return 0
+
+        if target_cid is None:
+            for cid, contact in self.contacts.items():
+                if isinstance(contact, KooContactAutomaticSingleSurface):
+                    target_cid = cid
+            if target_cid is None:
+                print("[WARNING] BuildExclusionsFromTied: SINGLE_SURFACE 접촉 없음")
+                return 0
+
+        # 중복 제거 (방향 무관)
+        seen = set()
+        unique_pairs = []
+        for ssid, msid in tied_pairs:
+            key = (min(ssid, msid), max(ssid, msid))
+            if key not in seen:
+                seen.add(key)
+                unique_pairs.append((ssid, msid))
+
+        # CEID 할당 (maxid+1)
+        self.maxid += 1
+        ceid = self.maxid
+
+        # TYPEA=3, TYPEB=3 (Part ID 직접 — R16 지원)
+        for ssid, msid in unique_pairs:
+            self.AddExcludeInteraction(ceid, target_cid, ssid, msid, typea=3, typeb=3)
+
+        print(f"CONTACT_EXCLUDE_INTERACTION (CEID={ceid}): {len(unique_pairs)} Tied 쌍 → CID {target_cid}에서 제외")
+        return len(unique_pairs)
+
     def ConvertAss5ToAstsPartPairs(self, partManager, cid, marginX = 1.5, marginY = 1.5, marginZ = 1.5, absoluteMarginX = 5.0, absoluteMarginY = 5.0, absoluteMarginZ = 0.5):
         genContact = None
         if cid in self.contacts:

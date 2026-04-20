@@ -168,12 +168,12 @@ class KooControlShell:
         self.THEORY = 2
         self.BWC = 2
         self.MITER = 1
-        self.PROJ = 0 
+        self.PROJ = 0
         self.ROTASCL = 1.0
         self.INTGRD = 0
         self.LAMSHT = 0
         self.CSTYP6 = 1
-        self.THSHEL = 0 
+        self.THSHEL = 0
         self.PSTUPD = 0
         self.SIDT4TU = 0
         self.CNTCO = 0
@@ -193,11 +193,23 @@ class KooControlShell:
         self.DRCMTH = 0
         self.LISPSID = 0
         self.NLOCDT = 0
+        self.ISWSHL = 0
+        # 입력에서 읽은 카드 수 추적 (있는 카드만 출력하기 위함)
+        self._num_cards = 1
         
     def AddtoDynaKeywrod(self, keyword : ControlShell):
         keyword.SetControlShell(self.WRPANG, self.ESORT, self.IRNXX, self.ISTUPD, self.THEORY, self.BWC, self.MITER, self.PROJ, self.ROTASCL, self.INTGRD, self.LAMSHT, self.CSTYP6, self.THSHEL, self.PSTUPD, self.SIDT4TU, self.CNTCO, self.ITSFLG, self.IRQUAD, self.W_MODE, self.STRETCH, self.ICRQ, self.NFAIL1, self.NFAIL4, self.PSNFAIL, self.KEEPCS, self.DELFR, self.DRCPSID, self.DRCPRM, self.INTPERR, self.DRCMTH, self.LISPSID, self.NLOCDT)
     
+    def _gen_opt_field(self, val, fmt=">10"):
+        if val == "" or val is None:
+            return "          "
+        elif isinstance(val, float):
+            return format(val, ">10.3f")
+        else:
+            return format(val, fmt)
+
     def GenerateDynaKeyword(self):
+        nc = getattr(self, '_num_cards', 5)
         keyword = "*CONTROL_SHELL\n"
         keyword += "$$   WRPANG     ESORT     IRNXX    ISTUPD    THEORY       BWC     MITER      PROJ\n"
         keyword += format(self.WRPANG, ">10.3f")
@@ -209,55 +221,61 @@ class KooControlShell:
         keyword += format(self.MITER, ">10")
         keyword += format(self.PROJ, ">10")
         keyword += "\n"
+        if nc < 2:
+            return keyword
         keyword += "$$  ROTASCL   INTGRD    LAMSHT    CSTYP6    THSHEL\n"
         keyword += format(self.ROTASCL, ">10.3f")
         keyword += format(self.INTGRD, ">10")
         keyword += format(self.LAMSHT, ">10")
         keyword += format(self.CSTYP6, ">10")
-        keyword += format(self.THSHEL, ">10")        
+        keyword += format(self.THSHEL, ">10")
         keyword += "\n"
+        if nc < 3:
+            return keyword
         keyword += "$$  PSTUPD   SIDT4TU     CNTCO   ITSFLG    IRQUAD    W_MODE   STRETCH      ICRQ\n"
         keyword += format(self.PSTUPD, ">10")
         keyword += format(self.SIDT4TU, ">10")
         keyword += format(self.CNTCO, ">10")
         keyword += format(self.ITSFLG, ">10")
         keyword += format(self.IRQUAD, ">10")
-        if self.W_MODE == "":
-            self.W_MODE = "          "            
-            keyword += format(self.W_MODE, ">10")
-        else:
-            keyword += format(self.W_MODE, ">10.3f")
-        if self.STRETCH == "":
-            self.STRETCH = "          "
-            keyword += format(self.STRETCH, ">10")
-        else:
-            keyword += format(self.STRETCH, ">10.3f")
-        keyword += format(self.ICRQ, ">10")        
+        keyword += self._gen_opt_field(self.W_MODE)
+        keyword += self._gen_opt_field(self.STRETCH)
+        keyword += format(self.ICRQ, ">10")
         keyword += "\n"
+        if nc < 4:
+            return keyword
         keyword += "$$  NFAIL1    NFAIL4   PSNFAIL   KEEPCS     DELFR   DRCPSID    DRCPRM   INTPERR\n"
-        if self.NFAIL1 == "":
-            self.NFAIL1 = "          "
-        keyword += format(self.NFAIL1, ">10")
-        if self.NFAIL4 == "":
-            self.NFAIL4 = "          "
-        keyword += format(self.NFAIL4, ">10")
+        keyword += self._gen_opt_field(self.NFAIL1)
+        keyword += self._gen_opt_field(self.NFAIL4)
         keyword += format(self.PSNFAIL, ">10")
         keyword += format(self.KEEPCS, ">10")
         keyword += format(self.DELFR, ">10")
         keyword += format(self.DRCPSID, ">10")
         keyword += format(self.DRCPRM, ">10.3f")
-        if self.INTPERR == "":
-            self.INTPERR = "          "
-        keyword += format(self.INTPERR, ">10")
+        keyword += self._gen_opt_field(self.INTPERR)
         keyword += "\n"
-        keyword += "$$  DRCMTH   LISPSID    NLOCDT\n"
+        if nc < 5:
+            return keyword
+        keyword += "$$  DRCMTH   LISPSID    NLOCDT    ISWSHL\n"
         keyword += format(self.DRCMTH, ">10")
         keyword += format(self.LISPSID, ">10")
         keyword += format(self.NLOCDT, ">10")
+        keyword += format(self.ISWSHL, ">10")
         keyword += "\n"
         return keyword
     
+    def _write_opt_field(self, stream, val, fmt=">10"):
+        """빈 문자열이면 공백 10자, 아니면 포맷 적용"""
+        if val == "" or val is None:
+            stream.write("          ")
+        elif isinstance(val, float):
+            stream.write(format(val, ">10.3f"))
+        else:
+            stream.write(format(val, fmt))
+
     def WriteStreamDynaKeyword(self, stream):
+        nc = getattr(self, '_num_cards', 5)
+        # Card 1 (필수)
         stream.write("*CONTROL_SHELL\n")
         stream.write("$$   WRPANG     ESORT     IRNXX    ISTUPD    THEORY       BWC     MITER      PROJ\n")
         stream.write(format(self.WRPANG, ">10.3f"))
@@ -269,47 +287,50 @@ class KooControlShell:
         stream.write(format(self.MITER, ">10"))
         stream.write(format(self.PROJ, ">10"))
         stream.write("\n")
+        if nc < 2:
+            return
+        # Card 2
         stream.write("$$  ROTASCL   INTGRD    LAMSHT    CSTYP6    THSHEL\n")
         stream.write(format(self.ROTASCL, ">10.3f"))
         stream.write(format(self.INTGRD, ">10"))
         stream.write(format(self.LAMSHT, ">10"))
         stream.write(format(self.CSTYP6, ">10"))
-        stream.write(format(self.THSHEL, ">10"))        
+        stream.write(format(self.THSHEL, ">10"))
         stream.write("\n")
+        if nc < 3:
+            return
+        # Card 3
         stream.write("$$  PSTUPD   SIDT4TU     CNTCO   ITSFLG    IRQUAD    W_MODE   STRETCH      ICRQ\n")
         stream.write(format(self.PSTUPD, ">10"))
         stream.write(format(self.SIDT4TU, ">10"))
         stream.write(format(self.CNTCO, ">10"))
         stream.write(format(self.ITSFLG, ">10"))
         stream.write(format(self.IRQUAD, ">10"))
-        if self.W_MODE == "":
-            self.W_MODE = "          "            
-        stream.write(format(self.W_MODE, ">10"))
-        if self.STRETCH == "":
-            self.STRETCH = "          "
-        stream.write(format(self.STRETCH, ">10"))
-        stream.write(format(self.ICRQ, ">10"))        
+        self._write_opt_field(stream, self.W_MODE)
+        self._write_opt_field(stream, self.STRETCH)
+        stream.write(format(self.ICRQ, ">10"))
         stream.write("\n")
+        if nc < 4:
+            return
+        # Card 4
         stream.write("$$  NFAIL1    NFAIL4   PSNFAIL   KEEPCS     DELFR   DRCPSID    DRCPRM   INTPERR\n")
-        if self.NFAIL1 == "":
-            self.NFAIL1 = "          "
-        stream.write(format(self.NFAIL1, ">10"))
-        if self.NFAIL4 == "":
-            self.NFAIL4 = "          "
-        stream.write(format(self.NFAIL4, ">10"))
+        self._write_opt_field(stream, self.NFAIL1)
+        self._write_opt_field(stream, self.NFAIL4)
         stream.write(format(self.PSNFAIL, ">10"))
         stream.write(format(self.KEEPCS, ">10"))
         stream.write(format(self.DELFR, ">10"))
         stream.write(format(self.DRCPSID, ">10"))
         stream.write(format(self.DRCPRM, ">10.3f"))
-        if self.INTPERR == "":
-            self.INTPERR = "          "
-        stream.write(format(self.INTPERR, ">10"))
+        self._write_opt_field(stream, self.INTPERR)
         stream.write("\n")
-        stream.write("$$  DRCMTH   LISPSID    NLOCDT\n")
+        if nc < 5:
+            return
+        # Card 5
+        stream.write("$$  DRCMTH   LISPSID    NLOCDT    ISWSHL\n")
         stream.write(format(self.DRCMTH, ">10"))
         stream.write(format(self.LISPSID, ">10"))
         stream.write(format(self.NLOCDT, ">10"))
+        stream.write(format(self.ISWSHL, ">10"))
         stream.write("\n")
 
 class KooControlSolid:
@@ -957,8 +978,9 @@ class KooControlManager:
         self.controlMppIONodump = KooControlMppIONodump()
     
     def SetControlfromDyna(self, controlKeyword):
-        if controlKeyword[0] == "*CONTROL_SHELL":        
+        if controlKeyword[0] == "*CONTROL_SHELL":
             self.controlShell = KooControlShell()
+            self.controlShell._num_cards = len(controlKeyword) - 1  # 헤더 제외
             Line1 = controlKeyword[1]
             self.controlShell.WRPANG = KooDynaFloat(Line1[0],20.0)
             self.controlShell.ESORT = KooDynaInt(Line1[1],0)
@@ -976,7 +998,7 @@ class KooControlManager:
                 self.controlShell.CSTYP6 = KooDynaInt(Line2[3],1)
                 self.controlShell.THSHEL = KooDynaInt(Line2[4],0)
             if len(controlKeyword) > 3:
-                Line3 = controlKeyword[3]            
+                Line3 = controlKeyword[3]
                 self.controlShell.PSTUPD = KooDynaInt(Line3[0],0)
                 self.controlShell.SIDT4TU = KooDynaInt(Line3[1],0)
                 self.controlShell.CNTCO = KooDynaInt(Line3[2],0)
@@ -994,12 +1016,14 @@ class KooControlManager:
                 self.controlShell.DELFR = KooDynaInt(Line4[4],0)
                 self.controlShell.DRCPSID = KooDynaInt(Line4[5],0)
                 self.controlShell.DRCPRM = KooDynaFloat(Line4[6],1.0)
-                self.controlShell.INTPERR = ""
+                self.controlShell.INTPERR = KooDynaInt(Line4[7],"")
             if len(controlKeyword) > 5:
                 Line5 = controlKeyword[5]
                 self.controlShell.DRCMTH = KooDynaInt(Line5[0],0)
                 self.controlShell.LISPSID = KooDynaInt(Line5[1],0)
                 self.controlShell.NLOCDT = KooDynaInt(Line5[2],0)
+                if len(Line5) > 3:
+                    self.controlShell.ISWSHL = KooDynaInt(Line5[3],0)
         elif controlKeyword[0] == "*CONTROL_SOLID":
             self.controlSolid = KooControlSolid()
             Line1 = controlKeyword[1]
@@ -1098,18 +1122,18 @@ class KooControlManager:
             
         elif controlKeyword[0] == "*CONTROL_TERMINATION":
             parameter = controlKeyword[1]
-            if len(parameter[0]) == 0:
-                parameter[0] = "0.0"
-            if len(parameter[1]) == 0:
-                parameter[1] = "0"
-            if len(parameter[2]) == 0:
-                parameter[2] = "0.0"
-            if len(parameter[3]) == 0:
-                parameter[3] = "0.0"
-            if len(parameter[4]) == 0:
-                parameter[4] = "1.0E+8"
-            if len(parameter[5]) == 0:
-                parameter[5] = "0"
+            if len(parameter[0].strip()) == 0:
+                parameter[0] = "0.0"       # ENDTIM
+            if len(parameter[1].strip()) == 0:
+                parameter[1] = "0"         # ENDCYC
+            if len(parameter[2].strip()) == 0:
+                parameter[2] = "0.0"       # DTMIN
+            if len(parameter[3].strip()) == 0:
+                parameter[3] = "0.0"       # ENDENG
+            if len(parameter[4].strip()) == 0:
+                parameter[4] = "1.0E+8"   # ENDMAS
+            if len(parameter[5].strip()) == 0:
+                parameter[5] = "0"         # NOSOL
             self.controlTermination = KooControlTermination()
             self.controlTermination.ENDTIM = KooDynaFloat(parameter[0])
             self.controlTermination.ENDCYC = KooDynaInt(parameter[1])
@@ -1119,21 +1143,21 @@ class KooControlManager:
             self.controlTermination.NOSOL = KooDynaInt(parameter[5])
         elif controlKeyword[0] == "*CONTROL_TIMESTEP":
             parameter = controlKeyword[1]
-            if len(parameter[0]) == 0:
-                parameter[0] = "0.0"
-            if len(parameter[1]) == 0:
-                parameter[1] = "0.0"
-            if len(parameter[2]) == 0:
+            if len(parameter[0].strip()) == 0:
+                parameter[0] = "0.0"       # DTINIT: 0=자동
+            if len(parameter[1].strip()) == 0:
+                parameter[1] = "0.9"       # TSSFAC: LS-DYNA 디폴트 0.9 (0이면 dt=0!)
+            if len(parameter[2].strip()) == 0:
                 parameter[2] = "0"
-            if len(parameter[3]) == 0:
+            if len(parameter[3].strip()) == 0:
                 parameter[3] = "0.0"
-            if len(parameter[4]) == 0:
+            if len(parameter[4].strip()) == 0:
                 parameter[4] = "0.0"
-            if len(parameter[5]) == 0:
+            if len(parameter[5].strip()) == 0:
                 parameter[5] = "0"
-            if len(parameter[6]) == 0:
+            if len(parameter[6].strip()) == 0:
                 parameter[6] = "0"
-            if len(parameter[7]) == 0:
+            if len(parameter[7].strip()) == 0:
                 parameter[7] = "0"            
             
             self.controlTimeStep = KooControlTimeStep(0.0,0.0)                
