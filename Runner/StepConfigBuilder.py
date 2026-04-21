@@ -47,9 +47,12 @@ def build_drop_attitude_config(
     # drop_surface 설정
     drop_surface = sim_params.get("drop_surface", {})
     ds_type = drop_surface.get("type", "Plane")
-    ds_size = drop_surface.get("size", [300, 300, 20])
-    ds_mesh = drop_surface.get("mesh", [30, 30, 2])
-    drop_surface_line = f"DropSurface,{ds_type},{ds_size[0]},{ds_size[1]},{ds_size[2]},{ds_mesh[0]},{ds_mesh[1]},{ds_mesh[2]}"
+    if ds_type == "RigidWall":
+        drop_surface_line = "DropSurface,RigidWall,0,0,0,0,0,0"
+    else:
+        ds_size = drop_surface.get("size", [300, 300, 20])
+        ds_mesh = drop_surface.get("mesh", [30, 30, 2])
+        drop_surface_line = f"DropSurface,{ds_type},{ds_size[0]},{ds_size[1]},{ds_size[2]},{ds_mesh[0]},{ds_mesh[1]},{ds_mesh[2]}"
     if ds_type == "PlanewithRoughness":
         roughness = drop_surface.get("roughness_mode", "Random")
         r_max = drop_surface.get("r_max", 0.0)

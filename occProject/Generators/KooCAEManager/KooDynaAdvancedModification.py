@@ -2324,48 +2324,85 @@ class KooDynaAdvancedModification:
 
             # RobustContact: Tied 쌍을 SINGLE_SURFACE에서 제외 + 중복 Tied 제거
             if robust_contact:
-                n_excl = self.dynaImporter.contactManager.BuildExclusionsFromTied()
+                # CONTACT_EXCLUDE_INTERACTION은 SOFT=2 전용 — SOFT≠2면 강제 전환
+                if opt_SOFT != 2:
+                    print(f"DROP_ATTITUDE: RobustContact requires SOFT=2, overriding SOFT={opt_SOFT} → 2")
+                    opt_SOFT = 2
+                # DEPTH=3 강제 (양면 침투 검사, 과보정 방지)
+                if opt_DEPTH != 3:
+                    print(f"DROP_ATTITUDE: RobustContact DEPTH={opt_DEPTH} → 3")
+                    opt_DEPTH = 3
+                # 이미 생성된 SS의 OptCardA 갱신
+                for _, c in list(self.dynaImporter.contactManager.contacts.items()):
+                    if hasattr(c, 'OptCardA') and c.OptCardA and hasattr(c, 'name'):
+                        if 'SS_from_GENERAL' in str(c.name) or 'SS_AllParts' in str(c.name):
+                            c.OptCardA[0] = 2   # SOFT=2
+                            c.OptCardA[5] = 3   # DEPTH=3
+                # 1. 중복 Tied 먼저 제거 (exclusion 쌍 중복 방지)
                 n_dup = self.dynaImporter.contactManager.RemoveDuplicateTiedContacts()
-                print(f"DROP_ATTITUDE: RobustContact — {n_excl} exclusion 쌍, {n_dup} 중복 Tied 제거")
+                # 2. 정리된 Tied 기반으로 exclusion 생성
+                n_excl = self.dynaImporter.contactManager.BuildExclusionsFromTied(
+                    partManager=self.dynaImporter.partManager)
+                print(f"DROP_ATTITUDE: RobustContact — SOFT=2, DEPTH=3, {n_dup} 중복 Tied 제거, {n_excl} exclusion 쌍")
 
-            part = self.dynaImporter.partManager.AddSolidPart(self.dynaImporter.nodeManager, None, section, material)
-            if not use_fast_mode:
-                self.dynaImporter.SyncronizeMaxID()
-            if dropSurface[0] == "Plane":
+            if dropSurface[0] == "RigidWall":
+                # RIGIDWALL_PLANAR_MOVING_FORCES — 메시 없는 무한 강체 평면
+                # impactPoint = 바닥 위치, z_direction = 바닥→물체 방향 (법선)
+                # Tail point = impactPoint, Head point = impactPoint + 법선
+                rw_fric = option.get("DropContact", {}).get("FS", 0.3)
+                nsid_all = nodeSet.sid  # AllNodes 노드셋
+                rw = self.dynaImporter.additionalManager.CreateRigidwallPlanarMovingForces(
+                    NSID=nsid_all, NSIDEX=0, BOXID=0,
+                    OFFSET=0.0, BIRTH=0.0, DEATH=1.0e20, RWKSF=1.0,
+                    XT=impactPoint[0], YT=impactPoint[1], ZT=impactPoint[2],
+                    XH=impactPoint[0] - z_direction[0],
+                    YH=impactPoint[1] - z_direction[1],
+                    ZH=impactPoint[2] - z_direction[2],
+                    FRIC=rw_fric, WVEL=0.0, MASS=0.0, V0=0.0,
+                    SOFT=0, SSID=0, N1=0, N2=0, N3=0, N4=0)
+                print(f"DROP_ATTITUDE: RigidWall 생성 (FRIC={rw_fric}, 위치=[{impactPoint[0]:.1f},{impactPoint[1]:.1f},{impactPoint[2]:.1f}])")
+                # RigidWall은 파트/접촉 불필요 → 바닥판 접촉 생성 skip
+                part = None
+                dropContactCID = None
+            else:
+                part = self.dynaImporter.partManager.AddSolidPart(self.dynaImporter.nodeManager, None, section, material)
+                if not use_fast_mode:
+                    self.dynaImporter.SyncronizeMaxID()
+                if dropSurface[0] == "Plane":
+                    nsFixed = part.elementManager.CreateImpactBox(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ)
+                    nodeSetFixed.AddNodesfromDict(nsFixed)
+                elif dropSurface[0] == "PlanewithRoughness":
+                    nsFixed = part.elementManager.CreateImpactBoxwithRoughness(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor2)
+                    nodeSetFixed.AddNodesfromDict(nsFixed)
 
-                nsFixed = part.elementManager.CreateImpactBox(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ) 
-                nodeSetFixed.AddNodesfromDict(nsFixed)
-            elif dropSurface[0] == "PlanewithRoughness":
-                nsFixed = part.elementManager.CreateImpactBoxwithRoughness(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor2)
-                nodeSetFixed.AddNodesfromDict(nsFixed)
-
-            # 바닥판 접촉 생성
+            # 바닥판 접촉 생성 (RigidWall이면 part=None → 접촉/D2R 전체 skip)
             drop_contact = option.get("DropContact", {})
             dropContactCID = None
 
-            # OptCardA/B 공통 파라미터
-            opt_SOFT = int(drop_contact.get("SOFT", 1))
-            opt_SOFSCL = drop_contact.get("SOFSCL", 0.1)
-            opt_LCIDAB = int(drop_contact.get("LCIDAB", 0))
-            opt_MAXPAR = drop_contact.get("MAXPAR", 1.025)
-            opt_SBOPT = int(drop_contact.get("SBOPT", 0))
-            opt_DEPTH = int(drop_contact.get("DEPTH", 0))
-            opt_BSORT = int(drop_contact.get("BSORT", 100))
-            opt_FRCFRQ = int(drop_contact.get("FRCFRQ", 1))
-            opt_PENMAX = drop_contact.get("PENMAX", 0.0)
-            opt_THKOPT = int(drop_contact.get("THKOPT", 1))
-            opt_SHLTHK = int(drop_contact.get("SHLTHK", 1))
-            opt_SNLOG = int(drop_contact.get("SNLOG", 0))
-            opt_ISYM = int(drop_contact.get("ISYM", 0))
-            opt_I2D3D = int(drop_contact.get("I2D3D", 0))
-            opt_SLDTHK = drop_contact.get("SLDTHK", 0.0)
-            opt_SLDSTF = drop_contact.get("SLDSTF", 0.0)
+            if part is not None:
+                # Plane/PlanewithRoughness — 기존 접촉 생성 로직
+                opt_SOFT = int(drop_contact.get("SOFT", 1))
+                opt_SOFSCL = drop_contact.get("SOFSCL", 0.1)
+                opt_LCIDAB = int(drop_contact.get("LCIDAB", 0))
+                opt_MAXPAR = drop_contact.get("MAXPAR", 1.025)
+                opt_SBOPT = int(drop_contact.get("SBOPT", 0))
+                opt_DEPTH = int(drop_contact.get("DEPTH", 0))
+                opt_BSORT = int(drop_contact.get("BSORT", 100))
+                opt_FRCFRQ = int(drop_contact.get("FRCFRQ", 1))
+                opt_PENMAX = drop_contact.get("PENMAX", 0.0)
+                opt_THKOPT = int(drop_contact.get("THKOPT", 1))
+                opt_SHLTHK = int(drop_contact.get("SHLTHK", 1))
+                opt_SNLOG = int(drop_contact.get("SNLOG", 0))
+                opt_ISYM = int(drop_contact.get("ISYM", 0))
+                opt_I2D3D = int(drop_contact.get("I2D3D", 0))
+                opt_SLDTHK = drop_contact.get("SLDTHK", 0.0)
+                opt_SLDSTF = drop_contact.get("SLDSTF", 0.0)
 
-            if not convertToSS and not option.get("DeformableToRigid", False):
+            if part is not None and not convertToSS and not option.get("DeformableToRigid", False):
                 # GENERAL 유지 + D2R 없음 → 바닥판도 GENERAL이 알아서 잡음, 별도 접촉 불필요
                 print("DROP_ATTITUDE: GENERAL retained, drop surface included in GENERAL contact")
 
-            else:
+            elif part is not None:
                 # 외곽 part 필터링 (바닥판 접촉 대상)
                 allMinX, allMaxX = float('inf'), float('-inf')
                 allMinY, allMaxY = float('inf'), float('-inf')

@@ -1111,13 +1111,14 @@ class KooContactManager:
             self.exclusions[ceid] = {"ceid": ceid, "cid": contact_cid, "pairs": []}
         self.exclusions[ceid]["pairs"].append((sida, sidb, typea, typeb))
 
-    def BuildExclusionsFromTied(self, target_cid=None):
+    def BuildExclusionsFromTied(self, target_cid=None, partManager=None):
         """Tied 접촉에서 파트 쌍을 수집하여 *CONTACT_EXCLUDE_INTERACTION 자동 생성.
 
-        SOFT=2 접촉에서만 사용 가능. TYPEA=3, TYPEB=3 (Part ID 직접).
+        SOFT=2 접촉에서만 사용 가능. TYPEA=2, TYPEB=2 (Part Set).
 
         Args:
             target_cid: 제외 대상 접촉 CID (None이면 가장 최근 SINGLE_SURFACE)
+            partManager: Part Set 생성용
 
         Returns:
             생성된 exclusion 쌍 수
@@ -1154,9 +1155,22 @@ class KooContactManager:
         self.maxid += 1
         ceid = self.maxid
 
-        # TYPEA=3, TYPEB=3 (Part ID 직접 — R16 지원)
+        # TYPEA=2, TYPEB=2 (Part Set)
+        # 파트별 1개짜리 Part Set 캐시 (동일 파트가 여러 쌍에 등장 시 재사용)
+        if partManager is None:
+            print("[WARNING] partManager 없음 — CONTACT_EXCLUDE_INTERACTION 생성 불가")
+            return 0
+        part_set_cache = {}  # pid → psid
         for ssid, msid in unique_pairs:
-            self.AddExcludeInteraction(ceid, target_cid, ssid, msid, typea=3, typeb=3)
+            if ssid not in part_set_cache:
+                ps = partManager.CreatePartSet(pids=[ssid], name=f"ExclP_{ssid}")
+                part_set_cache[ssid] = ps.psid
+            if msid not in part_set_cache:
+                ps = partManager.CreatePartSet(pids=[msid], name=f"ExclP_{msid}")
+                part_set_cache[msid] = ps.psid
+            self.AddExcludeInteraction(ceid, target_cid,
+                                       part_set_cache[ssid], part_set_cache[msid],
+                                       typea=2, typeb=2)
 
         print(f"CONTACT_EXCLUDE_INTERACTION (CEID={ceid}): {len(unique_pairs)} Tied 쌍 → CID {target_cid}에서 제외")
         return len(unique_pairs)
