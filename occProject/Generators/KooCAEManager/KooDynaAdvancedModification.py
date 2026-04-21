@@ -2322,6 +2322,26 @@ class KooDynaAdvancedModification:
                     print("DROP_ATTITUDE: No GENERAL/SS found -> Created SINGLE_SURFACE(CID={0}, SOFT={1}) with {2} parts".format(
                         ss.cid, SOFT_opt, len(allPartIDs)))
 
+            # 바닥판 접촉 OptCardA/B 파라미터 (robust_contact에서도 참조)
+            drop_contact = option.get("DropContact", {})
+            opt_SOFT = int(drop_contact.get("SOFT", 1))
+            opt_SOFSCL = drop_contact.get("SOFSCL", 0.1)
+            opt_LCIDAB = int(drop_contact.get("LCIDAB", 0))
+            opt_MAXPAR = drop_contact.get("MAXPAR", 1.025)
+            opt_SBOPT = int(drop_contact.get("SBOPT", 0))
+            opt_DEPTH = int(drop_contact.get("DEPTH", 0))
+            opt_BSORT = int(drop_contact.get("BSORT", 100))
+            opt_FRCFRQ = int(drop_contact.get("FRCFRQ", 1))
+            opt_PENMAX = drop_contact.get("PENMAX", 0.0)
+            opt_THKOPT = int(drop_contact.get("THKOPT", 1))
+            opt_SHLTHK = int(drop_contact.get("SHLTHK", 1))
+            opt_SNLOG = int(drop_contact.get("SNLOG", 0))
+            opt_ISYM = int(drop_contact.get("ISYM", 0))
+            opt_I2D3D = int(drop_contact.get("I2D3D", 0))
+            opt_SLDTHK = drop_contact.get("SLDTHK", 0.0)
+            opt_SLDSTF = drop_contact.get("SLDSTF", 0.0)
+            dropContactCID = None
+
             # RobustContact: Tied 쌍을 SINGLE_SURFACE에서 제외 + 중복 Tied 제거
             if robust_contact:
                 # CONTACT_EXCLUDE_INTERACTION은 SOFT=2 전용 — SOFT≠2면 강제 전환
@@ -2376,28 +2396,6 @@ class KooDynaAdvancedModification:
                     nodeSetFixed.AddNodesfromDict(nsFixed)
 
             # 바닥판 접촉 생성 (RigidWall이면 part=None → 접촉/D2R 전체 skip)
-            drop_contact = option.get("DropContact", {})
-            dropContactCID = None
-
-            if part is not None:
-                # Plane/PlanewithRoughness — 기존 접촉 생성 로직
-                opt_SOFT = int(drop_contact.get("SOFT", 1))
-                opt_SOFSCL = drop_contact.get("SOFSCL", 0.1)
-                opt_LCIDAB = int(drop_contact.get("LCIDAB", 0))
-                opt_MAXPAR = drop_contact.get("MAXPAR", 1.025)
-                opt_SBOPT = int(drop_contact.get("SBOPT", 0))
-                opt_DEPTH = int(drop_contact.get("DEPTH", 0))
-                opt_BSORT = int(drop_contact.get("BSORT", 100))
-                opt_FRCFRQ = int(drop_contact.get("FRCFRQ", 1))
-                opt_PENMAX = drop_contact.get("PENMAX", 0.0)
-                opt_THKOPT = int(drop_contact.get("THKOPT", 1))
-                opt_SHLTHK = int(drop_contact.get("SHLTHK", 1))
-                opt_SNLOG = int(drop_contact.get("SNLOG", 0))
-                opt_ISYM = int(drop_contact.get("ISYM", 0))
-                opt_I2D3D = int(drop_contact.get("I2D3D", 0))
-                opt_SLDTHK = drop_contact.get("SLDTHK", 0.0)
-                opt_SLDSTF = drop_contact.get("SLDSTF", 0.0)
-
             if part is not None and not convertToSS and not option.get("DeformableToRigid", False):
                 # GENERAL 유지 + D2R 없음 → 바닥판도 GENERAL이 알아서 잡음, 별도 접촉 불필요
                 print("DROP_ATTITUDE: GENERAL retained, drop surface included in GENERAL contact")
@@ -2613,9 +2611,10 @@ class KooDynaAdvancedModification:
                         f.write("*IncludeStress,True\n")
                         f.write("*RemoveDynamicRelaxation,True\n")
                         f.write("*MovetoOriginAutomatic,True\n")
-                        f.write("*RemovePartbyID,")
-                        f.write(str(part.id))
-                        f.write("\n")
+                        if part is not None:
+                            f.write("*RemovePartbyID,")
+                            f.write(str(part.id))
+                            f.write("\n")
                         if dropContactCID is not None:
                             f.write("*RemoveContactbyID,")
                             f.write(str(dropContactCID))
