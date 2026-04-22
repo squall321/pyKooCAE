@@ -2348,12 +2348,34 @@ class KooDynaAdvancedModification:
                 opt_SOFT = 2
                 opt_DEPTH = 3
 
+                # 0. tied_options 처리 (Part→Segment 변환 + 파라미터 수정)
+                tied_opts = option.get("TiedOptions", {})
+                if tied_opts.get("ConvertToSegment", False):
+                    tied_tol = tied_opts.get("Tolerance", rc_tolerance if 'rc_tolerance' in dir() else 0.1)
+                    tied_angle = tied_opts.get("NormalAngleLimit", 30.0)
+                    self.dynaImporter.contactManager.ConvertTiedToSegment(
+                        self.dynaImporter.partManager,
+                        self.dynaImporter.segmentSetManager,
+                        self.dynaImporter.nodeManager,
+                        tolerance=tied_tol,
+                        normal_angle_limit=tied_angle)
+
+                # Tied 파라미터 일괄 수정 — 제어 옵션 제외 후 나머지 전부 Contact 파라미터로 전달
+                _tied_control_keys = {"ConvertToSegment", "Tolerance", "NormalAngleLimit"}
+                tied_params = {k: v for k, v in tied_opts.items() if k not in _tied_control_keys}
+                # SAST/SBST 디폴트: 0.005
+                tied_params.setdefault("SAST", 0.005)
+                tied_params.setdefault("SBST", 0.005)
+                self.dynaImporter.contactManager.ModifyTiedParameters(tied_params)
+
                 # 1. 중복 Tied 먼저 제거
                 n_dup = self.dynaImporter.contactManager.RemoveDuplicateTiedContacts()
 
-                # 2. Tied 인터페이스 segment 수집 (KD-tree proximity 기반)
+                # 2. Tied 인터페이스 segment 수집 (KD-tree proximity + normal vector 기반)
+                from KooCAEManager.KooElement import compute_segment_normal, compute_segment_center, are_segments_facing
                 tied_interface_segments = set()  # frozenset(sorted node IDs)
                 rc_tolerance = option.get("RobustContactTolerance", 0.1)  # mm 단위
+                rc_normal_angle = tied_opts.get("NormalAngleLimit", 30.0) if tied_opts else 30.0
                 nodeMan = self.dynaImporter.nodeManager
 
                 def _seg_center(seg):
@@ -2366,25 +2388,27 @@ class KooDynaAdvancedModification:
                         cx += n.x; cy += n.y; cz += n.z; nn += 1
                     return (cx/nn, cy/nn, cz/nn) if nn > 0 else None
 
-                # 파트별 외부 면 + KD-tree 캐시 (같은 파트가 여러 Tied에 등장 시 재사용)
-                _bound_cache = {}   # pid → (segments, centers, tree)
+                # 파트별 외부 면 + KD-tree + 법선 캐시
+                _bound_cache = {}   # pid → (segments, centers, normals, tree)
                 def _get_part_surface(pid):
                     if pid in _bound_cache:
                         return _bound_cache[pid]
                     p = self.dynaImporter.partManager.parts.get(pid)
                     if p is None or not p.elementManager.elements:
-                        _bound_cache[pid] = ([], [], None)
+                        _bound_cache[pid] = ([], [], [], None)
                         return _bound_cache[pid]
                     segs = p.elementManager.GetExternalBoundary(False)
                     centers = []
+                    normals = []
                     valid_segs = []
                     for seg in segs:
                         c = _seg_center(seg)
                         if c:
                             centers.append(c)
+                            normals.append(compute_segment_normal(seg, nodeMan))
                             valid_segs.append(seg)
                     tree = KDTree(centers) if centers else None
-                    _bound_cache[pid] = (valid_segs, centers, tree)
+                    _bound_cache[pid] = (valid_segs, centers, normals, tree)
                     return _bound_cache[pid]
 
                 segSetMan = self.dynaImporter.segmentSetManager
@@ -2405,56 +2429,66 @@ class KooDynaAdvancedModification:
                                 tied_interface_segments.add(frozenset(seg))
 
                     elif contact.SSTYP == 3 and contact.MSTYP == 3:
-                        # Part-to-Part Tied — proximity 기반 segment 탐색
+                        # Part-to-Part Tied — proximity + normal vector 기반 segment 탐색
                         pidA, pidB = contact.SSID, contact.MSID
 
-                        segsA, centersA, treeA = _get_part_surface(pidA)
-                        segsB, centersB, treeB = _get_part_surface(pidB)
+                        segsA, centersA, normalsA, treeA = _get_part_surface(pidA)
+                        segsB, centersB, normalsB, treeB = _get_part_surface(pidB)
 
                         if treeB and centersA:
                             for i, seg in enumerate(segsA):
                                 dists, idxs = treeB.query(centersA[i], k=1)
                                 if dists < rc_tolerance:
-                                    tied_interface_segments.add(frozenset(seg))
-                                    tied_interface_segments.add(frozenset(segsB[idxs]))
+                                    j = int(idxs)
+                                    if are_segments_facing(normalsA[i], normalsB[j], rc_normal_angle):
+                                        tied_interface_segments.add(frozenset(seg))
+                                        tied_interface_segments.add(frozenset(segsB[j]))
 
                         if treeA and centersB:
                             for i, seg in enumerate(segsB):
                                 dists, idxs = treeA.query(centersB[i], k=1)
                                 if dists < rc_tolerance:
-                                    tied_interface_segments.add(frozenset(seg))
-                                    tied_interface_segments.add(frozenset(segsA[idxs]))
+                                    j = int(idxs)
+                                    if are_segments_facing(normalsB[i], normalsA[j], rc_normal_angle):
+                                        tied_interface_segments.add(frozenset(seg))
+                                        tied_interface_segments.add(frozenset(segsA[j]))
 
                     elif contact.SSTYP == 0 and contact.MSTYP == 3:
                         # 혼합: SS=Segment Set, MS=Part
                         if contact.SSID in segSetMan.segmentSetList:
                             for seg in segSetMan.segmentSetList[contact.SSID].segments:
                                 tied_interface_segments.add(frozenset(seg))
-                        # Part 쪽은 proximity로 추가 탐색
-                        segsM, centersM, treeM = _get_part_surface(contact.MSID)
+                        # Part 쪽은 proximity + normal로 추가 탐색
+                        segsM, centersM, normalsM, treeM = _get_part_surface(contact.MSID)
                         if treeM and contact.SSID in segSetMan.segmentSetList:
                             ssSegs = segSetMan.segmentSetList[contact.SSID].segments
                             for seg in ssSegs:
                                 c = _seg_center(list(seg))
                                 if c and treeM:
+                                    nA = compute_segment_normal(list(seg), nodeMan)
                                     dists, idxs = treeM.query(c, k=1)
                                     if dists < rc_tolerance:
-                                        tied_interface_segments.add(frozenset(segsM[idxs]))
+                                        j = int(idxs)
+                                        if are_segments_facing(nA, normalsM[j], rc_normal_angle):
+                                            tied_interface_segments.add(frozenset(segsM[j]))
 
                     elif contact.SSTYP == 3 and contact.MSTYP == 0:
                         # 혼합: SS=Part, MS=Segment Set
                         if contact.MSID in segSetMan.segmentSetList:
                             for seg in segSetMan.segmentSetList[contact.MSID].segments:
                                 tied_interface_segments.add(frozenset(seg))
-                        segsS, centersS, treeS = _get_part_surface(contact.SSID)
+                        segsS, centersS, normalsS, treeS = _get_part_surface(contact.SSID)
                         if treeS and contact.MSID in segSetMan.segmentSetList:
                             msSegs = segSetMan.segmentSetList[contact.MSID].segments
                             for seg in msSegs:
                                 c = _seg_center(list(seg))
                                 if c and treeS:
+                                    nM = compute_segment_normal(list(seg), nodeMan)
                                     dists, idxs = treeS.query(c, k=1)
                                     if dists < rc_tolerance:
-                                        tied_interface_segments.add(frozenset(segsS[idxs]))
+                                        j = int(idxs)
+                                        if are_segments_facing(nM, normalsS[j], rc_normal_angle):
+                                            tied_interface_segments.add(frozenset(segsS[j]))
 
                 print(f"DROP_ATTITUDE: RobustContact — {len(tied_interface_segments)} Tied 인터페이스 segment 감지")
 

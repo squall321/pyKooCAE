@@ -1319,3 +1319,204 @@ class KooContactManager:
 
         print(f"[RemoveDuplicateTiedContacts] Removed {len(contactsToRemove)} duplicate tied contacts")
         return len(contactsToRemove)
+
+    def ConvertTiedToSegment(self, partManager, segManager, nodeManager, tolerance=0.1, normal_angle_limit=30.0):
+        """Part-to-Part Tied (SSTYP=3, MSTYP=3) → Segment Set 기반 (SSTYP=0, MSTYP=0) 변환.
+        proximity + normal vector 각도 필터링으로 마주보는 면만 매칭.
+        """
+        from scipy.spatial import KDTree
+        from KooCAEManager.KooElement import compute_segment_normal, compute_segment_center, are_segments_facing
+        import numpy as np
+
+        tiedContactTypes = (KooContactTiedSurfacetoSurface, KooContactTiedSurfacetoSurfaceOffset,
+                            KooContactTiedShellEdgetoSurfaceBeamOffset)
+        converted = 0
+
+        for _, contact in list(self.contacts.items()):
+            if not isinstance(contact, tiedContactTypes):
+                continue
+            if contact.SSTYP != 3 or contact.MSTYP != 3:
+                continue
+
+            pidA, pidB = contact.SSID, contact.MSID
+            partA = partManager.parts.get(pidA)
+            partB = partManager.parts.get(pidB)
+            if partA is None or partB is None:
+                continue
+            if not partA.elementManager.elements or not partB.elementManager.elements:
+                continue
+
+            segsA = partA.elementManager.GetExternalBoundary(False)
+            segsB = partB.elementManager.GetExternalBoundary(False)
+            if not segsA or not segsB:
+                continue
+
+            # 중심점 + 법선 계산
+            centersA = []
+            normalsA = []
+            validA = []
+            for seg in segsA:
+                c = compute_segment_center(seg, nodeManager)
+                if c is not None:
+                    centersA.append(c)
+                    normalsA.append(compute_segment_normal(seg, nodeManager))
+                    validA.append(seg)
+
+            centersB = []
+            normalsB = []
+            validB = []
+            for seg in segsB:
+                c = compute_segment_center(seg, nodeManager)
+                if c is not None:
+                    centersB.append(c)
+                    normalsB.append(compute_segment_normal(seg, nodeManager))
+                    validB.append(seg)
+
+            if not centersA or not centersB:
+                continue
+
+            treeB = KDTree(centersB)
+
+            matchedA = []
+            matchedB_set = set()
+
+            for i, seg in enumerate(validA):
+                dists, idxs = treeB.query(centersA[i], k=1)
+                if dists < tolerance:
+                    j = int(idxs)
+                    if are_segments_facing(normalsA[i], normalsB[j], normal_angle_limit):
+                        matchedA.append(seg)
+                        matchedB_set.add(j)
+
+            matchedB = [validB[j] for j in sorted(matchedB_set)]
+
+            if not matchedA and not matchedB:
+                print(f"[ConvertTiedToSegment] CID={contact.cid}: PID {pidA}-{pidB} 매칭 segment 없음, skip")
+                continue
+
+            # Segment Set 생성
+            ssA = segManager.CreateSegmentSet(name=f"Tied_SS_CID{contact.cid}_S")
+            ssA.AddSegments(matchedA)
+            ssB = segManager.CreateSegmentSet(name=f"Tied_MS_CID{contact.cid}_M")
+            ssB.AddSegments(matchedB)
+
+            # 기존 Tied 접촉의 SSID/MSID/SSTYP/MSTYP 교체
+            contact.SSID = ssA.sid
+            contact.MSID = ssB.sid
+            contact.SSTYP = 0
+            contact.MSTYP = 0
+            converted += 1
+            print(f"[ConvertTiedToSegment] CID={contact.cid}: PID {pidA}-{pidB} → SegSet SS={ssA.sid}({len(matchedA)}seg) MS={ssB.sid}({len(matchedB)}seg)")
+
+        print(f"[ConvertTiedToSegment] {converted} Tied 접촉 변환 완료")
+        return converted
+
+    def ModifyTiedParameters(self, tied_options):
+        """모든 Tied 접촉의 파라미터를 일괄 수정.
+        LS-DYNA Contact Card 전체 필드 지원.
+
+        tied_options keys:
+          --- Card 2 ---
+          SBOXID, MBOXID, SPR, MPR
+          --- Card 3 ---
+          FS, FD, DC, VC, VDC, PENCHK, BT, DT
+          --- Card 4 ---
+          SFS, SFM, SST (=SAST), MST (=SBST), SFST, SFMT, FSF, VSF
+          SAST → SST alias, SBST → MST alias
+          --- OptCardA ---
+          SOFT, SOFSCL, LCIDAB, MAXPAR, SBOPT, DEPTH, BSORT, FRCFRQ
+          --- OptCardB ---
+          PENMAX, THKOPT, SHLTHK, SNLOG, ISYM, I2D3D, SLDTHK, SLDSTF
+          --- OptCardC ---
+          IGAP, IGNORE, DPRFAC, DTSTIF, EDGEK, FLANGL, CID_RCF
+          --- OptCardD ---
+          Q2TRI, DTPCHK, SFNBR, FNLSCL, DNLSCL, TCSO, TIEDID, SHLEDG
+          --- OptCardE ---
+          SHAREC, CPARM8, IPBACK, SRNDE, FRICSF, ICOR, FTORQ, REGION
+          --- OptCardF ---
+          PSTIFF, IGNROFF, FSTOL, DBINR, SSFTYP, SWTPR, TETFAC
+        """
+        tiedContactTypes = (KooContactTiedSurfacetoSurface, KooContactTiedSurfacetoSurfaceOffset,
+                            KooContactTiedShellEdgetoSurfaceBeamOffset)
+        modified = 0
+
+        # Card 2 direct fields
+        card2_fields = ["SBOXID", "MBOXID", "SPR", "MPR"]
+        # Card 3 direct fields
+        card3_fields = ["FS", "FD", "DC", "VC", "VDC", "PENCHK", "BT", "DT"]
+        # Card 4 direct fields
+        card4_fields = ["SFS", "SFM", "SST", "MST", "SFST", "SFMT", "FSF", "VSF"]
+
+        # OptCard field definitions: (card_name, setter_method, field_names_in_order)
+        opt_cards = {
+            "A": ("SetOptCardA", ["SOFT", "SOFSCL", "LCIDAB", "MAXPAR", "SBOPT", "DEPTH", "BSORT", "FRCFRQ"]),
+            "B": ("SetOptCardB", ["PENMAX", "THKOPT", "SHLTHK", "SNLOG", "ISYM", "I2D3D", "SLDTHK", "SLDSTF"]),
+            "C": ("SetOptCardC", ["IGAP", "IGNORE", "DPRFAC", "DTSTIF", "EDGEK", "FLANGL", "CID_RCF"]),
+            "D": ("SetOptCardD", ["Q2TRI", "DTPCHK", "SFNBR", "FNLSCL", "DNLSCL", "TCSO", "TIEDID", "SHLEDG"]),
+            "E": ("SetOptCardE", ["SHAREC", "CPARM8", "IPBACK", "SRNDE", "FRICSF", "ICOR", "FTORQ", "REGION"]),
+            "F": ("SetOptCardF", ["PSTIFF", "IGNROFF", "FSTOL", "DBINR", "SSFTYP", "SWTPR", "TETFAC"]),
+        }
+
+        # Alias 처리: SAST → SST, SBST → MST
+        opts = dict(tied_options)
+        if "SAST" in opts and "SST" not in opts:
+            opts["SST"] = opts.pop("SAST")
+        elif "SAST" in opts:
+            opts.pop("SAST")
+        if "SBST" in opts and "MST" not in opts:
+            opts["MST"] = opts.pop("SBST")
+        elif "SBST" in opts:
+            opts.pop("SBST")
+        # DPRFAC alias (DPRFACPA1)
+        if "DPRFACPA1" in opts and "DPRFAC" not in opts:
+            opts["DPRFAC"] = opts.pop("DPRFACPA1")
+        if "DTSTIFPA2" in opts and "DTSTIF" not in opts:
+            opts["DTSTIF"] = opts.pop("DTSTIFPA2")
+
+        # 어떤 OptCard 가 수정 대상인지 판별
+        opt_card_fields_used = {}  # card_letter → {field: value}
+        for card_letter, (setter, fields) in opt_cards.items():
+            matched = {f: opts[f] for f in fields if f in opts}
+            if matched:
+                opt_card_fields_used[card_letter] = matched
+
+        for _, contact in self.contacts.items():
+            if not isinstance(contact, tiedContactTypes):
+                continue
+
+            # Card 2
+            for f in card2_fields:
+                if f in opts:
+                    setattr(contact, f, opts[f])
+
+            # Card 3
+            for f in card3_fields:
+                if f in opts:
+                    setattr(contact, f, opts[f])
+
+            # Card 4
+            for f in card4_fields:
+                if f in opts:
+                    setattr(contact, f, opts[f])
+
+            # OptCards — 기존 값을 보존하면서 지정된 필드만 덮어씀
+            for card_letter, (setter, fields) in opt_cards.items():
+                if card_letter not in opt_card_fields_used:
+                    continue
+                card_attr = f"OptCard{card_letter}"
+                existing = getattr(contact, card_attr, [])
+
+                # 기존 OptCard 없으면 디폴트로 초기화
+                if not existing:
+                    getattr(contact, setter)()
+                    existing = getattr(contact, card_attr)
+
+                # 필드별 덮어쓰기
+                for i, fname in enumerate(fields):
+                    if fname in opts and i < len(existing):
+                        existing[i] = opts[fname]
+
+            modified += 1
+
+        print(f"[ModifyTiedParameters] {modified} Tied 접촉 파라미터 수정 완료")
+        return modified

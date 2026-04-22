@@ -5616,4 +5616,45 @@ class ElementManager:
     # id_array, grid_dict, offset = assign_structured_grid_indices(elements, nodes, element_ids)
     # print(id_array.shape)  # should be (ni, nj, nk)
     # print(id_array)        # 3D array with element IDs
- 
+
+
+def compute_segment_normal(seg, nodeManager):
+    """segment(노드ID 리스트) → 법선 벡터 (numpy array, 단위벡터). 실패 시 None."""
+    coords = []
+    for nid in seg:
+        n = nodeManager.GetNode(nid)
+        if n is None:
+            return None
+        coords.append((n.x, n.y, n.z))
+    if len(coords) < 3:
+        return None
+    v1 = np.array(coords[1]) - np.array(coords[0])
+    v2 = np.array(coords[2]) - np.array(coords[0])
+    normal = np.cross(v1, v2)
+    norm = np.linalg.norm(normal)
+    if norm < 1e-30:
+        return None
+    return normal / norm
+
+
+def compute_segment_center(seg, nodeManager):
+    """segment(노드ID 리스트) → 중심점 (numpy array). 실패 시 None."""
+    cx, cy, cz, nn = 0.0, 0.0, 0.0, 0
+    for nid in seg:
+        n = nodeManager.GetNode(nid)
+        if n is None:
+            return None
+        cx += n.x; cy += n.y; cz += n.z; nn += 1
+    if nn == 0:
+        return None
+    return np.array([cx / nn, cy / nn, cz / nn])
+
+
+def are_segments_facing(normalA, normalB, angle_limit_deg):
+    """두 법선이 마주보는지 판정. cos(angle) < -cos(limit) 이면 True."""
+    if normalA is None or normalB is None:
+        return True  # 법선 계산 실패 시 보수적으로 통과
+    cos_limit = math.cos(math.radians(angle_limit_deg))
+    dot = np.dot(normalA, normalB)
+    return dot < -cos_limit
+

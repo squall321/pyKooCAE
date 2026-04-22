@@ -94,6 +94,12 @@ def build_drop_attitude_config(
         if rc_tolerance != 1.0:
             contact_opt_line += f"\nRobustContactTolerance,{rc_tolerance}"
 
+    # Tied 접촉 옵션
+    tied_options = sim_params.get("tied_options", {})
+    tied_opt_line = ""
+    for key, val in tied_options.items():
+        tied_opt_line += f"\nTiedOptions.{key},{val}"
+
     # 바닥판 접촉 옵션
     drop_contact = sim_params.get("drop_contact", {})
     drop_contact_line = ""
@@ -131,7 +137,7 @@ YoungsModulus,{youngs_modulus}
 PoissonRatio,{poisson_ratio}
 tFinal,{tFinal}
 dt,{dt}
-{drop_surface_line}{d2r_line}{contact_opt_line}{drop_contact_line}
+{drop_surface_line}{d2r_line}{contact_opt_line}{drop_contact_line}{tied_opt_line}
 **EndDropAttitude
 *End
 """

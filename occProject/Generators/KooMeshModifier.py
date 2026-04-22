@@ -1462,6 +1462,22 @@ class KooMeshModifier(KooSimulationGenerator):
                                 curOptions["DropContact"][key] = float(val)
                             except ValueError:
                                 curOptions["DropContact"][key] = val
+                        elif "tiedoptions." in line.lower():
+                            svector = line.split(",")
+                            key = svector[0].split(".")[1].strip()
+                            val = svector[1].strip()
+                            if "TiedOptions" not in curOptions:
+                                curOptions["TiedOptions"] = {}
+                            key_lower = key.lower()
+                            # Boolean 필드
+                            if key_lower == "converttosegment":
+                                curOptions["TiedOptions"]["ConvertToSegment"] = val.lower() != "false"
+                            else:
+                                # 숫자 필드 (LS-DYNA contact card 전체 + 제어 옵션)
+                                try:
+                                    curOptions["TiedOptions"][key] = float(val)
+                                except ValueError:
+                                    curOptions["TiedOptions"][key] = val
 
                     self.modeIDOption[curModeID] = curOptions
                 elif "*weakcoupling" in line.lower():
