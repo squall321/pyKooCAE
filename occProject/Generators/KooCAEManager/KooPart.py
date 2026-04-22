@@ -1916,14 +1916,14 @@ class KooSTLPart(KooPart):
             
     
 class PartSet:
-    def __init__(self, psid, da1 = 0.0, da2 = 0.0, da3 = 0.0, da4 = 0.0, solver="MECH",pids = [], name = ""):
+    def __init__(self, psid, da1 = 0.0, da2 = 0.0, da3 = 0.0, da4 = 0.0, solver="MECH", pids = None, name = ""):
         self.psid = psid
         self.da1 = da1
         self.da2 = da2
         self.da3 = da3
         self.da4 = da4
         self.solver = solver
-        self.pids = pids
+        self.pids = pids if pids is not None else []
         self.name = name 
     
     def AddPart(self, pid):
@@ -2085,7 +2085,7 @@ class KooPartManager():
         if partManager.elementManager is not None:
             self.elementManager.OverwritefromElementManager(partManager.elementManager)
 
-    def CreatePartSet(self, da1 = 0.0, da2 = 0.0, da3 = 0.0, da4 = 0.0, solver="MECH", pids = [], name=""):
+    def CreatePartSet(self, da1 = 0.0, da2 = 0.0, da3 = 0.0, da4 = 0.0, solver="MECH", pids = None, name=""):
         self.maxSID = self.maxSID + 1
         if name == "":
             name = "PartSet_{psid}".format(psid = self.maxSID)
@@ -2093,7 +2093,7 @@ class KooPartManager():
         self.partSets[self.maxSID] = partSet
         return partSet
         
-    def CreatePartSetwithID(self, psid, da1 = 0.0, da2 = 0.0, da3 = 0.0, da4 = 0.0, solver="MECH", pids = [], name = ""):
+    def CreatePartSetwithID(self, psid, da1 = 0.0, da2 = 0.0, da3 = 0.0, da4 = 0.0, solver="MECH", pids = None, name = ""):
         self.maxSID = max(self.maxSID, psid)
         if name == "":
             name = "PartSet_{psid}".format(psid = psid)
