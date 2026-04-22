@@ -1425,6 +1425,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "deformabletorigid" in line.lower():
                             svector = line.split(",")
                             curOptions["DeformableToRigid"] = svector[1].strip().lower() == "true"
+                        elif "robustcontacttolerance" in line.lower():
+                            svector = line.split(",")
+                            curOptions["RobustContactTolerance"] = KooDynaFloat(svector[1])
                         elif "robustcontact" in line.lower():
                             svector = line.split(",")
                             curOptions["RobustContact"] = svector[1].strip().lower() != "false"

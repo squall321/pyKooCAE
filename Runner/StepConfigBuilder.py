@@ -90,6 +90,9 @@ def build_drop_attitude_config(
         contact_opt_line += f"\nDecomposeContactAbsoluteMarginZ,{decompose_abs_margin_z}"
     if robust_contact:
         contact_opt_line += "\nRobustContact,True"
+        rc_tolerance = sim_params.get("robust_contact_tolerance", 0.1)
+        if rc_tolerance != 1.0:
+            contact_opt_line += f"\nRobustContactTolerance,{rc_tolerance}"
 
     # 바닥판 접촉 옵션
     drop_contact = sim_params.get("drop_contact", {})

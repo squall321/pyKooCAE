@@ -2342,28 +2342,157 @@ class KooDynaAdvancedModification:
             opt_SLDSTF = drop_contact.get("SLDSTF", 0.0)
             dropContactCID = None
 
-            # RobustContact: Tied 쌍을 SINGLE_SURFACE에서 제외 + 중복 Tied 제거
+            # RobustContact: 전체 외부 segment에서 Tied 인터페이스 면 제외한 Segment Set으로 SS 교체
             if robust_contact:
-                # CONTACT_EXCLUDE_INTERACTION은 SOFT=2 전용 — SOFT≠2면 강제 전환
-                if opt_SOFT != 2:
-                    print(f"DROP_ATTITUDE: RobustContact requires SOFT=2, overriding SOFT={opt_SOFT} → 2")
-                    opt_SOFT = 2
-                # DEPTH=3 강제 (양면 침투 검사, 과보정 방지)
-                if opt_DEPTH != 3:
-                    print(f"DROP_ATTITUDE: RobustContact DEPTH={opt_DEPTH} → 3")
-                    opt_DEPTH = 3
-                # 이미 생성된 SS의 OptCardA 갱신
-                for _, c in list(self.dynaImporter.contactManager.contacts.items()):
-                    if hasattr(c, 'OptCardA') and c.OptCardA and hasattr(c, 'name'):
-                        if 'SS_from_GENERAL' in str(c.name) or 'SS_AllParts' in str(c.name):
-                            c.OptCardA[0] = 2   # SOFT=2
-                            c.OptCardA[5] = 3   # DEPTH=3
-                # 1. 중복 Tied 먼저 제거 (exclusion 쌍 중복 방지)
+                # SOFT=2, DEPTH=3 강제
+                opt_SOFT = 2
+                opt_DEPTH = 3
+
+                # 1. 중복 Tied 먼저 제거
                 n_dup = self.dynaImporter.contactManager.RemoveDuplicateTiedContacts()
-                # 2. 정리된 Tied 기반으로 exclusion 생성
-                n_excl = self.dynaImporter.contactManager.BuildExclusionsFromTied(
-                    partManager=self.dynaImporter.partManager)
-                print(f"DROP_ATTITUDE: RobustContact — SOFT=2, DEPTH=3, {n_dup} 중복 Tied 제거, {n_excl} exclusion 쌍")
+
+                # 2. Tied 인터페이스 segment 수집 (KD-tree proximity 기반)
+                tied_interface_segments = set()  # frozenset(sorted node IDs)
+                rc_tolerance = option.get("RobustContactTolerance", 0.1)  # mm 단위
+                nodeMan = self.dynaImporter.nodeManager
+
+                def _seg_center(seg):
+                    """segment 노드 ID 리스트 → 중심점 (x,y,z) 또는 None"""
+                    cx, cy, cz, nn = 0, 0, 0, 0
+                    for nid in seg:
+                        n = nodeMan.GetNode(nid)
+                        if n is None:
+                            return None
+                        cx += n.x; cy += n.y; cz += n.z; nn += 1
+                    return (cx/nn, cy/nn, cz/nn) if nn > 0 else None
+
+                # 파트별 외부 면 + KD-tree 캐시 (같은 파트가 여러 Tied에 등장 시 재사용)
+                _bound_cache = {}   # pid → (segments, centers, tree)
+                def _get_part_surface(pid):
+                    if pid in _bound_cache:
+                        return _bound_cache[pid]
+                    p = self.dynaImporter.partManager.parts.get(pid)
+                    if p is None or not p.elementManager.elements:
+                        _bound_cache[pid] = ([], [], None)
+                        return _bound_cache[pid]
+                    segs = p.elementManager.GetExternalBoundary(False)
+                    centers = []
+                    valid_segs = []
+                    for seg in segs:
+                        c = _seg_center(seg)
+                        if c:
+                            centers.append(c)
+                            valid_segs.append(seg)
+                    tree = KDTree(centers) if centers else None
+                    _bound_cache[pid] = (valid_segs, centers, tree)
+                    return _bound_cache[pid]
+
+                segSetMan = self.dynaImporter.segmentSetManager
+
+                for _, contact in list(self.dynaImporter.contactManager.contacts.items()):
+                    if 'Tied' not in type(contact).__name__:
+                        continue
+
+                    if contact.SSTYP == 0 and contact.MSTYP == 0:
+                        # Segment Set 기반 Tied — segment를 직접 가져옴
+                        ssidA = contact.SSID
+                        ssidB = contact.MSID
+                        if ssidA in segSetMan.segmentSetList:
+                            for seg in segSetMan.segmentSetList[ssidA].segments:
+                                tied_interface_segments.add(frozenset(seg))
+                        if ssidB in segSetMan.segmentSetList:
+                            for seg in segSetMan.segmentSetList[ssidB].segments:
+                                tied_interface_segments.add(frozenset(seg))
+
+                    elif contact.SSTYP == 3 and contact.MSTYP == 3:
+                        # Part-to-Part Tied — proximity 기반 segment 탐색
+                        pidA, pidB = contact.SSID, contact.MSID
+
+                        segsA, centersA, treeA = _get_part_surface(pidA)
+                        segsB, centersB, treeB = _get_part_surface(pidB)
+
+                        if treeB and centersA:
+                            for i, seg in enumerate(segsA):
+                                dists, idxs = treeB.query(centersA[i], k=1)
+                                if dists < rc_tolerance:
+                                    tied_interface_segments.add(frozenset(seg))
+                                    tied_interface_segments.add(frozenset(segsB[idxs]))
+
+                        if treeA and centersB:
+                            for i, seg in enumerate(segsB):
+                                dists, idxs = treeA.query(centersB[i], k=1)
+                                if dists < rc_tolerance:
+                                    tied_interface_segments.add(frozenset(seg))
+                                    tied_interface_segments.add(frozenset(segsA[idxs]))
+
+                    elif contact.SSTYP == 0 and contact.MSTYP == 3:
+                        # 혼합: SS=Segment Set, MS=Part
+                        if contact.SSID in segSetMan.segmentSetList:
+                            for seg in segSetMan.segmentSetList[contact.SSID].segments:
+                                tied_interface_segments.add(frozenset(seg))
+                        # Part 쪽은 proximity로 추가 탐색
+                        segsM, centersM, treeM = _get_part_surface(contact.MSID)
+                        if treeM and contact.SSID in segSetMan.segmentSetList:
+                            ssSegs = segSetMan.segmentSetList[contact.SSID].segments
+                            for seg in ssSegs:
+                                c = _seg_center(list(seg))
+                                if c and treeM:
+                                    dists, idxs = treeM.query(c, k=1)
+                                    if dists < rc_tolerance:
+                                        tied_interface_segments.add(frozenset(segsM[idxs]))
+
+                    elif contact.SSTYP == 3 and contact.MSTYP == 0:
+                        # 혼합: SS=Part, MS=Segment Set
+                        if contact.MSID in segSetMan.segmentSetList:
+                            for seg in segSetMan.segmentSetList[contact.MSID].segments:
+                                tied_interface_segments.add(frozenset(seg))
+                        segsS, centersS, treeS = _get_part_surface(contact.SSID)
+                        if treeS and contact.MSID in segSetMan.segmentSetList:
+                            msSegs = segSetMan.segmentSetList[contact.MSID].segments
+                            for seg in msSegs:
+                                c = _seg_center(list(seg))
+                                if c and treeS:
+                                    dists, idxs = treeS.query(c, k=1)
+                                    if dists < rc_tolerance:
+                                        tied_interface_segments.add(frozenset(segsS[idxs]))
+
+                print(f"DROP_ATTITUDE: RobustContact — {len(tied_interface_segments)} Tied 인터페이스 segment 감지")
+
+                # 3. 전체 모델 외부 segment 수집 (바닥판 제외)
+                all_segments = []
+                for pid, p in self.dynaImporter.partManager.parts.items():
+                    if not p.elementManager.elements:
+                        continue
+                    ext_segs = p.elementManager.GetExternalBoundary(False)
+                    all_segments.extend(ext_segs)
+                print(f"DROP_ATTITUDE: RobustContact — 전체 외부 segment {len(all_segments)}개")
+
+                # 4. Tied 면 제외
+                filtered_segments = []
+                for seg in all_segments:
+                    if frozenset(seg) not in tied_interface_segments:
+                        filtered_segments.append(seg)
+                print(f"DROP_ATTITUDE: RobustContact — Tied 제외 후 {len(filtered_segments)}개 segment")
+
+                # 5. Segment Set 생성
+                ss_seg_set = self.dynaImporter.segmentSetManager.CreateSegmentSet(name="RobustContact_SS")
+                ss_seg_set.AddSegments(filtered_segments)
+
+                # 6. 모든 SINGLE_SURFACE의 SSID/SSTYP를 Segment Set으로 교체
+                ss_replaced = 0
+                for _, c in list(self.dynaImporter.contactManager.contacts.items()):
+                    ctype = type(c).__name__
+                    if 'AutomaticSingleSurface' in ctype or 'SingleSurface' in ctype:
+                        c.SSID = ss_seg_set.sid
+                        c.SSTYP = 0  # Segment Set
+                        c.SetOptCardA(opt_SOFT, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
+                        ss_replaced += 1
+                        print(f"DROP_ATTITUDE: RobustContact — SS CID={c.cid} → SSID={ss_seg_set.sid}(SegSet), SOFT=2, DEPTH=3")
+
+                # exclusion 불필요 — 제거
+                self.dynaImporter.contactManager.exclusions.clear()
+
+                print(f"DROP_ATTITUDE: RobustContact 완료 — {n_dup} 중복 Tied 제거, {len(tied_interface_segments)} Tied segment 제외")
 
             if dropSurface[0] == "RigidWall":
                 # RIGIDWALL_PLANAR_MOVING_FORCES — 메시 없는 무한 강체 평면
