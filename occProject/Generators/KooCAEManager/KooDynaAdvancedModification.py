@@ -2283,8 +2283,14 @@ class KooDynaAdvancedModification:
                     else:
                         ss.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
                     ss.name = "SS_from_GENERAL_CID{0}".format(cid_g)
-                    if contact_g.OptCardC: ss.OptCardC = contact_g.OptCardC
-                    if contact_g.OptCardD: ss.OptCardD = contact_g.OptCardD
+                    if has_optC:
+                        ss.SetOptCardC(opt_IGAP, opt_IGNORE, opt_DPRFAC, opt_DTSTIF, opt_EDGEK, 0.0, opt_FLANGL, opt_CID_RCF)
+                    elif contact_g.OptCardC:
+                        ss.OptCardC = contact_g.OptCardC
+                    if has_optD:
+                        ss.SetOptCardD(opt_Q2TRI, opt_DTPCHK, opt_SFNBR, opt_FNLSCL, opt_DNLSCL, opt_TCSO, opt_TIEDID, opt_SHLEDG)
+                    elif contact_g.OptCardD:
+                        ss.OptCardD = contact_g.OptCardD
                     if contact_g.OptCardE: ss.OptCardE = contact_g.OptCardE
                     if contact_g.OptCardF: ss.OptCardF = contact_g.OptCardF
                     self.dynaImporter.contactManager.RemoveContactbyID(cid_g)
@@ -2318,6 +2324,10 @@ class KooDynaAdvancedModification:
                         1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
                     ss.SetOptCardA(SOFT_opt, SOFSCL_opt, 0, 1.025, SBOPT_opt, DEPTH_opt, BSORT_opt, FRCFRQ_opt)
                     ss.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
+                    if has_optC:
+                        ss.SetOptCardC(opt_IGAP, opt_IGNORE, opt_DPRFAC, opt_DTSTIF, opt_EDGEK, 0.0, opt_FLANGL, opt_CID_RCF)
+                    if has_optD:
+                        ss.SetOptCardD(opt_Q2TRI, opt_DTPCHK, opt_SFNBR, opt_FNLSCL, opt_DNLSCL, opt_TCSO, opt_TIEDID, opt_SHLEDG)
                     ss.name = "SS_AllParts_Auto"
                     print("DROP_ATTITUDE: No GENERAL/SS found -> Created SINGLE_SURFACE(CID={0}, SOFT={1}) with {2} parts".format(
                         ss.cid, SOFT_opt, len(allPartIDs)))
@@ -2340,6 +2350,25 @@ class KooDynaAdvancedModification:
             opt_I2D3D = int(drop_contact.get("I2D3D", 0))
             opt_SLDTHK = drop_contact.get("SLDTHK", 0.0)
             opt_SLDSTF = drop_contact.get("SLDSTF", 0.0)
+            # OptCardC
+            opt_IGAP = int(drop_contact.get("IGAP", 1))
+            opt_IGNORE = int(drop_contact.get("IGNORE", 0))
+            opt_DPRFAC = drop_contact.get("DPRFAC", 0.0)
+            opt_DTSTIF = drop_contact.get("DTSTIF", 0.0)
+            opt_EDGEK = drop_contact.get("EDGEK", 0.0)
+            opt_FLANGL = drop_contact.get("FLANGL", 0.0)
+            opt_CID_RCF = int(drop_contact.get("CID_RCF", 0))
+            has_optC = any(drop_contact.get(k) for k in ["IGAP", "IGNORE", "DPRFAC", "DTSTIF", "EDGEK", "FLANGL", "CID_RCF"])
+            # OptCardD
+            opt_Q2TRI = int(drop_contact.get("Q2TRI", 0))
+            opt_DTPCHK = drop_contact.get("DTPCHK", 0.0)
+            opt_SFNBR = drop_contact.get("SFNBR", 0.0)
+            opt_FNLSCL = drop_contact.get("FNLSCL", 0.0)
+            opt_DNLSCL = drop_contact.get("DNLSCL", 0.0)
+            opt_TCSO = int(drop_contact.get("TCSO", 0))
+            opt_TIEDID = int(drop_contact.get("TIEDID", 0))
+            opt_SHLEDG = int(drop_contact.get("SHLEDG", 0))
+            has_optD = any(drop_contact.get(k) for k in ["Q2TRI", "DTPCHK", "SFNBR", "FNLSCL", "DNLSCL", "TCSO", "TIEDID", "SHLEDG"])
             dropContactCID = None
 
             # RobustContact: 전체 외부 segment에서 Tied 인터페이스 면 제외한 Segment Set으로 SS 교체
@@ -2520,6 +2549,11 @@ class KooDynaAdvancedModification:
                         c.SSID = ss_seg_set.sid
                         c.SSTYP = 0  # Segment Set
                         c.SetOptCardA(opt_SOFT, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
+                        c.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
+                        if has_optC:
+                            c.SetOptCardC(opt_IGAP, opt_IGNORE, opt_DPRFAC, opt_DTSTIF, opt_EDGEK, 0.0, opt_FLANGL, opt_CID_RCF)
+                        if has_optD:
+                            c.SetOptCardD(opt_Q2TRI, opt_DTPCHK, opt_SFNBR, opt_FNLSCL, opt_DNLSCL, opt_TCSO, opt_TIEDID, opt_SHLEDG)
                         ss_replaced += 1
                         print(f"DROP_ATTITUDE: RobustContact — SS CID={c.cid} → SSID={ss_seg_set.sid}(SegSet), SOFT=2, DEPTH=3")
 
@@ -2581,6 +2615,10 @@ class KooDynaAdvancedModification:
                     newGeneral.name = "AllParts_GENERAL_withWall"
                     newGeneral.SetOptCardA(SOFT_opt, SOFSCL_opt, 0, 1.025, SBOPT_opt, DEPTH_opt, BSORT_opt, FRCFRQ_opt)
                     newGeneral.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
+                    if has_optC:
+                        newGeneral.SetOptCardC(opt_IGAP, opt_IGNORE, opt_DPRFAC, opt_DTSTIF, opt_EDGEK, 0.0, opt_FLANGL, opt_CID_RCF)
+                    if has_optD:
+                        newGeneral.SetOptCardD(opt_Q2TRI, opt_DTPCHK, opt_SFNBR, opt_FNLSCL, opt_DNLSCL, opt_TCSO, opt_TIEDID, opt_SHLEDG)
                     print(f"DROP_ATTITUDE: IncludeWallInGeneral — GENERAL 없음 → 전체 파트({len(allPIDs)}개, 바닥판 포함) GENERAL 생성(CID={newGeneral.cid})")
                 dropContactCID = None
 
@@ -2654,10 +2692,14 @@ class KooDynaAdvancedModification:
                         internalGeneral.name = "Internal_GENERAL"
                         internalGeneral.SetOptCardA(opt_SOFT if opt_SOFT != 2 else 1, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
                         internalGeneral.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
-                        # OptCardB~F 복사
-                        if orig_g.OptCardB: internalGeneral.OptCardB = orig_g.OptCardB
-                        if orig_g.OptCardC: internalGeneral.OptCardC = orig_g.OptCardC
-                        if orig_g.OptCardD: internalGeneral.OptCardD = orig_g.OptCardD
+                        if has_optC:
+                            internalGeneral.SetOptCardC(opt_IGAP, opt_IGNORE, opt_DPRFAC, opt_DTSTIF, opt_EDGEK, 0.0, opt_FLANGL, opt_CID_RCF)
+                        elif orig_g.OptCardC:
+                            internalGeneral.OptCardC = orig_g.OptCardC
+                        if has_optD:
+                            internalGeneral.SetOptCardD(opt_Q2TRI, opt_DTPCHK, opt_SFNBR, opt_FNLSCL, opt_DNLSCL, opt_TCSO, opt_TIEDID, opt_SHLEDG)
+                        elif orig_g.OptCardD:
+                            internalGeneral.OptCardD = orig_g.OptCardD
                         if orig_g.OptCardE: internalGeneral.OptCardE = orig_g.OptCardE
                         if orig_g.OptCardF: internalGeneral.OptCardF = orig_g.OptCardF
                         self.dynaImporter.contactManager.RemoveContactbyID(cid_g)
@@ -2674,6 +2716,10 @@ class KooDynaAdvancedModification:
                         dropGeneral.name = "DropSurface_GENERAL"
                         dropGeneral.SetOptCardA(opt_SOFT if opt_SOFT != 2 else 1, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
                         dropGeneral.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
+                        if has_optC:
+                            dropGeneral.SetOptCardC(opt_IGAP, opt_IGNORE, opt_DPRFAC, opt_DTSTIF, opt_EDGEK, 0.0, opt_FLANGL, opt_CID_RCF)
+                        if has_optD:
+                            dropGeneral.SetOptCardD(opt_Q2TRI, opt_DTPCHK, opt_SFNBR, opt_FNLSCL, opt_DNLSCL, opt_TCSO, opt_TIEDID, opt_SHLEDG)
                         dropContactCID = dropGeneral.cid
                         print("DROP_ATTITUDE: Created DropSurface_GENERAL (CID={0}, SOFT=1)".format(dropGeneral.cid))
 
@@ -2719,6 +2765,10 @@ class KooDynaAdvancedModification:
                     FRCFRQ = drop_contact.get("FRCFRQ", 1)
                     surfacetosurfaceContact.SetOptCardA(SOFT, SOFSCL, LCIDAB, MAXPAR, SBOPT, DEPTH, BSORT, FRCFRQ)
                     surfacetosurfaceContact.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
+                    if has_optC:
+                        surfacetosurfaceContact.SetOptCardC(opt_IGAP, opt_IGNORE, opt_DPRFAC, opt_DTSTIF, opt_EDGEK, 0.0, opt_FLANGL, opt_CID_RCF)
+                    if has_optD:
+                        surfacetosurfaceContact.SetOptCardD(opt_Q2TRI, opt_DTPCHK, opt_SFNBR, opt_FNLSCL, opt_DNLSCL, opt_TCSO, opt_TIEDID, opt_SHLEDG)
                     dropContactCID = surfacetosurfaceContact.cid
 
             # DeformableToRigid Paired Switch

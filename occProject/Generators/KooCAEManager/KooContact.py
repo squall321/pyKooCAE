@@ -62,7 +62,7 @@ class KooContact:
     def SetOptCardB(self,PENMAX=0.0, THKOPT=0, SHLTHK=0, SNLOG=0, ISYM=0, I2D3D=0, SLDTHK=0.0, SLDSTF=0.0):
         self.OptCardB = [PENMAX, THKOPT, SHLTHK, SNLOG, ISYM, I2D3D, SLDTHK, SLDSTF]
     
-    def SetOptCardC(self, IGAP=1, IGNORE=0, DPRFACPA1=0.0, DTSTIFPA2=0.0, EDGEK=0.0, FLANGL=0.0, CID_RCF=0):
+    def SetOptCardC(self, IGAP=1, IGNORE=0, DPRFACPA1=0.0, DTSTIFPA2=0.0, EDGEK=0.0, BLANK=0.0, FLANGL=0.0, CID_RCF=0):
         self.OptCardC = [IGAP, IGNORE, DPRFACPA1, DTSTIFPA2, EDGEK,"          ", FLANGL, CID_RCF]   
     
     def SetOptCardD(self,Q2TRI=0, DTPCHK=0.0, SFNBR=0.0, FNLSCL=0.0, DNLSCL=0.0, TCSO=0, TIEDID=0, SHLEDG=0):
@@ -71,7 +71,7 @@ class KooContact:
     def SetOptCardE(self,SHAREC=0, CPARM8=0, IPBACK=0, SRNDE=0, FRICSF=1.0, ICOR=0, FTORQ=0, REGION=0):
         self.OptCardE = [SHAREC, CPARM8, IPBACK, SRNDE, FRICSF, ICOR, FTORQ, REGION]
     
-    def SetOptCardF(self,PSTIFF=0, IGNROFF=0, FSTOL=2.0, DBINR=0, SSFTYP=0, SWTPR=0, TETFAC=0.0):
+    def SetOptCardF(self,PSTIFF=0, IGNROFF=0, BLANK=0.0, FSTOL=2.0, DBINR=0, SSFTYP=0, SWTPR=0, TETFAC=0.0):
         self.OptCardF = [PSTIFF, IGNROFF, "          ", FSTOL, DBINR, SSFTYP, SWTPR, TETFAC]
     
     def WritetoDynaKeyword(self, startID = 0):
@@ -1328,8 +1328,8 @@ class KooContactManager:
         from KooCAEManager.KooElement import compute_segment_normal, compute_segment_center, are_segments_facing
         import numpy as np
 
-        tiedContactTypes = (KooContactTiedSurfacetoSurface, KooContactTiedSurfacetoSurfaceOffset,
-                            KooContactTiedShellEdgetoSurfaceBeamOffset)
+        # TIED_SHELL_EDGE_TO_SURFACE는 Segment Set 변환 불가 (LS-DYNA 제약)
+        tiedContactTypes = (KooContactTiedSurfacetoSurface, KooContactTiedSurfacetoSurfaceOffset)
         converted = 0
 
         for _, contact in list(self.contacts.items()):
@@ -1451,10 +1451,10 @@ class KooContactManager:
         opt_cards = {
             "A": ("SetOptCardA", ["SOFT", "SOFSCL", "LCIDAB", "MAXPAR", "SBOPT", "DEPTH", "BSORT", "FRCFRQ"]),
             "B": ("SetOptCardB", ["PENMAX", "THKOPT", "SHLTHK", "SNLOG", "ISYM", "I2D3D", "SLDTHK", "SLDSTF"]),
-            "C": ("SetOptCardC", ["IGAP", "IGNORE", "DPRFAC", "DTSTIF", "EDGEK", "FLANGL", "CID_RCF"]),
+            "C": ("SetOptCardC", ["IGAP", "IGNORE", "DPRFAC", "DTSTIF", "EDGEK", "_BLANK_", "FLANGL", "CID_RCF"]),
             "D": ("SetOptCardD", ["Q2TRI", "DTPCHK", "SFNBR", "FNLSCL", "DNLSCL", "TCSO", "TIEDID", "SHLEDG"]),
             "E": ("SetOptCardE", ["SHAREC", "CPARM8", "IPBACK", "SRNDE", "FRICSF", "ICOR", "FTORQ", "REGION"]),
-            "F": ("SetOptCardF", ["PSTIFF", "IGNROFF", "FSTOL", "DBINR", "SSFTYP", "SWTPR", "TETFAC"]),
+            "F": ("SetOptCardF", ["PSTIFF", "IGNROFF", "_BLANK_", "FSTOL", "DBINR", "SSFTYP", "SWTPR", "TETFAC"]),
         }
 
         # Alias 처리: SAST → SST, SBST → MST
