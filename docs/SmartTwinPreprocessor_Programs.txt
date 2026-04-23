@@ -1,0 +1,147 @@
+================================================================================
+SmartTwinPreprocessor — 프로그램 설명서
+================================================================================
+
+
+1. KooChainRun — 순차/누적 CAE 해석 워크플로우 매니저
+--------------------------------------------------------------------------------
+
+- LS-DYNA 기반 구조 해석 시뮬레이션 대규모 자동화 CLI 도구
+- scenario.json으로부터 낙하 자세(오일러 각), 높이, 재료 물성 등 조합하여 runner_config.json 생성
+- Slurm HPC 환경에서 Apptainer(SIF) 컨테이너를 통해 LS-DYNA 솔버 실행
+- 누적(Cumulative) 모드: 이전 스텝 dynain 결과를 다음 스텝 초기 조건으로 자동 연결, 다단계 충격 해석
+- DOE 모드: Slurm Array Job으로 수백~수천 개 독립 케이스 병렬 제출
+- 잡 추적(jobs.json), sacct 기반 상태 모니터링
+- 실패 잡 자동 재실행(rerun), 노드 제외(exclude-nodes)
+- 체크포인트 복구
+
+
+2. KooMeshModifier — LS-DYNA 모델 자동 전처리 및 메시 변환 엔진
+--------------------------------------------------------------------------------
+
+- LS-DYNA 키워드(.k) 파일을 읽어 메시/파트/접촉/경계조건/제어 카드를 프로그래밍 방식으로 수정하는 범용 FEA 전처리 엔진
+- 설정 파일(runner_config) 기반 20여 가지 모드 조합 지원
+
+[낙하/충격 시험]
+- DROP_ATTITUDE
+  - 오일러 각 회전, 바닥판 메시 또는 강체벽(RigidWall) 자동 생성, 초기 속도 부여
+  - GENERAL→SINGLE_SURFACE 접촉 변환 또는 S2S 쌍 분해
+  - robust_contact: Tied 인터페이스를 KD-tree + 법선 벡터 필터링으로 자동 감지, SINGLE_SURFACE Segment Set에서 제외(이중 구속 방지), SOFT=2/DEPTH=3 강제
+  - tied_options: Part-to-Part Tied→Segment Set 변환, Contact 카드 전체 필드 일괄 오버라이드(SAST/SBST 디폴트 0.005)
+- DROP_WEIGHT_IMPACT_TEST
+  - 낙하 중량 충격 시험(Ball Drop) 설정
+  - 충격자(Impactor) 메시 자동 생성
+  - 부분 강체화(Partial Rigid)로 충격 영역 외 파트를 강체 변환, 계산 비용 절감
+- TRANSFORM
+  - 모델 좌표계 이동/회전 변환
+
+[요소 변환]
+- CONVERT_CNRB_TO_SOLID
+  - CNRB를 실린더형 솔리드 Hexa 요소로 변환
+  - 원통좌표 기반 내/외 링 노드 생성 후 Tied Contact 연결
+- CONSTRAINED_NODAL_RIGIDBODY_TO_BEAM
+  - CNRB를 빔(Beam) 요소로 변환
+  - 탄성 재료/단면 자동 생성
+- 비정렬→정렬 메시 변환
+  - 솔리드를 층별 정렬 구조 메시로 재구성
+  - Solid→TShell, Solid→Shell 변환
+  - Composite Layup 적용
+
+[파트/재료 수정]
+- ELASTIC_TO_RIGID
+  - 탄성체 재료를 강체(Rigid) 재료로 교체
+- MATERIAL_EXCHANGE
+  - 재료 물성 변수를 치환하여 DOE별 변형 키워드 파일 일괄 생성
+- PART_EXCHANGE
+  - 특정 파트 메시를 외부 메시로 교체
+- PART_MORPHING
+  - 지정 영역(Box/PID 기반) 메시 형상 변형(모핑)
+  - 위치/크기/비율 지정
+
+[휨/변형/공차]
+- WARPED_PART
+  - 외부 Warpage 데이터(Top/Bottom)를 읽어 Z방향 노드 좌표 변형
+  - 진폭/단위 스케일 제어
+- WARPED_TO_INITIAL_STRESS_PART
+  - Warpage 데이터를 초기 응력(Initial Stress)으로 변환 적용
+- DIMENSIONAL_TOLERANCE
+  - 치수 공차 DOE
+  - LHS, 정규분포, 리스트 기반 샘플링으로 파트별 치수 변형 일괄 생성
+- TRANSLATION_DOE
+  - 지정 파트 X/Y/Z 이동 DOE 일괄 생성
+  - FastDOE(노드 캐시) 고속 출력
+- PART_LOCATION_DOE
+  - Bounding Box 범위 내 LHS 샘플링
+  - 장애물 파트 간섭 자동 체크
+
+[접촉 관리]
+- CONTACT_AUTO_DECOMPOSITION
+  - AUTOMATIC_GENERAL 접촉을 파트 BBox 기반 개별 S2S 쌍으로 자동 분해
+  - Tied 쌍 자동 제외
+- REMOVE_DUPLICATE_TIED_CONTACTS
+  - SSID/MSID 순서 무관 동일 쌍 중복 Tied 자동 감지/제거
+
+[접착/결합]
+- COHESIVE_BETWEEN_CONFORMAL_MESHES
+  - Conformal 메시 사이 Cohesive Zone 쉘 요소 자동 생성
+  - MAT_138(Mixed Mode) 자동 구성
+
+[해석 연계]
+- WEAK_COUPLING
+  - 외부 d3plot 변위 이력을 보간하여 경계 노드에 Prescribed Motion 적용
+  - 열-구조 약결합 해석
+- DYNAIN_TO_INITIAL
+  - dynain 결과를 현재 모델 초기 조건으로 적용
+  - Dynamic Relaxation 제거, 원점 이동/회전 보정
+- SIMULATION_AUTOMATION
+  - JSON 기반 Full Angle/Cumulative/MBD/Partial Impact 복합 시뮬레이션 파이프라인 자동 생성
+- FEM_TO_IGA
+  - FEM 솔리드를 IGA NURBS 요소로 변환
+  - Edge Length/BBox Offset/적분 규칙 지정
+
+[기타]
+- DEFEATURE_MESH
+  - 최소 길이 이하 미세 요소 제거, 메시 단순화
+- ERODING_MIN_DT
+  - 전체 재료에 MAT_ADD_EROSION 추가
+  - DTMIN 기반 요소 삭제 기준 자동 설정
+- CONTROL_SHELL/SOLID/TIMESTEP 자동 설정
+- Part Set/Node Set/Segment Set 관리
+- 메타데이터(JSON) 자동 생성
+
+
+3. KooAutomatedModeller — ODB/CAD 패키지 자동 모델링 및 FEA 메시 생성기
+--------------------------------------------------------------------------------
+
+- 텍스트 기반 패키지 정의 파일로부터 반도체/전자부품 3D CAD 형상 자동 생성 및 FEA 메시 변환
+- Open CASCADE(OCC) 커널 기반 파라메트릭 형상 생성
+
+[PKG — 사용자 정의 패키지]
+- 다층 구조(Die, Molding Compound, Substrate, Solder Ball, Underfill, DAF 등) 파라메트릭 자동 생성
+- 메시 생성 모드: Part/Node Set/Segment Set/Contact/Boundary/Load 자동 구성 → LS-DYNA(.k) 내보내기
+- Nastran(.bdf), ANSYS APDL(.cdb), ABAQUS(.inp), OBJ 포맷 지원
+- 메시 비활성 시 STEP CAD 파일로 형상만 내보내기
+- 패키지 치수, 리드/볼 배치, 층별 두께, 메시 밀도 등 정의 파일에서 제어
+
+[CAPACITOR/CAP — 적층 세라믹 커패시터(MLCC)]
+- 내부 전극 적층 구조, 외부 단자, 유전체 층 파라메트릭 모델링
+- 적층 수, 두께, 마진 등 정의 파일 지정
+- STEP 형상 및 FEA 메시 자동 생성
+
+[PCB — 인쇄회로기판]
+- ODB++ 데이터로부터 다층 PCB 기판 형상 생성
+- 구리/프리프레그/코어 층별 두께, 비아, 패드 구조 반영
+- STEP 파일 내보내기
+
+[PBA — Printed Board Assembly]
+- PCB + 실장 부품(패키지, 수동소자) 전체 어셈블리 자동 생성
+- ODB++ 패키지 데이터로 부품 위치/회전 자동 적용
+- 전체 어셈블리 STEP 파일 내보내기
+
+[ArrayPCB — 어레이 PCB 패널]
+- 다수 PCB 단위를 규칙적으로 배열한 어레이 패널 자동 생성
+- 패널 크기, 배열 수, 간격 등 정의 파일 제어
+
+[공통]
+- PyQt5 기반 3D 뷰어 내장, --display 옵션으로 실시간 확인
+- CLI 모드(offscreen)로 배치 처리 지원

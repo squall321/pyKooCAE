@@ -69,6 +69,7 @@ def build_drop_attitude_config(
     ensure_ss = sim_params.get("ensure_single_surface", False)
     decompose_general = sim_params.get("decompose_general_contact", False)
     robust_contact = sim_params.get("robust_contact", False)
+    include_wall_in_general = sim_params.get("include_wall_in_general", False)
     decompose_margin = sim_params.get("decompose_contact_margin", 1.5)
     decompose_abs_margin_x = sim_params.get("decompose_contact_absolute_margin_x", 5.0)
     decompose_abs_margin_y = sim_params.get("decompose_contact_absolute_margin_y", 5.0)
@@ -93,6 +94,8 @@ def build_drop_attitude_config(
         rc_tolerance = sim_params.get("robust_contact_tolerance", 0.1)
         if rc_tolerance != 1.0:
             contact_opt_line += f"\nRobustContactTolerance,{rc_tolerance}"
+    if include_wall_in_general:
+        contact_opt_line += "\nIncludeWallInGeneral,True"
 
     # Tied 접촉 옵션
     tied_options = sim_params.get("tied_options", {})

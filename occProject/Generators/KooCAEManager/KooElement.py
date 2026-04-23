@@ -4535,39 +4535,25 @@ class ElementManager:
         unique_boundaries = unique_boundaries[1:len_unique_boundaries]'''
         
         boundary_counts = Counter(tuple(sorted(b)) for b in boundaries)
-        
-        
-        unique_boundaries = [tuple(list(b)) for b, count in boundary_counts.items() if count == 1]
-        #unique_boundaries_set = {tuple(sorted(boundary)) for boundary in unique_boundaries}
 
-        # find original boundaries from the unique boundaries
-        
-        
-        
-        if sortedBoundary == True:
-            # Step 3: Create a mapping from sorted boundaries to their original (unsorted) versions
-            boundary_map = {tuple(sorted(b)): b for b in boundaries}
-            
-            # Step 4: Retrieve the original boundaries using the unique boundaries and the map
-            original_boundaries = [boundary_map[b] for b in unique_boundaries if b in boundary_map]
+        # 외부 면 = 한 번만 등장하는 면 (내부 면은 인접 요소와 공유되어 2번 등장)
+        unique_sorted_keys = {k for k, count in boundary_counts.items() if count == 1}
 
-            '''original_boundaries = []
-            # allocate memory
-            boundary_sorted = [tuple(sorted(b)) for b in boundaries]                           
-            for boundary in unique_boundaries:
-                if boundary in boundary_sorted:
-                    ith = boundary_sorted.index(boundary)
-                    curBoundary_not_sorted =  boundaries[ith]
-                    original_boundaries.append(curBoundary_not_sorted)'''
-            #for boundary in boundaries:
-            #    boundarysorted = tuple(sorted(boundary))
-            #    if boundarysorted in unique_boundaries:
-            #        original_boundaries.append(boundary)                                 
+        # sorted key → 원래 노드 순서 매핑 (원래 순서를 보존해야 법선 방향이 올바름)
+        boundary_map = {}
+        for b in boundaries:
+            key = tuple(sorted(b))
+            if key not in boundary_map:
+                boundary_map[key] = b
+
+        # 원래 노드 순서로 복원
+        original_boundaries = [boundary_map[k] for k in unique_sorted_keys if k in boundary_map]
+
+        if sortedBoundary:
             print(f"Number of unsorted external boundaries: {len(original_boundaries)} (Part {self.elementManagerID}, {len(self.elements)} elements)")
-            return original_boundaries
         else:
-            print(f"Number of external boundaries: {len(unique_boundaries)} (Part {self.elementManagerID}, {len(self.elements)} elements)")
-            return unique_boundaries
+            print(f"Number of external boundaries: {len(original_boundaries)} (Part {self.elementManagerID}, {len(self.elements)} elements)")
+        return original_boundaries
     
     def GetExternalNodes(self):
         boundaries = self.GetExternalBoundary()

@@ -2559,7 +2559,32 @@ class KooDynaAdvancedModification:
                     nodeSetFixed.AddNodesfromDict(nsFixed)
 
             # 바닥판 접촉 생성 (RigidWall이면 part=None → 접촉/D2R 전체 skip)
-            if part is not None and not convertToSS and not option.get("DeformableToRigid", False):
+            includeWallInGeneral = option.get("IncludeWallInGeneral", False)
+
+            if part is not None and includeWallInGeneral:
+                # 바닥판 파트를 기존 AUTOMATIC_GENERAL에 포함 — 별도 접촉 생성하지 않음
+                # GENERAL이 없으면 전체 파트(모델+바닥판)로 GENERAL 생성
+                if general_cids:
+                    print(f"DROP_ATTITUDE: IncludeWallInGeneral — 바닥판(PID={part.id})이 기존 GENERAL에 자동 포함")
+                else:
+                    allPIDs = [pid for pid, p in self.dynaImporter.partManager.parts.items()
+                               if p.elementManager.elements]
+                    allPartSet = self.dynaImporter.partManager.CreatePartSet(pids=allPIDs, name="AllParts_General")
+                    gen_FS = drop_contact.get("FS", 0.3)
+                    gen_FD = drop_contact.get("FD", 0.2)
+                    gen_VDC = drop_contact.get("VDC", 10.0)
+                    newGeneral = self.dynaImporter.contactManager.CreateContactAutomaticGeneral(
+                        allPartSet.psid, 0, 2, 0, 0, 0, 0, 0,
+                        gen_FS, gen_FD, 0.0, 0.0, gen_VDC,
+                        0, 0.0, "1.0000E+20",
+                        1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
+                    newGeneral.name = "AllParts_GENERAL_withWall"
+                    newGeneral.SetOptCardA(SOFT_opt, SOFSCL_opt, 0, 1.025, SBOPT_opt, DEPTH_opt, BSORT_opt, FRCFRQ_opt)
+                    newGeneral.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
+                    print(f"DROP_ATTITUDE: IncludeWallInGeneral — GENERAL 없음 → 전체 파트({len(allPIDs)}개, 바닥판 포함) GENERAL 생성(CID={newGeneral.cid})")
+                dropContactCID = None
+
+            elif part is not None and not convertToSS and not option.get("DeformableToRigid", False):
                 # GENERAL 유지 + D2R 없음 → 바닥판도 GENERAL이 알아서 잡음, 별도 접촉 불필요
                 print("DROP_ATTITUDE: GENERAL retained, drop surface included in GENERAL contact")
 
