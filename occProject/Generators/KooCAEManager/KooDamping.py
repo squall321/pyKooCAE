@@ -1,5 +1,18 @@
 from __future__ import annotations
 from KooCAEManager.KooOperator import *
+
+def _fmt_dyna_float(val, width=10):
+    """LS-DYNA 호환 실수 출력. 작은 값은 지수 표기, 일반 값은 고정 소수점."""
+    if val == 0.0:
+        return format(0.0, f">{width}.1f")
+    abs_val = abs(val)
+    if abs_val < 0.001 or abs_val >= 1.0e7:
+        # 지수 표기: 1.00E-04 형태
+        s = f"{val:.2E}"
+        return format(s, f">{width}")
+    else:
+        return format(val, f">{width}.4f")
+
 class KooDamping:
     def __init__(self, did):
         self.did = did 
@@ -22,7 +35,7 @@ class KooDampingGlobal(KooDamping):
         keyword = ""    
         keyword += "*DAMPING_GLOBAL\n"
         keyword += format(self.LCID, ">10")
-        keyword += format(self.VALDMP, ">10.3f")
+        keyword += _fmt_dyna_float(self.VALDMP)
         keyword += format(self.STX, ">10.3f")
         keyword += format(self.STY, ">10.3f")
         keyword += format(self.STZ, ">10.3f")
@@ -35,7 +48,7 @@ class KooDampingGlobal(KooDamping):
     def WriteStreamDynaKeyword(self, stream, startPID):
         stream.write("*DAMPING_GLOBAL\n")
         stream.write(format(self.LCID, ">10"))
-        stream.write(format(self.VALDMP, ">10.3f"))
+        stream.write(_fmt_dyna_float(self.VALDMP))
         stream.write(format(self.STX, ">10.3f"))
         stream.write(format(self.STY, ">10.3f"))
         stream.write(format(self.STZ, ">10.3f"))
@@ -56,14 +69,14 @@ class KooDampingPartStiffness(KooDamping):
         keyword = ""    
         keyword += "*DAMPING_PART_STIFFNESS\n"
         keyword += format(self.pid + startPID, ">10")
-        keyword += format(self.coef, ">10.3f")
+        keyword += _fmt_dyna_float(self.coef)
         keyword += "\n"
         return keyword
     
     def WriteStreamDynaKeyword(self, stream, startPID):
         stream.write("*DAMPING_PART_STIFFNESS\n")
         stream.write(format(self.pid + startPID, ">10"))
-        stream.write(format(self.coef, ">10.3f"))
+        stream.write(_fmt_dyna_float(self.coef))
         stream.write("\n")
 
 class KooDampingPartStiffnessSet(KooDamping):
@@ -77,14 +90,14 @@ class KooDampingPartStiffnessSet(KooDamping):
         keyword = ""    
         keyword += "*DAMPING_PART_STIFFNESS_SET\n"
         keyword += format(self.psid + startPSID, ">10")
-        keyword += format(self.coef, ">10.3f")
+        keyword += _fmt_dyna_float(self.coef)
         keyword += "\n"
         return keyword
     
     def WriteStreamDynaKeyword(self, stream, startPSID):
         stream.write("*DAMPING_PART_STIFFNESS_SET\n")
         stream.write(format(self.psid + startPSID, ">10"))
-        stream.write(format(self.coef, ">10.3f"))
+        stream.write(_fmt_dyna_float(self.coef))
         stream.write("\n")
     
 class KooDampingPartMass(KooDamping):
@@ -107,7 +120,7 @@ class KooDampingPartMass(KooDamping):
         keyword += "*DAMPING_PART_MASS\n"
         keyword += format(self.pid + startPID, ">10")
         keyword += format(self.lcid, ">10")
-        keyword += format(self.sf, ">10.3f")
+        keyword += _fmt_dyna_float(self.sf)
         keyword += format(self.flag, ">10")        
         keyword += "\n"
         if self.flag == 1:
@@ -124,7 +137,7 @@ class KooDampingPartMass(KooDamping):
         stream.write("*DAMPING_PART_MASS\n")
         stream.write(format(self.pid + startPID, ">10"))
         stream.write(format(self.lcid, ">10"))
-        stream.write(format(self.sf, ">10.3f"))
+        stream.write(_fmt_dyna_float(self.sf))
         stream.write(format(self.flag, ">10"))        
         stream.write("\n")
         if self.flag == 1:
@@ -156,7 +169,7 @@ class KooDampingPartMassSet(KooDamping):
         keyword += "*DAMPING_PART_MASS_SET\n"
         keyword += format(self.psid + startPSID, ">10")
         keyword += format(self.lcid, ">10")
-        keyword += format(self.sf, ">10.3f")
+        keyword += _fmt_dyna_float(self.sf)
         keyword += format(self.flag, ">10")        
         keyword += "\n"
         if self.flag == 1:
@@ -173,7 +186,7 @@ class KooDampingPartMassSet(KooDamping):
         stream.write("*DAMPING_PART_MASS_SET\n")
         stream.write(format(self.psid + startPSID, ">10"))
         stream.write(format(self.lcid, ">10"))
-        stream.write(format(self.sf, ">10.3f"))
+        stream.write(_fmt_dyna_float(self.sf))
         stream.write(format(self.flag, ">10"))        
         stream.write("\n")
         if self.flag == 1:

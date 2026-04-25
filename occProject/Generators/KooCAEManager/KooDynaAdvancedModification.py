@@ -1891,6 +1891,21 @@ class KooDynaAdvancedModification:
         if cm.controlHourglass is None:
             cm.SetControlHourglass(IHQ=5, QH=0.1)
 
+        # DAMPING_PART_STIFFNESS 보정: coef=0.0이면 0.01(최소 권장값)로 설정
+        # LS-DYNA explicit에서 COEF > 0: unitless stiffness-weighted damping (권장 0.01~0.25)
+        from KooCAEManager.KooDamping import KooDampingPartStiffness, KooDampingPartStiffnessSet
+        damp_corrected = 0
+        for did, damp in self.dynaImporter.dampingManager.dampings.items():
+            if isinstance(damp, (KooDampingPartStiffness, KooDampingPartStiffnessSet)):
+                if damp.coef == 0.0:
+                    damp.coef = 0.01
+                    damp_corrected += 1
+                elif 0.0 < damp.coef < 0.01:
+                    damp.coef = 0.01
+                    damp_corrected += 1
+        if damp_corrected > 0:
+            print(f"DROP_ATTITUDE: DAMPING_PART_STIFFNESS {damp_corrected}개 보정 (coef < 0.01 → 0.01)")
+
         # DATABASE 출력 설정
         binary = 1
         lcur = 0
