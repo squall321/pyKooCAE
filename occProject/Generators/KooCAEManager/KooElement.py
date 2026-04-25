@@ -5605,9 +5605,14 @@ class ElementManager:
 
 
 def compute_segment_normal(seg, nodeManager):
-    """segment(노드ID 리스트) → 법선 벡터 (numpy array, 단위벡터). 실패 시 None."""
+    """segment(노드ID 리스트) → 법선 벡터 (numpy array, 단위벡터). 실패 시 None.
+    퇴화 요소(중복 노드) 처리: 고유 좌표만 사용하여 법선 계산."""
     coords = []
+    seen_nids = set()
     for nid in seg:
+        if nid in seen_nids:
+            continue
+        seen_nids.add(nid)
         n = nodeManager.GetNode(nid)
         if n is None:
             return None
@@ -5624,9 +5629,14 @@ def compute_segment_normal(seg, nodeManager):
 
 
 def compute_segment_center(seg, nodeManager):
-    """segment(노드ID 리스트) → 중심점 (numpy array). 실패 시 None."""
+    """segment(노드ID 리스트) → 중심점 (numpy array). 실패 시 None.
+    퇴화 요소(중복 노드) 처리: 고유 노드만 사용하여 중심 계산."""
     cx, cy, cz, nn = 0.0, 0.0, 0.0, 0
+    seen_nids = set()
     for nid in seg:
+        if nid in seen_nids:
+            continue
+        seen_nids.add(nid)
         n = nodeManager.GetNode(nid)
         if n is None:
             return None

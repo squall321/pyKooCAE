@@ -2400,7 +2400,7 @@ class KooDynaAdvancedModification:
                 n_dup = self.dynaImporter.contactManager.RemoveDuplicateTiedContacts()
 
                 # 2. Tied 인터페이스 segment 수집 (KD-tree proximity + normal vector 기반)
-                from KooCAEManager.KooElement import compute_segment_normal, compute_segment_center, are_segments_facing
+                from KooCAEManager.KooElement import compute_segment_normal, compute_segment_center, are_segments_facing, FaceElement
                 tied_interface_segments = set()  # frozenset(sorted node IDs)
                 rc_tolerance = option.get("RobustContactTolerance", 0.1)  # mm 단위
                 rc_normal_angle = tied_opts.get("NormalAngleLimit", 30.0) if tied_opts else 30.0
@@ -2425,15 +2425,27 @@ class KooDynaAdvancedModification:
                     if p is None or not p.elementManager.elements:
                         _bound_cache[pid] = ([], [], [], None)
                         return _bound_cache[pid]
-                    segs = p.elementManager.GetExternalBoundary(False)
+                    # Shell: 요소 connectivity가 면, Solid: 외부 면 추출
+                    first_elem = next(iter(p.elementManager.elements.values()))
+                    if isinstance(first_elem, FaceElement):
+                        segs = []
+                        for eid, elem in p.elementManager.elements.items():
+                            nids = [n.id for n in elem.nodes if n is not None]
+                            if len(nids) >= 3:
+                                segs.append(nids)
+                    else:
+                        segs = [s for s in p.elementManager.GetExternalBoundary(False) if len(set(s)) >= 3]
                     centers = []
                     normals = []
                     valid_segs = []
                     for seg in segs:
                         c = _seg_center(seg)
                         if c:
+                            n = compute_segment_normal(seg, nodeMan)
+                            if n is None:
+                                continue  # zero-area face 제외
                             centers.append(c)
-                            normals.append(compute_segment_normal(seg, nodeMan))
+                            normals.append(n)
                             valid_segs.append(seg)
                     tree = KDTree(centers) if centers else None
                     _bound_cache[pid] = (valid_segs, centers, normals, tree)
@@ -2525,15 +2537,35 @@ class KooDynaAdvancedModification:
                 for pid, p in self.dynaImporter.partManager.parts.items():
                     if not p.elementManager.elements:
                         continue
-                    ext_segs = p.elementManager.GetExternalBoundary(False)
-                    all_segments.extend(ext_segs)
+                    first_elem = next(iter(p.elementManager.elements.values()))
+                    if isinstance(first_elem, FaceElement):
+                        # Shell: 요소 connectivity가 면
+                        for eid, elem in p.elementManager.elements.items():
+                            nids = [n.id for n in elem.nodes if n is not None]
+                            if len(nids) >= 3:
+                                all_segments.append(nids)
+                    else:
+                        # Solid: 외부 면 추출 (퇴화 요소의 zero-area face 제외)
+                        ext_segs = p.elementManager.GetExternalBoundary(False)
+                        for seg in ext_segs:
+                            if len(set(seg)) >= 3:  # 고유 노드 3개 이상만
+                                all_segments.append(seg)
                 print(f"DROP_ATTITUDE: RobustContact — 전체 외부 segment {len(all_segments)}개")
 
-                # 4. Tied 면 제외
+                # 4. 파트 간 중복 segment 제거 + Tied 면 제외
+                seen_segs = set()
                 filtered_segments = []
+                n_dup_seg = 0
                 for seg in all_segments:
-                    if frozenset(seg) not in tied_interface_segments:
+                    seg_key = frozenset(seg)
+                    if seg_key in seen_segs:
+                        n_dup_seg += 1
+                        continue
+                    seen_segs.add(seg_key)
+                    if seg_key not in tied_interface_segments:
                         filtered_segments.append(seg)
+                if n_dup_seg > 0:
+                    print(f"DROP_ATTITUDE: RobustContact — 파트 간 중복 segment {n_dup_seg}개 제거")
                 print(f"DROP_ATTITUDE: RobustContact — Tied 제외 후 {len(filtered_segments)}개 segment")
 
                 # 5. Segment Set 생성

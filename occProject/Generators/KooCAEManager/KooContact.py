@@ -1323,10 +1323,30 @@ class KooContactManager:
     def ConvertTiedToSegment(self, partManager, segManager, nodeManager, tolerance=0.1, normal_angle_limit=30.0):
         """Part-to-Part Tied (SSTYP=3, MSTYP=3) → Segment Set 기반 (SSTYP=0, MSTYP=0) 변환.
         proximity + normal vector 각도 필터링으로 마주보는 면만 매칭.
+        Shell 파트: 요소 connectivity를 segment로 사용 (face = element itself)
+        Solid 파트: GetExternalBoundary로 외부 면 추출
         """
         from scipy.spatial import KDTree
-        from KooCAEManager.KooElement import compute_segment_normal, compute_segment_center, are_segments_facing
+        from KooCAEManager.KooElement import compute_segment_normal, compute_segment_center, are_segments_facing, FaceElement, SolidElement
         import numpy as np
+
+        def _get_part_segments(part):
+            """파트의 surface segment 추출. Shell→요소 connectivity, Solid→외부면."""
+            elems = part.elementManager.elements
+            if not elems:
+                return []
+            first_elem = next(iter(elems.values()))
+            if isinstance(first_elem, FaceElement):
+                # Shell: 요소 자체가 면 → 노드 connectivity를 segment로
+                segs = []
+                for eid, elem in elems.items():
+                    nids = [n.id for n in elem.nodes if n is not None]
+                    if len(nids) >= 3:
+                        segs.append(nids)
+                return segs
+            else:
+                # Solid: 외부 면 추출 (퇴화 요소의 zero-area face 제외)
+                return [s for s in part.elementManager.GetExternalBoundary(False) if len(set(s)) >= 3]
 
         # TIED_SHELL_EDGE_TO_SURFACE는 Segment Set 변환 불가 (LS-DYNA 제약)
         tiedContactTypes = (KooContactTiedSurfacetoSurface, KooContactTiedSurfacetoSurfaceOffset)
@@ -1346,30 +1366,36 @@ class KooContactManager:
             if not partA.elementManager.elements or not partB.elementManager.elements:
                 continue
 
-            segsA = partA.elementManager.GetExternalBoundary(False)
-            segsB = partB.elementManager.GetExternalBoundary(False)
+            segsA = _get_part_segments(partA)
+            segsB = _get_part_segments(partB)
             if not segsA or not segsB:
                 continue
 
-            # 중심점 + 법선 계산
+            # 중심점 + 법선 계산 (퇴화 요소의 zero-area face 제외)
             centersA = []
             normalsA = []
             validA = []
             for seg in segsA:
+                if len(set(seg)) < 3:
+                    continue  # 고유 노드 3개 미만 → zero-area
                 c = compute_segment_center(seg, nodeManager)
-                if c is not None:
+                n = compute_segment_normal(seg, nodeManager)
+                if c is not None and n is not None:
                     centersA.append(c)
-                    normalsA.append(compute_segment_normal(seg, nodeManager))
+                    normalsA.append(n)
                     validA.append(seg)
 
             centersB = []
             normalsB = []
             validB = []
             for seg in segsB:
+                if len(set(seg)) < 3:
+                    continue
                 c = compute_segment_center(seg, nodeManager)
-                if c is not None:
+                n = compute_segment_normal(seg, nodeManager)
+                if c is not None and n is not None:
                     centersB.append(c)
-                    normalsB.append(compute_segment_normal(seg, nodeManager))
+                    normalsB.append(n)
                     validB.append(seg)
 
             if not centersA or not centersB:
