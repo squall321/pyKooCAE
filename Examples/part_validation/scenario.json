@@ -1,0 +1,27 @@
+{
+    "project_name": "PartValidation_Example",
+    "mode": "part_validation",
+    "description": "파트별 낙하 검증 시뮬레이션 — 각 파트를 독립적으로 0도 낙하시켜 해석 가능 여부 사전 확인",
+
+    "model_file": "../HWWarrantyDropTest/Tests/Test_001/model.k",
+
+    "output_dir": "validation_output",
+
+    "simulation_params": {
+        "height": 100,
+        "tFinal": 0.0005,
+        "dt": 0.00001
+    },
+
+    "environment": {
+        "sif_path": "/data/SmartTwinPreprocessor/containers/lsdyna.sif",
+        "solver_command": "ls-dyna",
+        "koomeshmodifier_path": "/data/SmartTwinPreprocessor/bin/KooMeshModifier",
+        "ncpu": 4,
+        "memory": "4G",
+        "partition": "normal"
+    },
+
+    "min_elements": 10,
+    "except_pids": []
+}

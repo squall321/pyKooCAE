@@ -93,6 +93,7 @@ echo ""
         --include-module=Runner.DirectInputWorkflow \
         --include-module=Runner.ImpactPositionSource \
         --include-module=Runner.StepConfigBuilder \
+        --include-module=Runner.PartValidationWorkflow \
         --jobs=8 \
         --show-progress
 

@@ -350,6 +350,12 @@ def cmd_prepare(args):
         with open(scenario_path, 'r', encoding='utf-8') as f:
             user_config = json.load(f)
 
+        # part_validation 모드 분기
+        if user_config.get("mode") == "part_validation":
+            from Runner.PartValidationWorkflow import prepare_part_validation
+            prepare_part_validation(user_config, scenario_path, output_path)
+            return
+
         # Create designer and parse config
         designer = CumulativeDesigner(user_config, scenario_dir=str(scenario_path.parent))
         runner_config = designer.parse_user_config()
@@ -757,11 +763,20 @@ echo "========================================"
 
 def cmd_submit(args):
     """Execute submit command"""
+    import json
     config_path = Path(args.config).resolve()
 
     if not config_path.exists():
         print(f"Error: Config file not found: {config_path}")
         sys.exit(1)
+
+    # part_validation 모드 분기
+    with open(config_path, 'r', encoding='utf-8') as f:
+        rc = json.load(f)
+    if rc.get("mode") == "part_validation":
+        from Runner.PartValidationWorkflow import submit_part_validation
+        submit_part_validation(str(config_path), args)
+        return
 
     if args.mode == 'cumulative':
         _submit_cumulative(args, config_path)
@@ -1831,14 +1846,23 @@ def cmd_status(args):
 
 def cmd_collect(args):
     """Execute collect command"""
-    from Runner.LargeScaleDOEManager import LargeScaleDOEManager
-
+    import json
     config_path = Path(args.config).resolve()
-    output_dir = Path(args.output_dir).resolve()
 
     if not config_path.exists():
         print(f"❌ Error: Config file not found: {config_path}")
         sys.exit(1)
+
+    # part_validation 모드 분기
+    with open(config_path, 'r', encoding='utf-8') as f:
+        rc = json.load(f)
+    if rc.get("mode") == "part_validation":
+        from Runner.PartValidationWorkflow import collect_part_validation
+        collect_part_validation(str(config_path))
+        return
+
+    from Runner.LargeScaleDOEManager import LargeScaleDOEManager
+    output_dir = Path(args.output_dir).resolve()
 
     print("=" * 80)
     print("KooChainRun - Collect Results")

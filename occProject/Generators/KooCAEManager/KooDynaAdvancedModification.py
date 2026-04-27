@@ -2244,6 +2244,17 @@ class KooDynaAdvancedModification:
             print("Impact Point [", impactPoint[0],",", impactPoint[1],"," ,  impactPoint[2], "]")
             initV = self.dynaImporter.initialManager.CreateInitialVelocity(nsid,0,0,0,0, velocity[0],velocity[1],velocity[2],angular_velocity[0],angular_velocity[1],angular_velocity[2],0.0,0.0,0.0,0.0,0.0,0.0)
 
+            # 비정상 요소 강체화: stable dt가 임계값 이하인 요소를 MAT_RIGID로 변환
+            rigidify_dt = option.get("RigidifySmallDtThreshold", 0.0)
+            rigidified_pids = []
+            if rigidify_dt > 0:
+                rigidified_pids = self.dynaImporter.partManager.RigidifySmallDtElements(
+                    self.dynaImporter.matManager,
+                    self.dynaImporter.sectionManager,
+                    dt_threshold=rigidify_dt,
+                    exceptPIDs=set()
+                )
+
             # 접촉 처리 (바닥판 생성 전)
             convertToSS = option.get("ConvertGeneralToSingleSurface", True)
             decomposeGeneral = option.get("DecomposeGeneralContact", False)
@@ -2547,11 +2558,14 @@ class KooDynaAdvancedModification:
 
                 print(f"DROP_ATTITUDE: RobustContact — {len(tied_interface_segments)} Tied 인터페이스 segment 감지")
 
-                # 3. 전체 모델 외부 segment 수집 (바닥판 제외)
+                # 3. 전체 모델 외부 segment 수집 (바닥판 + 강체화 파트 제외)
+                rigidified_set = set(rigidified_pids) if rigidified_pids else set()
                 all_segments = []
                 for pid, p in self.dynaImporter.partManager.parts.items():
                     if not p.elementManager.elements:
                         continue
+                    if pid in rigidified_set:
+                        continue  # 강체화된 파트 제외
                     first_elem = next(iter(p.elementManager.elements.values()))
                     if isinstance(first_elem, FaceElement):
                         # Shell: 요소 connectivity가 면
@@ -4814,6 +4828,11 @@ class KooDynaAdvancedModification:
                             print("DX: ", curDx, "DY: ", curDy, " is not valid")
                         part.Translate(-curDx, -curDy, 0.0)
                
+    def PartValidationSplit(self, option, output_dir):
+        """파트별 낙하 검증용 분할."""
+        from KooCAEManager.KooPartValidator import split_parts_for_validation
+        return split_parts_for_validation(self.dynaImporter, output_dir, option)
+
     def ErodingMinDT(self, dt):
         
         matMan : KooMaterialManager = self.dynaImporter.matManager

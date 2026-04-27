@@ -211,7 +211,10 @@ class KooMeshModifier(KooSimulationGenerator):
                         if not line:  # Skip empty lines
                             continue
                         svector = line.split(",")                    
-                        if "elastic_to_rigid" in svector[0].lower():
+                        if "part_validation_split" in svector[0].lower():
+                            self.modeList.append("PART_VALIDATION_SPLIT")
+                            self.modeIDList.append(int(svector[1]))
+                        elif "elastic_to_rigid" in svector[0].lower():
                             self.modeList.append("ELASTIC_TO_RIGID")
                             self.modeIDList.append(int(svector[1]))                        
                         elif "material_exchange" in svector[0].lower():
@@ -219,6 +222,9 @@ class KooMeshModifier(KooSimulationGenerator):
                             self.modeIDList.append(int(svector[1]))
                         elif "part_location_doe" in svector[0].lower():
                             self.modeList.append("PART_LOCATION_DOE")
+                            self.modeIDList.append(int(svector[1]))
+                        elif "rigidify_small_dt" in svector[0].lower():
+                            self.modeList.append("RIGIDIFY_SMALL_DT")
                             self.modeIDList.append(int(svector[1]))
                         elif "eroding_min_dt" in svector[0].lower():
                             self.modeList.append("ERODING_MIN_DT")
@@ -1428,6 +1434,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "includewallingeneral" in line.lower():
                             svector = line.split(",")
                             curOptions["IncludeWallInGeneral"] = svector[1].strip().lower() != "false"
+                        elif "rigifysmalldtthreshold" in line.lower() or "rigidifysmalldtthreshold" in line.lower():
+                            svector = line.split(",")
+                            curOptions["RigidifySmallDtThreshold"] = KooDynaFloat(svector[1])
                         elif "robustcontacttolerance" in line.lower():
                             svector = line.split(",")
                             curOptions["RobustContactTolerance"] = KooDynaFloat(svector[1])
@@ -1701,6 +1710,68 @@ class KooMeshModifier(KooSimulationGenerator):
                         line = line.replace('\n','')
                     self.modeIDOption[curModeID] = curOptions
                     line  = line.strip()
+                    continue
+                elif "**rigifysmalldt" in line.lower() or "**rigidifysmalldt" in line.lower():
+                    svector = line.split(",")
+                    curModeID = int(svector[1])
+                    curOptions = {}
+                    line = f.readline().strip()
+                    line = line.replace('\n','')
+                    while True:
+                        if not line:
+                            break
+                        if "**end" in line.lower():
+                            break
+                        elif "*dtthreshold" in line.lower() or "*dt" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DtThreshold"] = KooDynaFloat(svector[1], 1.0e-8)
+                        elif "*exceptpid" in line.lower():
+                            svector = line.split(",")
+                            except_pids = set()
+                            for i in range(1, len(svector)):
+                                except_pids.add(int(svector[i]))
+                            curOptions["ExceptPIDs"] = except_pids
+                        line = f.readline().strip()
+                        line = line.replace('\n','')
+                    self.modeIDOption[curModeID] = curOptions
+                    line = line.strip()
+                    continue
+                elif "**partvalidationsplit" in line.lower():
+                    svector = line.split(",")
+                    curModeID = int(svector[1])
+                    curOptions = {}
+                    line = f.readline().strip()
+                    line = line.replace('\n','')
+                    while True:
+                        if not line:
+                            break
+                        if "**end" in line.lower():
+                            break
+                        elif "*height" in line.lower():
+                            svector = line.split(",")
+                            curOptions["height"] = KooDynaFloat(svector[1], 100.0)
+                        elif "*tfinal" in line.lower():
+                            svector = line.split(",")
+                            curOptions["tFinal"] = KooDynaFloat(svector[1], 0.0005)
+                        elif "*dt" in line.lower():
+                            svector = line.split(",")
+                            curOptions["dt"] = KooDynaFloat(svector[1], 0.00001)
+                        elif "*outputdir" in line.lower():
+                            svector = line.split(",")
+                            curOptions["output_dir"] = svector[1].strip()
+                        elif "*exceptpid" in line.lower():
+                            svector = line.split(",")
+                            except_pids = []
+                            for i in range(1, len(svector)):
+                                except_pids.append(int(svector[i]))
+                            curOptions["except_pids"] = except_pids
+                        elif "*minelements" in line.lower():
+                            svector = line.split(",")
+                            curOptions["min_elements"] = int(svector[1])
+                        line = f.readline().strip()
+                        line = line.replace('\n','')
+                    self.modeIDOption[curModeID] = curOptions
+                    line = line.strip()
                     continue
                 elif "**partexchange" in line.lower():
                     svector = line.split(",")
@@ -2057,6 +2128,22 @@ class KooMeshModifier(KooSimulationGenerator):
         curOption = self.modeIDOption[modeid]
         dt = curOption["DT"]
         self.advancedModification.ErodingMinDT(dt)
+
+    def GenerateRigidifySmallDT(self, modeid):
+        curOption = self.modeIDOption[modeid]
+        dt_threshold = curOption.get("DtThreshold", 1.0e-8)
+        except_pids = curOption.get("ExceptPIDs", set())
+        self.dynaImporter.partManager.RigidifySmallDtElements(
+            self.dynaImporter.matManager,
+            self.dynaImporter.sectionManager,
+            dt_threshold=dt_threshold,
+            exceptPIDs=except_pids
+        )
+
+    def GeneratePartValidationSplit(self, modeid):
+        curOption = self.modeIDOption[modeid]
+        output_dir = curOption.get("output_dir", os.path.join(self.curDir, "validation_split"))
+        self.advancedModification.PartValidationSplit(curOption, output_dir)
     
     def GenerateConstrainedNodalRigidBodyToBeam(self, modeid):
         curOption = self.modeIDOption[modeid]
@@ -2295,6 +2382,12 @@ class KooMeshModifier(KooSimulationGenerator):
             elif mode == "ERODING_MIN_DT":
                 self.GenerateErodingMinDT(modeid)
                 additionalword += "_emdt"
+            elif mode == "RIGIDIFY_SMALL_DT":
+                self.GenerateRigidifySmallDT(modeid)
+                additionalword += "_rsdt"
+            elif mode == "PART_VALIDATION_SPLIT":
+                self.GeneratePartValidationSplit(modeid)
+                additionalword += "_pvsplit"
             elif mode == "PART_EXCHANGE":
                 self.GeneratePartExchange(modeid)
                 additionalword += "_pex"

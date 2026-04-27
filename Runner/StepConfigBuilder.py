@@ -96,6 +96,9 @@ def build_drop_attitude_config(
             contact_opt_line += f"\nRobustContactTolerance,{rc_tolerance}"
     if include_wall_in_general:
         contact_opt_line += "\nIncludeWallInGeneral,True"
+    rigidify_dt = sim_params.get("rigidify_small_dt_threshold", 0.0)
+    if rigidify_dt > 0:
+        contact_opt_line += f"\nRigidifySmallDtThreshold,{rigidify_dt}"
 
     # Tied 접촉 옵션
     tied_options = sim_params.get("tied_options", {})

@@ -2837,6 +2837,102 @@ class KooPartManager():
                 
                 
     
+    def RigidifySmallDtElements(self, materialMan, sectionMan, dt_threshold, exceptPIDs=None):
+        """stable dt가 dt_threshold 이하인 요소를 새 강체 파트로 분리.
+
+        Args:
+            materialMan: KooMaterialManager
+            sectionMan: KooSectionManager
+            dt_threshold: 이 값 이하 dt인 요소를 강체화
+            exceptPIDs: 제외할 PID set (None이면 없음)
+
+        Returns:
+            rigid_pids: 생성된 강체 파트 PID 리스트
+        """
+        from KooCAEManager.KooElement import compute_element_stable_dt, FaceElement, SolidElement
+
+        if exceptPIDs is None:
+            exceptPIDs = set()
+
+        rigid_pids = []
+        total_rigidified = 0
+        parts_to_add = {}  # pid → new rigid part
+
+        for pid, part in list(self.parts.items()):
+            if pid in exceptPIDs:
+                continue
+            if not part.elementManager.elements:
+                continue
+
+            # 재료 물성 가져오기
+            mat = part.material
+            if mat is None:
+                continue
+            E = mat.GetE()
+            rho = mat.GetRho()
+            nu = mat.GetNu()
+            if E <= 0 or rho <= 0:
+                continue
+
+            # 이미 강체 재료면 skip
+            if hasattr(mat, 'dtype') and 'RIGID' in str(getattr(mat, 'dtype', '')).upper():
+                continue
+            mat_name = getattr(mat, 'name', '')
+            if 'RIGID' in str(mat_name).upper():
+                continue
+
+            # 요소별 dt 계산 → 분리 대상 수집
+            small_dt_eids = []
+            for eid, elem in part.elementManager.elements.items():
+                dt = compute_element_stable_dt(elem, E, rho, nu)
+                if dt <= dt_threshold:
+                    small_dt_eids.append(eid)
+
+            if not small_dt_eids:
+                continue
+
+            # 새 강체 파트 생성
+            rigid_mat = materialMan.CreateRigidMaterial(
+                f"RIGID_SmallDT_P{pid}", rho, E, nu)
+
+            # section 복제 (shell이면 shell section, solid면 solid section)
+            first_elem = next(iter(part.elementManager.elements.values()))
+            if isinstance(first_elem, FaceElement):
+                thickness = 0.0
+                if hasattr(part, 'section') and part.section is not None:
+                    thickness = getattr(part.section, 'thickness', 0.1)
+                rigid_section = sectionMan.CreateShellSection(
+                    f"RIGID_SmallDT_P{pid}", thickness if thickness > 0 else 0.1)
+            else:
+                rigid_section = sectionMan.CreateSolidSection(f"RIGID_SmallDT_P{pid}")
+
+            new_pid = self.maxID + 1
+            self.maxID = new_pid
+            rigid_part = KooPart(part.nodeManager, None, rigid_mat, rigid_section, part.nodeSetManager)
+            rigid_part.SetID(new_pid)
+            rigid_part.name = f"RIGID_SmallDT_from_P{pid}"
+
+            # 요소 이동: 원래 파트 → 강체 파트
+            moved_elems = {}
+            for eid in small_dt_eids:
+                if eid in part.elementManager.elements:
+                    moved_elems[eid] = part.elementManager.elements[eid]
+
+            rigid_part.elementManager.AddElements(moved_elems)
+            part.elementManager.RemoveElements(moved_elems)
+
+            parts_to_add[new_pid] = rigid_part
+            rigid_pids.append(new_pid)
+            total_rigidified += len(small_dt_eids)
+            print(f"RigidifySmallDtElements: PID {pid} → {len(small_dt_eids)} 요소 강체화 (새 PID={new_pid}, dt_threshold={dt_threshold:.2E})")
+
+        # 새 파트 등록
+        for new_pid, rpart in parts_to_add.items():
+            self.parts[new_pid] = rpart
+
+        print(f"RigidifySmallDtElements: 총 {total_rigidified} 요소 강체화, {len(rigid_pids)} 강체 파트 생성")
+        return rigid_pids
+
     def GenerateRigidPartforAll(self, materialMan : KooMaterialManager, sectionMan : KooSectionManager, offsetid = 0):
         rigidMat = materialMan.rigidMaterials
         allMat = materialMan.materials

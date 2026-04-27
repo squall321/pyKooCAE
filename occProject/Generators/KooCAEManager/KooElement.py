@@ -5654,3 +5654,52 @@ def are_segments_facing(normalA, normalB, angle_limit_deg):
     dot = np.dot(normalA, normalB)
     return dot < -cos_limit
 
+
+def compute_element_min_edge_length(element):
+    """요소의 최소 edge 길이 계산. 노드 좌표 기반."""
+    nodes = element.nodes
+    if not nodes or len(nodes) < 2:
+        return float('inf')
+    coords = []
+    for n in nodes:
+        if n is None:
+            continue
+        coords.append(np.array([n.x, n.y, n.z]))
+    if len(coords) < 2:
+        return float('inf')
+    # 모든 노드 쌍 거리 중 최소 (중복 노드 제외)
+    min_len = float('inf')
+    for i in range(len(coords)):
+        for j in range(i + 1, len(coords)):
+            d = np.linalg.norm(coords[i] - coords[j])
+            if d > 1e-30:  # zero-length edge 제외
+                min_len = min(min_len, d)
+    return min_len
+
+
+def compute_element_stable_dt(element, E, rho, nu=0.3):
+    """요소의 stable timestep 계산.
+    dt = L_char / c, c = sqrt(E / rho * (1-nu) / ((1+nu)(1-2nu))) for solid
+    dt = L_char / c, c = sqrt(E / (rho * (1-nu^2))) for shell
+    """
+    if E <= 0 or rho <= 0:
+        return float('inf')
+    L = compute_element_min_edge_length(element)
+    if L == float('inf') or L <= 0:
+        return float('inf')
+    if isinstance(element, SolidElement):
+        # Solid: P-wave speed
+        factor = (1.0 - nu) / ((1.0 + nu) * (1.0 - 2.0 * nu))
+        if factor <= 0:
+            factor = 1.0
+        c = math.sqrt(E * factor / rho)
+    elif isinstance(element, FaceElement):
+        # Shell: plate wave speed
+        factor = 1.0 / (1.0 - nu * nu)
+        c = math.sqrt(E * factor / rho)
+    else:
+        c = math.sqrt(E / rho)
+    if c <= 0:
+        return float('inf')
+    return L / c
+
