@@ -360,6 +360,18 @@ class KooDeformableToRigidAutomatic:
         stream.write(self.WriteDynaKeyword())
 
 
+class KooBoundaryNonReflecting:
+    """*BOUNDARY_NON_REFLECTING — 비반사 경계 (응력파 흡수)"""
+    def __init__(self, ssid, ad=0.0, as_val=0.0):
+        self.ssid = ssid   # Segment Set ID
+        self.ad = ad        # dilatational wave (0=on)
+        self.as_val = as_val  # shear wave (0=on)
+
+    def WriteStreamDynaKeyword(self, stream):
+        stream.write("*BOUNDARY_NON_REFLECTING\n")
+        stream.write(f"{self.ssid:>10}{self.ad:>10.1f}{self.as_val:>10.1f}\n")
+
+
 class KooDynaAdditionalManager:
     def __init__(self):
         self.maxRWID = 0
@@ -368,6 +380,7 @@ class KooDynaAdditionalManager:
         self.maxInterface = 0
         self.interfaces = {}
         self.d2r_automatics = {}
+        self.non_reflecting_boundaries = []
 
     def OverwritefromDynaAdditionalManager(self, dynaAdditionalManager: KooDynaAdditionalManager):
 
@@ -409,6 +422,12 @@ class KooDynaAdditionalManager:
         rigidwall = KooRigidWallGeometricFlatDisplay(ID, name,NSID,NSIDEX,BOXID,BIRTH,DEATH,XT,YT,ZT,XH,YH,ZH,FRIC,XHEV,YHEV,ZHEV,LENL,LENM)
         self.rigidwalls[ID] = rigidwall
         return rigidwall  
+
+    def CreateBoundaryNonReflecting(self, ssid, ad=0.0, as_val=0.0):
+        """비반사 경계 생성. solid 요소 외부면 Segment Set에 적용."""
+        nr = KooBoundaryNonReflecting(ssid, ad, as_val)
+        self.non_reflecting_boundaries.append(nr)
+        return nr
 
     def CreateHourglass(self, HGID, IHQ=5, QM=0.1, IBQ="", Q1=1.5, Q2=0.06, QBVDC="QM", QW="QM"):
         hourglass = KooHourglass(HGID, IHQ, QM, IBQ, Q1, Q2, QBVDC, QW)
@@ -713,6 +732,8 @@ class KooDynaAdditionalManager:
         for key in self.hourglasses:
             hourglass = self.hourglasses[key]
             hourglass.WriteStreamDynaKeyword(stream)
+        for nr in self.non_reflecting_boundaries:
+            nr.WriteStreamDynaKeyword(stream)
         for key in self.interfaces:
             interface = self.interfaces[key]
             interface.WriteStreamDynaKeyword(stream)

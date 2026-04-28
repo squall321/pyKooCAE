@@ -5150,7 +5150,24 @@ class ElementManager:
                     n7 = nodesTensor[i+1][j+1][k+1]
                     n8 = nodesTensor[i][j+1][k+1]
                     self.CreateHexahedronLinearElement(n1,n2,n3,n4,n5,n6,n7,n8)
-        return nodesFixed   
+
+        # 바닥면(k=0) segment + 꼭짓점 노드 수집
+        bottomSegments = []
+        for i in range(numX):
+            for j in range(numY):
+                # 바닥면 quad: k=0 면의 4노드 (법선이 -Z 방향)
+                n1 = nodesTensor[i][j][0]
+                n2 = nodesTensor[i+1][j][0]
+                n3 = nodesTensor[i+1][j+1][0]
+                n4 = nodesTensor[i][j+1][0]
+                bottomSegments.append([n1.id, n4.id, n3.id, n2.id])  # 외향 법선 (아래쪽)
+        # bbox 꼭짓점 노드 (최소 SPC용)
+        cornerNodes = {
+            "xyz_min": nodesTensor[0][0][0],        # xmin, ymin, zmin
+            "xmax_ymin": nodesTensor[numX][0][0],   # xmax, ymin, zmin
+            "xmin_ymax": nodesTensor[0][numY][0],   # xmin, ymax, zmin
+        }
+        return nodesFixed, bottomSegments, cornerNodes   
     
        
     def CreateImpactBoxwithRoughness(self, impactPoint, z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor2):
@@ -5263,7 +5280,22 @@ class ElementManager:
                     n7 = nodesTensor[i+1][j+1][k+1]
                     n8 = nodesTensor[i][j+1][k+1]
                     self.CreateHexahedronLinearElement(n1,n2,n3,n4,n5,n6,n7,n8)
-        return nodeSetFixed
+
+        # 바닥면(k=0) segment + 꼭짓점 노드 수집
+        bottomSegments = []
+        for i in range(numX):
+            for j in range(numY):
+                n1 = nodesTensor[i][j][0]
+                n2 = nodesTensor[i+1][j][0]
+                n3 = nodesTensor[i+1][j+1][0]
+                n4 = nodesTensor[i][j+1][0]
+                bottomSegments.append([n1.id, n4.id, n3.id, n2.id])
+        cornerNodes = {
+            "xyz_min": nodesTensor[0][0][0],
+            "xmax_ymin": nodesTensor[numX][0][0],
+            "xmin_ymax": nodesTensor[0][numY][0],
+        }
+        return nodeSetFixed, bottomSegments, cornerNodes
     def RemoveOuterElement(self, locX, locY, locZ, Radius):
         
         elems = self.elements

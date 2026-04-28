@@ -1431,6 +1431,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "deformabletorigid" in line.lower():
                             svector = line.split(",")
                             curOptions["DeformableToRigid"] = svector[1].strip().lower() == "true"
+                        elif "nonreflectingboundary" in line.lower():
+                            svector = line.split(",")
+                            curOptions["NonReflectingBoundary"] = svector[1].strip().lower() != "false"
                         elif "includewallingeneral" in line.lower():
                             svector = line.split(",")
                             curOptions["IncludeWallInGeneral"] = svector[1].strip().lower() != "false"

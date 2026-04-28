@@ -2645,12 +2645,45 @@ class KooDynaAdvancedModification:
                 part = self.dynaImporter.partManager.AddSolidPart(self.dynaImporter.nodeManager, None, section, material)
                 if not use_fast_mode:
                     self.dynaImporter.SyncronizeMaxID()
+                bottomSegments = None
+                cornerNodes = None
                 if dropSurface[0] == "Plane":
-                    nsFixed = part.elementManager.CreateImpactBox(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ)
+                    nsFixed, bottomSegments, cornerNodes = part.elementManager.CreateImpactBox(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ)
                     nodeSetFixed.AddNodesfromDict(nsFixed)
                 elif dropSurface[0] == "PlanewithRoughness":
-                    nsFixed = part.elementManager.CreateImpactBoxwithRoughness(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor2)
+                    nsFixed, bottomSegments, cornerNodes = part.elementManager.CreateImpactBoxwithRoughness(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor2)
                     nodeSetFixed.AddNodesfromDict(nsFixed)
+
+                # NON_REFLECTING 경계 적용 (옵션)
+                nonReflecting = option.get("NonReflectingBoundary", False)
+                if nonReflecting and bottomSegments and cornerNodes:
+                    # 1. 기존 전체 SPC 제거
+                    nodeSetFixed.Clear()
+
+                    # 2. 바닥면 segment → Segment Set → BOUNDARY_NON_REFLECTING
+                    nrSegSet = self.dynaImporter.segmentSetManager.CreateSegmentSet(name="NR_Bottom")
+                    nrSegSet.AddSegments(bottomSegments)
+                    self.dynaImporter.additionalManager.CreateBoundaryNonReflecting(nrSegSet.sid)
+                    print(f"DROP_ATTITUDE: BOUNDARY_NON_REFLECTING 적용 (SSID={nrSegSet.sid}, {len(bottomSegments)} segments)")
+
+                    # 3. 꼭짓점 3개 최소 SPC (rigid body motion 구속)
+                    n_xyz = cornerNodes["xyz_min"]     # ux, uy, uz 고정
+                    n_x   = cornerNodes["xmax_ymin"]   # uy, uz 고정
+                    n_y   = cornerNodes["xmin_ymax"]   # uz 고정
+
+                    ns_corner = self.dynaImporter.nodeSetManager.CreateNodeSet("NR_Corner_XYZ")
+                    ns_corner.AddNode(n_xyz)
+                    self.dynaImporter.boundaryNodeManager.CreateBoundarySPCNodeSet(ns_corner, 0, 1, 1, 1, 0, 0, 0, "NR_FIX_XYZ")
+
+                    ns_corner_x = self.dynaImporter.nodeSetManager.CreateNodeSet("NR_Corner_YZ")
+                    ns_corner_x.AddNode(n_x)
+                    self.dynaImporter.boundaryNodeManager.CreateBoundarySPCNodeSet(ns_corner_x, 0, 0, 1, 1, 0, 0, 0, "NR_FIX_YZ")
+
+                    ns_corner_y = self.dynaImporter.nodeSetManager.CreateNodeSet("NR_Corner_Z")
+                    ns_corner_y.AddNode(n_y)
+                    self.dynaImporter.boundaryNodeManager.CreateBoundarySPCNodeSet(ns_corner_y, 0, 0, 0, 1, 0, 0, 0, "NR_FIX_Z")
+
+                    print(f"DROP_ATTITUDE: 최소 SPC — N{n_xyz.id}(xyz), N{n_x.id}(yz), N{n_y.id}(z)")
 
             # 바닥판 접촉 생성 (RigidWall이면 part=None → 접촉/D2R 전체 skip)
             includeWallInGeneral = option.get("IncludeWallInGeneral", False)
@@ -3389,8 +3422,8 @@ class KooDynaAdvancedModification:
             
             zDir = np.array([0.0, 0.0, -1.0])
                                     
-            wallPart.elementManager.CreateImpactBox(wallLocation,zDir, xDir,xLength,yLength,zLength,numX,numY,numZ)                                
-            MSID = wallPart.id        
+            _ = wallPart.elementManager.CreateImpactBox(wallLocation,zDir, xDir,xLength,yLength,zLength,numX,numY,numZ)
+            MSID = wallPart.id
             SSID = 0
             contactWalltoObjects = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(SSID, MSID, SSTYP, MSTYP, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)                    
             contactWalltoObjects.SetOptCardA(2)
@@ -3907,8 +3940,8 @@ class KooDynaAdvancedModification:
             
             zDir = np.array([0.0, 0.0, -1.0])
                                     
-            wallPart.elementManager.CreateImpactBox(wallLocation,zDir, xDir,xLength,yLength,zLength,numX,numY,numZ)                                
-            MSID = wallPart.id        
+            _ = wallPart.elementManager.CreateImpactBox(wallLocation,zDir, xDir,xLength,yLength,zLength,numX,numY,numZ)
+            MSID = wallPart.id
             SSID = 0
             contactWalltoObjects = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(SSID, MSID, SSTYP, MSTYP, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
             contactWalltoObjects.SetOptCardA(opt_SOFT, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
@@ -4473,7 +4506,7 @@ class KooDynaAdvancedModification:
                 self.dynaImporter.SyncronizeMaxID()
                 wallLocation = [locX[j], locY[j], zMin]
                 zDir = np.array([0.0, 0.0, -1.0])
-                wallPart.elementManager.CreateImpactBox(wallLocation, zDir, xDir, xLength, yLength, zLength, numX, numY, numZ)
+                _ = wallPart.elementManager.CreateImpactBox(wallLocation, zDir, xDir, xLength, yLength, zLength, numX, numY, numZ)
                 MSID = wallPart.id
                 SSID = 0
                 contactWalltoObjects = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(SSID, MSID, SSTYP, MSTYP, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
