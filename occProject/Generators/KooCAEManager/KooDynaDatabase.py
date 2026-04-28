@@ -129,11 +129,24 @@ class KooDatabaseRcforc(KooDatabaseBasic):
         stream.write("*DATABASE_RCFORC\n")
         super().WriteStreamDynaKeyword(stream)
 
+class KooDatabaseNcforc(KooDatabaseBasic):
+    def __init__(self, DT=0.0, BINARY=1, LCUR="", IOOPT=0, OPTION1=0, OPTION2=0, OPTION3=0, OPTION4=0):
+        super(KooDatabaseNcforc, self).__init__(DT, BINARY, LCUR, IOOPT, OPTION1, OPTION2, OPTION3, OPTION4)
+
+    def WritetoDynaKeyword(self):
+        keyword = "*DATABASE_NCFORC\n"
+        keyword += super().WritetoDynaKeyword()
+        return keyword
+
+    def WriteStreamDynaKeyword(self, stream):
+        stream.write("*DATABASE_NCFORC\n")
+        super().WriteStreamDynaKeyword(stream)
+
 class KooDatabaseRwforc(KooDatabaseBasic):
     def __init__(self, DT=0.0, BINARY=1, LCUR="", IOOPT=0, OPTION1=0, OPTION2=0, OPTION3=0, OPTION4=0):
         super(KooDatabaseRwforc, self).__init__(DT, BINARY, LCUR, IOOPT, OPTION1, OPTION2, OPTION3, OPTION4)
-    
-    def WritetoDynaKeyword(self):        
+
+    def WritetoDynaKeyword(self):
         keyword = "*DATABASE_RWFORC\n"
         keyword += super().WritetoDynaKeyword()                
         return keyword
@@ -784,6 +797,10 @@ class KooDatabaseManager:
     def SetDatabaseRcforc(self, DT=0.0, BINARY=1, LCUR="", IOOPT=0, OPTION1=0, OPTION2=0, OPTION3=0, OPTION4=0):
         databaseRcforc = KooDatabaseRcforc(DT, BINARY, LCUR, IOOPT, OPTION1, OPTION2, OPTION3, OPTION4)
         self.database["RCFORC"] = databaseRcforc
+
+    def SetDatabaseNcforc(self, DT=0.0, BINARY=1, LCUR="", IOOPT=0, OPTION1=0, OPTION2=0, OPTION3=0, OPTION4=0):
+        databaseNcforc = KooDatabaseNcforc(DT, BINARY, LCUR, IOOPT, OPTION1, OPTION2, OPTION3, OPTION4)
+        self.database["NCFORC"] = databaseNcforc
     
     def SetDatabaseRwforc(self, DT=0.0, BINARY=1, LCUR="", IOOPT=0, OPTION1=0, OPTION2=0, OPTION3=0, OPTION4=0):
         databaseRwforc = KooDatabaseRwforc(DT, BINARY, LCUR, IOOPT, OPTION1, OPTION2, OPTION3, OPTION4)

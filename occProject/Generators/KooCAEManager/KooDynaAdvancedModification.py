@@ -1919,7 +1919,12 @@ class KooDynaAdvancedModification:
         PSETID = 0
         CID = 0
         self.dynaImporter.databaseManager.SetDatabaseBinaryD3plot(DTCYCL,LCDT,BEAM,NPLTC,PSETID,CID)
-        
+
+        # DATABASE_NCFORC: 접촉면 노드별 접촉력 출력
+        self.dynaImporter.databaseManager.SetDatabaseNcforc(dt, binary, lcur, ioopt)
+        # DATABASE_BINARY_INTFOR: 접촉 인터페이스 상세 출력
+        self.dynaImporter.databaseManager.SetDatabaseBinaryIntfor(DTCYCL, LCDT, BEAM, NPLTC, PSETID, CID, ioopt)
+
         
     
     # ================================================================
@@ -2705,12 +2710,13 @@ class KooDynaAdvancedModification:
                                             edge_lengths.append(el)
                                     if len(edge_lengths) >= 200:
                                         break
+                        min_inner_mesh = int(option.get("DropContact", {}).get("MinInnerMesh", 10))
                         if edge_lengths:
                             avg_edge = sum(edge_lengths) / len(edge_lengths)
                             target_edge = avg_edge * mesh_scale
-                            numInnerX = max(10, int(innerXLength / target_edge)) if numInnerX == 0 else numInnerX
-                            numInnerY = max(10, int(innerYLength / target_edge)) if numInnerY == 0 else numInnerY
-                            print(f"DROP_ATTITUDE: PlaneGraded 자동 — 외곽면 평균 요소={avg_edge:.2f}, 바닥판 요소={target_edge:.2f} (scale={mesh_scale}), 메시={numInnerX}x{numInnerY}")
+                            numInnerX = max(min_inner_mesh, int(innerXLength / target_edge)) if numInnerX == 0 else numInnerX
+                            numInnerY = max(min_inner_mesh, int(innerYLength / target_edge)) if numInnerY == 0 else numInnerY
+                            print(f"DROP_ATTITUDE: PlaneGraded 자동 — 외곽면 평균 요소={avg_edge:.2f}, 바닥판 요소={target_edge:.2f} (scale={mesh_scale}), 메시={numInnerX}x{numInnerY}, 최소={min_inner_mesh}")
                         else:
                             numInnerX = numInnerX if numInnerX > 0 else 20
                             numInnerY = numInnerY if numInnerY > 0 else 20
