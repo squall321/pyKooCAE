@@ -5170,6 +5170,124 @@ class ElementManager:
         return nodesFixed, bottomSegments, cornerNodes   
     
        
+    def CreateImpactBoxGraded(self, impactPoint, impactDirection, xDirection,
+                              innerXLength, innerYLength, zLength,
+                              numInnerX, numInnerY, numZ,
+                              numOuterLayers=5, ratio=1.5):
+        """중심부 균일 + 외곽 graded mesh 바닥판 생성.
+
+        Args:
+            impactPoint: 충돌점 (중심)
+            impactDirection: Z 방향 (법선)
+            xDirection: X 방향
+            innerXLength: 중심 균일 영역 X 크기
+            innerYLength: 중심 균일 영역 Y 크기
+            zLength: 두께
+            numInnerX: 중심 영역 X 요소 수
+            numInnerY: 중심 영역 Y 요소 수
+            numZ: 두께 방향 요소 수
+            numOuterLayers: 외곽 확장 단수 (기본 5)
+            ratio: 외곽 요소 크기 비율 (기본 1.5)
+
+        Returns:
+            (nodesFixed, bottomSegments, cornerNodes)
+        """
+        Zdir = impactDirection
+        Xdir = xDirection
+        Ydir = np.cross(Zdir, Xdir)
+        dz = zLength / numZ
+
+        # 중심 균일 영역 간격
+        dx_inner = innerXLength / numInnerX
+        dy_inner = innerYLength / numInnerY
+
+        # X 방향 좌표 생성: 외곽(-)  + 중심(균일) + 외곽(+)
+        def _graded_coords(inner_length, num_inner, num_outer, r, d_inner):
+            # 중심 좌표 (-inner/2 ~ +inner/2)
+            coords = []
+            for i in range(num_inner + 1):
+                coords.append(-inner_length / 2.0 + i * d_inner)
+
+            # 오른쪽 외곽 확장
+            pos = inner_length / 2.0
+            d = d_inner
+            right_coords = []
+            for _ in range(num_outer):
+                d *= r
+                pos += d
+                right_coords.append(pos)
+
+            # 왼쪽 외곽 확장
+            pos = -inner_length / 2.0
+            d = d_inner
+            left_coords = []
+            for _ in range(num_outer):
+                d *= r
+                pos -= d
+                left_coords.append(pos)
+
+            all_coords = sorted(left_coords) + coords + right_coords
+            return all_coords
+
+        x_coords = _graded_coords(innerXLength, numInnerX, numOuterLayers, ratio, dx_inner)
+        y_coords = _graded_coords(innerYLength, numInnerY, numOuterLayers, ratio, dy_inner)
+
+        totalX = len(x_coords) - 1  # 요소 수
+        totalY = len(y_coords) - 1
+
+        # 노드 생성
+        nodesTensor = []
+        nodesFixed = {}
+        for i, xc in enumerate(x_coords):
+            nodesMat = []
+            for j, yc in enumerate(y_coords):
+                nodesVec = []
+                for k in range(numZ + 1):
+                    pos = impactPoint + xc * Xdir + yc * Ydir + k * dz * Zdir
+                    node = self.nodeManager.CreateNode(pos[0], pos[1], pos[2])
+                    self.nodeManager.AddNode(node)
+                    nodesVec.append(node)
+                    if k == numZ:
+                        nodesFixed[node.id] = node
+                nodesMat.append(nodesVec)
+            nodesTensor.append(nodesMat)
+
+        # 요소 생성
+        for i in range(totalX):
+            for j in range(totalY):
+                for k in range(numZ):
+                    n1 = nodesTensor[i][j][k]
+                    n2 = nodesTensor[i+1][j][k]
+                    n3 = nodesTensor[i+1][j+1][k]
+                    n4 = nodesTensor[i][j+1][k]
+                    n5 = nodesTensor[i][j][k+1]
+                    n6 = nodesTensor[i+1][j][k+1]
+                    n7 = nodesTensor[i+1][j+1][k+1]
+                    n8 = nodesTensor[i][j+1][k+1]
+                    self.CreateHexahedronLinearElement(n1, n2, n3, n4, n5, n6, n7, n8)
+
+        # 바닥면(k=0) segment + 꼭짓점 노드
+        bottomSegments = []
+        for i in range(totalX):
+            for j in range(totalY):
+                n1 = nodesTensor[i][j][0]
+                n2 = nodesTensor[i+1][j][0]
+                n3 = nodesTensor[i+1][j+1][0]
+                n4 = nodesTensor[i][j+1][0]
+                bottomSegments.append([n1.id, n4.id, n3.id, n2.id])
+        cornerNodes = {
+            "xyz_min": nodesTensor[0][0][0],
+            "xmax_ymin": nodesTensor[totalX][0][0],
+            "xmin_ymax": nodesTensor[0][totalY][0],
+        }
+
+        total_size_x = x_coords[-1] - x_coords[0]
+        total_size_y = y_coords[-1] - y_coords[0]
+        print(f"CreateImpactBoxGraded: {totalX}x{totalY}x{numZ} = {totalX*totalY*numZ} 요소")
+        print(f"  중심: {innerXLength:.1f}x{innerYLength:.1f} ({numInnerX}x{numInnerY}), 전체: {total_size_x:.1f}x{total_size_y:.1f}")
+
+        return nodesFixed, bottomSegments, cornerNodes
+
     def CreateImpactBoxwithRoughness(self, impactPoint, z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor2):
         Zdir = z_direction
         Xdir = x_direction

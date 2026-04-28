@@ -49,6 +49,12 @@ def build_drop_attitude_config(
     ds_type = drop_surface.get("type", "Plane")
     if ds_type == "RigidWall":
         drop_surface_line = "DropSurface,RigidWall,0,0,0,0,0,0"
+    elif ds_type == "PlaneGraded":
+        ds_size = drop_surface.get("size", [200, 200, 20])
+        ds_mesh = drop_surface.get("mesh", [10, 10, 2])
+        num_outer = drop_surface.get("num_outer_layers", 5)
+        graded_ratio = drop_surface.get("ratio", 1.5)
+        drop_surface_line = f"DropSurface,PlaneGraded,{ds_size[0]},{ds_size[1]},{ds_size[2]},{ds_mesh[0]},{ds_mesh[1]},{ds_mesh[2]},{num_outer},{graded_ratio}"
     else:
         ds_size = drop_surface.get("size", [300, 300, 20])
         ds_mesh = drop_surface.get("mesh", [30, 30, 2])

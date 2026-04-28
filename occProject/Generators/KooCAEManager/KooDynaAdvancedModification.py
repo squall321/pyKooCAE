@@ -2624,20 +2624,25 @@ class KooDynaAdvancedModification:
 
             if dropSurface[0] == "RigidWall":
                 # RIGIDWALL_PLANAR_MOVING_FORCES — 메시 없는 무한 강체 평면
-                # impactPoint = 바닥 위치, z_direction = 바닥→물체 방향 (법선)
-                # Tail point = impactPoint, Head point = impactPoint + 법선
-                rw_fric = option.get("DropContact", {}).get("FS", 0.3)
-                nsid_all = nodeSet.sid  # AllNodes 노드셋
+                rw_opts = option.get("DropContact", {})
+                rw_fric = rw_opts.get("FS", 0.3)
+                rw_rwksf = rw_opts.get("RWKSF", 1.0)
+                rw_soft = int(rw_opts.get("RW_SOFT", 0))
+                rw_mass = rw_opts.get("RW_MASS", 0.0)
+                rw_v0 = rw_opts.get("RW_V0", 0.0)
+                rw_birth = rw_opts.get("RW_BIRTH", 0.0)
+                rw_death = rw_opts.get("RW_DEATH", 1.0e20)
+                nsid_all = nodeSet.sid
                 rw = self.dynaImporter.additionalManager.CreateRigidwallPlanarMovingForces(
                     NSID=nsid_all, NSIDEX=0, BOXID=0,
-                    OFFSET=0.0, BIRTH=0.0, DEATH=1.0e20, RWKSF=1.0,
+                    OFFSET=0.0, BIRTH=rw_birth, DEATH=rw_death, RWKSF=rw_rwksf,
                     XT=impactPoint[0], YT=impactPoint[1], ZT=impactPoint[2],
                     XH=impactPoint[0] - z_direction[0],
                     YH=impactPoint[1] - z_direction[1],
                     ZH=impactPoint[2] - z_direction[2],
-                    FRIC=rw_fric, WVEL=0.0, MASS=0.0, V0=0.0,
-                    SOFT=0, SSID=0, N1=0, N2=0, N3=0, N4=0)
-                print(f"DROP_ATTITUDE: RigidWall 생성 (FRIC={rw_fric}, 위치=[{impactPoint[0]:.1f},{impactPoint[1]:.1f},{impactPoint[2]:.1f}])")
+                    FRIC=rw_fric, WVEL=0.0, MASS=rw_mass, V0=rw_v0,
+                    SOFT=rw_soft, SSID=0, N1=0, N2=0, N3=0, N4=0)
+                print(f"DROP_ATTITUDE: RigidWall 생성 (FRIC={rw_fric}, RWKSF={rw_rwksf}, SOFT={rw_soft})")
                 # RigidWall은 파트/접촉 불필요 → 바닥판 접촉 생성 skip
                 part = None
                 dropContactCID = None
@@ -2649,6 +2654,72 @@ class KooDynaAdvancedModification:
                 cornerNodes = None
                 if dropSurface[0] == "Plane":
                     nsFixed, bottomSegments, cornerNodes = part.elementManager.CreateImpactBox(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ)
+                    nodeSetFixed.AddNodesfromDict(nsFixed)
+                elif dropSurface[0] == "PlaneGraded":
+                    innerXLength = dropSurface[1]
+                    innerYLength = dropSurface[2]
+                    gradedZLength = dropSurface[3]
+                    numInnerX = dropSurface[4]
+                    numInnerY = dropSurface[5]
+                    gradedNumZ = dropSurface[6]
+                    numOuterLayers = dropSurface[7]
+                    gradedRatio = dropSurface[8]
+
+                    # 자동 크기 계산: size=0이면 제품 바운딩 박스 * 1.5 + 요소 크기 자동 매칭
+                    if innerXLength == 0 or innerYLength == 0:
+                        bbox = self.dynaImporter.nodeManager.GetBoundingBox()
+                        bbox_x = bbox[3] - bbox[0]
+                        bbox_y = bbox[4] - bbox[1]
+                        innerXLength = max(bbox_x, bbox_y) * 1.5 if innerXLength == 0 else innerXLength
+                        innerYLength = max(bbox_x, bbox_y) * 1.5 if innerYLength == 0 else innerYLength
+
+                    # 요소 수 자동: mesh=0이면 제품 외곽면 요소 크기 기준
+                    # mesh_scale: 바닥판 요소 크기 = 외곽면 평균 요소 크기 * mesh_scale
+                    mesh_scale = option.get("DropContact", {}).get("MeshScale", 1.0)
+                    if numInnerX == 0 or numInnerY == 0:
+                        from KooCAEManager.KooElement import compute_element_min_edge_length, FaceElement
+                        edge_lengths = []
+                        for pid, p in self.dynaImporter.partManager.parts.items():
+                            if not p.elementManager.elements:
+                                continue
+                            first_elem = next(iter(p.elementManager.elements.values()))
+                            if isinstance(first_elem, FaceElement):
+                                # Shell: 요소 자체가 외곽면
+                                for eid, elem in p.elementManager.elements.items():
+                                    el = compute_element_min_edge_length(elem)
+                                    if el < float('inf'):
+                                        edge_lengths.append(el)
+                                    if len(edge_lengths) >= 200:
+                                        break
+                            else:
+                                # Solid: 외곽 요소만 — boundary에 속하는 요소의 edge
+                                ext_segs = p.elementManager.GetExternalBoundary(False)
+                                ext_nids = set()
+                                for seg in ext_segs[:50]:  # 샘플
+                                    ext_nids.update(seg)
+                                for eid, elem in p.elementManager.elements.items():
+                                    nids = {n.id for n in elem.nodes if n is not None}
+                                    if nids & ext_nids:  # 외곽 노드를 포함하는 요소
+                                        el = compute_element_min_edge_length(elem)
+                                        if el < float('inf'):
+                                            edge_lengths.append(el)
+                                    if len(edge_lengths) >= 200:
+                                        break
+                        if edge_lengths:
+                            avg_edge = sum(edge_lengths) / len(edge_lengths)
+                            target_edge = avg_edge * mesh_scale
+                            numInnerX = max(10, int(innerXLength / target_edge)) if numInnerX == 0 else numInnerX
+                            numInnerY = max(10, int(innerYLength / target_edge)) if numInnerY == 0 else numInnerY
+                            print(f"DROP_ATTITUDE: PlaneGraded 자동 — 외곽면 평균 요소={avg_edge:.2f}, 바닥판 요소={target_edge:.2f} (scale={mesh_scale}), 메시={numInnerX}x{numInnerY}")
+                        else:
+                            numInnerX = numInnerX if numInnerX > 0 else 20
+                            numInnerY = numInnerY if numInnerY > 0 else 20
+
+                    nsFixed, bottomSegments, cornerNodes = part.elementManager.CreateImpactBoxGraded(
+                        impactPoint, z_direction, x_direction,
+                        innerXLength, innerYLength, gradedZLength,
+                        numInnerX, numInnerY, gradedNumZ,
+                        numOuterLayers=numOuterLayers, ratio=gradedRatio)
                     nodeSetFixed.AddNodesfromDict(nsFixed)
                 elif dropSurface[0] == "PlanewithRoughness":
                     nsFixed, bottomSegments, cornerNodes = part.elementManager.CreateImpactBoxwithRoughness(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor2)

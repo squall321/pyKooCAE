@@ -1411,6 +1411,17 @@ class KooMeshModifier(KooSimulationGenerator):
                                 numZ = KooDynaInt(svector[7])
                                 curOptions["DropSurface"] = ["Plane", xLength, yLength, zLength, numX, numY, numZ]
                                                                 
+                            elif dropSurface.lower() == "planegraded":
+                                # PlaneGraded,innerX,innerY,zLength,numInnerX,numInnerY,numZ,numOuterLayers,ratio
+                                innerXLength = KooDynaFloat(svector[2])
+                                innerYLength = KooDynaFloat(svector[3])
+                                zLength = KooDynaFloat(svector[4])
+                                numInnerX = KooDynaInt(svector[5])
+                                numInnerY = KooDynaInt(svector[6])
+                                numZ = KooDynaInt(svector[7])
+                                numOuterLayers = KooDynaInt(svector[8]) if len(svector) > 8 else 5
+                                ratio = KooDynaFloat(svector[9]) if len(svector) > 9 else 1.5
+                                curOptions["DropSurface"] = ["PlaneGraded", innerXLength, innerYLength, zLength, numInnerX, numInnerY, numZ, numOuterLayers, ratio]
                             elif dropSurface.lower() == "planewithroughness":
                                 xLength = KooDynaFloat(svector[2])
                                 yLength = KooDynaFloat(svector[3])
