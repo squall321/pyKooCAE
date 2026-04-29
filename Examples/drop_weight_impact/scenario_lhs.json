@@ -1,0 +1,34 @@
+{
+    "_comment": "LHS 모드 — Latin Hypercube Sampling 100개, 모델 범위 자동",
+    "project_name": "DWI_LHS",
+    "mode": "drop_weight_impact",
+    "model_file": "../MinimumModel.k",
+    "output_dir": "dwi_lhs",
+
+    "simulation_params": {
+        "tFinal": 0.001,
+        "dt": 0.000001,
+        "impactor": {
+            "type": "Sphere",
+            "radius": 5.0,
+            "height": 100,
+            "density": 7850,
+            "youngs_modulus": 2.0e11,
+            "poisson_ratio": 0.3
+        },
+        "locations": {
+            "mode": "lhs",
+            "n_samples": 100,
+            "margin": 0.9
+        },
+        "generation_mode": "DampingSpring"
+    },
+
+    "environment": {
+        "koomeshmodifier_path": "/data/SmartTwinPreprocessor/bin/KooMeshModifier",
+        "koochainrun_path": "/data/SmartTwinPreprocessor/bin/KooChainRun",
+        "ncpu": 4,
+        "memory": "4G",
+        "partition": "normal"
+    }
+}

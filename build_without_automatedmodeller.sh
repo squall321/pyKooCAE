@@ -94,6 +94,7 @@ echo ""
         --include-module=Runner.ImpactPositionSource \
         --include-module=Runner.StepConfigBuilder \
         --include-module=Runner.PartValidationWorkflow \
+        --include-module=Runner.DropWeightImpactWorkflow \
         --jobs=8 \
         --show-progress
 

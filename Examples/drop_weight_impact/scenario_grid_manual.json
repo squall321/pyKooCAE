@@ -1,0 +1,36 @@
+{
+    "_comment": "격자 모드 — 범위 수동 지정, 7x13 격자",
+    "project_name": "DWI_GridManual",
+    "mode": "drop_weight_impact",
+    "model_file": "../MinimumModel.k",
+    "output_dir": "dwi_grid_manual",
+
+    "simulation_params": {
+        "tFinal": 0.001,
+        "dt": 0.000001,
+        "impactor": {
+            "type": "Sphere",
+            "radius": 5.0,
+            "height": 100,
+            "density": 7850,
+            "youngs_modulus": 2.0e11,
+            "poisson_ratio": 0.3
+        },
+        "locations": {
+            "mode": "grid",
+            "x_range": [-30, 30],
+            "y_range": [-60, 60],
+            "x_count": 7,
+            "y_count": 13
+        },
+        "generation_mode": "DampingSpring"
+    },
+
+    "environment": {
+        "koomeshmodifier_path": "/data/SmartTwinPreprocessor/bin/KooMeshModifier",
+        "koochainrun_path": "/data/SmartTwinPreprocessor/bin/KooChainRun",
+        "ncpu": 4,
+        "memory": "4G",
+        "partition": "normal"
+    }
+}

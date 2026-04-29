@@ -356,6 +356,12 @@ def cmd_prepare(args):
             prepare_part_validation(user_config, scenario_path, output_path)
             return
 
+        # drop_weight_impact 모드 분기
+        if user_config.get("mode") == "drop_weight_impact":
+            from Runner.DropWeightImpactWorkflow import prepare_drop_weight_impact
+            prepare_drop_weight_impact(user_config, scenario_path, output_path)
+            return
+
         # Create designer and parse config
         designer = CumulativeDesigner(user_config, scenario_dir=str(scenario_path.parent))
         runner_config = designer.parse_user_config()
@@ -776,6 +782,10 @@ def cmd_submit(args):
     if rc.get("mode") == "part_validation":
         from Runner.PartValidationWorkflow import submit_part_validation
         submit_part_validation(str(config_path), args)
+        return
+    if rc.get("mode") == "drop_weight_impact":
+        from Runner.DropWeightImpactWorkflow import submit_drop_weight_impact
+        submit_drop_weight_impact(str(config_path), args)
         return
 
     if args.mode == 'cumulative':
@@ -1859,6 +1869,10 @@ def cmd_collect(args):
     if rc.get("mode") == "part_validation":
         from Runner.PartValidationWorkflow import collect_part_validation
         collect_part_validation(str(config_path))
+        return
+    if rc.get("mode") == "drop_weight_impact":
+        from Runner.DropWeightImpactWorkflow import collect_drop_weight_impact
+        collect_drop_weight_impact(str(config_path))
         return
 
     from Runner.LargeScaleDOEManager import LargeScaleDOEManager

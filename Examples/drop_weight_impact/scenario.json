@@ -1,0 +1,65 @@
+{
+    "_comment": "전위치 부분충격 (Ball Drop) 시뮬레이션",
+    "_comment2": "KooChainRun prepare scenario.json → submit → collect",
+
+    "project_name": "BallDropTest",
+    "mode": "drop_weight_impact",
+
+    "model_file": "../MinimumModel.k",
+    "output_dir": "dwi_output",
+
+    "simulation_params": {
+        "_comment_sim": "해석 시간 설정",
+        "tFinal": 0.001,
+        "dt": 0.000001,
+
+        "_comment_impactor": "충격자 설정 — Sphere 또는 Cylinder",
+        "impactor": {
+            "type": "Sphere",
+            "radius": 5.0,
+            "height": 100,
+            "density": 7850,
+            "youngs_modulus": 2.0e11,
+            "poisson_ratio": 0.3
+        },
+
+        "_comment_locations": "충격 위치 DOE — grid/list/lhs 모드 지원",
+        "locations": {
+            "mode": "grid",
+            "_comment_auto": "x_range/y_range 생략 시 모델 bbox에서 자동 계산",
+            "_comment_margin": "margin: bbox 대비 범위 비율 (0.9 = 90%, 가장자리 5% 안쪽)",
+            "margin": 0.9,
+            "_comment_count": "x_count/y_count: 각 방향 격자 수",
+            "x_count": 5,
+            "y_count": 5,
+            "_comment_spacing": "spacing 사용 시 x_count/y_count 대신 간격(mm)으로 자동 결정",
+            "_comment_spacing2": "예: \"spacing\": 10.0 → 10mm 간격 격자"
+        },
+
+        "_comment_mode": "generation_mode: DampingSpring(기본) / OutsideRigidPart / OutsideRigidElement",
+        "generation_mode": "DampingSpring",
+
+        "_comment_boundary": "boundary_distance: 충격점 기준 강체화 반경 (mm, 0=비활성)",
+        "boundary_distance": 0.0,
+
+        "_comment_offset": "offset_distance: 충격자-모델 간격 (mm)",
+        "offset_distance": 0.05,
+
+        "_comment_wall": "바닥판 물성",
+        "wall": {
+            "youngs_modulus": 2.0e11,
+            "poisson_ratio": 0.3,
+            "density": 7850
+        }
+    },
+
+    "environment": {
+        "sif_path": "",
+        "solver_command": "ls-dyna",
+        "koomeshmodifier_path": "/data/SmartTwinPreprocessor/bin/KooMeshModifier",
+        "koochainrun_path": "/data/SmartTwinPreprocessor/bin/KooChainRun",
+        "ncpu": 4,
+        "memory": "4G",
+        "partition": "normal"
+    }
+}

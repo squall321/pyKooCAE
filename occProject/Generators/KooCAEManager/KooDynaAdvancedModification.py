@@ -2065,13 +2065,14 @@ class KooDynaAdvancedModification:
         nodeSet.AddNodesfromDict(nodes)
         nsid = nodeSet.sid
 
-        nodeSetFixed = self.dynaImporter.nodeSetManager.CreateNodeSet("BottomFix")
-        spcBoundary = self.dynaImporter.boundaryNodeManager.CreateBoundarySPCNodeSet(nodeSetFixed,0,1,1,1,1,1,1,"FIXED")
-
-        # 바닥판 재료/섹션 (RigidWall이면 불필요 → 생성 skip)
+        # 바닥판 SPC + 재료/섹션 (RigidWall이면 전부 불필요)
+        nodeSetFixed = None
+        spcBoundary = None
         section = None
         material = None
         if dropSurface[0] != "RigidWall":
+            nodeSetFixed = self.dynaImporter.nodeSetManager.CreateNodeSet("BottomFix")
+            spcBoundary = self.dynaImporter.boundaryNodeManager.CreateBoundarySPCNodeSet(nodeSetFixed,0,1,1,1,1,1,1,"FIXED")
             section = self.dynaImporter.sectionManager.CreateSolidSection("RigidWall",1)
             material = self.dynaImporter.matManager.CreateElasticMaterial("RigidWall", rho, E, nu)
 

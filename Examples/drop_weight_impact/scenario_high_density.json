@@ -1,0 +1,34 @@
+{
+    "_comment": "고밀도 격자 — 5mm 간격, 전영역",
+    "project_name": "DWI_HighDensity",
+    "mode": "drop_weight_impact",
+    "model_file": "../MinimumModel.k",
+    "output_dir": "dwi_high_density",
+
+    "simulation_params": {
+        "tFinal": 0.0005,
+        "dt": 0.0000005,
+        "impactor": {
+            "type": "Sphere",
+            "radius": 3.0,
+            "height": 50,
+            "density": 7850,
+            "youngs_modulus": 2.0e11,
+            "poisson_ratio": 0.3
+        },
+        "locations": {
+            "mode": "grid",
+            "spacing": 5.0,
+            "margin": 0.95
+        },
+        "generation_mode": "DampingSpring"
+    },
+
+    "environment": {
+        "koomeshmodifier_path": "/data/SmartTwinPreprocessor/bin/KooMeshModifier",
+        "koochainrun_path": "/data/SmartTwinPreprocessor/bin/KooChainRun",
+        "ncpu": 8,
+        "memory": "8G",
+        "partition": "normal"
+    }
+}

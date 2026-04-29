@@ -1,0 +1,42 @@
+{
+    "_comment": "실린더 충격자 + 부분 강체화",
+    "project_name": "DWI_Cylinder",
+    "mode": "drop_weight_impact",
+    "model_file": "../MinimumModel.k",
+    "output_dir": "dwi_cylinder",
+
+    "simulation_params": {
+        "tFinal": 0.001,
+        "dt": 0.000001,
+        "impactor": {
+            "type": "Cylinder",
+            "front_radius": 3.0,
+            "outer_radius": 6.0,
+            "front_height": 5.0,
+            "back_height": 10.0,
+            "back_radius": 6.0,
+            "radius": 3.0,
+            "height": 150,
+            "density": 7850,
+            "youngs_modulus": 2.0e11,
+            "poisson_ratio": 0.3
+        },
+        "locations": {
+            "mode": "grid",
+            "x_count": 3,
+            "y_count": 3,
+            "margin": 0.8
+        },
+        "generation_mode": "OutsideRigidPart",
+        "boundary_distance": 30.0,
+        "offset_distance": 0.05
+    },
+
+    "environment": {
+        "koomeshmodifier_path": "/data/SmartTwinPreprocessor/bin/KooMeshModifier",
+        "koochainrun_path": "/data/SmartTwinPreprocessor/bin/KooChainRun",
+        "ncpu": 4,
+        "memory": "4G",
+        "partition": "normal"
+    }
+}

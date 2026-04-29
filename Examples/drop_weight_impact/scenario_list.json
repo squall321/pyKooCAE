@@ -1,0 +1,41 @@
+{
+    "_comment": "리스트 모드 — 특정 위치만 지정",
+    "project_name": "DWI_List",
+    "mode": "drop_weight_impact",
+    "model_file": "../MinimumModel.k",
+    "output_dir": "dwi_list",
+
+    "simulation_params": {
+        "tFinal": 0.001,
+        "dt": 0.000001,
+        "impactor": {
+            "type": "Sphere",
+            "radius": 5.0,
+            "height": 100,
+            "density": 7850,
+            "youngs_modulus": 2.0e11,
+            "poisson_ratio": 0.3
+        },
+        "locations": {
+            "mode": "list",
+            "points": [
+                [0, 0],
+                [20, 0],
+                [-20, 0],
+                [0, 50],
+                [0, -50],
+                [20, 50],
+                [-20, -50]
+            ]
+        },
+        "generation_mode": "DampingSpring"
+    },
+
+    "environment": {
+        "koomeshmodifier_path": "/data/SmartTwinPreprocessor/bin/KooMeshModifier",
+        "koochainrun_path": "/data/SmartTwinPreprocessor/bin/KooChainRun",
+        "ncpu": 4,
+        "memory": "4G",
+        "partition": "normal"
+    }
+}
