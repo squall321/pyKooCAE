@@ -1,0 +1,13 @@
+*Inputfile
+model.k
+*Mode
+REMESH_TETRA,1
+**RemeshTetra,1
+*PID,100099,35202
+*MinDt,1.0e-8
+*TargetEdgeLength,0.5
+*MaxAspectRatio,10.0
+*SmoothingIterations,5
+*PreserveSharedNodes,True
+**EndRemeshTetra
+*End

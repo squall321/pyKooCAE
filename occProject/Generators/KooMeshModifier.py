@@ -223,6 +223,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "part_location_doe" in svector[0].lower():
                             self.modeList.append("PART_LOCATION_DOE")
                             self.modeIDList.append(int(svector[1]))
+                        elif "remesh_tetra" in svector[0].lower():
+                            self.modeList.append("REMESH_TETRA")
+                            self.modeIDList.append(int(svector[1]))
                         elif "rigidify_small_dt" in svector[0].lower():
                             self.modeList.append("RIGIDIFY_SMALL_DT")
                             self.modeIDList.append(int(svector[1]))
@@ -1400,8 +1403,10 @@ class KooMeshModifier(KooSimulationGenerator):
                             curOptions["DT"] = dt
                         elif "dropsurface" in line.lower():
                             svector = line.split(",")
-                            dropSurface = svector[1]
-                            if dropSurface.lower() == "plane":
+                            dropSurface = svector[1].strip()
+                            if dropSurface.lower() == "rigidwall":
+                                curOptions["DropSurface"] = ["RigidWall"]
+                            elif dropSurface.lower() == "plane":
                                 xLength = KooDynaFloat(svector[2])
                                 yLength = KooDynaFloat(svector[3])
                                 zLength = KooDynaFloat(svector[4])
@@ -1745,6 +1750,45 @@ class KooMeshModifier(KooSimulationGenerator):
                             for i in range(1, len(svector)):
                                 except_pids.add(int(svector[i]))
                             curOptions["ExceptPIDs"] = except_pids
+                        line = f.readline().strip()
+                        line = line.replace('\n','')
+                    self.modeIDOption[curModeID] = curOptions
+                    line = line.strip()
+                    continue
+                elif "**remeshtetra" in line.lower():
+                    svector = line.split(",")
+                    curModeID = int(svector[1])
+                    curOptions = {}
+                    curOptions["PID"] = []
+                    line = f.readline().strip()
+                    line = line.replace('\n','')
+                    while True:
+                        if not line:
+                            break
+                        if "**end" in line.lower():
+                            break
+                        elif "*pid" in line.lower():
+                            svector = line.split(",")
+                            for i in range(1, len(svector)):
+                                curOptions["PID"].append(int(svector[i]))
+                        elif "*mindt" in line.lower():
+                            svector = line.split(",")
+                            curOptions["MinDt"] = KooDynaFloat(svector[1], 0.0)
+                        elif "*targetedgelength" in line.lower():
+                            svector = line.split(",")
+                            curOptions["TargetEdgeLength"] = KooDynaFloat(svector[1], 0.0)
+                        elif "*maxaspectratio" in line.lower():
+                            svector = line.split(",")
+                            curOptions["MaxAspectRatio"] = KooDynaFloat(svector[1], 10.0)
+                        elif "*smoothingiterations" in line.lower():
+                            svector = line.split(",")
+                            curOptions["SmoothingIterations"] = int(svector[1])
+                        elif "*preservesharednodes" in line.lower():
+                            svector = line.split(",")
+                            curOptions["PreserveSharedNodes"] = svector[1].strip().lower() != "false"
+                        elif "*objective" in line.lower():
+                            svector = line.split(",")
+                            curOptions["Objective"] = svector[1].strip().lower()
                         line = f.readline().strip()
                         line = line.replace('\n','')
                     self.modeIDOption[curModeID] = curOptions
@@ -2154,6 +2198,10 @@ class KooMeshModifier(KooSimulationGenerator):
             exceptPIDs=except_pids
         )
 
+    def GenerateRemeshTetra(self, modeid):
+        curOption = self.modeIDOption[modeid]
+        self.advancedModification.RemeshTetra(curOption)
+
     def GeneratePartValidationSplit(self, modeid):
         curOption = self.modeIDOption[modeid]
         output_dir = curOption.get("output_dir", os.path.join(self.curDir, "validation_split"))
@@ -2399,6 +2447,9 @@ class KooMeshModifier(KooSimulationGenerator):
             elif mode == "RIGIDIFY_SMALL_DT":
                 self.GenerateRigidifySmallDT(modeid)
                 additionalword += "_rsdt"
+            elif mode == "REMESH_TETRA":
+                self.GenerateRemeshTetra(modeid)
+                additionalword += "_remesh"
             elif mode == "PART_VALIDATION_SPLIT":
                 self.GeneratePartValidationSplit(modeid)
                 additionalword += "_pvsplit"

@@ -2066,12 +2066,14 @@ class KooDynaAdvancedModification:
         nsid = nodeSet.sid
 
         nodeSetFixed = self.dynaImporter.nodeSetManager.CreateNodeSet("BottomFix")
-        spcBoundary = self.dynaImporter.boundaryNodeManager.CreateBoundarySPCNodeSet(nodeSetFixed,0,1,1,1,1,1,1,"FIXED")          
+        spcBoundary = self.dynaImporter.boundaryNodeManager.CreateBoundarySPCNodeSet(nodeSetFixed,0,1,1,1,1,1,1,"FIXED")
 
-
-        section = self.dynaImporter.sectionManager.CreateSolidSection("RigidWall",1)
-
-        material = self.dynaImporter.matManager.CreateElasticMaterial("RigidWall", rho, E, nu)
+        # 바닥판 재료/섹션 (RigidWall이면 불필요 → 생성 skip)
+        section = None
+        material = None
+        if dropSurface[0] != "RigidWall":
+            section = self.dynaImporter.sectionManager.CreateSolidSection("RigidWall",1)
+            material = self.dynaImporter.matManager.CreateElasticMaterial("RigidWall", rho, E, nu)
 
         boundingBox = self.dynaImporter.nodeManager.GetBoundingBox()
         xLength = boundingBox[3] - boundingBox[0]
@@ -4938,6 +4940,11 @@ class KooDynaAdvancedModification:
                             print("DX: ", curDx, "DY: ", curDy, " is not valid")
                         part.Translate(-curDx, -curDy, 0.0)
                
+    def RemeshTetra(self, option):
+        """사면체 파트 리메시."""
+        from KooCAEManager.KooTetraRemesher import remesh_tetra_parts
+        remesh_tetra_parts(self.dynaImporter, option)
+
     def PartValidationSplit(self, option, output_dir):
         """파트별 낙하 검증용 분할."""
         from KooCAEManager.KooPartValidator import split_parts_for_validation
