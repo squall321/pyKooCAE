@@ -2072,7 +2072,7 @@ class KooDynaAdvancedModification:
         material = None
         if dropSurface[0] != "RigidWall":
             nodeSetFixed = self.dynaImporter.nodeSetManager.CreateNodeSet("BottomFix")
-            spcBoundary = self.dynaImporter.boundaryNodeManager.CreateBoundarySPCNodeSet(nodeSetFixed,0,1,1,1,1,1,1,"FIXED")
+            spcBoundary = self.dynaImporter.boundaryNodeManager.CreateBoundarySPCNodeSet(nodeSetFixed,0,1,1,1,1,1,1,"SPC_BottomFix")
             section = self.dynaImporter.sectionManager.CreateSolidSection("RigidWall",1)
             material = self.dynaImporter.matManager.CreateElasticMaterial("RigidWall", rho, E, nu)
 
@@ -3930,7 +3930,7 @@ class KooDynaAdvancedModification:
             if stressWaveDistance != 0.0:
                 nodeSetInside = self.dynaImporter.nodeSetManager.CreateNodeSetwithNodes("BoundaryNodes", 0.0,0.0,0.0,0.0,"MECH",0, [])
                 nodeSetFixed = self.dynaImporter.nodeSetManager.CreateNodeSetwithNodes("BoundaryFixNodes", 0.0,0.0,0.0,0.0,"MECH",0, [])
-                spcBoundary = self.dynaImporter.boundaryNodeManager.CreateBoundarySPCNodeSet(nodeSetFixed,0,1,1,1,1,1,1,"FIXED")          
+                spcBoundary = self.dynaImporter.boundaryNodeManager.CreateBoundarySPCNodeSet(nodeSetFixed,0,1,1,1,1,1,1,"SPC_BottomFix")          
         
                 for pid in self.dynaImporter.partManager.parts:
                     
