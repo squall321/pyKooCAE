@@ -108,6 +108,12 @@ def build_drop_attitude_config(
     rigidify_dt = sim_params.get("rigidify_small_dt_threshold", 0.0)
     if rigidify_dt > 0:
         contact_opt_line += f"\nRigidifySmallDtThreshold,{rigidify_dt}"
+    rigidify_ar = sim_params.get("rigidify_max_aspect_ratio", 0.0)
+    if rigidify_ar > 0:
+        contact_opt_line += f"\nRigidifyMaxAspectRatio,{rigidify_ar}"
+    rigidify_eids = sim_params.get("rigidify_element_ids", [])
+    if rigidify_eids:
+        contact_opt_line += "\nRigidifyElementIDs," + ",".join(str(e) for e in rigidify_eids)
 
     # Tied 접촉 옵션
     tied_options = sim_params.get("tied_options", {})

@@ -164,6 +164,7 @@ class KooRigidwallPlanarMovingForces:
         pass 
     
     def WriteDynaKeyword(self):
+        _f = self._fmt_rw
         keyword = ""
         keyword += "*RIGIDWALL_PLANAR_MOVING_FORCES_ID\n"
         keyword += format(self.ID, ">10")
@@ -171,22 +172,17 @@ class KooRigidwallPlanarMovingForces:
         keyword += format(self.NSID, ">10")
         keyword += format(self.NSIDEX, ">10")
         keyword += format(self.BOXID, ">10")
-        keyword += format(self.OFFSET, ">10.3e")
-        keyword += format(self.BIRTH, ">10.3e")
-        keyword += format(self.DEATH, ">10.3e")
-        keyword += format(self.RWKSF, ">10.3e")
         keyword += "\n"
-        keyword += format(self.XT, ">10.3e")
-        keyword += format(self.YT, ">10.3e")
-        keyword += format(self.ZT, ">10.3e")
-        keyword += format(self.XH, ">10.3e")
-        keyword += format(self.YH, ">10.3e")
-        keyword += format(self.ZH, ">10.3e")
-        keyword += format(self.FRIC, ">10.3e")
-        keyword += format(self.WVEL, ">10.3e")
+        keyword += _f(self.XT)
+        keyword += _f(self.YT)
+        keyword += _f(self.ZT)
+        keyword += _f(self.XH)
+        keyword += _f(self.YH)
+        keyword += _f(self.ZH)
+        keyword += _f(self.FRIC)
         keyword += "\n"
-        keyword += format(self.MASS, ">10.3e")
-        keyword += format(self.V0, ">10.3e")
+        keyword += _f(self.MASS)
+        keyword += _f(self.V0)
         keyword += "\n"
         keyword += format(self.SOFT, ">10")
         keyword += format(self.SSID, ">10")
@@ -197,36 +193,49 @@ class KooRigidwallPlanarMovingForces:
         keyword += "\n"
         return keyword  
     
+    @staticmethod
+    def _fmt_rw(val, width=10):
+        """RigidWall용 실수 포맷. LS-DYNA 호환."""
+        s = f"{val:>{width}.4f}"
+        if len(s) > width:
+            s = f"{val:>{width}.3e}"
+        if len(s) > width:
+            s = f"{val:>{width}.2e}"
+        return s
+
     def WriteStreamDynaKeyword(self, stream):
+        # 필드 너비: 모델의 포맷에 맞춤 (standard=10)
+        W = 10
+        _f = lambda v: self._fmt_rw(v, W)
         stream.write("*RIGIDWALL_PLANAR_MOVING_FORCES_ID\n")
-        stream.write(format(self.ID, ">10"))
+        # ID card
+        stream.write(format(self.ID, f">{W}"))
         stream.write("\n")
-        stream.write(format(self.NSID, ">10"))
-        stream.write(format(self.NSIDEX, ">10"))
-        stream.write(format(self.BOXID, ">10"))
-        stream.write(format(self.OFFSET, ">10.3e"))
-        stream.write(format(self.BIRTH, ">10.3e"))
-        stream.write(format(self.DEATH, ">10.3e"))
-        stream.write(format(self.RWKSF, ">10.3e"))
+        # Card 1: NSID, NSIDEX, BOXID
+        stream.write(format(self.NSID, f">{W}"))
+        stream.write(format(self.NSIDEX, f">{W}"))
+        stream.write(format(self.BOXID, f">{W}"))
         stream.write("\n")
-        stream.write(format(self.XT, ">10.3e"))
-        stream.write(format(self.YT, ">10.3e"))
-        stream.write(format(self.ZT, ">10.3e"))
-        stream.write(format(self.XH, ">10.3e"))
-        stream.write(format(self.YH, ">10.3e"))
-        stream.write(format(self.ZH, ">10.3e"))
-        stream.write(format(self.FRIC, ">10.3e"))
-        stream.write(format(self.WVEL, ">10.3e"))
+        # Card 2: XT, YT, ZT, XH, YH, ZH, FRIC
+        stream.write(_f(self.XT))
+        stream.write(_f(self.YT))
+        stream.write(_f(self.ZT))
+        stream.write(_f(self.XH))
+        stream.write(_f(self.YH))
+        stream.write(_f(self.ZH))
+        stream.write(_f(self.FRIC))
         stream.write("\n")
-        stream.write(format(self.MASS, ">10.3e"))
-        stream.write(format(self.V0, ">10.3e"))
+        # Card 6 (MOVING): MASS, V0
+        stream.write(_f(self.MASS))
+        stream.write(_f(self.V0))
         stream.write("\n")
-        stream.write(format(self.SOFT, ">10"))
-        stream.write(format(self.SSID, ">10"))
-        stream.write(format(self.N1, ">10"))
-        stream.write(format(self.N2, ">10"))
-        stream.write(format(self.N3, ">10"))
-        stream.write(format(self.N4, ">10"))
+        # Card 7 (FORCES): SOFT, SSID, N1, N2, N3, N4
+        stream.write(format(self.SOFT, f">{W}"))
+        stream.write(format(self.SSID, f">{W}"))
+        stream.write(format(self.N1, f">{W}"))
+        stream.write(format(self.N2, f">{W}"))
+        stream.write(format(self.N3, f">{W}"))
+        stream.write(format(self.N4, f">{W}"))
         stream.write("\n")              
         
 class KooInterfaceSpringbackLSDyna:

@@ -1456,6 +1456,13 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "rigifysmalldtthreshold" in line.lower() or "rigidifysmalldtthreshold" in line.lower():
                             svector = line.split(",")
                             curOptions["RigidifySmallDtThreshold"] = KooDynaFloat(svector[1])
+                        elif "rigidifymaxaspectratio" in line.lower():
+                            svector = line.split(",")
+                            curOptions["RigidifyMaxAspectRatio"] = KooDynaFloat(svector[1])
+                        elif "rigidifyelementids" in line.lower():
+                            svector = line.split(",")
+                            eids = [int(svector[i]) for i in range(1, len(svector))]
+                            curOptions["RigidifyElementIDs"] = eids
                         elif "robustcontacttolerance" in line.lower():
                             svector = line.split(",")
                             curOptions["RobustContactTolerance"] = KooDynaFloat(svector[1])
@@ -1744,6 +1751,12 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "*dtthreshold" in line.lower() or "*dt" in line.lower():
                             svector = line.split(",")
                             curOptions["DtThreshold"] = KooDynaFloat(svector[1], 1.0e-8)
+                        elif "*maxaspectratio" in line.lower():
+                            svector = line.split(",")
+                            curOptions["MaxAspectRatio"] = KooDynaFloat(svector[1], 0.0)
+                        elif "*elementids" in line.lower():
+                            svector = line.split(",")
+                            curOptions["ElementIDs"] = [int(svector[i]) for i in range(1, len(svector))]
                         elif "*exceptpid" in line.lower():
                             svector = line.split(",")
                             except_pids = set()
@@ -2191,11 +2204,15 @@ class KooMeshModifier(KooSimulationGenerator):
         curOption = self.modeIDOption[modeid]
         dt_threshold = curOption.get("DtThreshold", 1.0e-8)
         except_pids = curOption.get("ExceptPIDs", set())
+        max_ar = curOption.get("MaxAspectRatio", 0.0)
+        elem_ids = curOption.get("ElementIDs", None)
         self.dynaImporter.partManager.RigidifySmallDtElements(
             self.dynaImporter.matManager,
             self.dynaImporter.sectionManager,
             dt_threshold=dt_threshold,
-            exceptPIDs=except_pids
+            exceptPIDs=except_pids,
+            max_aspect_ratio=max_ar,
+            element_ids=elem_ids
         )
 
     def GenerateRemeshTetra(self, modeid):

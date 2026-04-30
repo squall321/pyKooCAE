@@ -2837,22 +2837,27 @@ class KooPartManager():
                 
                 
     
-    def RigidifySmallDtElements(self, materialMan, sectionMan, dt_threshold, exceptPIDs=None):
-        """stable dt가 dt_threshold 이하인 요소를 새 강체 파트로 분리.
+    def RigidifySmallDtElements(self, materialMan, sectionMan, dt_threshold,
+                               exceptPIDs=None, max_aspect_ratio=0.0, element_ids=None):
+        """stable dt/aspect ratio/수동 지정 기준으로 요소를 새 강체 파트로 분리.
 
         Args:
             materialMan: KooMaterialManager
             sectionMan: KooSectionManager
-            dt_threshold: 이 값 이하 dt인 요소를 강체화
+            dt_threshold: 이 값 이하 dt인 요소를 강체화 (0이면 비활성)
             exceptPIDs: 제외할 PID set (None이면 없음)
+            max_aspect_ratio: 이 값 초과 aspect ratio인 요소를 강체화 (0이면 비활성)
+            element_ids: 수동 지정 요소 ID 리스트 (None이면 없음)
 
         Returns:
             rigid_pids: 생성된 강체 파트 PID 리스트
         """
-        from KooCAEManager.KooElement import compute_element_stable_dt, FaceElement, SolidElement
+        from KooCAEManager.KooElement import compute_element_stable_dt, compute_element_min_edge_length, FaceElement, SolidElement
+        import numpy as np
 
         if exceptPIDs is None:
             exceptPIDs = set()
+        manual_eids = set(element_ids) if element_ids else set()
 
         rigid_pids = []
         total_rigidified = 0
@@ -2881,11 +2886,55 @@ class KooPartManager():
             if 'RIGID' in str(mat_name).upper():
                 continue
 
-            # 요소별 dt 계산 → 분리 대상 수집
+            # TETRA만 대상 (HEXA 제외)
+            first_elem = next(iter(part.elementManager.elements.values()))
+            unique_node_count = len(set(n.id for n in first_elem.nodes if n is not None))
+            is_tetra_part = isinstance(first_elem, SolidElement) and (
+                first_elem.type in ("TETRA4", "TETRA10") or unique_node_count <= 5)
+            is_shell_part = isinstance(first_elem, FaceElement)
+
+            # 요소별 기준 판정 → 분리 대상 수집
             small_dt_eids = []
             for eid, elem in part.elementManager.elements.items():
-                dt = compute_element_stable_dt(elem, E, rho, nu)
-                if dt <= dt_threshold:
+                rigidify = False
+
+                # HEXA는 자동 기준에서 제외 (수동 지정은 허용)
+                elem_unique = len(set(n.id for n in elem.nodes if n is not None))
+                is_tetra_elem = isinstance(elem, SolidElement) and elem_unique <= 5
+
+                # 수동 지정 (타입 무관)
+                if eid in manual_eids:
+                    rigidify = True
+
+                # dt 기준 (TETRA만)
+                if not rigidify and dt_threshold > 0 and is_tetra_elem:
+                    dt = compute_element_stable_dt(elem, E, rho, nu)
+                    if dt <= dt_threshold:
+                        rigidify = True
+
+                # aspect ratio 기준 (TETRA만)
+                if not rigidify and max_aspect_ratio > 0 and is_tetra_elem:
+                    nodes_e = [n for n in elem.nodes if n is not None]
+                    if len(nodes_e) >= 4:
+                        coords_e = [np.array([n.x, n.y, n.z]) for n in nodes_e]
+                        unique_coords = []
+                        seen = set()
+                        for c in coords_e:
+                            key = (round(c[0], 8), round(c[1], 8), round(c[2], 8))
+                            if key not in seen:
+                                seen.add(key)
+                                unique_coords.append(c)
+                        if len(unique_coords) >= 4:
+                            edges = []
+                            for i in range(len(unique_coords)):
+                                for j in range(i+1, len(unique_coords)):
+                                    d = np.linalg.norm(unique_coords[i] - unique_coords[j])
+                                    if d > 1e-30:
+                                        edges.append(d)
+                            if edges and max(edges) / min(edges) > max_aspect_ratio:
+                                rigidify = True
+
+                if rigidify:
                     small_dt_eids.append(eid)
 
             if not small_dt_eids:

@@ -2252,15 +2252,19 @@ class KooDynaAdvancedModification:
             print("Impact Point [", impactPoint[0],",", impactPoint[1],"," ,  impactPoint[2], "]")
             initV = self.dynaImporter.initialManager.CreateInitialVelocity(nsid,0,0,0,0, velocity[0],velocity[1],velocity[2],angular_velocity[0],angular_velocity[1],angular_velocity[2],0.0,0.0,0.0,0.0,0.0,0.0)
 
-            # 비정상 요소 강체화: stable dt가 임계값 이하인 요소를 MAT_RIGID로 변환
+            # 비정상 요소 강체화: dt/aspect ratio/수동 지정 기준
             rigidify_dt = option.get("RigidifySmallDtThreshold", 0.0)
+            rigidify_ar = option.get("RigidifyMaxAspectRatio", 0.0)
+            rigidify_eids = option.get("RigidifyElementIDs", None)
             rigidified_pids = []
-            if rigidify_dt > 0:
+            if rigidify_dt > 0 or rigidify_ar > 0 or rigidify_eids:
                 rigidified_pids = self.dynaImporter.partManager.RigidifySmallDtElements(
                     self.dynaImporter.matManager,
                     self.dynaImporter.sectionManager,
                     dt_threshold=rigidify_dt,
-                    exceptPIDs=set()
+                    exceptPIDs=set(),
+                    max_aspect_ratio=rigidify_ar,
+                    element_ids=rigidify_eids
                 )
 
             # 접촉 처리 (바닥판 생성 전)
