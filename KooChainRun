@@ -6,7 +6,7 @@ A CLI tool for managing multi-step chained CAE simulations with automatic
 Slurm job submission and dependency management.
 
 Author: Koo Engineering
-Version: 1.2.0
+Version: 1.3.0
 """
 
 import sys
@@ -52,7 +52,7 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         """
     )
 
-    parser.add_argument('--version', action='version', version='KooChainRun 1.2.0')
+    parser.add_argument('--version', action='version', version='KooChainRun 1.3.0')
 
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 

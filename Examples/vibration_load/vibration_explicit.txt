@@ -1,0 +1,25 @@
+*Inputfile
+MinimumModel.k
+*Info,VibTest,DV1
+*Description,Vibration load (explicit factor) - Z-axis force
+*Creator,user,user@example.com,CAE,Team
+*Mode
+VIBRATION_LOAD,1
+**VibrationLoad,1
+Direction,Z
+LoadType,Force
+RelativeMode,Explicit
+LoadCurve
+0.0, 0.0
+0.001, 100.0
+0.002, 200.0
+0.003, 100.0
+0.004, 0.0
+EndLoadCurve
+PartFactors
+1, 1.0
+2, 0.5
+3, 1.5
+EndPartFactors
+**EndVibrationLoad
+*End

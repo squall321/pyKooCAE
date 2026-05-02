@@ -120,6 +120,33 @@ class KooLoadBodyRZ(KooLoadBody):
         stream.write("*LOAD_BODY_RZ\n")
         super().WriteStreamDynaKeyword(stream)
 
+class KooLoadBodyParts:
+    """*LOAD_BODY_PARTS_X/Y/Z — 특정 파트(셋)에 body force(가속도) 적용.
+
+    카드:
+        *LOAD_BODY_PARTS_<dir>
+        $#    PSID      LCID        SF    DRLCID      DRSF
+                <psid>    <lcid>    <sf>     <0>      <1.0>
+    """
+    def __init__(self, direction, psid, lcid, sf=1.0, drlcid=0, drsf=1.0):
+        self.direction = direction.upper()  # 'X' | 'Y' | 'Z'
+        self.psid = psid
+        self.lcid = lcid
+        self.sf = sf
+        self.drlcid = drlcid
+        self.drsf = drsf
+
+    def WriteStreamDynaKeyword(self, stream):
+        stream.write(f"*LOAD_BODY_PARTS_{self.direction}\n")
+        stream.write("$#    PSID      LCID        SF    DRLCID      DRSF\n")
+        stream.write(format(int(self.psid), ">10"))
+        stream.write(format(int(self.lcid), ">10"))
+        stream.write(format(float(self.sf), ">10.4e"))
+        stream.write(format(int(self.drlcid), ">10"))
+        stream.write(format(float(self.drsf), ">10.4e"))
+        stream.write("\n")
+
+
 class KooLoadBodyVector(KooLoadBody):
     def __init__(self, lcid, sf =1.0, lciddr = "", xc = 0.0, yc = 0.0, zc = 0.0, cid = 0, fx = 0.0, fy = 0.0, fz = 0.0): 
         super(KooLoadBodyVector,self).__init__(lcid, sf, lciddr, xc, yc, zc, cid)
@@ -733,7 +760,14 @@ class KooLoadManager:
     def CreateLoadBodyVector(self, lcid, sf = 1.0, lciddr = "", xc = 0.0, yc = 0.0, zc = 0.0, cid = 0, fx = 0.0, fy = 0.0, fz = 0.0):
         load = KooLoadBodyVector(lcid, sf, lciddr, xc, yc, zc, cid, fx, fy, fz)
         self.bodyLoads.append(load)
-        return load    
+        return load
+
+    def CreateLoadBodyParts(self, direction, psid, lcid, sf=1.0, drlcid=0, drsf=1.0):
+        """*LOAD_BODY_PARTS_<X|Y|Z> 카드 추가."""
+        load = KooLoadBodyParts(direction, psid, lcid, sf, drlcid, drsf)
+        self.bodyLoads.append(load)
+        return load
+
     
     def CreateLoadNodalPoint(self, name, lcid=None, cid = 0, fx = 0.0, fy = 0.0, fz = 0.0, nodeid = 0):
         self.maxid += 1

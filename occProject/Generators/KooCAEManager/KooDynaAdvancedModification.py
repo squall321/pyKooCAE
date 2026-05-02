@@ -4965,6 +4965,11 @@ class KooDynaAdvancedModification:
         from KooCAEManager.KooImportMerger import import_merge_k
         import_merge_k(simGenerator, option)
 
+    def VibrationLoad(self, option):
+        """다중 파트 동기화 진동 하중 (DEFINE_CURVE + LOAD_BODY_PARTS_<dir> 생성)."""
+        from KooCAEManager.KooVibrationLoad import apply_vibration_load
+        apply_vibration_load(self.dynaImporter, option)
+
     def PartValidationSplit(self, option, output_dir):
         """파트별 낙하 검증용 분할."""
         from KooCAEManager.KooPartValidator import split_parts_for_validation

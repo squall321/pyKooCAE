@@ -1,0 +1,22 @@
+*Inputfile
+MinimumModel.k
+*Info,VibTest,DV1
+*Description,Vibration load (volume proportional) - X-axis force
+*Creator,user,user@example.com,CAE,Team
+*Mode
+VIBRATION_LOAD,1
+**VibrationLoad,1
+Direction,X
+LoadType,Force
+RelativeMode,VolumeProportional
+ReferencePart,1
+LoadCurve
+0.0, 0.0
+0.005, 1000.0
+0.01, 0.0
+EndLoadCurve
+PartList
+1, 2, 3, 4, 5
+EndPartList
+**EndVibrationLoad
+*End

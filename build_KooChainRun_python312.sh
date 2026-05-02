@@ -1,8 +1,15 @@
 #!/bin/bash
 # KooChainRun (KCR) 빌드 스크립트 - Python 3.12
-# 사용법: ./build_KooChainRun_python312.sh
+# 사용법:
+#   ./build_KooChainRun_python312.sh           # incremental (캐시 보존)
+#   ./build_KooChainRun_python312.sh --clean   # clean 빌드
 
 set -e
+
+CLEAN_BUILD=false
+if [ "$1" == "--clean" ]; then
+    CLEAN_BUILD=true
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -12,11 +19,20 @@ echo "KooChainRun 빌드 (Python 3.12)"
 echo "================================================================================"
 echo "venv: ./venv312"
 echo "Python: $(./venv312/bin/python --version)"
+if [ "$CLEAN_BUILD" = true ]; then
+    echo "모드: CLEAN (캐시 모두 삭제)"
+else
+    echo "모드: INCREMENTAL (캐시 보존)"
+fi
 echo ""
 
-# 기존 빌드 결과 제거
-echo "기존 빌드 결과 제거 중..."
-rm -rf KooChainRun.build KooChainRun.dist .nuitka
+# Nuitka cache + .build/.dist는 옵션
+if [ "$CLEAN_BUILD" = true ]; then
+    echo "Nuitka cache + build/dist 삭제 중..."
+    rm -rf KooChainRun.build KooChainRun.dist .nuitka
+else
+    echo "Nuitka cache 보존 (변경 모듈만 재빌드)"
+fi
 
 # Nuitka로 빌드
 echo "Nuitka 빌드 시작..."

@@ -1,8 +1,15 @@
 #!/bin/bash
 # pyKooCAE 전체 통합 빌드 스크립트 - Python 3.12
-# 사용법: ./build_all_python312.sh
+# 사용법:
+#   ./build_all_python312.sh           # incremental (캐시 보존)
+#   ./build_all_python312.sh --clean   # clean 빌드
 
 set -e
+
+CLEAN_BUILD=false
+if [ "$1" == "--clean" ]; then
+    CLEAN_BUILD=true
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -16,19 +23,28 @@ echo "pyKooCAE 통합 빌드 (Python 3.12)"
 echo "================================================================================"
 echo "Python: $(./venv312/bin/python --version)"
 echo "출력 디렉토리: $BUILD_DIR"
+if [ "$CLEAN_BUILD" = true ]; then
+    echo "모드: CLEAN (캐시 모두 삭제)"
+else
+    echo "모드: INCREMENTAL (캐시 보존)"
+fi
 echo ""
 
 # 기존 빌드 결과 제거 (Library 백업 후 복원)
-echo "기존 빌드 결과 제거 중..."
 LIBRARY_BACKUP="/tmp/pyKooCAE_Library_backup_$$"
 if [ -d "$BUILD_DIR/Library" ]; then
     echo "  build_dist/Library 백업 중..."
     cp -r "$BUILD_DIR/Library" "$LIBRARY_BACKUP"
 fi
 rm -rf "$BUILD_DIR"
-rm -rf KooChainRun.build KooChainRun.dist .nuitka
-rm -rf occProject/Generators/KooMeshModifier.build occProject/Generators/KooMeshModifier.dist occProject/Generators/.nuitka
-rm -rf occProject/Generators/KooAutomatedModeller.build occProject/Generators/KooAutomatedModeller.dist
+if [ "$CLEAN_BUILD" = true ]; then
+    echo "Nuitka cache + build/dist 삭제 중..."
+    rm -rf KooChainRun.build KooChainRun.dist .nuitka
+    rm -rf occProject/Generators/KooMeshModifier.build occProject/Generators/KooMeshModifier.dist occProject/Generators/.nuitka
+    rm -rf occProject/Generators/KooAutomatedModeller.build occProject/Generators/KooAutomatedModeller.dist
+else
+    echo "Nuitka cache 보존 (변경 모듈만 재빌드)"
+fi
 
 mkdir -p "$BIN_DIR"
 mkdir -p "$LIB_DIR"

@@ -321,6 +321,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "decompose_k" in svector[0].lower():
                             self.modeList.append("DECOMPOSE_K")
                             self.modeIDList.append(int(svector[1]))
+                        elif "vibration_load" in svector[0].lower():
+                            self.modeList.append("VIBRATION_LOAD")
+                            self.modeIDList.append(int(svector[1]))
                         elif "import_merge_k" in svector[0].lower():
                             # import_merge_k를 merge_k보다 먼저 체크 (substring 충돌 방지)
                             self.modeList.append("IMPORT_MERGE_K")
@@ -2210,6 +2213,87 @@ class KooMeshModifier(KooSimulationGenerator):
                             print(f"  Warning: unknown DecomposeK option line: {line}")
                     self.modeIDOption[curModeID] = curOptions
 
+                elif "**vibrationload" in line.lower():
+                    # **VibrationLoad,<modeID>
+                    svector = line.split(",")
+                    curModeID = int(svector[1])
+                    curOptions = {
+                        "Direction": "Z",
+                        "LoadType": "Force",
+                        "RelativeMode": "Explicit",
+                        "LoadCurve": [],
+                        "PartFactors": {},
+                        "PartList": [],
+                    }
+                    in_curve = False
+                    in_factors = False
+                    in_partlist = False
+                    while True:
+                        line = f.readline()
+                        if not line:
+                            break
+                        line = line.strip().replace('\n', '')
+                        if not line or line.startswith('$'):
+                            continue
+                        if "**end" in line.lower():
+                            break
+                        low = line.lower()
+                        # 멀티라인 블록 종료 마커
+                        if low.startswith("endloadcurve"):
+                            in_curve = False; continue
+                        if low.startswith("endpartfactors"):
+                            in_factors = False; continue
+                        if low.startswith("endpartlist"):
+                            in_partlist = False; continue
+                        # 블록 진입
+                        if low == "loadcurve":
+                            in_curve = True; continue
+                        if low == "partfactors":
+                            in_factors = True; continue
+                        if low == "partlist":
+                            in_partlist = True; continue
+                        # 블록 내부 데이터
+                        if in_curve:
+                            parts = [p.strip() for p in line.split(",")]
+                            if len(parts) >= 2:
+                                try:
+                                    curOptions["LoadCurve"].append([float(parts[0]), float(parts[1])])
+                                except ValueError:
+                                    pass
+                            continue
+                        if in_factors:
+                            parts = [p.strip() for p in line.split(",")]
+                            if len(parts) >= 2:
+                                try:
+                                    curOptions["PartFactors"][int(parts[0])] = float(parts[1])
+                                except ValueError:
+                                    pass
+                            continue
+                        if in_partlist:
+                            for tok in line.split(","):
+                                tok = tok.strip()
+                                if tok:
+                                    try:
+                                        curOptions["PartList"].append(int(tok))
+                                    except ValueError:
+                                        pass
+                            continue
+                        # 단일 라인 옵션 (Key,Value)
+                        if low.startswith("direction,"):
+                            curOptions["Direction"] = line.split(",", 1)[1].strip()
+                        elif low.startswith("loadtype,"):
+                            curOptions["LoadType"] = line.split(",", 1)[1].strip()
+                        elif low.startswith("relativemode,"):
+                            curOptions["RelativeMode"] = line.split(",", 1)[1].strip()
+                        elif low.startswith("referencepart,"):
+                            try:
+                                curOptions["ReferencePart"] = int(line.split(",", 1)[1].strip())
+                            except ValueError:
+                                pass
+                        else:
+                            print(f"  Warning: unknown VibrationLoad option line: {line}")
+                    self.modeIDOption[curModeID] = curOptions
+
                 elif "**importmergek" in line.lower():
                     # **ImportMergeK,<modeID> 옵션 블록 파서 (mergek 보다 먼저 체크)
                     svector = line.split(",")
@@ -2275,6 +2359,10 @@ class KooMeshModifier(KooSimulationGenerator):
     def GenerateImportMergeK(self, modeid):
         curOption = self.modeIDOption[modeid]
         self.advancedModification.ImportMergeK(curOption, self)
+
+    def GenerateVibrationLoad(self, modeid):
+        curOption = self.modeIDOption[modeid]
+        self.advancedModification.VibrationLoad(curOption)
 
     def GenerateRemoveDuplicateTiedContacts(self, modeid):
         curOption = self.modeIDOption[modeid]
@@ -2690,6 +2778,9 @@ class KooMeshModifier(KooSimulationGenerator):
             elif mode == "IMPORT_MERGE_K":
                 self.GenerateImportMergeK(modeid)
                 additionalword += "_imported"
+            elif mode == "VIBRATION_LOAD":
+                self.GenerateVibrationLoad(modeid)
+                additionalword += "_vib"
 
             self.dynaImporter.SyncronizeMaxID()
         ## write modified File

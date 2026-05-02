@@ -1,9 +1,16 @@
 #!/bin/bash
 # pyKooCAE 빌드 스크립트 (KooAutomatedModeller 제외) - Python 3.12
-# KooMeshModifier + KooChainRun만 빌드 (~20분)
-# 사용법: ./build_without_automatedmodeller.sh
+# KooMeshModifier + KooChainRun만 빌드
+# 사용법:
+#   ./build_without_automatedmodeller.sh           # incremental (캐시 보존, 빠름)
+#   ./build_without_automatedmodeller.sh --clean   # clean 빌드 (모든 캐시 삭제, 느리지만 안전)
 
 set -e
+
+CLEAN_BUILD=false
+if [ "$1" == "--clean" ]; then
+    CLEAN_BUILD=true
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -17,10 +24,14 @@ echo "pyKooCAE 빌드 (KooAutomatedModeller 제외, Python 3.12)"
 echo "================================================================================"
 echo "Python: $(./venv312/bin/python --version)"
 echo "출력 디렉토리: $BUILD_DIR"
+if [ "$CLEAN_BUILD" = true ]; then
+    echo "모드: CLEAN (캐시 모두 삭제)"
+else
+    echo "모드: INCREMENTAL (캐시 보존, 변경된 모듈만 재빌드)"
+fi
 echo ""
 
 # 기존 빌드 결과 제거 (Library, KooAutomatedModeller 보존)
-echo "기존 빌드 결과 제거 중 (KooAutomatedModeller 보존)..."
 LIBRARY_BACKUP="/tmp/pyKooCAE_Library_backup_$$"
 AUTOMOD_BACKUP="/tmp/pyKooCAE_AutoMod_backup_$$"
 if [ -d "$BUILD_DIR/Library" ]; then
@@ -31,9 +42,15 @@ if [ -d "$LIB_DIR/KooAutomatedModeller" ]; then
     echo "  build_dist/lib/KooAutomatedModeller 백업 중..."
     cp -r "$LIB_DIR/KooAutomatedModeller" "$AUTOMOD_BACKUP"
 fi
+# build_dist는 항상 정리 (재배치 필요), Nuitka cache는 옵션
 rm -rf "$BUILD_DIR"
-rm -rf KooChainRun.build KooChainRun.dist .nuitka
-rm -rf occProject/Generators/KooMeshModifier.build occProject/Generators/KooMeshModifier.dist occProject/Generators/.nuitka
+if [ "$CLEAN_BUILD" = true ]; then
+    echo "  Nuitka cache + build/dist 삭제 중 (clean 빌드)..."
+    rm -rf KooChainRun.build KooChainRun.dist .nuitka
+    rm -rf occProject/Generators/KooMeshModifier.build occProject/Generators/KooMeshModifier.dist occProject/Generators/.nuitka
+else
+    echo "  Nuitka cache + .build 폴더 보존 (incremental, 변경 모듈만 재빌드)"
+fi
 
 mkdir -p "$BIN_DIR"
 mkdir -p "$LIB_DIR"

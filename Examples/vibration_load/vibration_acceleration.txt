@@ -1,0 +1,25 @@
+*Inputfile
+MinimumModel.k
+*Info,VibTest,DV1
+*Description,Vibration load (acceleration input) - Y-axis sine pulse
+*Creator,user,user@example.com,CAE,Team
+*Mode
+VIBRATION_LOAD,1
+**VibrationLoad,1
+Direction,Y
+LoadType,Acceleration
+RelativeMode,Explicit
+LoadCurve
+0.0, 0.0
+0.0005, 9810.0
+0.001, 0.0
+0.0015, -9810.0
+0.002, 0.0
+EndLoadCurve
+PartFactors
+1, 1.0
+2, 1.0
+3, 1.0
+EndPartFactors
+**EndVibrationLoad
+*End
