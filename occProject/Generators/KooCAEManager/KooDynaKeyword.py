@@ -9667,6 +9667,18 @@ class RigidWallPlanar(DynaKeyword):
     def __init__(self):
         super(RigidWallPlanar,self).__init__("RIGIDWALL_PLANAR")
 
+    def getRigidWallPlanar(self):
+        """parameters를 KooDynaAdditional.SetAdditionalfromDyna 형식으로 변환."""
+        result = []
+        for p in self.parameters:
+            # p는 [card1, card2] (단순) 또는 [id_card, card1, card2] (ID 포함 못 봄)
+            if len(p) == 2:
+                result.append(["*RIGIDWALL_PLANAR", p[0], p[1]])
+            elif len(p) == 3:
+                # SID + card1 + card2 → ID 변형으로 처리
+                result.append(["*RIGIDWALL_PLANAR_ID", [p[0][0]], p[1], p[2]])
+        return result
+
     def parse(self, rigidwall_keywords):
         for i in range(len(rigidwall_keywords)):            
             parameterList = [] 
@@ -9710,6 +9722,15 @@ class RigidWallPlanar(DynaKeyword):
 class RigidWallPlanarID(DynaKeyword):
     def __init__(self):
         super(RigidWallPlanarID,self).__init__("RIGIDWALL_PLANAR_ID")
+
+    def getRigidWallPlanarID(self):
+        """parameters를 KooDynaAdditional.SetAdditionalfromDyna 형식으로 변환."""
+        result = []
+        for p in self.parameters:
+            # p = [id_card, card1, card2]
+            if len(p) == 3:
+                result.append(["*RIGIDWALL_PLANAR_ID", p[0], p[1], p[2]])
+        return result
 
     def parse(self, rigidwall_keywords):
         for i in range(len(rigidwall_keywords)):            
@@ -11375,12 +11396,95 @@ class DynaManager():
         self.currentDirectory = os.getcwd()
         self.inputFile = ""
         self.dynaKeywordMan = None
-        self.preserve_includes = False  # True면 *INCLUDE 구조 보존
+        self.preserve_includes = False  # False: include 인라인, IGA는 passthrough로 별도 처리
         self._include_sources = {}      # 키워드별 source_file 목록
         self._include_files = []        # include 파일 절대경로 목록
         self._main_file = ""            # 메인 파일 절대경로
         self._include_passthrough_data = []  # IGA include passthrough 데이터
+        # 사용자 지정 보존 패턴 (basename glob 또는 절대경로). 매칭 시 passthrough 처리.
+        self._preserve_include_patterns = []
         pass
+
+    def matchesPreservePattern(self, include_path):
+        """include_path가 사용자 지정 보존 패턴 중 하나와 매칭되는지."""
+        import fnmatch
+        patterns = getattr(self, '_preserve_include_patterns', None) or []
+        if not patterns:
+            return False
+        base = os.path.basename(include_path)
+        abs_path = os.path.abspath(include_path)
+        for pat in patterns:
+            if not pat:
+                continue
+            # 절대경로 매칭
+            if os.path.isabs(pat):
+                if os.path.abspath(pat) == abs_path:
+                    return True
+                continue
+            # glob 패턴 (basename 매칭)
+            if fnmatch.fnmatch(base, pat):
+                return True
+        return False
+
+    def findPreservedIncludeForPID(self, pid):
+        """주어진 PID가 어느 보존(passthrough)된 include에 있는지 확인.
+
+        보존된 include는 파싱되지 않으므로 partManager에 등록 안 됨.
+        수정 모드가 그 PID를 건드리려 할 때 명확한 에러 메시지 제공용.
+
+        Returns:
+            include 파일 절대경로 (찾으면) 또는 None.
+        """
+        try:
+            pid_int = int(pid)
+        except (ValueError, TypeError):
+            return None
+        for entry in getattr(self, '_include_passthrough_data', []):
+            content = entry.get('content', '')
+            if pid_int in self._extractPidsFromContent(content):
+                return entry.get('file', '')
+        return None
+
+    def _extractPidsFromContent(self, content):
+        """*PART 블록에서 PID 목록 추출 (코멘트 $ 제외, 첫 데이터 라인의 첫 10자)."""
+        pids = set()
+        lines = content.splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            # *PART, *PART_COMPOSITE, *PART_INERTIA 등 (*SET_PART은 별도 키워드로 매칭 대상 아님)
+            up = line.upper()
+            if up.startswith('*PART'):
+                # *PART 블록의 데이터 라인 찾기
+                # name 라인(첫 비-코멘트), data 라인(두 번째 비-코멘트, PID는 첫 10자)
+                non_comment_count = 0
+                j = i + 1
+                while j < len(lines):
+                    sub = lines[j]
+                    if sub.startswith('*'):
+                        break  # 다음 키워드
+                    if sub.startswith('$') or not sub.strip():
+                        j += 1
+                        continue
+                    non_comment_count += 1
+                    if non_comment_count == 2:
+                        # 데이터 라인
+                        try:
+                            pid_str = sub[:10].strip()
+                            pids.add(int(pid_str))
+                        except (ValueError, IndexError):
+                            pass
+                        # *PART_COMPOSITE 같은 경우 여러 데이터 라인이 있으나
+                        # PID는 한 블록당 하나 → 다음 *까지 건너뛰기
+                        j += 1
+                        while j < len(lines) and not lines[j].startswith('*'):
+                            j += 1
+                        break
+                    j += 1
+                i = j
+            else:
+                i += 1
+        return pids
     
     def SetInputPath(self, path):
 
@@ -11472,22 +11576,33 @@ class DynaManager():
                     # 보존 모드: include 파일은 읽지 않고 경로만 추적
                     print(f"  Include preserved (not inlined): {os.path.basename(include_path)}")
                 else:
-                    # 인라인 모드: IGA 키워드 포함 여부 확인
+                    # 인라인 모드: 사용자 지정 보존 패턴 또는 IGA 자동 보존 확인
                     with open(include_path, 'r', errors='replace') as inc_f:
                         inc_content = inc_f.read()
-                    has_iga = any(kw in inc_content for kw in
-                                 ['*IGA_', '*SECTION_IGA_', '*PARAMETER_LOCAL'])
-                    if has_iga:
-                        # IGA include → 전체를 passthrough로 보존
+
+                    user_preserve = self.matchesPreservePattern(include_path)
+                    # 분해 출력 파일은 자동 IGA passthrough 우회 (raw 보존된 IGA 키워드가
+                    # 자기 자신을 IGA로 오인식해 통째 passthrough되는 문제 방지)
+                    no_auto_passthrough = (
+                        "KOO_DECOMPOSED_NO_AUTO_PASSTHROUGH" in inc_content[:500]
+                        or getattr(self, '_disable_auto_iga_passthrough', False)
+                    )
+                    has_iga = (not no_auto_passthrough) and any(
+                        kw in inc_content for kw in ['*IGA_', '*SECTION_IGA_', '*PARAMETER_LOCAL']
+                    )
+
+                    if user_preserve or has_iga:
+                        # passthrough → *INCLUDE 참조로 보존
                         if "_INCLUDE_PASSTHROUGH" not in keyword_dict:
                             keyword_dict["_INCLUDE_PASSTHROUGH"] = []
                         entry = {"file": include_path, "content": inc_content}
                         keyword_dict["_INCLUDE_PASSTHROUGH"].append(entry)
                         self._include_passthrough_data.append(entry)
                         lines_with_asterisk.append("_INCLUDE_PASSTHROUGH")
-                        print(f"  Include passthrough (IGA): {os.path.basename(include_path)}")
+                        reason = "user-specified" if user_preserve else "IGA"
+                        print(f"  Include passthrough ({reason}): {os.path.basename(include_path)}")
                     else:
-                        # 일반 include → 재귀적으로 읽기
+                        # 일반 include → 재귀적으로 읽기 (인라인)
                         self.ReadKeywordsfromFile(include_path, lines_with_asterisk, keyword_dict)
             else:
                 print(f"Warning: Include file not found: {include_path}")
@@ -12597,14 +12712,17 @@ class DynaManager():
 
     def ReadInputFile(self, outputFileName,writelog = True):
         os.chdir(self.currentDirectory)
-        path = os.path.join(self.currentDirectory, self.inputFile)        
+        path = os.path.join(self.currentDirectory, self.inputFile)
         # Initialize an empty list to store the lines
         lines_with_asterisk = []
         keyword_dict = {}
-        
-        
-      
+
+
+
         lines_with_asterisk, keyword_dict = self.ReadKeywordsfromFile(path,lines_with_asterisk, keyword_dict)
+        # 다운스트림 (DECOMPOSE_K, MERGE_K, fallback writer 등)에서 raw 키워드 데이터 접근용
+        self._raw_keyword_dict = keyword_dict
+        self._raw_keywords_seen = list(dict.fromkeys(lines_with_asterisk))
         
         # remove duplicate keywords
         lines_with_asterisk_reduced = list(dict.fromkeys(lines_with_asterisk))
@@ -14625,14 +14743,12 @@ class DynaManager():
             except Exception as e:
                 print(f"Warning: Passthrough keyword registration failed: {e}")
 
-            # IGA include passthrough 출력
+            # IGA include passthrough → *INCLUDE로 보존 (PARAMETER_LOCAL 스코프 유지)
             if "_INCLUDE_PASSTHROUGH" in keyword_dict:
                 for entry in keyword_dict["_INCLUDE_PASSTHROUGH"]:
                     inc_file = entry["file"]
-                    file.write(f"$$ --- Include passthrough: {os.path.basename(inc_file)} ---\n")
-                    file.write(entry["content"])
-                    if not entry["content"].endswith('\n'):
-                        file.write('\n')
+                    file.write("*INCLUDE\n")
+                    file.write(f" {os.path.basename(inc_file)}\n")
                 while "_INCLUDE_PASSTHROUGH" in lines_with_asterisk:
                     lines_with_asterisk.remove("_INCLUDE_PASSTHROUGH")
 

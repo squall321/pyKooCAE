@@ -1892,6 +1892,11 @@ class KooDynaImporter():
         dynaKeyword = self.dynaManager.dynaKeywordMan.keywords
         if "TITLE" in dynaKeyword:
             self.keywordInterpreted["TITLE"] = True
+        # 단순 *RIGIDWALL_PLANAR / _ID — additionalManager로 통합 (출력 시 _MOVING_FORCES_ID 형식으로 변환됨, 의미 동일)
+        if "RIGIDWALL_PLANAR" in dynaKeyword:
+            self.keywordInterpreted["RIGIDWALL_PLANAR"] = True
+        if "RIGIDWALL_PLANAR_ID" in dynaKeyword:
+            self.keywordInterpreted["RIGIDWALL_PLANAR_ID"] = True
         if "RIGIDWALL_PLANAR_MOVING_FORCES" in dynaKeyword:
             self.keywordInterpreted["RIGIDWALL_PLANAR_MOVING_FORCES"] = True
         if "RIGIDWALL_PLANAR_MOVING_FORCES_ID" in dynaKeyword:
@@ -1916,6 +1921,18 @@ class KooDynaImporter():
             for additional in additionals:
                 self.additionalManager.SetAdditionalfromDyna(additional)
                 
+        if "RIGIDWALL_PLANAR" in dynaKeyword:
+            rwPlanarKeyword : RigidWallPlanar = dynaKeyword["RIGIDWALL_PLANAR"]
+            additionals = rwPlanarKeyword.getRigidWallPlanar()
+            for additional in additionals:
+                self.additionalManager.SetAdditionalfromDyna(additional)
+
+        if "RIGIDWALL_PLANAR_ID" in dynaKeyword:
+            rwPlanarIDKeyword : RigidWallPlanarID = dynaKeyword["RIGIDWALL_PLANAR_ID"]
+            additionals = rwPlanarIDKeyword.getRigidWallPlanarID()
+            for additional in additionals:
+                self.additionalManager.SetAdditionalfromDyna(additional)
+
         if "RIGIDWALL_PLANAR_MOVING_FORCES" in dynaKeyword:
             rigidWallPlanarMovingForcesKeyword : RigidWallPlanarMovingForces = dynaKeyword["RIGIDWALL_PLANAR_MOVING_FORCES"]
             additionals = rigidWallPlanarMovingForcesKeyword.getRigidWallPlanarMovingForces()
@@ -2078,18 +2095,14 @@ class KooDynaImporter():
         self.additionalManager.WriteStreamDynaKeyword(stream)
 
         # include 처리
+        # IGA passthrough: WriteModifiedFile의 WriteIGAIncludes에서 *INCLUDE 출력
+        # 여기서는 preserve_includes 모드일 때만 출력
         if hasattr(self, '_include_files') and self._include_files:
             if getattr(self.dynaManager, 'preserve_includes', False):
-                # 보존 모드: *INCLUDE 문 출력
                 for inc_file in self._include_files:
                     stream.write("*INCLUDE\n")
                     stream.write(f" {os.path.basename(inc_file)}\n")
-            else:
-                # 인라인 모드: IGA passthrough 내용 출력
-                for entry in getattr(self.dynaManager, '_include_passthrough_data', []):
-                    stream.write(entry["content"])
-                    if not entry["content"].endswith('\n'):
-                        stream.write('\n')
+            # IGA passthrough는 WriteModifiedFile에서 처리 → 여기서 인라인하지 않음
 
         return stream.getvalue()
 

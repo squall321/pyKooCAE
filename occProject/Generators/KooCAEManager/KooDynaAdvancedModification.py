@@ -4950,6 +4950,21 @@ class KooDynaAdvancedModification:
         from KooCAEManager.KooTetraRemesher import remesh_tetra_parts
         remesh_tetra_parts(self.dynaImporter, option)
 
+    def DecomposeK(self, option, cur_dir, input_filename):
+        """K 파일을 그룹 단위로 분해하여 다중 파일 출력."""
+        from KooCAEManager.KooKFileDecomposer import decompose_k_file
+        decompose_k_file(self.dynaImporter, cur_dir, input_filename, option)
+
+    def MergeK(self, option, cur_dir, input_filename):
+        """모든 *INCLUDE를 인라인하여 단일 .k로 출력 (PARAMETER_LOCAL은 강제 보존)."""
+        from KooCAEManager.KooKFileMerger import merge_k_file
+        merge_k_file(self.dynaImporter, cur_dir, input_filename, option)
+
+    def ImportMergeK(self, option, simGenerator):
+        """외부 .k 파일을 기존 모델에 병합 import (PID/NID/EID/SID auto-offset, MID 보존)."""
+        from KooCAEManager.KooImportMerger import import_merge_k
+        import_merge_k(simGenerator, option)
+
     def PartValidationSplit(self, option, output_dir):
         """파트별 낙하 검증용 분할."""
         from KooCAEManager.KooPartValidator import split_parts_for_validation
@@ -6239,6 +6254,11 @@ class KooDynaAdvancedModification:
         if not iga_parts_configs:
             print("Warning: No IGA parts specified in FEMtoIGA mode")
             return
+
+        # 보존 include 안의 source_pid를 변환하려는지 검사
+        from KooCAEManager.KooTetraRemesher import _check_pids_not_in_preserved_includes
+        target_pids = [c.get('source_pid') for c in iga_parts_configs if c.get('source_pid') is not None]
+        _check_pids_not_in_preserved_includes(self.dynaImporter, target_pids, "FEMtoIGA")
 
         partManager = self.dynaImporter.partManager
         materialManager = self.dynaImporter.matManager

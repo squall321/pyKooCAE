@@ -15,6 +15,37 @@ import tempfile
 from scipy.spatial import KDTree
 
 
+def _check_pids_not_in_preserved_includes(dynaImporter, pids, mode_name):
+    """수정 대상 PID가 보존된 include에 있으면 명확한 에러로 중단.
+
+    Args:
+        dynaImporter: KooDynaImporter
+        pids: 수정 대상 PID 리스트
+        mode_name: 모드 이름 (에러 메시지용)
+
+    Raises:
+        ValueError: 모순 발견 시
+    """
+    dyna_mgr = getattr(dynaImporter, 'dynaManager', None)
+    if dyna_mgr is None or not hasattr(dyna_mgr, 'findPreservedIncludeForPID'):
+        return
+    conflicts = []
+    for pid in pids:
+        inc_file = dyna_mgr.findPreservedIncludeForPID(pid)
+        if inc_file:
+            conflicts.append((pid, inc_file))
+    if conflicts:
+        msg_lines = [
+            f"[{mode_name}] 보존된 include 안의 PID를 수정할 수 없습니다:",
+        ]
+        for pid, f in conflicts:
+            msg_lines.append(f"  PID {pid} → '{os.path.basename(f)}' (보존 지정됨)")
+        msg_lines.append(
+            "해결: scenario.json의 'preserve_includes'에서 해당 파일을 제외하거나 PID를 수정 대상에서 빼세요."
+        )
+        raise ValueError("\n".join(msg_lines))
+
+
 def remesh_tetra_parts(dynaImporter, option):
     """사면체 파트 리메시 메인 함수.
 
@@ -46,6 +77,9 @@ def remesh_tetra_parts(dynaImporter, option):
     if not pids:
         print("RemeshTetra: PID가 지정되지 않았습니다.")
         return
+
+    # 보존된 include 안의 PID를 건드리려 하는지 검사 → 모순 시 즉시 에러
+    _check_pids_not_in_preserved_includes(dynaImporter, pids, "RemeshTetra")
 
     partManager = dynaImporter.partManager
     nodeManager = dynaImporter.nodeManager

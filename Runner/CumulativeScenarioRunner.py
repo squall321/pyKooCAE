@@ -985,6 +985,21 @@ class CumulativeScenarioRunner:
         logging.info(f"Completed: {alias}")
         return True
 
+    def _build_preserve_block(self) -> str:
+        """scenario.json의 preserve_includes를 *PreserveIncludes 블록으로 변환.
+
+        Returns:
+            "*PreserveIncludes\\npat1\\npat2\\n" 형식 또는 빈 문자열
+        """
+        patterns = self.config.get("preserve_includes", [])
+        if not patterns:
+            return ""
+        valid = [p for p in patterns if p]
+        if not valid:
+            return ""
+        lines = "\n".join(valid)
+        return f"*PreserveIncludes\n{lines}\n"
+
     def _create_step_config(self, doe_index: int, step_config: Dict[str, Any]) -> Optional[str]:
         """Step별 KooMeshModifier 설정 파일 생성 (output_dir에 저장)"""
         step_num = step_config["step"]
@@ -1017,6 +1032,7 @@ class CumulativeScenarioRunner:
             euler = self._get_doe_euler(doe_index, step_num, condition)
             sim_params = self.config.get("simulation_params", {})
 
+            preserve_includes = self.config.get("preserve_includes", [])
             config_content = build_drop_attitude_config(
                 model_file=model_file,
                 output_dir=self.output_dir,
@@ -1028,6 +1044,7 @@ class CumulativeScenarioRunner:
                 euler=euler,
                 sim_params=sim_params,
                 run_directory_mode=True,
+                preserve_includes=preserve_includes,
             )
 
         elif mode == "IMPACT":
@@ -1039,6 +1056,7 @@ class CumulativeScenarioRunner:
 
             dim_damper = impact_params.get("dimension_damper", [0.001, 0.001, 0.001])
             dim_damper_str = ",".join(str(v) for v in dim_damper)
+            preserve_block = self._build_preserve_block()
 
             config_content = f"""*Inputfile
 {model_file}
@@ -1046,7 +1064,7 @@ class CumulativeScenarioRunner:
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
-*Mode
+{preserve_block}*Mode
 DROP_WEIGHT_IMPACT_TEST,1
 **DropWeightImpactTest,1
 GenerationMode,DampingSpring
@@ -1074,6 +1092,7 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
             # 열응력 시뮬레이션 설정 (기본 템플릿)
             target_temp = params.get("target_temp_C", 85)
             hold_time = params.get("hold_time_s", 1800)
+            preserve_block = self._build_preserve_block()
 
             config_content = f"""*Inputfile
 {model_file}
@@ -1081,7 +1100,7 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition} T={target_temp}C
 *Creator,automation,auto@system.com,CAE,AUTO
-*Mode
+{preserve_block}*Mode
 THERMAL_CYCLE,1
 **ThermalCycle,1
 TargetTemperature,{target_temp}
@@ -1094,13 +1113,14 @@ RampTime,600
 
         else:
             # 기타 모드는 기본 템플릿
+            preserve_block = self._build_preserve_block()
             config_content = f"""*Inputfile
 {model_file}
 *RunDirectoryMode,True,{self.output_dir}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
-*Mode
+{preserve_block}*Mode
 {mode},1
 **{mode},1
 **End{mode}

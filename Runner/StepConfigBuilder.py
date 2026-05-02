@@ -17,6 +17,7 @@ def build_drop_attitude_config(
     euler: dict,
     sim_params: dict,
     run_directory_mode: bool = True,
+    preserve_includes: list = None,
 ) -> str:
     """DROP_ATTITUDE step_config 내용 생성
 
@@ -133,13 +134,20 @@ def build_drop_attitude_config(
     else:
         run_dir_line = "*RunDirectoryMode,False"
 
+    # PreserveIncludes 블록 (사용자 지정 보존 패턴)
+    preserve_block = ""
+    if preserve_includes:
+        preserve_lines = "\n".join(p for p in preserve_includes if p)
+        if preserve_lines:
+            preserve_block = f"*PreserveIncludes\n{preserve_lines}\n"
+
     config_content = f"""*Inputfile
 {model_file}
 {run_dir_line}
 *Info,{project},Step{step_num}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
-*Mode
+{preserve_block}*Mode
 DROP_ATTITUDE,1
 **DropAttitude,1
 EulerRolling,{euler['roll']}

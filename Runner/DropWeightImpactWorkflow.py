@@ -86,7 +86,8 @@ def prepare_drop_weight_impact(user_config, scenario_path, output_path):
             config_path, model_file, output_dir,
             loc_x[i], loc_y[i], i + 1, total_cases,
             impactor, tFinal, dt, gen_mode, boundary_dist,
-            sim_params
+            sim_params,
+            preserve_includes=user_config.get("preserve_includes", []),
         )
 
         manifest["cases"].append({
@@ -250,6 +251,120 @@ def _parse_bbox_from_kfile(model_file):
     return (xmin, xmax, ymin, ymax, zmin, zmax)
 
 
+def _parse_part_centers_from_kfile(model_file, pids):
+    """모델 .k 파일에서 특정 PID들의 바운딩 박스 중심 계산.
+    Returns: {pid: (cx, cy, sx, sy)} — 중심 좌표 + 크기
+    """
+    # 1. 노드 좌표 수집
+    nodes = {}  # nid → (x, y, z)
+    in_node = False
+    with open(model_file, 'r', errors='replace') as f:
+        for line in f:
+            ls = line.strip()
+            if ls.startswith('*'):
+                if ls.upper().startswith('*NODE'):
+                    in_node = True
+                    continue
+                elif in_node:
+                    in_node = False
+                continue
+            if not in_node:
+                continue
+            try:
+                if len(line) >= 56:
+                    nid = int(line[:8])
+                    x = float(line[8:24])
+                    y = float(line[24:40])
+                    z = float(line[40:56])
+                else:
+                    parts = ls.split()
+                    if len(parts) >= 4:
+                        nid = int(parts[0])
+                        x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+                    else:
+                        continue
+                nodes[nid] = (x, y, z)
+            except (ValueError, IndexError):
+                continue
+
+    # 2. 요소에서 PID별 노드 수집
+    pid_nids = {pid: set() for pid in pids}
+    in_solid = False
+    in_shell = False
+    prev_line = None
+
+    with open(model_file, 'r', errors='replace') as f:
+        for line in f:
+            ls = line.strip()
+            if ls.startswith('*'):
+                if 'ELEMENT_SOLID' in ls.upper():
+                    in_solid = True
+                    in_shell = False
+                    prev_line = None
+                    continue
+                elif 'ELEMENT_SHELL' in ls.upper():
+                    in_shell = True
+                    in_solid = False
+                    continue
+                else:
+                    in_solid = False
+                    in_shell = False
+                    prev_line = None
+                    continue
+
+            if in_solid:
+                # 2줄 1세트: line1=EID,PID / line2=N1~N8
+                if prev_line is None:
+                    prev_line = ls
+                else:
+                    try:
+                        parts1 = prev_line.split()
+                        pid = int(parts1[1]) if len(parts1) >= 2 else int(prev_line[8:16])
+                        if pid in pid_nids:
+                            parts2 = ls.split()
+                            for p in parts2:
+                                try:
+                                    pid_nids[pid].add(int(p))
+                                except ValueError:
+                                    pass
+                    except (ValueError, IndexError):
+                        pass
+                    prev_line = None
+
+            elif in_shell:
+                try:
+                    parts = ls.split()
+                    if len(parts) >= 6:
+                        pid = int(parts[1])
+                        if pid in pid_nids:
+                            for p in parts[2:]:
+                                try:
+                                    pid_nids[pid].add(int(p))
+                                except ValueError:
+                                    pass
+                except (ValueError, IndexError):
+                    pass
+
+    # 3. PID별 bbox 중심
+    result = {}
+    for pid in pids:
+        nids = pid_nids.get(pid, set())
+        if not nids:
+            print(f"    ⚠️ PID {pid}: 노드 없음, skip")
+            continue
+        xs = [nodes[n][0] for n in nids if n in nodes]
+        ys = [nodes[n][1] for n in nids if n in nodes]
+        if not xs:
+            continue
+        cx = (min(xs) + max(xs)) / 2.0
+        cy = (min(ys) + max(ys)) / 2.0
+        sx = max(xs) - min(xs)
+        sy = max(ys) - min(ys)
+        result[pid] = (cx, cy, sx, sy)
+        print(f"    PID {pid}: center=({cx:.1f},{cy:.1f}), size=({sx:.1f}x{sy:.1f})")
+    return result
+
+
 def _generate_impact_locations(locations, model_file=None):
     """충격 위치 DOE 생성."""
     mode = locations.get("mode", "grid")
@@ -303,6 +418,41 @@ def _generate_impact_locations(locations, model_file=None):
         loc_y = [p[1] for p in points]
         return loc_x, loc_y
 
+    elif mode == "part_center":
+        # 파트 중심 기준 등간격 격자
+        pids = locations.get("pids", locations.get("pid", []))
+        if isinstance(pids, int):
+            pids = [pids]
+        spacing = locations.get("spacing", 5.0)
+        layers = locations.get("layers", 2)
+
+        if not pids or not model_file:
+            print("⚠️ part_center: pids와 model_file 필요")
+            return [0.0], [0.0]
+
+        part_centers = _parse_part_centers_from_kfile(model_file, pids)
+        loc_x, loc_y = [], []
+        seen = set()
+
+        for pid in pids:
+            if pid not in part_centers:
+                continue
+            cx, cy, sx, sy = part_centers[pid]
+            for i in range(-layers, layers + 1):
+                for j in range(-layers, layers + 1):
+                    px = cx + i * spacing
+                    py = cy + j * spacing
+                    key = (round(px, 4), round(py, 4))
+                    if key not in seen:
+                        seen.add(key)
+                        loc_x.append(float(px))
+                        loc_y.append(float(py))
+
+        n_per_part = (2 * layers + 1) ** 2
+        print(f"    part_center: {len(pids)} 파트, spacing={spacing}mm, layers={layers}, {n_per_part}개/파트")
+        print(f"    중복 제거 후 총 {len(loc_x)}개 위치")
+        return loc_x, loc_y
+
     elif mode == "lhs":
         n_samples = locations.get("n_samples", 50)
         try:
@@ -324,7 +474,7 @@ def _generate_impact_locations(locations, model_file=None):
 def _write_dwi_step_config(config_path, model_file, output_dir,
                             loc_x, loc_y, index, total,
                             impactor, tFinal, dt, gen_mode, boundary_dist,
-                            sim_params):
+                            sim_params, preserve_includes=None):
     """단일 충격 위치용 step_config 작성."""
     imp_type = impactor.get("type", "Sphere")
     imp_radius = impactor.get("radius", 5.0)
@@ -344,6 +494,14 @@ def _write_dwi_step_config(config_path, model_file, output_dir,
         f"*Info,DWI,Case{index:04d}",
         f"*Description,DWI Case{index}/{total} x={loc_x:.2f} y={loc_y:.2f}",
         "*Creator,automation,auto@system.com,CAE,AUTO",
+    ]
+    # 사용자 지정 보존 패턴 (멀티스케일/IGA 등)
+    if preserve_includes:
+        valid = [p for p in preserve_includes if p]
+        if valid:
+            lines.append("*PreserveIncludes")
+            lines.extend(valid)
+    lines.extend([
         "*Mode",
         "DROP_WEIGHT_IMPACT_TEST,1",
         "**DropWeightImpactTest,1",
@@ -356,7 +514,7 @@ def _write_dwi_step_config(config_path, model_file, output_dir,
         f"InitialVelocityY,0",
         f"InitialVelocityZ,{vz}",
         f"ImpactorType,{imp_type}",
-    ]
+    ])
 
     if imp_type.lower() == "sphere":
         lines.append(f"ImpactorDimension,{imp_radius}")

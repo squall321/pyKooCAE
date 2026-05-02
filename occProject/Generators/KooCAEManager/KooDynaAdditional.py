@@ -520,9 +520,71 @@ class KooDynaAdditionalManager:
             hourglass = self.CreateHourglass(HGID, IHQ, QM, IBQ, Q1, Q2, QBVDC, QW)         
             return hourglass        
         
+        elif additionalKeyword[0] == "*RIGIDWALL_PLANAR":
+            # 단순 *RIGIDWALL_PLANAR — Card 1: NSID/NSIDEX/BOXID/OFFSET/BIRTH/DEATH/RWKSF
+            #                          Card 2: XT/YT/ZT/XH/YH/ZH/FRIC/WVEL
+            # MOVING_FORCES 옵션 없음 → MASS=V0=SOFT=SSID=N1..N4=0으로 처리
+            firstLine = additionalKeyword[1] if len(additionalKeyword) > 1 else []
+            secondLine = additionalKeyword[2] if len(additionalKeyword) > 2 else []
+            if len(firstLine) < 7:
+                firstLine = list(firstLine) + [""] * (7 - len(firstLine))
+            if len(secondLine) < 8:
+                secondLine = list(secondLine) + [""] * (8 - len(secondLine))
+            NSID = KooDynaInt(firstLine[0], 0)
+            NSIDEX = KooDynaInt(firstLine[1], 0)
+            BOXID = KooDynaInt(firstLine[2], 0)
+            OFFSET = KooDynaFloat(firstLine[3], 0.0)
+            BIRTH = KooDynaFloat(firstLine[4], 0.0)
+            DEATH = KooDynaFloat(firstLine[5], 1.0e20)
+            RWKSF = KooDynaFloat(firstLine[6], 1.0)
+            XT = KooDynaFloat(secondLine[0], 0.0)
+            YT = KooDynaFloat(secondLine[1], 0.0)
+            ZT = KooDynaFloat(secondLine[2], 0.0)
+            XH = KooDynaFloat(secondLine[3], 0.0)
+            YH = KooDynaFloat(secondLine[4], 0.0)
+            ZH = KooDynaFloat(secondLine[5], 0.0)
+            FRIC = KooDynaFloat(secondLine[6], 0.0)
+            WVEL = KooDynaFloat(secondLine[7], 0.0)
+            rigidWall = self.CreateRigidwallPlanarMovingForces(
+                NSID, NSIDEX, BOXID, OFFSET, BIRTH, DEATH, RWKSF,
+                XT, YT, ZT, XH, YH, ZH, FRIC, WVEL,
+                0.0, 0.0, 0, 0, 0, 0, 0, 0
+            )
+            return rigidWall
+        elif additionalKeyword[0] == "*RIGIDWALL_PLANAR_ID":
+            # *RIGIDWALL_PLANAR_ID — ID/name 카드 + Card 1/2 (MOVING_FORCES 없음)
+            zeroLine = additionalKeyword[1] if len(additionalKeyword) > 1 else [0]
+            ID = KooDynaInt(zeroLine[0], 0)
+            firstLine = additionalKeyword[2] if len(additionalKeyword) > 2 else []
+            secondLine = additionalKeyword[3] if len(additionalKeyword) > 3 else []
+            if len(firstLine) < 7:
+                firstLine = list(firstLine) + [""] * (7 - len(firstLine))
+            if len(secondLine) < 8:
+                secondLine = list(secondLine) + [""] * (8 - len(secondLine))
+            NSID = KooDynaInt(firstLine[0], 0)
+            NSIDEX = KooDynaInt(firstLine[1], 0)
+            BOXID = KooDynaInt(firstLine[2], 0)
+            OFFSET = KooDynaFloat(firstLine[3], 0.0)
+            BIRTH = KooDynaFloat(firstLine[4], 0.0)
+            DEATH = KooDynaFloat(firstLine[5], 1.0e20)
+            RWKSF = KooDynaFloat(firstLine[6], 1.0)
+            XT = KooDynaFloat(secondLine[0], 0.0)
+            YT = KooDynaFloat(secondLine[1], 0.0)
+            ZT = KooDynaFloat(secondLine[2], 0.0)
+            XH = KooDynaFloat(secondLine[3], 0.0)
+            YH = KooDynaFloat(secondLine[4], 0.0)
+            ZH = KooDynaFloat(secondLine[5], 0.0)
+            FRIC = KooDynaFloat(secondLine[6], 0.0)
+            WVEL = KooDynaFloat(secondLine[7], 0.0)
+            rigidWall = self.CreateRigidwallPlanarMovingForceswithID(
+                ID, NSID, NSIDEX, BOXID, OFFSET, BIRTH, DEATH, RWKSF,
+                XT, YT, ZT, XH, YH, ZH, FRIC, WVEL,
+                0.0, 0.0, 0, 0, 0, 0, 0, 0
+            )
+            return rigidWall
         elif additionalKeyword[0] == "*RIGIDWALL_PLANAR_MOVING_FORCES":
-            firstLine = additionalKeyword[1]            
-            secondLine = additionalKeyword[2]           
+            firstLine = additionalKeyword[1]
+            secondLine = additionalKeyword[2]
             thirdLine = additionalKeyword[3]
             fourthLine = additionalKeyword[4]
             if len(firstLine)<7:

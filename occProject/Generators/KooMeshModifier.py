@@ -202,6 +202,35 @@ class KooMeshModifier(KooSimulationGenerator):
                         self.modelInfoMetadata["created_by"]["group"] = svector[3]
                     if len(svector) > 4:
                         self.modelInfoMetadata["created_by"]["team"] = svector[4]
+                if "*preserveincludes" in line.lower():
+                    # *PreserveIncludes 블록: 다음 줄들에 패턴 (basename glob 또는 절대경로)
+                    # 종료 조건: 다음 *키워드 또는 빈 줄 다음 *키워드
+                    patterns = []
+                    while True:
+                        line = f.readline()
+                        if not line:
+                            break
+                        line = line.strip().replace('\n', '')
+                        if line.startswith('*'):
+                            break
+                        if not line or line.startswith('$'):
+                            continue
+                        # 한 줄에 여러 패턴 지원 (콤마 구분)
+                        for tok in line.split(','):
+                            tok = tok.strip()
+                            if tok:
+                                patterns.append(tok)
+                    if patterns:
+                        try:
+                            self.dynaImporter.dynaManager._preserve_include_patterns = patterns
+                            print(f"[PreserveIncludes] {len(patterns)} pattern(s) registered: {patterns}")
+                        except AttributeError:
+                            print(f"[PreserveIncludes] Warning: dynaManager not ready, patterns will be applied later: {patterns}")
+                            self._pending_preserve_patterns = patterns
+                    # *키워드를 만나서 종료된 경우 그 줄을 다음 루프로 넘기기 위해 continue 대신 처리 필요
+                    # readline으로 한 줄 더 안 읽도록 — 현재 line 변수가 *키워드를 가리킴
+                    # 그 *키워드를 다음 분기에서 처리해야 하므로 continue
+                    continue
                 if "*mode" in line.lower():
                     while True:
                         line = f.readline().strip()
@@ -289,10 +318,20 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "fem_to_iga" in svector[0].lower():
                             self.modeList.append("FEM_TO_IGA")
                             self.modeIDList.append(int(svector[1]))
+                        elif "decompose_k" in svector[0].lower():
+                            self.modeList.append("DECOMPOSE_K")
+                            self.modeIDList.append(int(svector[1]))
+                        elif "import_merge_k" in svector[0].lower():
+                            # import_merge_k를 merge_k보다 먼저 체크 (substring 충돌 방지)
+                            self.modeList.append("IMPORT_MERGE_K")
+                            self.modeIDList.append(int(svector[1]))
+                        elif "merge_k" in svector[0].lower():
+                            self.modeList.append("MERGE_K")
+                            self.modeIDList.append(int(svector[1]))
                         else:
                             print("Invalid mode")
                             exit()
-                    continue  
+                    continue
                 elif "**remove_duplicate_tied_contacts" in line.lower():
                     svector = line.split(",")
                     curModeID = int(svector[1])
@@ -2113,6 +2152,109 @@ class KooMeshModifier(KooSimulationGenerator):
 
                     self.modeIDOption[curModeID] = curOptions
 
+                elif "**decomposek" in line.lower():
+                    # **DecomposeK,<modeID> 옵션 블록 파서
+                    svector = line.split(",")
+                    curModeID = int(svector[1])
+                    curOptions = {"Groups": []}
+                    while True:
+                        line = f.readline()
+                        if not line:
+                            break
+                        line = line.strip().replace('\n', '')
+                        if not line or line.startswith('$'):
+                            continue
+                        if "**end" in line.lower():
+                            break
+                        low = line.lower()
+                        if low.startswith("group,"):
+                            parts = [p.strip() for p in line.split(",")]
+                            if len(parts) < 3:
+                                print(f"  Warning: Group line missing members: {line}")
+                                continue
+                            group_name = parts[1]
+                            members = [p for p in parts[2:] if p]
+                            patterns = [m for m in members if any(c in m for c in "*?[]")]
+                            exact = [m for m in members if m not in patterns]
+                            curOptions["Groups"].append({
+                                "name": group_name,
+                                "patterns": patterns,
+                                "parts": exact,
+                            })
+                        elif low.startswith("groupfromfile,"):
+                            parts = [p.strip() for p in line.split(",")]
+                            if len(parts) < 3:
+                                print(f"  Warning: GroupFromFile line incomplete: {line}")
+                                continue
+                            curOptions["Groups"].append({
+                                "name": parts[1],
+                                "from_file": parts[2],
+                            })
+                        elif low.startswith("outputdir,"):
+                            curOptions["OutputDir"] = line.split(",", 1)[1].strip()
+                        elif low.startswith("defaultgroupname,"):
+                            curOptions["DefaultGroupName"] = line.split(",", 1)[1].strip()
+                        elif low.startswith("groupssubdir,"):
+                            curOptions["GroupsSubdir"] = line.split(",", 1)[1].strip()
+                        elif low.startswith("separatematerials,"):
+                            curOptions["SeparateMaterials"] = (line.split(",", 1)[1].strip().lower() == "true")
+                        elif low.startswith("sharednodespolicy,"):
+                            curOptions["SharedNodesPolicy"] = line.split(",", 1)[1].strip()
+                        elif low.startswith("emitgroupsets,"):
+                            curOptions["EmitGroupSets"] = (line.split(",", 1)[1].strip().lower() == "true")
+                        elif low.startswith("modelindependentsplit,"):
+                            curOptions["ModelIndependentSplit"] = (line.split(",", 1)[1].strip().lower() == "true")
+                        elif low.startswith("groupboundarypolicy,"):
+                            curOptions["GroupBoundaryPolicy"] = line.split(",", 1)[1].strip()
+                        else:
+                            print(f"  Warning: unknown DecomposeK option line: {line}")
+                    self.modeIDOption[curModeID] = curOptions
+
+                elif "**importmergek" in line.lower():
+                    # **ImportMergeK,<modeID> 옵션 블록 파서 (mergek 보다 먼저 체크)
+                    svector = line.split(",")
+                    curModeID = int(svector[1])
+                    curOptions = {}
+                    while True:
+                        line = f.readline()
+                        if not line:
+                            break
+                        line = line.strip().replace('\n', '')
+                        if not line or line.startswith('$'):
+                            continue
+                        if "**end" in line.lower():
+                            break
+                        low = line.lower()
+                        if low.startswith("importfile,"):
+                            curOptions["ImportFile"] = line.split(",", 1)[1].strip()
+                        else:
+                            print(f"  Warning: unknown ImportMergeK option line: {line}")
+                    self.modeIDOption[curModeID] = curOptions
+
+                elif "**mergek" in line.lower():
+                    # **MergeK,<modeID> 옵션 블록 파서
+                    svector = line.split(",")
+                    curModeID = int(svector[1])
+                    curOptions = {}
+                    while True:
+                        line = f.readline()
+                        if not line:
+                            break
+                        line = line.strip().replace('\n', '')
+                        if not line or line.startswith('$'):
+                            continue
+                        if "**end" in line.lower():
+                            break
+                        low = line.lower()
+                        if low.startswith("outputfile,"):
+                            curOptions["OutputFile"] = line.split(",", 1)[1].strip()
+                        elif low.startswith("forceinlineiga,"):
+                            curOptions["ForceInlineIGA"] = (line.split(",", 1)[1].strip().lower() == "true")
+                        elif low.startswith("forceinlinepreserved,"):
+                            curOptions["ForceInlinePreserved"] = (line.split(",", 1)[1].strip().lower() == "true")
+                        else:
+                            print(f"  Warning: unknown MergeK option line: {line}")
+                    self.modeIDOption[curModeID] = curOptions
 
                 line = f.readline()
                 if not line:  # EOF
@@ -2121,6 +2263,18 @@ class KooMeshModifier(KooSimulationGenerator):
                 line = line.strip()
                 if not line:  # Empty line, skip it
                     continue
+
+    def GenerateDecomposeK(self, modeid):
+        curOption = self.modeIDOption[modeid]
+        self.advancedModification.DecomposeK(curOption, self.curDir, self.inputFileName)
+
+    def GenerateMergeK(self, modeid):
+        curOption = self.modeIDOption[modeid]
+        self.advancedModification.MergeK(curOption, self.curDir, self.inputFileName)
+
+    def GenerateImportMergeK(self, modeid):
+        curOption = self.modeIDOption[modeid]
+        self.advancedModification.ImportMergeK(curOption, self)
 
     def GenerateRemoveDuplicateTiedContacts(self, modeid):
         curOption = self.modeIDOption[modeid]
@@ -2527,16 +2681,28 @@ class KooMeshModifier(KooSimulationGenerator):
             elif mode == "FEM_TO_IGA":
                 self.GenerateFEMtoIGA(modeid)
                 additionalword += "_iga"
+            elif mode == "DECOMPOSE_K":
+                self.GenerateDecomposeK(modeid)
+                self._skip_default_write = True
+            elif mode == "MERGE_K":
+                self.GenerateMergeK(modeid)
+                self._skip_default_write = True
+            elif mode == "IMPORT_MERGE_K":
+                self.GenerateImportMergeK(modeid)
+                additionalword += "_imported"
 
             self.dynaImporter.SyncronizeMaxID()
         ## write modified File
-        import time 
-        print("Write LS-Dyna Modified File")
-        starttime = time.time()
-        self.WriteModifiedFile(additionalword)
-        endtime = time.time()
-        print("Time : ", endtime - starttime)
-        print("Complete")
+        import time
+        if getattr(self, '_skip_default_write', False):
+            print("Default WriteModifiedFile skipped (DECOMPOSE_K / MERGE_K mode handled output)")
+        else:
+            print("Write LS-Dyna Modified File")
+            starttime = time.time()
+            self.WriteModifiedFile(additionalword)
+            endtime = time.time()
+            print("Time : ", endtime - starttime)
+            print("Complete")
          
         '''print("Write Nastran Modified File") 
         starttime = time.time()       
@@ -2556,19 +2722,82 @@ class KooMeshModifier(KooSimulationGenerator):
         filePath = os.path.join(self.curDir, self.inputFileName)
         filePath = filePath.replace(".k","")
         filePath = filePath + modifiedKeyword + ".k"
+        outputDir = os.path.dirname(filePath)
         with open(filePath, "w") as f:
             f.write("*KEYWORD\n")
             f.write(self.dynaImporter.WriteStreamDynaKeyword())
 
-            # IGA Include 문 추가
+            # IGA Include 문 추가 (FEM_TO_IGA 모드에서 생성된 경우)
             if len(self.dynaImporter.partManager.igaParts) > 0:
                 self.dynaImporter.partManager.WriteIGAIncludes(f)
 
+            # passthrough *INCLUDE 출력 (IGA 등 PARAMETER_LOCAL 스코프 유지)
+            passthrough_data = getattr(self.dynaImporter.dynaManager, '_include_passthrough_data', [])
+            if passthrough_data:
+                f.write("$\n$--- Include Files (passthrough) ---\n$\n")
+                for entry in passthrough_data:
+                    inc_file = entry.get("file", "")
+                    f.write("*INCLUDE\n")
+                    f.write(f" {os.path.basename(inc_file)}\n")
+
+            # 미인터프리트 키워드 raw 보존 (KooDynaImporter가 모르는 키워드도 손실 방지)
+            self._write_uninterpreted_raw_blocks(f)
+
             f.write("*END\n")
+
+        # *INCLUDE 참조 파일들을 출력 폴더에 복사
+        import shutil
+        include_files = getattr(self.dynaImporter, '_include_files', [])
+        for src in include_files:
+            if src and os.path.exists(src):
+                dst = os.path.join(outputDir, os.path.basename(src))
+                if not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+                    print(f"  Include 파일 복사: {os.path.basename(src)}")
+
+        # IGA 파트 파일도 복사 (FEM_TO_IGA 모드)
+        for iga_part in self.dynaImporter.partManager.igaParts.values():
+            src = getattr(iga_part, 'output_file_path', '')
+            if src and os.path.exists(src):
+                dst = os.path.join(outputDir, os.path.basename(src))
+                if not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+                    print(f"  IGA 파일 복사: {os.path.basename(src)}")
             
     
+    def _write_uninterpreted_raw_blocks(self, f):
+        """KooDynaImporter가 파싱 못 한 키워드들을 raw text로 보존 출력.
+
+        매니저에 들어가지 못한 *RIGIDWALL_PLANAR(단순형), *DEFINE_FRICTION 등
+        모든 미지원 키워드의 원본 데이터를 그대로 출력하여 손실을 방지.
+        """
+        try:
+            dyna_mgr = self.dynaImporter.dynaManager
+            raw_dict = getattr(dyna_mgr, '_raw_keyword_dict', None)
+            if not raw_dict:
+                return
+            interpreted = getattr(self.dynaImporter, 'keywordInterpreted', {}) or {}
+            # passthrough/특수 키워드는 별도 처리됨
+            SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END"}
+            wrote_header = False
+            for kw_name, blocks in raw_dict.items():
+                if kw_name in SKIP:
+                    continue
+                if interpreted.get(kw_name, False):
+                    continue
+                # 미인터프리트 → raw 출력
+                if not wrote_header:
+                    f.write("$\n$--- Uninterpreted keywords (raw, preserved) ---\n$\n")
+                    wrote_header = True
+                for block in blocks:
+                    f.write(f"*{kw_name}\n")
+                    for line in block:
+                        f.write(line if line.endswith('\n') else line + '\n')
+        except Exception as e:
+            print(f"  Warning: uninterpreted raw 출력 실패 (skip): {e}")
+
     def WriteNastranModifiedFile(self, modifiedKeyword):
-        
+
         filePath = os.path.join(self.curDir, self.inputFileName)
         filePath = filePath.replace(".k","")
         filePath = filePath + modifiedKeyword + ".bdf"
