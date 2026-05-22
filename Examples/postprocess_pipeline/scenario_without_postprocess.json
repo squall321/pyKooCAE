@@ -1,0 +1,37 @@
+{
+  "project_name": "DropTest_Fib100_ManualPP",
+  "base_dir": "/data/koopark/Test_ManualPostprocess",
+  "environment": {
+    "koomeshmodifier_path": "/opt/SmartTwinPreprocessor/bin/KooMeshModifier",
+    "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
+    "apptainer_sif": "/opt/apptainers/SmartTwinPreprocessor.sif",
+    "apptainer_bind": "/data:/data",
+    "ncpu": 16,
+    "memory": "32G",
+    "time_limit": "12:00:00"
+  },
+  "scenarios": [
+    {
+      "scenario_name": "Fibonacci100",
+      "template": "MinimumModel.k",
+      "cumulative": {"num_steps": 1, "mode_sequence": ["DROP"]},
+      "angle_source": {
+        "source_type": "fibonacci_lattice",
+        "fibonacci_lattice": {"num_directions": 100}
+      }
+    }
+  ],
+  "simulation_params": {
+    "tFinal": 0.005,
+    "dt": 1e-06,
+    "height": 1500,
+    "drop_surface": {"type": "RigidWall"}
+  },
+  "postprocess": {
+    "enabled": false,
+    "sif_path": "/opt/apptainers/SmartTwinPostprocessor.sif",
+    "yield_stress_mpa": 350,
+    "section_view_axes": ["z"],
+    "section_view_fields": ["von_mises"]
+  }
+}

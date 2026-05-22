@@ -84,6 +84,7 @@ class RunnerConfig:
     scenarios: List[ScenarioConfig]
     environment: Dict[str, Any]
     simulation_params: Optional[Dict[str, Any]] = None
+    postprocess: Optional[Dict[str, Any]] = None
 
 
 class CumulativeDesigner:
@@ -128,12 +129,16 @@ class CumulativeDesigner:
         # simulation_params 가져오기 (없으면 None)
         simulation_params = self.user_config.get("simulation_params", None)
 
+        # postprocess 옵션 (KooD3plotReader pipeline, 없으면 None)
+        postprocess = self.user_config.get("postprocess", None)
+
         return RunnerConfig(
             project_name=self.project_name,
             base_dir=self.base_dir,
             scenarios=scenarios,
             environment=environment,
-            simulation_params=simulation_params
+            simulation_params=simulation_params,
+            postprocess=postprocess
         )
 
     def _process_scenario(self, scenario_cfg: Dict[str, Any]) -> ScenarioConfig:
@@ -600,6 +605,8 @@ class CumulativeDesigner:
             "environment": runner_config.environment,
             # simulation_params (있으면 추가)
             **({"simulation_params": runner_config.simulation_params} if runner_config.simulation_params else {}),
+            # postprocess (있으면 추가) — KooD3plotReader pipeline
+            **({"postprocess": runner_config.postprocess} if runner_config.postprocess else {}),
             # 원본 시나리오 목록 (LargeScaleDOEManager 등 다른 Runner 호환)
             "project_name": runner_config.project_name,
             "base_dir": runner_config.base_dir,
@@ -640,6 +647,26 @@ class CumulativeDesigner:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
         print(f"runner_config.json 생성 완료: {output_path}")
+
+        # postprocess 옵션이 있으면 sphere_report.sh를 항상 생성 (수동 trigger 보장)
+        # enabled 무관 — sh는 항상 만들어 두고 사용자가 언제든 bash로 실행 가능
+        if runner_config.postprocess:
+            try:
+                from Runner.PostprocessShellGenerator import build_sphere_report_sh
+                output_dir = data["project"].get("output_dir", str(Path(output_path).parent / "output"))
+                os.makedirs(output_dir, exist_ok=True)
+                sh_text = build_sphere_report_sh(
+                    output_dir=output_dir,
+                    sif_path=runner_config.postprocess.get("sif_path"),
+                    options=runner_config.postprocess,
+                )
+                sh_path = os.path.join(output_dir, "sphere_report.sh")
+                with open(sh_path, 'w') as f:
+                    f.write(sh_text)
+                os.chmod(sh_path, 0o755)
+                print(f"sphere_report.sh 생성 (수동 실행 가능): {sh_path}")
+            except Exception as e:
+                print(f"  Warning: sphere_report.sh 생성 실패 (skip): {e}")
 
 
 def main():

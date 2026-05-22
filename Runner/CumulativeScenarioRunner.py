@@ -625,6 +625,49 @@ class CumulativeScenarioRunner:
 
         return self._generate_alias(doe_index, step - 1, prev_mode, prev_condition)
 
+    def _generate_and_maybe_run_deep_report(self, run_dir: str, output_run_dir: str):
+        """deep_report.sh를 run_dir에 항상 생성, postprocess.enabled && auto_deep이면 즉시 실행.
+
+        postprocess 옵션 없으면 전체 skip (회귀 무영향).
+        sh의 RUN_DIR 변수는 d3plot이 있는 output_run_dir을 가리킴.
+        """
+        pp = self.config.get("postprocess")
+        if not pp:
+            return  # 옵션 없으면 아무것도 안 함
+
+        try:
+            from Runner.PostprocessShellGenerator import build_deep_report_sh
+            sh_text = build_deep_report_sh(
+                run_dir=output_run_dir,
+                sif_path=pp.get("sif_path"),
+                options=pp,
+            )
+            sh_path = os.path.join(run_dir, "deep_report.sh")
+            with open(sh_path, 'w') as f:
+                f.write(sh_text)
+            os.chmod(sh_path, 0o755)
+            logging.info(f"deep_report.sh 생성: {sh_path}")
+        except Exception as e:
+            logging.warning(f"deep_report.sh 생성 실패 (skip): {e}")
+            return
+
+        # 자동 실행
+        if pp.get("enabled") and pp.get("auto_deep", True):
+            try:
+                log_path = os.path.join(run_dir, "deep_report.log")
+                logging.info(f"deep_report 자동 실행: {sh_path}")
+                with open(log_path, 'w') as logf:
+                    result = subprocess.run(
+                        ["bash", sh_path],
+                        cwd=run_dir,
+                        stdout=logf, stderr=subprocess.STDOUT,
+                        timeout=pp.get("deep_timeout_seconds", 7200),
+                    )
+                if result.returncode != 0:
+                    logging.warning(f"deep_report 실행 실패 (rc={result.returncode}, log={log_path})")
+            except Exception as e:
+                logging.warning(f"deep_report 자동 실행 실패 (skip): {e}")
+
     def _get_prev_run_dir(self, doe_index: int, step: int) -> Optional[str]:
         """이전 step의 결과 폴더 반환"""
         prev_alias = self._get_prev_alias(doe_index, step)
@@ -959,6 +1002,10 @@ class CumulativeScenarioRunner:
                 "error": "dynain not generated"
             })
             return False
+
+        # 6.5 KooD3plotReader deep_report sh 생성 + (옵션 시) 자동 실행
+        # postprocess 옵션 없으면 전체 skip → 회귀 무영향
+        self._generate_and_maybe_run_deep_report(run_dir, output_run_dir)
 
         # 7. DYNAIN_TO_INITIAL 실행 (마지막 step 제외)
         total_steps = self.config["scenario"]["total_steps"]
