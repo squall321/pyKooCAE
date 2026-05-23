@@ -35,8 +35,7 @@ scontrol show node | grep RealMemory  # 노드별 RAM
 | 파일 | 출처 | 크기 |
 |---|---|---|
 | `SmartTwinPreprocessor_*.tar.gz` | `/data/SmartTwinPreprocessor/` | ~1.2 GB |
-| `Examples/portable_bundle/*.json` | 이 repo | < 10 KB |
-| `docs/QUICKSTART_PORTABLE.md` (이 파일) | 이 repo | < 50 KB |
+| `Examples/portable_bundle/` 폴더 전체 (시나리오 JSON 4종 + 이 QUICKSTART + README + HOW_TO_ASK_LLM) | 이 repo | < 100 KB |
 
 설치 명령:
 ```bash
@@ -309,10 +308,14 @@ LLM이 §4 reference를 읽고 즉시 정확한 JSON을 만들어줍니다.
 
 ---
 
-## 8. 참고 문서 (이 repo 안)
+## 8. 참고 문서
 
-- `Examples/portable_bundle/README.md` — portable_bundle 시나리오 4종 비교
-- `Examples/portable_bundle/HOW_TO_ASK_LLM.md` — LLM 요청 프롬프트 템플릿
+**같은 폴더 (portable_bundle/)**:
+- `README.md` — 시나리오 4종 비교 표, 새 PC에서 변경할 3가지
+- `HOW_TO_ASK_LLM.md` — LLM 요청 프롬프트 템플릿 6종
+- `01_minimal_single_drop.json` ~ `04_fibonacci_162_separate_job.json` — 시나리오 예제
+
+**더 자세한 정보가 필요할 때 (별도 repo 문서, 옵션)**:
 - `docs/FullAngleDrop_HPC_Workflow.md` — 원본 HPC 워크플로우 (더 상세)
 - `Examples/postprocess_pipeline/README.md` — 후처리 파이프라인 상세
 

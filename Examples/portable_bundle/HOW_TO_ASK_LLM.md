@@ -4,7 +4,7 @@
 
 ## 사용 패턴 (3단계)
 
-1. **첫 대화 시**: LLM에 `docs/QUICKSTART_PORTABLE.md` 전체를 먼저 던지기 (context 설정).
+1. **첫 대화 시**: LLM에 `QUICKSTART.md` 전체를 먼저 던지기 (context 설정).
 2. **시나리오 만들기**: 아래 템플릿 중 골라서 채우기.
 3. **수정/디버그**: 현재 scenario.json을 붙여넣고 변경 요청.
 
@@ -13,7 +13,7 @@
 ## 템플릿 1 — 새 시나리오 만들기 (초안)
 
 ```
-첨부한 QUICKSTART_PORTABLE.md 참고해서 다음 조건으로 scenario.json 만들어줘:
+첨부한 QUICKSTART.md 참고해서 다음 조건으로 scenario.json 만들어줘:
 
 - project_name: <원하는 이름>
 - base_dir: /data/<my_user>/<my_project>
@@ -62,7 +62,7 @@ JSON 출력만. 변경 사항 한 줄 코멘트 추가.
 ## 템플릿 4 — 에러 디버깅
 
 ```
-첨부한 QUICKSTART_PORTABLE.md §5 트러블슈팅 참고해서 다음 문제 해결해줘:
+첨부한 QUICKSTART.md §5 트러블슈팅 참고해서 다음 문제 해결해줘:
 
 scenario.json:
 [붙여넣기]
@@ -95,7 +95,7 @@ scenario.json:
 - yield_stress: <MPa>
 - section view 축: <z / x / y>
 
-QUICKSTART_PORTABLE.md §4.5 참고. JSON 출력만.
+QUICKSTART.md §4.5 참고. JSON 출력만.
 ```
 
 ## 템플릿 6 — 결과 분석 도움

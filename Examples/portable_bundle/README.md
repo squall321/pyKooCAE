@@ -2,11 +2,15 @@
 
 다른 PC에서 **실행 파일 + 시나리오 + 이 문서**만 가지고 동일한 LS-DYNA 전각도 낙하 잡을 던지기 위한 패키지.
 
-## 가져갈 것 (3개)
+## 가져갈 것 (2개)
 
 1. **실행 파일 tar**: `/data/SmartTwinPreprocessor/SmartTwinPreprocessor_*.tar.gz` (~1.2 GB)
-2. **시나리오 파일**: 이 폴더의 `*.json` 중 하나 (목적에 맞게)
-3. **문서**: 이 README + `../docs/QUICKSTART_PORTABLE.md`
+2. **이 폴더 통째로**: `Examples/portable_bundle/` (시나리오 4종 + QUICKSTART + README + HOW_TO_ASK_LLM)
+   ```bash
+   tar czf portable_bundle.tar.gz Examples/portable_bundle/
+   ```
+
+→ 새 PC에서 `tar` 2개만 풀면 시작 가능. **시작은 [QUICKSTART.md](QUICKSTART.md) 부터 읽으세요**.
 
 ## 새 PC에서 한 번만 설치
 
@@ -70,7 +74,7 @@ ls output/sphere_report.html                             # 후처리 결과 (자
 - **sbatch 거부 (Memory)** → `environment.memory` / `lsdyna_memory` 줄이기 (compute node RAM 확인: `scontrol show node`)
 - **sphere_report "No analysis_results"** → deep_report 먼저 완료 필요 (`postprocess --deep` 먼저 실행)
 
-자세한 트러블슈팅은 `../../docs/QUICKSTART_PORTABLE.md` 또는 `../../docs/FullAngleDrop_HPC_Workflow.md` 참조.
+자세한 트러블슈팅은 `../QUICKSTART.md` 또는 `../../docs/FullAngleDrop_HPC_Workflow.md` 참조.
 
 ## LLM과 함께 작업할 때
 
