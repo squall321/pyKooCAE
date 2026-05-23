@@ -22,6 +22,7 @@ KooChainRun으로 162방향 전각도 낙하 시뮬을 돌린 후 자동 또는 
   "postprocess": {
     "enabled": true,
     "auto_deep": true,
+    "auto_deep_mode": "separate_job",
     "auto_sphere": true,
     "sif_path": "/opt/apptainers/SmartTwinPostprocessor.sif",
     "yield_stress_mpa": 350,
@@ -31,6 +32,9 @@ KooChainRun으로 162방향 전각도 낙하 시뮬을 돌린 후 자동 또는 
     "ua_threads": 8,
     "sv_threads": 8,
     "deep_timeout_seconds": 7200,
+    "deep_ncpu": 4,
+    "deep_memory": "8G",
+    "deep_time_limit": "02:00:00",
     "sphere_memory": "32G",
     "sphere_time_limit": "04:00:00"
   }
@@ -41,7 +45,9 @@ KooChainRun으로 162방향 전각도 낙하 시뮬을 돌린 후 자동 또는 
 |---|---|---|
 | `enabled` | `false` | 마스터 토글. false면 자동 실행 X (sh만 생성) |
 | `auto_deep` | `true` | enabled=true 시 각 시뮬 직후 deep_report 호출 |
+| `auto_deep_mode` | `"inline"` | `"inline"`: 시뮬 잡 안에서 bash 실행 (노드 점유 유지) / `"separate_job"`: 별도 Slurm 잡으로 즉시 제출 (시뮬 노드 해방) |
 | `auto_sphere` | `true` | enabled=true 시 모든 시뮬 후 sphere_report dependent job 제출 |
+| `deep_ncpu`, `deep_memory`, `deep_time_limit` | `1`, `8G`, `02:00:00` | separate_job 모드에서만 사용 (deep sbatch 리소스) |
 | `sif_path` | `/opt/apptainers/SmartTwinPostprocessor.sif` | KooD3plotReader SIF (compute node 표준) |
 | `yield_stress_mpa` | `350` | sphere_report 안전계수 계산용 |
 | `section_view_axes` | `["z"]` | deep_report 단면뷰 축 (`x`/`y`/`z`) |
@@ -101,4 +107,5 @@ output_dir/
 
 - **SIF 경로**: compute node에 `/opt/apptainers/SmartTwinPostprocessor.sif` 있어야 함. 없으면 sh가 명시적 에러 출력 후 종료
 - **Slurm dependency**: `--dependency=afterany`라 LS-DYNA 실패 케이스 있어도 sphere job은 실행. 정상 종료 필터로 처리
-- **노드 점유 시간**: auto_deep는 시뮬 직후 같은 노드에서 실행 → 노드 lock 길어짐. 대형 모델은 `deep_timeout_seconds` 조정
+- **노드 점유 시간**: `auto_deep_mode: "inline"` (default)은 시뮬 직후 같은 노드에서 실행 → 노드 lock 길어짐. 시뮬 노드를 빨리 해방하려면 `auto_deep_mode: "separate_job"` 사용 (각 deep_report가 별도 Slurm 잡으로 즉시 제출됨, job IDs는 `output_dir/deep_report_jobs.txt`에 기록)
+- **separate_job 모드**: 시뮬 잡 안에서 sbatch를 호출하므로 시뮬 노드가 sbatch 명령어 권한이 있어야 함 (보통 OK)

@@ -172,6 +172,58 @@ echo "[sphere_report] done: $REPORT_HTML"
 """
 
 
+def build_deep_report_sbatch(run_dir, sh_path, options=None, environment=None,
+                              dependency_id=None, job_name_suffix=""):
+    """단일 시뮬용 deep_report sbatch (separate_job 모드).
+
+    LS-DYNA 잡 끝나면 dependent 잡으로 별도 노드에서 deep_report 실행 → 시뮬 노드 해방.
+
+    Args:
+        run_dir: Run_*/ 폴더 (sbatch output 위치 + cwd)
+        sh_path: deep_report.sh 절대경로
+        options: dict (deep_timeout_seconds, deep_memory, deep_ncpu, deep_time_limit, deep_partition)
+        environment: dict (ncpu, memory, partition default fallback)
+        dependency_id: Slurm job ID (afterok). 없으면 즉시 실행
+        job_name_suffix: 잡 이름 suffix (보통 Run_id)
+
+    Returns:
+        sbatch 텍스트
+    """
+    import os as _os
+    opts = options or {}
+    env = environment or {}
+    ncpu = opts.get("deep_ncpu", env.get("ncpu", 1))
+    memory = opts.get("deep_memory", env.get("memory", "8G"))
+    partition = opts.get("deep_partition", env.get("partition", ""))
+    timeout_s = opts.get("deep_timeout_seconds", 7200)
+    time_limit = opts.get("deep_time_limit", _seconds_to_slurm_time(timeout_s + 600))
+
+    deps = ""
+    if dependency_id:
+        deps = f"#SBATCH --dependency=afterok:{dependency_id}\n"
+    partition_line = f"#SBATCH --partition={partition}\n" if partition else ""
+
+    suffix = f"_{job_name_suffix}" if job_name_suffix else ""
+    return f"""#!/bin/bash
+#SBATCH --job-name=deep_report{suffix}
+#SBATCH --output={run_dir}/deep_report.slurm.out
+#SBATCH --error={run_dir}/deep_report.slurm.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task={ncpu}
+#SBATCH --mem={memory}
+#SBATCH --time={time_limit}
+{partition_line}{deps}
+bash {sh_path}
+"""
+
+
+def _seconds_to_slurm_time(seconds):
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
+
+
 def build_sphere_sbatch(output_dir, sif_path=None, options=None, environment=None,
                         dependency_ids=None, runs_subdir="runs"):
     """Slurm dependent sphere job용 sbatch 텍스트.

@@ -626,10 +626,13 @@ class CumulativeScenarioRunner:
         return self._generate_alias(doe_index, step - 1, prev_mode, prev_condition)
 
     def _generate_and_maybe_run_deep_report(self, run_dir: str, output_run_dir: str):
-        """deep_report.sh를 run_dir에 항상 생성, postprocess.enabled && auto_deep이면 즉시 실행.
+        """deep_report.sh를 run_dir에 항상 생성, postprocess.enabled && auto_deep이면 자동 실행.
+
+        auto_deep_mode (default 'inline'):
+          - 'inline': 시뮬 잡 안에서 bash 실행 (노드 점유 유지)
+          - 'separate_job': dependent sbatch 별도 제출 (시뮬 노드 즉시 해방)
 
         postprocess 옵션 없으면 전체 skip (회귀 무영향).
-        sh의 RUN_DIR 변수는 d3plot이 있는 output_run_dir을 가리킴.
         """
         pp = self.config.get("postprocess")
         if not pp:
@@ -652,10 +655,16 @@ class CumulativeScenarioRunner:
             return
 
         # 자동 실행
-        if pp.get("enabled") and pp.get("auto_deep", True):
+        if not (pp.get("enabled") and pp.get("auto_deep", True)):
+            return
+
+        mode = pp.get("auto_deep_mode", "inline").lower()
+        if mode == "separate_job":
+            self._submit_deep_report_sbatch(run_dir, sh_path, pp)
+        else:  # inline
             try:
                 log_path = os.path.join(run_dir, "deep_report.log")
-                logging.info(f"deep_report 자동 실행: {sh_path}")
+                logging.info(f"deep_report 자동 실행 (inline): {sh_path}")
                 with open(log_path, 'w') as logf:
                     result = subprocess.run(
                         ["bash", sh_path],
@@ -667,6 +676,41 @@ class CumulativeScenarioRunner:
                     logging.warning(f"deep_report 실행 실패 (rc={result.returncode}, log={log_path})")
             except Exception as e:
                 logging.warning(f"deep_report 자동 실행 실패 (skip): {e}")
+
+    def _submit_deep_report_sbatch(self, run_dir: str, sh_path: str, pp: dict):
+        """auto_deep_mode=separate_job: dependent sbatch 잡으로 deep_report 제출.
+
+        시뮬 잡 안에서 호출되므로 SLURM_JOB_ID 환경변수로 현재 잡 ID 얻어
+        afterok dependency 설정 (단, 잡이 이미 끝나가는 시점이라 afterok 대신 즉시 제출).
+        """
+        try:
+            from Runner.PostprocessShellGenerator import build_deep_report_sbatch
+            env = self.config.get("environment", {})
+            run_id = os.path.basename(run_dir.rstrip("/"))
+            sbatch_text = build_deep_report_sbatch(
+                run_dir=run_dir,
+                sh_path=sh_path,
+                options=pp,
+                environment=env,
+                dependency_id=None,  # 시뮬 잡 안에서 호출되니 dependent 불필요 (즉시 제출 OK)
+                job_name_suffix=run_id,
+            )
+            sbatch_path = os.path.join(run_dir, "deep_report.sbatch")
+            with open(sbatch_path, 'w') as f:
+                f.write(sbatch_text)
+            os.chmod(sbatch_path, 0o755)
+            result = subprocess.run(
+                ["sbatch", sbatch_path],
+                capture_output=True, text=True, check=True, timeout=60,
+            )
+            jid = result.stdout.strip().split()[-1]
+            logging.info(f"deep_report sbatch 제출 (separate_job): job={jid}, {sbatch_path}")
+            # 잡 ID 기록 (sphere가 나중에 dependent 잡으로 모음에 활용 가능)
+            jids_log = os.path.join(os.path.dirname(run_dir), "deep_report_jobs.txt")
+            with open(jids_log, 'a') as f:
+                f.write(f"{jid}\t{run_id}\n")
+        except Exception as e:
+            logging.warning(f"deep_report sbatch 제출 실패 (skip): {e}")
 
     def _get_prev_run_dir(self, doe_index: int, step: int) -> Optional[str]:
         """이전 step의 결과 폴더 반환"""

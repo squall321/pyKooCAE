@@ -143,6 +143,7 @@ gpu         7-00:00:00     1       8      32 GB    smarttwincluster
   "postprocess": {
     "enabled": true,
     "auto_deep": true,
+    "auto_deep_mode": "separate_job",
     "auto_sphere": true,
     "sif_path": "/opt/apptainers/SmartTwinPostprocessor.sif",
     "yield_stress_mpa": 350,
@@ -152,6 +153,9 @@ gpu         7-00:00:00     1       8      32 GB    smarttwincluster
     "ua_threads": 8,
     "sv_threads": 8,
     "deep_timeout_seconds": 7200,
+    "deep_ncpu": 4,
+    "deep_memory": "8G",
+    "deep_time_limit": "02:00:00",
     "sphere_memory": "32G",
     "sphere_time_limit": "04:00:00"
   }
