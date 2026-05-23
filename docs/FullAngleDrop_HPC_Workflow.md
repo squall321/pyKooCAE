@@ -143,7 +143,6 @@ gpu         7-00:00:00     1       8      32 GB    smarttwincluster
   "postprocess": {
     "enabled": true,
     "auto_deep": true,
-    "auto_deep_mode": "separate_job",
     "auto_sphere": true,
     "sif_path": "/opt/apptainers/SmartTwinPostprocessor.sif",
     "yield_stress_mpa": 350,
@@ -153,14 +152,13 @@ gpu         7-00:00:00     1       8      32 GB    smarttwincluster
     "ua_threads": 8,
     "sv_threads": 8,
     "deep_timeout_seconds": 7200,
-    "deep_ncpu": 4,
-    "deep_memory": "8G",
-    "deep_time_limit": "02:00:00",
     "sphere_memory": "32G",
     "sphere_time_limit": "04:00:00"
   }
 }
 ```
+
+**옵션** — `auto_deep_mode: "separate_job"` 추가 시 deep_report가 시뮬 잡과 분리되어 별도 Slurm 잡으로 실행됩니다 (시뮬 노드 즉시 해방용). `deep_ncpu/deep_memory/deep_time_limit` 생략 시 환경 `ncpu/memory`를 자동 fallback.
 
 ### 3.2 옵션 의미
 
@@ -186,11 +184,13 @@ gpu         7-00:00:00     1       8      32 GB    smarttwincluster
 
 **후처리 (`postprocess`):**
 - `enabled` (default `false`): 마스터 토글. false면 sh만 생성, 자동 실행 X
-- `auto_deep` (default `true`): 각 시뮬 직후 같은 노드에서 deep_report 실행
-- `auto_sphere` (default `true`): 모든 시뮬 끝나면 Slurm dependent job(`afterany`)으로 sphere
+- `auto_deep` (default `true`): 각 시뮬 직후 deep_report 실행
+- `auto_deep_mode` (default `"inline"`): `"inline"` = 시뮬 잡 안에서 deep 실행 (**같은 Slurm Job ID**) / `"separate_job"` = 별도 Slurm 잡으로 deep 분리 (다른 Job ID, 시뮬 노드 즉시 해방)
+- `auto_sphere` (default `true`): 모든 시뮬 끝나면 Slurm dependent job(`afterany`)으로 sphere (**항상 별도 Job ID**)
 - `sif_path`: compute node 절대경로 (`/opt/apptainers/SmartTwinPostprocessor.sif`)
 - `yield_stress_mpa`: sphere의 안전계수 계산 기준
 - `section_view_axes`/`fields`/`mode`: deep_report 단면뷰 옵션
+- `deep_ncpu`, `deep_memory`, `deep_time_limit` (`separate_job` 모드만): deep sbatch 자원. 생략 시 `environment.ncpu/memory` 자동 사용 (시뮬 잡과 동일)
 
 ### 3.3 실행 명령
 
@@ -234,6 +234,32 @@ KooChainRun postprocess runner_config.json --sphere  # sphere만
 | dynain → stage-out | 1 | minimal | ~1s | normal |
 | `deep_report` (auto, LS-DYNA 직후) | `sv_threads`+`ua_threads` | ~2-4 GB | 1-3분 (소형 모델) | normal (LS-DYNA와 같은 노드) |
 | `sphere_report` (dependent job) | `sphere_ncpu` | `sphere_memory` | 30s-2분 | normal |
+
+### 3.5 Slurm Job ID 구조 (`auto_deep_mode`)
+
+**기본 동작 (default `inline`)** — 시뮬 + deep_report는 **같은 Slurm Job ID**, sphere만 별도:
+
+```
+squeue:
+  JOBID   STATE     NAME
+  100     RUNNING   DOE001          ← 시뮬 + deep_report 둘 다 이 잡 안에서 실행
+  101     RUNNING   DOE002          ← 동일
+  ...
+  105     PENDING   sphere_report   ← --dependency=afterany:100:101:... 로 대기
+```
+
+**옵션 `auto_deep_mode: "separate_job"`** — 시뮬 끝나면 deep_report가 별도 Slurm 잡으로 분리:
+
+```
+squeue (시뮬 잡 끝나는 시점):
+  JOBID   STATE     NAME
+  102     RUNNING   DOE003                            ← 다른 시뮬 진행 중
+  106     PENDING   deep_report_Run_20260523_*        ← DOE001 끝나며 자동 sbatch
+  107     PENDING   deep_report_Run_20260523_*        ← DOE002 끝나며 자동 sbatch
+  105     PENDING   sphere_report                     ← --dependency=afterany:100:101:...
+```
+
+`separate_job` 사용 시 잡 ID는 `output_dir/deep_report_jobs.txt`에 기록 (`<jid>\t<run_id>` 형식).
 
 **병렬 패턴:**
 - 162개 fibonacci 시 동시 실행 = node 수 × node당 동시 job (normal: 2 nodes × ~4 CPU = 8 동시)
