@@ -11,6 +11,7 @@ Version: 1.4.0
 
 import sys
 import os
+import re
 import argparse
 from pathlib import Path
 
@@ -1229,9 +1230,26 @@ def _submit_cumulative(args, config_path):
         print(f"  Note: DOE count ({doe_count}) < requested parallel slots ({args.nodes * args.jobs_per_node})")
         print(f"         Extra nodes will be idle.")
 
-    # 노드 Health Check: idle 상태지만 실제로 응답 불가한 노드 자동 감지
-    # SSH 기반 병렬 점검 (srun 대비: Slurm 리소스 미사용, 대규모 노드에서 빠름)
-    dead_nodes = []
+    # 노드 Health Check (advisory):
+    #   - SSH ping은 정보 제공용. NodeName이 DNS 미등록인 경우가 많아 신뢰 불가.
+    #   - scontrol show nodes에서 NodeAddr(실제 IP) 캐싱 후 IP로 SSH 시도.
+    #   - exclude 결정은 SLURM이 down/drain 상태로 마킹한 노드만 (advisory와 무관).
+    node_to_addr = {}
+    try:
+        sc = subprocess.run(
+            ["scontrol", "show", "nodes", "--oneliner"],
+            capture_output=True, text=True, timeout=10
+        )
+        if sc.returncode == 0:
+            for line in sc.stdout.splitlines():
+                m1 = re.search(r"NodeName=(\S+)", line)
+                m2 = re.search(r"NodeAddr=(\S+)", line)
+                if m1 and m2:
+                    node_to_addr[m1.group(1)] = m2.group(1)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    advisory_unreachable = []
     try:
         sinfo_result = subprocess.run(
             ["sinfo", "-N", "-h", "-p", partition, "-t", "idle,mix,alloc", "-o", "%N"],
@@ -1242,42 +1260,56 @@ def _submit_cumulative(args, config_path):
                 n.strip() for n in sinfo_result.stdout.strip().split("\n") if n.strip()
             ))
             if idle_nodes:
-                print(f"\nNode Health Check ({len(idle_nodes)} nodes, SSH parallel)...")
-                # 병렬 SSH ping: 모든 노드에 동시 요청
+                print(f"\nNode Health Check ({len(idle_nodes)} nodes, advisory — exclude는 SLURM down/drain 기준)...")
                 ssh_procs = {}
                 for node in idle_nodes:
+                    target = node_to_addr.get(node, node)  # IP fallback to nodename
                     try:
                         p = subprocess.Popen(
                             ["ssh", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
-                             "-o", "BatchMode=yes", node, "hostname"],
+                             "-o", "BatchMode=yes", target, "hostname"],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE
                         )
-                        ssh_procs[node] = p
+                        ssh_procs[node] = (p, target)
                     except Exception:
-                        dead_nodes.append(node)
+                        advisory_unreachable.append((node, "spawn-fail"))
 
-                # 결과 수집 (최대 10초 대기)
-                for node, p in ssh_procs.items():
+                for node, (p, target) in ssh_procs.items():
                     try:
                         p.communicate(timeout=10)
                         if p.returncode != 0:
-                            dead_nodes.append(node)
-                            print(f"  {node}: UNREACHABLE — auto exclude")
+                            advisory_unreachable.append((node, f"SSH rc={p.returncode} via {target}"))
                     except subprocess.TimeoutExpired:
                         p.kill()
                         p.communicate()
-                        dead_nodes.append(node)
-                        print(f"  {node}: TIMEOUT — auto exclude")
+                        advisory_unreachable.append((node, f"TIMEOUT via {target}"))
 
-                if not dead_nodes:
-                    print(f"  All {len(idle_nodes)} nodes OK")
+                if not advisory_unreachable:
+                    print(f"  All {len(idle_nodes)} nodes reachable")
+                else:
+                    for node, why in advisory_unreachable:
+                        print(f"  advisory: {node} unreachable ({why}) — SLURM still trusts it, NOT excluded")
     except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass  # sinfo/ssh 불가 시 skip
+        pass
+
+    # exclude는 SLURM이 명확히 down/drain으로 마킹한 노드만
+    dead_nodes = []
+    try:
+        sc_dead = subprocess.run(
+            ["sinfo", "-N", "-h", "-p", partition, "-t", "down,drain,fail", "-o", "%N"],
+            capture_output=True, text=True, timeout=10
+        )
+        if sc_dead.returncode == 0:
+            dead_nodes = sorted(set(
+                n.strip() for n in sc_dead.stdout.strip().split("\n") if n.strip()
+            ))
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
 
     exclude_line = ""
     if dead_nodes:
-        exclude_str = ",".join(sorted(set(dead_nodes)))
-        print(f"\n  Excluding {len(dead_nodes)} dead nodes: {exclude_str}")
+        exclude_str = ",".join(dead_nodes)
+        print(f"\n  Excluding {len(dead_nodes)} SLURM down/drain nodes: {exclude_str}")
         exclude_line = f"#SBATCH --exclude={exclude_str}"
 
     # include 파일 검증
@@ -1369,6 +1401,7 @@ def _submit_cumulative(args, config_path):
 #SBATCH --time={time_limit}
 #SBATCH --output={log_path}
 #SBATCH --error={log_path}
+#SBATCH --chdir=/data
 #SBATCH --requeue
 {exclusive_line}
 {exclude_line}
@@ -1758,6 +1791,7 @@ exit $EXIT_CODE
 #SBATCH --time={seq_time_limit}
 #SBATCH --output={log_path}
 #SBATCH --error={log_path}
+#SBATCH --chdir=/data
 #SBATCH --requeue
 {exclusive_line}
 {exclude_line}
@@ -2198,6 +2232,7 @@ def _rerun_sequential(manager, target_does, exclude_list, args):
 #SBATCH --time={seq_time_limit}
 #SBATCH --output={log_path}
 #SBATCH --error={log_path}
+#SBATCH --chdir=/data
 #SBATCH --requeue
 {exclusive_line}
 {exclude_line}

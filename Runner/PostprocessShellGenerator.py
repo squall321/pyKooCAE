@@ -212,6 +212,7 @@ def build_deep_report_sbatch(run_dir, sh_path, options=None, environment=None,
 #SBATCH --cpus-per-task={ncpu}
 #SBATCH --mem={memory}
 #SBATCH --time={time_limit}
+#SBATCH --chdir=/data
 {partition_line}{deps}
 bash {sh_path}
 """
@@ -260,6 +261,7 @@ def build_sphere_sbatch(output_dir, sif_path=None, options=None, environment=Non
 #SBATCH --cpus-per-task={ncpu}
 #SBATCH --mem={memory}
 #SBATCH --time={time_limit}
+#SBATCH --chdir=/data
 {partition_line}{deps}
 bash {output_dir}/sphere_report.sh
 """
