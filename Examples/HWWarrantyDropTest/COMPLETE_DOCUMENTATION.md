@@ -424,7 +424,7 @@ runid_00002:   Step1 → Step2 → Step3
 **원리**:
 ```bash
 apptainer exec \
-  --bind /data:/data,/shared:/shared \
+  --bind /data:/data \
   /opt/apptainers/KooSimulation313.sif \
   /opt/KooMeshModifier/run.sh --input=input.txt
 ```

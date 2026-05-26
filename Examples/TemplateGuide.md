@@ -104,10 +104,8 @@ apptainer:
   image_name: "lsdyna_r16.sif"       # 컨테이너 이미지 파일명
   image_path: "/opt/apptainers"      # 이미지 경로 (선택, 기본값 사용 시 생략)
   mode: fixed                        # fixed: 이미지 고정, selectable: 사용자 선택
-  bind:                              # 마운트 경로 리스트
-    - /shared:/shared
-    - /scratch:/scratch
-    - /mnt/gluster:/mnt/gluster
+  bind:                              # 마운트 경로 리스트 (예시 — 실제 필요한 것만)
+    - /data:/data
   environment:                       # 환경변수 (선택)
     - OMP_NUM_THREADS=8
     - CUDA_VISIBLE_DEVICES=0,1
@@ -123,7 +121,7 @@ apptainer:
   - `selectable`: 사용자가 실행 시 이미지 선택 가능
 - `bind`: 호스트 경로를 컨테이너 내부에 마운트
   - 형식: `호스트경로:컨테이너경로[:옵션]`
-  - 예: `/shared:/shared:ro` (읽기 전용)
+  - 예: `/scratch:/scratch:ro` (읽기 전용)
 - `environment`: 컨테이너 내부 환경변수 설정
 - `options`: apptainer exec 추가 옵션
 

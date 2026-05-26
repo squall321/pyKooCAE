@@ -742,9 +742,9 @@ echo "$(find /data/Test_001 -name 'Step001.lock' | wc -l) / 26 완료"
     "koomeshmodifier_path": "/opt/KooMeshModifier/run.sh",
     "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
     "apptainer_sif": "/opt/apptainers/KooSimulation313.sif",
-    "apptainer_bind": "/data:/data,/shared:/shared",
+    "apptainer_bind": "/data:/data",
     "lsdyna_apptainer_sif": "/opt/apptainers/LSDynaBasic_ifort2022_impilatest_mpp_s.sif",
-    "lsdyna_apptainer_bind": "/data:/data,/shared:/shared"
+    "lsdyna_apptainer_bind": "/data:/data"
   },
   "scenarios": [
     {
@@ -1548,7 +1548,7 @@ grep "apptainer_bind" scenario.json
 ```json
 {
   "environment": {
-    "apptainer_bind": "/data:/data,/shared:/shared,/opt:/opt"
+    "apptainer_bind": "/data:/data,/opt:/opt"
   }
 }
 ```

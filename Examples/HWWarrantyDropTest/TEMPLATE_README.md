@@ -115,9 +115,9 @@ KOOCR_NCPU_PER_JOB=16      # 작업당 CPU 코어 수 (기본값: 16)
     "koomeshmodifier_path": "/opt/KooMeshModifier/run.sh",
     "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
     "apptainer_sif": "/opt/apptainers/KooSimulation313.sif",
-    "apptainer_bind": "/data:/data,/shared:/shared",
+    "apptainer_bind": "/data:/data",
     "lsdyna_apptainer_sif": "/opt/apptainers/LSDynaBasic_ifort2022_impilatest_mpp_s.sif",
-    "lsdyna_apptainer_bind": "/data:/data,/shared:/shared"
+    "lsdyna_apptainer_bind": "/data:/data"
   },
   "scenarios": [
     {

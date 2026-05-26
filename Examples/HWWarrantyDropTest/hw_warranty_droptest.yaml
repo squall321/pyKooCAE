@@ -32,7 +32,6 @@ apptainer:
   mode: fixed
   bind:
     - /data:/data
-    - /shared:/shared
   environment:
     - OMP_NUM_THREADS=1
   options:
@@ -121,7 +120,7 @@ script:
 
     # Run KooChainRun prepare inside Apptainer
     apptainer exec \
-      --bind /data:/data,/shared:/shared \
+      --bind /data:/data \
       /opt/apptainers/KooSimulation313.sif \
       /opt/pyKooCAE/KooChainRun prepare scenario.json -o runner_config.json
 
@@ -151,7 +150,7 @@ script:
 
     # Submit jobs via KooChainRun
     apptainer exec \
-      --bind /data:/data,/shared:/shared \
+      --bind /data:/data \
       /opt/apptainers/KooSimulation313.sif \
       /opt/pyKooCAE/KooChainRun submit runner_config.json \
         --nodes "$NODES" \
@@ -209,7 +208,7 @@ script:
     mkdir -p "$RESULTS_DIR"
 
     apptainer exec \
-      --bind /data:/data,/shared:/shared \
+      --bind /data:/data \
       /opt/apptainers/KooSimulation313.sif \
       /opt/pyKooCAE/KooChainRun collect runner_config.json "$RESULTS_DIR" || true
 

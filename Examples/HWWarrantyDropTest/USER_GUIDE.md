@@ -445,14 +445,13 @@ KooMeshModifier와 LS-DYNA는 **별도 컨테이너**에서 실행.
 **실행 예시**:
 ```bash
 apptainer exec \
-  --bind /data:/data,/shared:/shared \
+  --bind /data:/data \
   /opt/apptainers/KooSimulation313.sif \
   /opt/KooMeshModifier/run.sh --input=input.txt
 ```
 
 **바인드 마운트**:
-- `/data:/data`: 실행 데이터, 결과
-- `/shared:/shared`: 템플릿 파일, 공유 리소스
+- `/data:/data`: 실행 데이터, 결과 (KooChainRun 워크플로우는 /data만 사용)
 
 ### LS-DYNA 컨테이너
 
@@ -463,7 +462,7 @@ apptainer exec \
 **실행 예시**:
 ```bash
 apptainer exec \
-  --bind /data:/data,/shared:/shared \
+  --bind /data:/data \
   /opt/apptainers/LSDynaBasic_ifort2022_impilatest_mpp_s.sif \
   mpirun -np 16 /opt/ls-dyna/lsdyna_R16.1.1 i=input.k ncpu=16
 ```
@@ -477,10 +476,10 @@ apptainer exec \
     "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
 
     "apptainer_sif": "/opt/apptainers/KooSimulation313.sif",
-    "apptainer_bind": "/data:/data,/shared:/shared",
+    "apptainer_bind": "/data:/data",
 
     "lsdyna_apptainer_sif": "/opt/apptainers/LSDynaBasic_ifort2022_impilatest_mpp_s.sif",
-    "lsdyna_apptainer_bind": "/data:/data,/shared:/shared"
+    "lsdyna_apptainer_bind": "/data:/data"
   }
 }
 ```
