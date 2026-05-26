@@ -9,10 +9,10 @@
     "memory": "2G",
     "lsdyna_memory": "2000m",
     "apptainer_sif": "/opt/apptainers/SmartTwinPreprocessor.sif",
-    "apptainer_bind": "/data:/data,/shared:/shared",
+    "apptainer_bind": "/data:/data",
     "apptainer_env": {},
     "lsdyna_apptainer_sif": "/opt/apptainers/LSDynaBasic_aocc420_ompi4.0.5_mpp_s.sif",
-    "lsdyna_apptainer_bind": "/data:/data,/shared:/shared",
+    "lsdyna_apptainer_bind": "/data:/data",
     "lsdyna_apptainer_env": {
       "LSTC_FILE": "/opt/ls-dyna_license/LSTC_FILE",
       "LSTC_LICENSE_SERVER": "CHANGE_ME_TO_YOUR_LICENSE_IP",

@@ -15,7 +15,7 @@
   - `LSDynaBasic_aocc420_ompi4.0.5_mpp_s.sif` (LS-DYNA single precision MPP)
   - `SmartTwinPostprocessor.sif` (후처리, KooD3plotReader)
 - [ ] LSTC 라이센스 서버 IP (compute node에서 접근 가능)
-- [ ] 공유 storage 마운트 (`/data/` 또는 `/shared/`)
+- [ ] 공유 storage 마운트 (`/data/` — 모든 노드에서 동일 경로로 접근 가능해야 함)
 - [ ] `sudo` 권한 (tar 풀 때 필요)
 
 확인 명령:
@@ -64,8 +64,8 @@ sudo tar xzf SmartTwinPreprocessor_*.tar.gz -C /opt/SmartTwinPreprocessor/
   "base_dir": "/data/<your_user>/<your_project>",   // ← (1) 본인 작업 경로
 
   "environment": {
-    "apptainer_bind": "/data:/data,/shared:/shared", // ← (2) 새 클러스터의 마운트 (보통 동일)
-    "lsdyna_apptainer_bind": "/data:/data,/shared:/shared",
+    "apptainer_bind": "/data:/data", // ← (2) 새 클러스터의 마운트 (보통 동일)
+    "lsdyna_apptainer_bind": "/data:/data",
 
     "lsdyna_apptainer_env": {
       "LSTC_LICENSE_SERVER": "192.168.XXX.YYY"        // ← (3) 새 클러스터의 라이센스 서버 IP
@@ -145,10 +145,10 @@ ls output/sphere_report.html          # 후처리 결과 (자동 시)
   "memory": "2G",                              // 시뮬 sbatch RAM
   "lsdyna_memory": "2000m",                    // LS-DYNA 내부 메모리
   "apptainer_sif": "/opt/apptainers/SmartTwinPreprocessor.sif",
-  "apptainer_bind": "/data:/data,/shared:/shared",
+  "apptainer_bind": "/data:/data",
   "apptainer_env": {},
   "lsdyna_apptainer_sif": "/opt/apptainers/LSDynaBasic_aocc420_ompi4.0.5_mpp_s.sif",
-  "lsdyna_apptainer_bind": "/data:/data,/shared:/shared",
+  "lsdyna_apptainer_bind": "/data:/data",
   "lsdyna_apptainer_env": {
     "LSTC_FILE": "/opt/ls-dyna_license/LSTC_FILE",
     "LSTC_LICENSE_SERVER": "192.168.XXX.YYY",   // ← 변경 필수

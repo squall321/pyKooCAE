@@ -44,7 +44,7 @@ gpu         7-00:00:00     1       8      32 GB    smarttwincluster
 │   └── lib/                         ← 각종 .so 등
 ├── SmartTwinPostprocessor/
 │   ├── SmartTwinPostprocessor.sif   ← Postprocessor SIF (compute node /opt에도 배포 필요)
-│   └── SmartTwinPostProcessorGUI.sif
+│   └── SmartTwinPostprocessorGUI.sif
 ├── tmp/                             ← apptainer 임시 디렉토리 (APPTAINER_TMPDIR)
 ├── koopark/                         ← 사용자 작업 디렉토리 (시나리오 + 결과)
 │   ├── Test_*                       ← 각 테스트별 폴더
@@ -92,9 +92,9 @@ gpu         7-00:00:00     1       8      32 GB    smarttwincluster
     "memory": "2G",
     "lsdyna_memory": "2000m",
     "apptainer_sif": "/opt/apptainers/SmartTwinPreprocessor.sif",
-    "apptainer_bind": "/data:/data,/shared:/shared",
+    "apptainer_bind": "/data:/data",
     "lsdyna_apptainer_sif": "/opt/apptainers/LSDynaBasic_aocc420_ompi4.0.5_mpp_s.sif",
-    "lsdyna_apptainer_bind": "/data:/data,/shared:/shared",
+    "lsdyna_apptainer_bind": "/data:/data",
     "lsdyna_apptainer_env": {
       "LSTC_FILE": "/opt/ls-dyna_license/LSTC_FILE",
       "LSTC_LICENSE_SERVER": "192.168.122.1",
