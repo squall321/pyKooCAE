@@ -57,6 +57,56 @@ def _flock_with_timeout(fd, operation, timeout=120):
             time.sleep(1)
 
 
+def _semaphore_acquire(lock_dir, max_concurrency, timeout=120, poll_interval=1.0):
+    """Token-file semaphore — 동시 max_concurrency개까지만 진입 허용.
+
+    NFS-safe (O_CREAT|O_EXCL은 NFSv3+에서 atomic). 글로벌 flock과 달리
+    여러 잡이 동시 작업 가능, 단 N개 cap.
+
+    동작:
+      lock_dir/.stage_out.token_00, _01, ... _<N-1>  토큰 파일 N개
+      각 잡이 그 중 하나를 O_EXCL로 생성 → 성공하면 잡음
+      모두 점유면 poll_interval 후 재시도, deadline 도달 시 TimeoutError
+
+    Args:
+        lock_dir: 토큰 파일 두는 디렉토리 (output_dir 같이 공유 위치)
+        max_concurrency: 동시 진입 허용 수 (>= 1)
+        timeout: 토큰 획득 timeout (초)
+        poll_interval: 재시도 간격 (초)
+
+    Returns:
+        (fd, token_path): _semaphore_release에 그대로 전달
+    """
+    os.makedirs(lock_dir, exist_ok=True)
+    deadline = time.time() + timeout
+    while True:
+        for i in range(max_concurrency):
+            token = os.path.join(lock_dir, f".stage_out.token_{i:02d}")
+            try:
+                fd = os.open(token, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
+                return fd, token
+            except FileExistsError:
+                continue
+        if time.time() >= deadline:
+            raise TimeoutError(
+                f"semaphore 획득 실패 (timeout={timeout}s, "
+                f"max_concurrency={max_concurrency}). "
+                f"stale token 가능성 — {lock_dir}/.stage_out.token_* 확인")
+        time.sleep(poll_interval)
+
+
+def _semaphore_release(fd, token):
+    """semaphore 토큰 반환. 예외는 무시 (best-effort cleanup)."""
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+    try:
+        os.unlink(token)
+    except OSError:
+        pass
+
+
 class ApptainerWrapper:
     """Apptainer 컨테이너 래핑 유틸리티"""
 
@@ -987,34 +1037,39 @@ class CumulativeScenarioRunner:
             # LS-DYNA 실행 (로컬 디스크)
             solver_success = self.solver.run(os.path.basename(local_input), local_work_dir, timeout)
 
-            # Stage-out: rsync로 결과를 NFS로 복사 (flock 직렬화: 동시 burst 방지)
+            # Stage-out: rsync로 결과를 NFS로 복사
+            # Semaphore 직렬화: 동시 진입 N개 cap (NFS burst 방지하면서도 throughput 보장)
+            #   - environment.stage_out_concurrency  (default 8)
+            #   - environment.stage_out_timeout_seconds  (default 120)
+            #   대형 클러스터(노드 수십~수백)는 시나리오에서 16/32로 늘리고 timeout도 늘리는 게 좋음.
             if os.path.isdir(local_work_dir):
-                stage_lock_file = os.path.join(self.output_dir, ".stage_out.lock")
-                logging.info(f"Stage-out 순서 대기 중... (DOE {doe_index})")
-                with open(stage_lock_file, 'a') as _stage_lf:
-                    _flock_with_timeout(_stage_lf, fcntl.LOCK_EX)
-                    try:
-                        logging.info(f"Stage-out: {local_work_dir} -> {output_run_dir}")
-                        rsync_ret = subprocess.run(
-                            ["rsync", "-a", "--size-only", local_work_dir + "/", output_run_dir + "/"],
-                            capture_output=True, text=True)
-                        if rsync_ret.returncode != 0:
-                            logging.warning(f"rsync failed ({rsync_ret.returncode}), fallback to shutil")
-                            for fname in os.listdir(local_work_dir):
-                                src = os.path.join(local_work_dir, fname)
-                                dst = os.path.join(output_run_dir, fname)
-                                if os.path.isfile(src):
-                                    shutil.copy2(src, dst)
-                                elif os.path.isdir(src):
-                                    dst_dir = os.path.join(output_run_dir, fname)
-                                    if not os.path.exists(dst_dir):
-                                        shutil.copytree(src, dst_dir)
-                                    else:
-                                        for sub in os.listdir(src):
-                                            shutil.copy2(os.path.join(src, sub), os.path.join(dst_dir, sub))
-                        logging.info(f"Stage-out 완료: DOE {doe_index}")
-                    finally:
-                        _flock_with_timeout(_stage_lf, fcntl.LOCK_UN)
+                env = self.config.get("environment", {})
+                sem_n = int(env.get("stage_out_concurrency", 8))
+                sem_timeout = int(env.get("stage_out_timeout_seconds", 120))
+                logging.info(f"Stage-out semaphore 대기 (DOE {doe_index}, concurrency={sem_n}, timeout={sem_timeout}s)")
+                _sem_fd, _sem_token = _semaphore_acquire(self.output_dir, sem_n, timeout=sem_timeout)
+                try:
+                    logging.info(f"Stage-out: {local_work_dir} -> {output_run_dir} (token={os.path.basename(_sem_token)})")
+                    rsync_ret = subprocess.run(
+                        ["rsync", "-a", "--size-only", local_work_dir + "/", output_run_dir + "/"],
+                        capture_output=True, text=True)
+                    if rsync_ret.returncode != 0:
+                        logging.warning(f"rsync failed ({rsync_ret.returncode}), fallback to shutil")
+                        for fname in os.listdir(local_work_dir):
+                            src = os.path.join(local_work_dir, fname)
+                            dst = os.path.join(output_run_dir, fname)
+                            if os.path.isfile(src):
+                                shutil.copy2(src, dst)
+                            elif os.path.isdir(src):
+                                dst_dir = os.path.join(output_run_dir, fname)
+                                if not os.path.exists(dst_dir):
+                                    shutil.copytree(src, dst_dir)
+                                else:
+                                    for sub in os.listdir(src):
+                                        shutil.copy2(os.path.join(src, sub), os.path.join(dst_dir, sub))
+                    logging.info(f"Stage-out 완료: DOE {doe_index}")
+                finally:
+                    _semaphore_release(_sem_fd, _sem_token)
                 # 로컬 정리 (Run 폴더 + 상위 apptainer_job 폴더)
                 shutil.rmtree(local_work_dir, ignore_errors=True)
                 job_dir = os.path.dirname(local_work_dir)
