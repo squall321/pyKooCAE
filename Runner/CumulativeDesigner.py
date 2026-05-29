@@ -50,6 +50,20 @@ from Runner.ImpactPositionSource import (
     ImpactPosition, parse_position_source
 )
 
+# ── VIBRATION 모드 (P1: explicit_factors only) ────────────────────────────────
+# VibrationSource 모듈은 별도 sub-task로 구현 예정.
+# Import 실패 시(모듈 미구현 상태)에도 DROP/IMPACT 기존 경로는 영향받지 않도록
+# try/except로 graceful import 처리. _process_vibration_scenario 호출 시점에만
+# 부재가 표면화됨 (호출 직전 None 체크로 명시적 ImportError 재발생).
+try:
+    from Runner.VibrationSource import (
+        VibrationLoadSpec, VibrationContext, parse_vibration_source
+    )
+except ImportError:
+    VibrationLoadSpec = None
+    VibrationContext = None
+    parse_vibration_source = None
+
 
 @dataclass
 class StepConfig:
@@ -169,8 +183,22 @@ class CumulativeDesigner:
 
         # IMPACT 모드 여부 확인
         has_impact = any(m == SimulationMode.IMPACT for m in mode_sequence)
+        # VIBRATION 모드 여부 확인
+        # SimulationMode enum에는 VIB("VIB")와 VIBRATION("VIBRATION") 두 멤버가
+        # 별도로 존재한다 (TemplateManager.py L34-35; long alias 정책 — DESIGN.md 채택안 C).
+        # Enum 멤버는 value가 같지 않으면 별개 객체이므로 둘 다 명시적으로 체크.
+        # (P1 잔여 버그: 이전엔 VIB만 체크하여 "VIBRATION" scenario는 _process_drop_scenario로
+        #  폴백 → angle_source 기본값(cuboid_geometry 26방향) 적용되어 doe_count=26 발생)
+        has_vibration = any(
+            m in (SimulationMode.VIB, SimulationMode.VIBRATION) for m in mode_sequence
+        )
 
-        if has_impact:
+        # VIBRATION을 IMPACT보다 먼저 분기 (혼합 시퀀스는 P2에서 정책 결정).
+        # P1 범위: 시퀀스 전체가 VIB-only일 때만 vibration 처리 진입.
+        if has_vibration:
+            return self._process_vibration_scenario(scenario_cfg, scenario_name,
+                                                     cumulative_cfg, num_steps, mode_sequence)
+        elif has_impact:
             return self._process_impact_scenario(scenario_cfg, scenario_name,
                                                   cumulative_cfg, num_steps, mode_sequence)
         else:
@@ -311,6 +339,99 @@ class CumulativeDesigner:
                     mode=mode.value,
                     angle_name=pos.name,  # position_name을 angle_name에 저장
                     angle_roll=0.0,       # IMPACT에서는 각도 미사용
+                    angle_pitch=0.0,
+                    angle_yaw=0.0,
+                    input_file=f"Step{step_number:03d}.k",
+                    output_dir=f"Step{step_number:03d}",
+                    dynain_source=f"Step{step_number-1:03d}/dynain" if step_number > 1 else None,
+                    doe_index=doe_idx
+                )
+                steps.append(step_cfg)
+
+        scenario_id = f"{scenario_name}_S{num_steps:03d}"
+
+        return ScenarioConfig(
+            scenario_id=scenario_id,
+            scenario_name=scenario_name,
+            total_steps=num_steps,
+            steps=steps
+        )
+
+    def _process_vibration_scenario(self, scenario_cfg: Dict[str, Any],
+                                     scenario_name: str,
+                                     cumulative_cfg: Dict[str, Any],
+                                     num_steps: int,
+                                     mode_sequence: List[SimulationMode]) -> ScenarioConfig:
+        """진동(VIBRATION) 시나리오 처리 (P1: explicit_factors only)
+
+        vibration_source로 진동 케이스 목록(DOE 인자 조합)을 생성하고,
+        각 케이스를 DOE로 매핑합니다. IMPACT 패턴을 모방하되 step별 각도 필드는
+        stub(0.0)로 두고 실제 DOE 메타데이터는 doe_vibrations 출력 필드로 분리합니다.
+
+        P1 범위 (design_decisions.md A~G 채택안):
+            - explicit_factors: 사용자가 명시적으로 인자 조합 리스트를 제공
+            - per_cap / circuit_group 전략은 P2에서 추가
+
+        Parameters:
+            scenario_cfg: 시나리오 설정 (vibration_source 키 포함)
+            scenario_name: 시나리오 이름
+            cumulative_cfg: 누적 설정
+            num_steps: Step 수
+            mode_sequence: 모드 시퀀스 (모두 VIB)
+
+        Returns:
+            ScenarioConfig
+        """
+        # parse_vibration_source 모듈 부재 시 명시적 에러 (호출 시점까지 지연)
+        if parse_vibration_source is None:
+            raise ImportError(
+                "VibrationSource 모듈을 import할 수 없습니다. "
+                "VIBRATION 시나리오를 사용하려면 Runner/VibrationSource.py 구현이 필요합니다 "
+                "(parse_vibration_source, VibrationLoadSpec, VibrationContext)."
+            )
+
+        # vibration_source 파싱 → 단일 VibrationLoadSpec
+        # parse_vibration_source 시그니처: (config: dict, ctx: VibrationContext) -> VibrationLoadSpec
+        # ctx 에는 scenario_dir 등 컨텍스트 전달 (P2+ max_doe_count 가드 진입로).
+        vibration_source_cfg = scenario_cfg.get("vibration_source", {})
+        ctx = VibrationContext(scenario_dir=self.scenario_dir)
+        spec = parse_vibration_source(vibration_source_cfg, ctx)
+
+        if spec is None:
+            raise ValueError("vibration_source에서 VibrationLoadSpec이 생성되지 않았습니다")
+
+        # DOE 케이스 = spec.doe_factors_list (P1 explicit_factors 길이 1;
+        # P2 per_cap/circuit_group 길이 N)
+        doe_factors_list = spec.doe_factors_list
+        if not doe_factors_list:
+            raise ValueError(
+                "VibrationLoadSpec.doe_factors_list 가 비어 있습니다 "
+                "(P1 explicit_factors 는 최소 1개 케이스를 생성해야 함)"
+            )
+
+        # 진동 spec 저장 (save_runner_config 에서 doe_vibrations 생성에 사용)
+        # IMPACT의 self._impact_positions 와 동일한 상태 저장 패턴
+        self._vibration_spec = spec
+
+        # 템플릿 자동 선택 (VIB → VIBRATION_FIRST / VIBRATION_CUMULATIVE)
+        templates = select_template_for_scenario(mode_sequence)
+
+        # 각 DOE 케이스마다 Step 시퀀스 생성
+        steps = []
+        for doe_idx, (case_name, _case_factors) in enumerate(doe_factors_list):
+            for i in range(num_steps):
+                step_number = i + 1
+                template = templates[i]
+                mode = mode_sequence[i]
+
+                # VIBRATION에서 각도 필드는 stub. 실제 DOE 인자는 doe_vibrations에 분리 저장.
+                # angle_name에는 케이스 식별자(case_name)를 보존하여 condition 컬럼으로 노출.
+                step_cfg = StepConfig(
+                    step_number=step_number,
+                    template=template.value,
+                    mode=mode.value,
+                    angle_name=case_name,  # 케이스 이름을 condition으로 사용
+                    angle_roll=0.0,        # VIBRATION에서는 각도 미사용
                     angle_pitch=0.0,
                     angle_yaw=0.0,
                     input_file=f"Step{step_number:03d}.k",
@@ -574,6 +695,37 @@ class CumulativeDesigner:
                                 "y": pos.y
                             }
 
+        # VIBRATION 모드: doe_vibrations 생성 (P1: explicit_factors only)
+        # 패턴: doe_positions와 동일 — 1-based DOE key, step_key → factor 딕셔너리
+        # VibrationLoadSpec.doe_factors_list: [(case_name, ((pid, factor), ...)), ...]
+        # P2 확장 여지: per_cap / circuit_group 도 동일 doe_factors_list 형식 채워
+        # 별도 분기 없이 동일 루프로 카탈로그 생성.
+        doe_vibrations = {}
+        if hasattr(self, '_vibration_spec') and self._vibration_spec is not None:
+            spec = self._vibration_spec
+            for case_idx, (case_name, case_part_factors) in enumerate(spec.doe_factors_list):
+                doe_key = str(case_idx + 1)  # 1-based
+                # part_factors → {"<pid>": factor} 딕셔너리 (JSON-friendly)
+                factors_dict = {str(pid): float(factor)
+                                for pid, factor in case_part_factors}
+
+                # Step 1 기본 항목 (DOE 단일 케이스도 doe_vibrations에 등록되도록)
+                doe_vibrations[doe_key] = {
+                    "1": {
+                        "case_name": case_name,
+                        "factors": factors_dict
+                    }
+                }
+                # 누적 step이 있으면 모든 step에 같은 케이스 할당
+                if first_scenario:
+                    for step in first_scenario.steps:
+                        if step.doe_index == case_idx:
+                            step_key = str(step.step_number)
+                            doe_vibrations[doe_key][step_key] = {
+                                "case_name": case_name,
+                                "factors": factors_dict
+                            }
+
         data = {
             # CumulativeScenarioRunner 호환 섹션
             "project": {
@@ -591,6 +743,9 @@ class CumulativeDesigner:
                 "steps": runner_steps,
                 "doe_angles": doe_angles,
                 **({"doe_positions": doe_positions} if doe_positions else {}),
+                # VIBRATION DOE 메타데이터 (P1: explicit_factors only)
+                # conditional spread로 비-VIB 시나리오 출력에 노이즈 없음
+                **({"doe_vibrations": doe_vibrations} if doe_vibrations else {}),
                 # batch_koomeshmodifier: 1-step 시나리오에서 헤드노드 일괄 생성 옵션
                 "batch_koomeshmodifier": self._get_batch_koomeshmodifier_flag()
             },

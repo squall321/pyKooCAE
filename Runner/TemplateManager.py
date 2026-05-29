@@ -32,6 +32,7 @@ class SimulationMode(Enum):
     THERM = "THERM"            # 열응력
     STAT = "STAT"              # 정적 하중
     VIB = "VIB"                # 진동
+    VIBRATION = "VIBRATION"    # 진동 (long alias, DESIGN.md 채택안 C — scenario에서 "VIBRATION" 사용)
     DWI = "DWI"                # 수침
     COMB = "COMB"              # 조합
 
@@ -45,6 +46,11 @@ class TemplateType(Enum):
     THERMAL_FIRST = "THERMAL_FIRST"                # 첫 번째 열해석
     THERMAL_CUMULATIVE = "THERMAL_CUMULATIVE"      # 누적 열해석
     THERMAL_TO_DROP = "THERMAL_TO_DROP"            # 열→낙하 전환
+    # ── VIBRATION 모드 (P1: explicit_factors only) ──────────────────────────────
+    # 기존 SimulationMode.VIB enum을 재사용 (중복 enum 추가 회피, surgical)
+    VIBRATION_FIRST = "VIBRATION_FIRST"            # 첫 번째 진동 (explicit_factors)
+    VIBRATION_CUMULATIVE = "VIBRATION_CUMULATIVE"  # 누적 진동 (DYNAIN_TO_INITIAL → VIBRATION)
+    # TODO(P2): VIBRATION_PER_CAP / VIBRATION_CIRCUIT_GROUP 추가 예정
 
 
 @dataclass
@@ -100,6 +106,18 @@ TEMPLATE_DEFINITIONS = {
         description="열→낙하 전환 (DYNAIN_TO_INITIAL(열) → DROP_ATTITUDE)",
         requires_dynain=True
     ),
+    # ── VIBRATION 템플릿 (P1: explicit_factors only) ────────────────────────────
+    TemplateType.VIBRATION_FIRST: TemplateInfo(
+        template_type=TemplateType.VIBRATION_FIRST,
+        description="첫 번째 진동 (VIBRATION 실행, explicit_factors 적용)",
+        requires_dynain=False
+    ),
+    TemplateType.VIBRATION_CUMULATIVE: TemplateInfo(
+        template_type=TemplateType.VIBRATION_CUMULATIVE,
+        description="누적 진동 (DYNAIN_TO_INITIAL → VIBRATION, explicit_factors 적용)",
+        requires_dynain=True
+    ),
+    # TODO(P2): VIBRATION_PER_CAP / VIBRATION_CIRCUIT_GROUP 등록 예정
 }
 
 
@@ -150,6 +168,9 @@ def select_template_for_step(
             return TemplateType.IMPACT_FIRST
         elif mode == SimulationMode.THERM:
             return TemplateType.THERMAL_FIRST
+        elif mode in (SimulationMode.VIB, SimulationMode.VIBRATION):
+            # 진동 (P1: explicit_factors only). VIB / VIBRATION 둘 다 허용 (backward compat).
+            return TemplateType.VIBRATION_FIRST
         else:
             raise ValueError(f"Step 1에서 지원하지 않는 모드: {mode}")
 
@@ -174,6 +195,11 @@ def select_template_for_step(
         elif mode == SimulationMode.THERM:
             # THERM 모드 (항상 누적)
             return TemplateType.THERMAL_CUMULATIVE
+
+        elif mode in (SimulationMode.VIB, SimulationMode.VIBRATION):
+            # VIB / VIBRATION 모드 (P1: prev_mode 무관하게 누적; THERM→VIB 등 전환은 P2)
+            # TODO(P2): prev_mode == THERM 시 THERMAL_TO_VIBRATION 분기 추가 검토
+            return TemplateType.VIBRATION_CUMULATIVE
 
         else:
             raise ValueError(f"Step {step}에서 지원하지 않는 모드: {mode}")

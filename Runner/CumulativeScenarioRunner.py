@@ -1257,6 +1257,63 @@ RampTime,600
 *End
 """
 
+        elif mode == "VIBRATION":
+            # ─────────────────────────────────────────────────────────────
+            # VIBRATION_LOAD 모드 — Registry-based zero-hardcode builder 호출
+            # ─────────────────────────────────────────────────────────────
+            # 설계 원칙 (design_decisions.md 채택안 A~G 준수):
+            #   - DROP/IMPACT/THERM과 달리, mode 키워드/옵션 키/relative_mode 직렬화는
+            #     StepConfigBuilder 내부의 `_VIB_KEYWORDS` / `_VIB_OPTION_KEYS` /
+            #     `_VIB_SERIALIZERS` 카탈로그·레지스트리에서만 관리됨 (zero-hardcode).
+            #   - 본 분기는 sim_params/params에서 인자만 추출 → builder에 위임.
+            #
+            # P1 범위: explicit_factors (relative_mode="Explicit") — part_factors 사용.
+            # TODO(P2): per_cap_factors / circuit_group_factors / VolumeProportional 지원
+            #          — StepConfigBuilder 측 `_VIB_SERIALIZERS`에 데코레이터로 추가 등록되며,
+            #            본 분기는 인자 패스스루만 추가하면 됨 (build_vibration_load_config
+            #            의 part_list / reference_part 인자 활용).
+            from Runner.StepConfigBuilder import build_vibration_load_config
+
+            sim_params = self.config.get("simulation_params", {})
+            vib_params = sim_params.get("vibration", {})
+
+            # params(step별) > vibration(전역 simulation_params) 순으로 lookup
+            # — step 단위 override가 가능하도록 params를 우선
+            def _vib_get(key, default=None):
+                if key in params:
+                    return params[key]
+                return vib_params.get(key, default)
+
+            direction = _vib_get("direction", "Z")
+            load_type = _vib_get("load_type", "Force")
+            relative_mode = _vib_get("relative_mode", "Explicit")
+            load_curve = _vib_get("load_curve", [])
+            # P1: explicit_factors — [(pid, factor), ...] 튜플 리스트 또는
+            #     JSON 호환 [[pid, factor], ...] 리스트 모두 허용
+            part_factors = _vib_get("part_factors", None)
+            # TODO(P2): part_list / reference_part 추출 (VolumeProportional 모드용)
+            part_list = _vib_get("part_list", None)
+            reference_part = _vib_get("reference_part", None)
+
+            preserve_includes = self.config.get("preserve_includes", [])
+            config_content = build_vibration_load_config(
+                model_file=model_file,
+                output_dir=self.output_dir,
+                project=project,
+                doe_index=doe_index,
+                step_num=step_num,
+                condition=condition,
+                direction=direction,
+                load_type=load_type,
+                relative_mode=relative_mode,
+                load_curve=load_curve,
+                part_factors=part_factors,
+                part_list=part_list,
+                reference_part=reference_part,
+                run_directory_mode=True,
+                preserve_includes=preserve_includes,
+            )
+
         else:
             # 기타 모드는 기본 템플릿
             preserve_block = self._build_preserve_block()
@@ -1494,13 +1551,27 @@ RampTime,600
         return True
 
     def _find_input_file(self, run_dir: str, mode: str) -> str:
-        """LS-DYNA 입력 파일 찾기 (절대경로 — cwd가 Output/이므로)"""
+        """LS-DYNA 입력 파일 찾기 (절대경로 — cwd가 Output/이므로)
+
+        DROP/IMPACT/THERM은 KooDynaAdvancedModification 측 RunDirectory 분기에서
+        고정 파일명(`DropSet.k` 등)이 강제되지만, VIBRATION은 KooMeshModifier의
+        일반 경로(`additionalword += "_vib"`)를 타기 때문에 입력 모델 파일의
+        베이스명에 `_vib.k` 접미사가 붙는다 (예: `MinimumModel.k` → `MinimumModel_vib.k`).
+        """
         if mode == "DROP":
             fname = "DropSet.k"
         elif mode == "IMPACT":
             fname = "DropWeightImpactTestSet.k"
         elif mode == "THERM":
             fname = "ThermalSet.k"
+        elif mode == "VIBRATION":
+            # KooMeshModifier 일반경로: `{inputFileName}_vib.k` (replace(".k","") + "_vib" + ".k")
+            # — self.config의 model_file 베이스명에 의존 (DROP과 다른 명명 규칙).
+            model_file = self.config["project"]["model_file"]
+            base = os.path.basename(model_file)
+            if base.endswith(".k"):
+                base = base[:-2]
+            fname = f"{base}_vib.k"
         else:
             fname = "SimulationSet.k"
         return os.path.join(run_dir, fname)

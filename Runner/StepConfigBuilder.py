@@ -173,6 +173,223 @@ dt,{dt}
     return config_content
 
 
+# =============================================================================
+# VIBRATION_LOAD 모드 — Registry-based zero-hardcode builder
+# =============================================================================
+#
+# 설계 원칙 (design_decisions.md 채택안 A~G 준수):
+#   - (A) 모드 이름은 단일 카탈로그 `_VIB_KEYWORDS`에서만 관리
+#   - (B) 옵션 키는 `_VIB_OPTION_KEYS` mapping table로 명시적 선언
+#   - (C) Relative 모드별 직렬화는 `_VIB_SERIALIZERS` decorator registry로 등록
+#   - (D) 기존 build_drop_attitude_config와 시그니처/헤더 패턴 대칭 유지
+#   - (E) sub-block (LoadCurve/PartFactors/PartList)은 Key...EndKey 규약 따름
+#   - (F) Validation은 호출자 책임 (헤더 docstring에 명시)
+#   - (G) P2 확장점(per_cap / circuit_group)은 TODO 주석으로 placeholder 표기
+#
+# 헤더 외부 directive(`*Inputfile`, `*RunDirectoryMode`, `*Info` 등) 패턴은
+# build_drop_attitude_config와 동일하게 유지 — KooMeshModifier step_config 포맷 규칙.
+
+# 모드 이름 카탈로그 (단일 사실원천)
+_VIB_KEYWORDS = {
+    "mode_name": "VIBRATION_LOAD",     # *Mode 다음 줄에 들어가는 모드 식별자
+    "block_open": "VibrationLoad",     # **VibrationLoad,<idx>
+    "block_close": "EndVibrationLoad", # **EndVibrationLoad
+    "sub_load_curve": "LoadCurve",     # LoadCurve ... EndLoadCurve
+    "sub_part_factors": "PartFactors", # PartFactors ... EndPartFactors  (P1: explicit)
+    "sub_part_list": "PartList",       # PartList ... EndPartList        (P2: volume-proportional)
+}
+
+# VibrationLoad 블록 내부 Key,Value 옵션 카탈로그
+# (config_key, sim_params_key 또는 직접 인자명, default)
+# — sim_params나 직접 인자에서 값을 가져올 키를 명시
+_VIB_OPTION_KEYS = (
+    # config_key,         arg_name,         default
+    ("Direction",         "direction",      "Z"),
+    ("LoadType",          "load_type",      "Force"),
+    ("RelativeMode",      "relative_mode",  "Explicit"),
+)
+
+# Relative mode 별 직렬화 함수 레지스트리 (decorator로 등록)
+_VIB_SERIALIZERS = {}
+
+
+def _register_vib_serializer(relative_mode: str):
+    """relative_mode → 직렬화 함수 등록 데코레이터.
+
+    각 직렬화 함수 시그니처: (load_curve, part_factors, part_list, reference_part) -> str
+    반환: 블록 내부에 삽입할 sub-block 문자열 (앞쪽 개행 포함, 끝 개행 없음).
+    """
+    def _decorator(fn):
+        _VIB_SERIALIZERS[relative_mode] = fn
+        return fn
+    return _decorator
+
+
+def _format_load_curve_block(load_curve: list) -> str:
+    """LoadCurve sub-block 직렬화.
+
+    포맷:
+        LoadCurve
+        <t1>,<v1>
+        <t2>,<v2>
+        ...
+        EndLoadCurve
+    """
+    open_kw = _VIB_KEYWORDS["sub_load_curve"]
+    close_kw = "End" + open_kw
+    lines = [open_kw]
+    for t, v in load_curve:
+        lines.append(f"{t},{v}")
+    lines.append(close_kw)
+    return "\n".join(lines)
+
+
+@_register_vib_serializer("Explicit")
+def _serialize_explicit(load_curve, part_factors, part_list, reference_part) -> str:
+    """Explicit relative_mode: LoadCurve + PartFactors 직렬화 (P1 범위).
+
+    파트별 가중치를 사용자가 직접 명시 — sim_params에서 (pid, factor) 튜플 리스트로 받음.
+    """
+    if not load_curve:
+        raise ValueError("VibrationLoad/Explicit: load_curve가 비어 있습니다.")
+    if not part_factors:
+        raise ValueError("VibrationLoad/Explicit: part_factors가 비어 있습니다.")
+
+    block = "\n" + _format_load_curve_block(load_curve)
+
+    pf_open = _VIB_KEYWORDS["sub_part_factors"]
+    pf_close = "End" + pf_open
+    block += "\n" + pf_open
+    for pid, factor in part_factors:
+        block += f"\n{pid},{factor}"
+    block += "\n" + pf_close
+    return block
+
+
+# TODO(P2): per_cap_factors 직렬화 — Cap 단위 자동 가중치 계산
+# @_register_vib_serializer("PerCap")
+# def _serialize_per_cap(...): ...
+
+# TODO(P2): circuit_group_factors 직렬화 — Circuit Group 단위 가중치
+# @_register_vib_serializer("CircuitGroup")
+# def _serialize_circuit_group(...): ...
+
+# TODO(P2): VolumeProportional 직렬화 — PartList + reference_part 기반 부피 비례
+# @_register_vib_serializer("VolumeProportional")
+# def _serialize_volume_proportional(...): ...
+
+
+def build_vibration_load_config(
+    model_file: str,
+    output_dir: str,
+    project: str,
+    doe_index: int,
+    step_num: int,
+    condition: str,
+    direction: str,
+    load_type: str,
+    relative_mode: str,
+    load_curve: list,
+    part_factors: list = None,
+    part_list: list = None,
+    reference_part: int = None,
+    run_directory_mode: bool = True,
+    preserve_includes: list = None,
+) -> str:
+    """VIBRATION_LOAD step_config 내용 생성 (build_drop_attitude_config와 대칭).
+
+    Args:
+        model_file: 입력 모델 파일 경로
+        output_dir: 출력 디렉토리
+        project: 프로젝트 이름
+        doe_index: DOE 번호
+        step_num: Step 번호
+        condition: 조건 문자열 (Description에 사용)
+        direction: 가진 방향 "X" | "Y" | "Z"
+        load_type: "Force" | "Acceleration"
+        relative_mode: "Explicit" | "VolumeProportional" | "PerCap" | "CircuitGroup"
+            (P1에서는 "Explicit"만 구현, 나머지는 P2 — 미등록 모드 호출 시 ValueError)
+        load_curve: [(time, value), ...] — Load curve 데이터 (필수)
+        part_factors: [(pid, factor), ...] — Explicit mode 전용 (P1)
+        part_list: [pid, ...] — VolumeProportional mode 전용 (P2 예정)
+        reference_part: int — VolumeProportional mode 전용 (P2 예정)
+        run_directory_mode: RunDirectoryMode 활성화 여부
+        preserve_includes: 보존할 include 패턴 리스트 (옵션)
+
+    Returns:
+        step_config 파일 내용 문자열
+
+    Raises:
+        ValueError: 등록되지 않은 relative_mode이거나 필수 데이터 누락 시.
+
+    Note:
+        - 헤더 부분(`*Inputfile`/`*RunDirectoryMode`/`*Info`/`*Description`/`*Creator`/
+          `*PreserveIncludes`)는 build_drop_attitude_config와 동일 패턴.
+        - 블록 내부는 `Key,Value` 라인 + sub-block(`LoadCurve...EndLoadCurve` 등).
+        - 검증(Direction이 X/Y/Z인지, load_type이 Force/Acceleration인지 등)은
+          호출자(scenario validator) 책임 — 본 함수는 직렬화만 담당.
+    """
+    # Relative mode 직렬화 함수 lookup (Registry 패턴)
+    if relative_mode not in _VIB_SERIALIZERS:
+        registered = sorted(_VIB_SERIALIZERS.keys())
+        raise ValueError(
+            f"VibrationLoad: 지원하지 않는 relative_mode='{relative_mode}'. "
+            f"등록된 모드: {registered} (P2에서 추가 예정: PerCap, CircuitGroup, VolumeProportional)"
+        )
+
+    # 옵션 키 직렬화 (mapping table 기반)
+    # — _VIB_OPTION_KEYS에 선언된 키들을 인자값으로 치환하여 Key,Value 라인 생성
+    _arg_values = {
+        "direction": direction,
+        "load_type": load_type,
+        "relative_mode": relative_mode,
+    }
+    option_lines = []
+    for config_key, arg_name, default in _VIB_OPTION_KEYS:
+        value = _arg_values.get(arg_name, default)
+        if value is None:
+            value = default
+        option_lines.append(f"{config_key},{value}")
+    options_block = "\n".join(option_lines)
+
+    # Relative mode 별 sub-block 직렬화 (LoadCurve + PartFactors/PartList 등)
+    serializer = _VIB_SERIALIZERS[relative_mode]
+    sub_block = serializer(load_curve, part_factors, part_list, reference_part)
+
+    # RunDirectoryMode (build_drop_attitude_config와 동일 패턴)
+    if run_directory_mode:
+        run_dir_line = f"*RunDirectoryMode,True,{output_dir}"
+    else:
+        run_dir_line = "*RunDirectoryMode,False"
+
+    # PreserveIncludes 블록 (build_drop_attitude_config와 동일 패턴)
+    preserve_block = ""
+    if preserve_includes:
+        preserve_lines = "\n".join(p for p in preserve_includes if p)
+        if preserve_lines:
+            preserve_block = f"*PreserveIncludes\n{preserve_lines}\n"
+
+    # Mode 이름 카탈로그에서 가져오기 (단일 사실원천)
+    mode_name = _VIB_KEYWORDS["mode_name"]
+    block_open = _VIB_KEYWORDS["block_open"]
+    block_close = _VIB_KEYWORDS["block_close"]
+
+    config_content = f"""*Inputfile
+{model_file}
+{run_dir_line}
+*Info,{project},Step{step_num}
+*Description,DOE{doe_index:03d} Step{step_num} VIBRATION_LOAD {condition}
+*Creator,automation,auto@system.com,CAE,AUTO
+{preserve_block}*Mode
+{mode_name},1
+**{block_open},1
+{options_block}{sub_block}
+**{block_close}
+*End
+"""
+    return config_content
+
+
 def build_dynain_to_initial_config(
     model_file: str,
     dynain_path: str,
@@ -208,3 +425,8 @@ def build_dynain_to_initial_config(
     lines.append("**EndDynainToInitial")
     lines.append("*End")
     return "\n".join(lines) + "\n"
+
+
+# zero-hardcode 표준 명명 alias (DESIGN.md 채택안 B)
+# 호출처는 build_vibration_load_config를 사용해도 되고 build_vibration_load_block을 사용해도 됨.
+build_vibration_load_block = build_vibration_load_config
