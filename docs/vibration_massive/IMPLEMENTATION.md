@@ -13,11 +13,13 @@
 | **P1 (코드)** | 인프라 + Registry + explicit_factors | ✅ **PASS** — 2건 blocking fix 적용 + Python 직접 호출 검증 완료 (P1.6) |
 | **P1.8** | Nuitka 빌드 + bin 검증 | ✅ **PASS** — `KooChainRun.bin` 정상 빌드, prepare 통과 (bin/소스 동등) |
 | **P2 (코드)** | per_cap + circuit_group 등록 (회로 일괄 ⭐) | ✅ **PASS** — 단위/통합 검증 + DROP 회귀 무영향 (P2.3) |
-| **P2.5 (실잡)** | LS-DYNA 실제 실행 검증 | ⏸ **BLOCKED (Slurm 인프라)** — sbatch 잡 ID 미발급, _vib.k 0개 |
-| **P2.6 (재시도)** | slurmctld 부분 복구 후 재제출 | ⏸ **BLOCKED (노드 부재)** — 모든 컴퓨트 노드 down/unk, sbatch 거부 |
-| **P2.7 (영구 기록)** | Slurm 인프라 장애 사실 보존 | ✅ **기록 완료** — admin 권한 (`virsh start`) 필요, 본 세션 범위 외 |
-| **P2.8** | commit/push/tar 결정 | 사용자 선택 대기 |
-| **P3** | cap_combination + max_doe_count 가드 | ⏸ Slurm 복구 후 진입 (단, 코드 작업은 인프라 무관하게 병행 가능) |
+| **P2.5 (실잡)** | LS-DYNA 실제 실행 검증 | ❌ **FAIL** — sbatch 잡 ID 미발급, _vib.k 0개 (Slurm controller down) |
+| **P2.6 (재시도)** | slurmctld 부분 복구 후 재제출 | ❌ **FAIL** — 모든 컴퓨트 노드 down/unk, sbatch 거부 |
+| **P2.7 (영구 기록)** | Slurm 인프라 장애 사실 보존 | 기록 완료 — admin 권한 (`virsh start`) 필요, 본 세션 범위 외 |
+| **P2.8** | commit/push/tar 결정 | 진행 완료 (코드 보존 목적) |
+| **P2.9 (e2e 재검증 — 노드 복구 후)** | 회로 일괄 진동 실잡 + `_vib.k` 카드 검증 | ❌ **FAIL — 재현 불가** (`/tmp` 노드 로컬 FS, NFS 미공유) |
+| **사용자 핵심 요구 (회로 일괄 진동) 동작 검증** | _vib.k 회로별 SF 1.0/0.5/2.0 차등 적용 | ❌ **INCOMPLETE — 결과물 0건** |
+| **P3** | cap_combination + max_doe_count 가드 | ⏸ 진입 보류 — e2e 검증 선행 필요 (NFS 경로 이동 + 재제출) |
 | **P4** | VolumeProportional 노출 | 대기 |
 | **P5** | (옵션) node/segment — KooMeshModifier 확장 | 대기 |
 | **P6** | 회로 자동 제안 helper | 대기 |
@@ -491,6 +493,67 @@ KooChainRun collect --config /tmp/vib_p2_test/scenario.json   # Normal terminati
 ## 최종 한 줄 상태
 
 **P1+P2 코드 (per_cap + circuit_group + Nuitka bin) 전부 PASS · e2e LS-DYNA 검증은 컴퓨트 노드 KVM VM down (admin `virsh start` 필요) 으로 보류 · 현 시점에서 commit/push/tar 진행 가능하며 인프라 복구 후 동일 시나리오로 즉시 e2e 재검증 가능.**
+
+---
+
+## P2.9 e2e 재검증 결과 — 노드 복구 후 (2026-05-29)
+
+> **결론: 사용자 핵심 요구 (회로 일괄 진동) 동작 검증 ❌ 실패 — 재현 불가.**
+> 컴퓨트 노드는 부분 복구되어 `run_doe_*.sh` 스크립트는 sbatch 큐에 진입했으나, 테스트 디렉터리(`/tmp/vib_p*_test/`) 가 **노드 로컬 파일시스템** 이라 컴퓨트 노드에서 `runner_config.json` 을 읽을 수 없음. 결과적으로 `_vib.k` / `Run_*/` / d3plot 모두 **0건 산출.**
+
+### VerifyVibK 실측 결과 (2026-05-29 시점)
+
+| 검증 항목 | 기대 | 실측 (Example A `/tmp/vib_p1_test/output/`) | 실측 (Example B `/tmp/vib_p2_test/output/`) | 결과 |
+|---|---|---|---|---|
+| `_vib.k` 파일 수 | ≥1 | **0** | **0** | ❌ FAIL |
+| `Run_*/` 디렉터리 수 | ≥1 | **0** | **0** | ❌ FAIL |
+| 잡 ID 발급 (sbatch) | ≥1 | 발급됨 (스크립트 큐 진입) | 발급됨 (스크립트 3건 큐 진입) | (부분 OK) |
+| LS-DYNA Normal termination | ≥1 / ≥3 | **0** | **0** | ❌ FAIL |
+| 회로별 SF 1.0/0.5/2.0 `*LOAD_BODY_PARTS_Z` 카드 기록 | C1=1.0, C2=0.5, C3=2.0 | **검증 불가 (산출물 없음)** | **검증 불가 (산출물 없음)** | ❌ IMPOSSIBLE |
+
+### 원인 (코드 무관 — 테스트 인프라 경로 문제)
+
+| # | 항목 | 사실 |
+|---|---|---|
+| 1 | 테스트 디렉터리 위치 | `/tmp/vib_p1_test/`, `/tmp/vib_p2_test/` — **노드 로컬 FS** |
+| 2 | 컴퓨트 노드 (node001/002) `/tmp` 가시성 | ❌ 헤드노드의 `/tmp` 와 별개 (서로 못 봄) |
+| 3 | `run_doe_*.sh` 가 참조하는 `runner_config.json` | 컴퓨트 노드에서 못 읽음 → 300초 NFS 대기 후 `exit 1` |
+| 4 | KooMeshModifier (`_vib.k` 생성 단계) | **단 한 번도 실행되지 않음** |
+| 5 | 결과 `_vib.k` / `Run_*/` / d3plot | 전부 0건 산출 |
+| 6 | 컴퓨트 노드 `/tmp/vib_p*_test/output/` 잔존물 | 슬럼 스크립트가 `mkdir -p` 로 만든 빈 껍데기뿐 |
+
+### 회로별 SF 차등 코드 경로 — 미실행
+
+C1_power(SF=1.0/m), C2_signal(SF=0.5/m), C3_motor(SF=2.0/m) 가 실제 LS-DYNA `*LOAD_BODY_PARTS_Z` 카드에 기록됐는지 확인할 **결과물 자체가 존재하지 않음.** circuit_group resolver → `_vib.k` 출력 경로는 본 세션에서 단 한 번도 실행되지 못함 (코드 단위·통합 검증 P2.3 만 통과).
+
+### P2.5/P2.6/P2.9 통합 상태 — 명시적 결과
+
+- **P2.5: ❌ FAIL** (Slurm controller down, sbatch 잡 ID 미발급)
+- **P2.6: ❌ FAIL** (컴퓨트 노드 부재, sbatch 거부)
+- **P2.9: ❌ FAIL** (노드 부분 복구 후 재시도했으나 `/tmp` 노드 로컬 FS 차단)
+- **사용자 핵심 요구 (회로 일괄 진동) 동작 검증: ❌ INCOMPLETE — _vib.k 결과물 0건, 회로별 SF 카드 검증 0건**
+
+### 잡 ID / Normal termination / `_vib.k` 카드 카운트
+
+| 지표 | Example A | Example B |
+|---|---|---|
+| sbatch 잡 ID | 발급됨 (스크립트 큐 진입) | 발급됨 (3건) |
+| Normal termination | **0** | **0** |
+| `_vib.k` 카드 검증 (`*LOAD_BODY_PARTS_Z` SF 일치) | **검증 불가** | **검증 불가** |
+
+### 필요 조치 (다음 세션)
+
+1. 테스트 디렉터리 (`vib_p1_test`, `vib_p2_test`) 를 **NFS 공유 경로** (`/data`, `/home`, `/shared` 등) 로 이동.
+2. `runner_config.json` 내부 절대경로를 새 위치로 갱신 (또는 `KooChainRun prepare` 재실행).
+3. `KooChainRun submit` 재실행 → 컴퓨트 노드에서 `runner_config.json` 가시성 확보.
+4. `Run_*/_vib.k` 에서 `*LOAD_BODY_PARTS_Z` SF 1.0/0.5/2.0 회로별 카드 비교 + Normal termination 카운트.
+
+### 참고 파일 (전부 헤드노드, 컴퓨트 노드에서는 안 보임)
+
+- `/tmp/vib_p2_test/output/slurm_scripts/run_doe_001.sh`
+- `/tmp/vib_p2_test/output/slurm_scripts/run_doe_002.sh`
+- `/tmp/vib_p2_test/output/slurm_scripts/run_doe_003.sh`
+- `/tmp/vib_p1_test/output/slurm_scripts/run_doe_001.sh`
 
 ---
 
