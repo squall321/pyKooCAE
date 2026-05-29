@@ -4,6 +4,36 @@
 
 ---
 
+## ⚠️ 0. 사전 요구사항 — `base_dir` 은 반드시 NFS 공유 경로
+
+KooChainRun 잡은 **헤드노드 + 컴퓨트 노드 양쪽에서 동일 경로**로 `runner_config.json`, 입력 `.k`, slurm 스크립트를 읽어야 한다. 따라서 시나리오의 `base_dir` / `output_dir` 은 **반드시 NFS로 공유된 경로**에 두어야 한다.
+
+**허용되는 위치 (NFS 공유):**
+- `/data/...` (cluster shared)
+- `/home/...` (NFS home)
+- `/shared/...` 또는 사이트별 공유 마운트
+
+**금지 (노드 로컬 FS — sbatch 잡은 컴퓨트 노드에서 절대 못 읽음):**
+
+```
+❌ /tmp/...                # 노드 로컬, 헤드노드 /tmp 와 컴퓨트 노드 /tmp 는 별개
+❌ /var/tmp/...            # 동일
+❌ $TMPDIR (slurm 외부)    # 컴퓨트 노드 입장에서 미정의
+```
+
+`/tmp` 에 시나리오를 두면 P2.9 와 같이 sbatch 는 통과해도 컴퓨트 노드에서 `runner_config.json` 을 못 찾아 300초 NFS 대기 후 `exit 1` 로 끝난다. **`Run_*/` 폴더 0개, `_vib.k` 0건, d3plot 0건**이 결과로 남는다.
+
+**검증 명령 (사용 전 확인):**
+```bash
+# 잡 제출 노드에서
+ls -la $YOUR_BASE_DIR/runner_config.json    # 헤드노드 read OK 확인
+# 컴퓨트 노드 측에서 (가능하다면)
+ssh node001 'ls -la $YOUR_BASE_DIR/runner_config.json'
+# 동일 inode/mtime 보이면 NFS OK
+```
+
+---
+
 ## 1. 시나리오 A — 캡 1개 진동 (최소 단위, P1 검증용)
 
 **목적:** Registry + StepConfigBuilder 인프라가 단일 DOE 1 step에서 LS-DYNA error 0으로 통과하는지 확인. P1 phase의 골든 케이스.

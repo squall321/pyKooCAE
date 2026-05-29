@@ -18,8 +18,9 @@
 | **P2.7 (영구 기록)** | Slurm 인프라 장애 사실 보존 | 기록 완료 — admin 권한 (`virsh start`) 필요, 본 세션 범위 외 |
 | **P2.8** | commit/push/tar 결정 | 진행 완료 (코드 보존 목적) |
 | **P2.9 (e2e 재검증 — 노드 복구 후)** | 회로 일괄 진동 실잡 + `_vib.k` 카드 검증 | ❌ **FAIL — 재현 불가** (`/tmp` 노드 로컬 FS, NFS 미공유) |
-| **사용자 핵심 요구 (회로 일괄 진동) 동작 검증** | _vib.k 회로별 SF 1.0/0.5/2.0 차등 적용 | ❌ **INCOMPLETE — 결과물 0건** |
-| **P3** | cap_combination + max_doe_count 가드 | ⏸ 진입 보류 — e2e 검증 선행 필요 (NFS 경로 이동 + 재제출) |
+| **P2.10 (NFS 경로 e2e 재검증)** | `/data/koopark/Test_VibP{1,2}/` NFS 이동 후 실잡 재제출 | ❌ **FAIL — 코드 결함 노출** (Slurm 정상, sbatch OK, 컴퓨트 노드 실행됨 → `StepConfigBuilder._serialize_explicit`에서 `load_curve가 비어 있습니다` 예외, 4잡 모두 ExitCode 1) |
+| **사용자 핵심 요구 (회로 일괄 진동) 동작 검증** | _vib.k 회로별 SF 1.0/0.5/2.0 차등 적용 | ❌ **INCOMPLETE — `_vib.k` 0건 산출, base_curve→VibrationLoadSpec 전달 누락 버그 (P2.10에서 발견)** |
+| **P3** | cap_combination + max_doe_count 가드 | ⏸ 진입 보류 — **선행 fix 필요**: VibrationSource resolver(특히 `explicit_factors` / `circuit_group`)의 `base_curve` 평탄화 → `VibrationLoadSpec.load_curve` 주입 경로 점검 |
 | **P4** | VolumeProportional 노출 | 대기 |
 | **P5** | (옵션) node/segment — KooMeshModifier 확장 | 대기 |
 | **P6** | 회로 자동 제안 helper | 대기 |
@@ -557,9 +558,76 @@ C1_power(SF=1.0/m), C2_signal(SF=0.5/m), C3_motor(SF=2.0/m) 가 실제 LS-DYNA `
 
 ---
 
+## P2.10 NFS 경로 e2e 재검증 결과 (2026-05-29)
+
+> **결론: 사용자 핵심 요구 (회로 일괄 진동) 동작 검증 ❌ FAIL — P2.9 의 `/tmp` 가시성 문제는 NFS 이동으로 해소되었으나, 컴퓨트 노드에서 새로운 코드 결함이 노출됨.**
+> 이번엔 인프라(Slurm controller, 노드 가시성, sbatch) 전부 정상 동작했고 KooChainRun 런타임이 컴퓨트 노드에서 진입했으나, **`StepConfigBuilder._serialize_explicit`에서 `load_curve` 가 비어 있어 예외 발생.**
+
+### 잡 ID / Normal termination / `_vib.k` 카운트
+
+| 지표 | Test_VibP1 (`explicit_factors`) | Test_VibP2 (`circuit_group` ⭐) |
+|---|---|---|
+| 테스트 디렉터리 (NFS) | `/data/koopark/Test_VibP1/` | `/data/koopark/Test_VibP2/` |
+| sbatch 잡 ID | 207 | 208, 209, 210 |
+| sacct State | FAILED (ExitCode 1:0) | 3건 모두 FAILED (ExitCode 1:0) |
+| Normal termination | **0** | **0** |
+| `Run_*/` 디렉터리 | **0** | **0** |
+| `_vib.k` 파일 | **0** | **0** |
+| 회로별 SF 차등 적용 검증 (C1=1.0, C2=0.5, C3=2.0) | (해당 없음) | **검증 불가 — 산출물 0건** |
+
+### 컴퓨트 노드 실측 traceback (4잡 모두 동일 패턴)
+
+```
+File "Runner/CumulativeScenarioRunner.py", line 1299, in _create_step_config
+File "Runner/StepConfigBuilder.py", line 357, in build_vibration_load_config
+File "Runner/StepConfigBuilder.py", line 254, in _serialize_explicit
+ValueError: VibrationLoad/Explicit: load_curve가 비어 있습니다.
+```
+
+- P1 (`explicit_factors`) + P2 (`circuit_group`) 두 resolver **모두 동일 지점**에서 실패 → resolver 별 버그가 아니라 **공통 base_curve 평탄화 경로의 누락**.
+
+### 원인 분석 (코드 결함 — P1.6/P2.3 단위 테스트 빈틈)
+
+| # | 항목 | 사실 |
+|---|---|---|
+| 1 | Slurm controller | ✅ 응답 OK (sinfo / squeue 정상) |
+| 2 | 컴퓨트 노드 (node002) | ✅ idle → 잡 할당 정상 |
+| 3 | sbatch 잡 ID 발급 | ✅ 207, 208, 209, 210 발급 |
+| 4 | NFS 가시성 | ✅ `runner_config.json` 컴퓨트 노드에서 정상 read |
+| 5 | KooChainRun 런타임 진입 | ✅ DOE 1/N 처리 시작 메시지까지 도달 |
+| 6 | **`base_curve` 블록 → `VibrationLoadSpec.load_curve` 주입** | ❌ **누락** — runner_config.json 의 base_curve 가 `_create_step_config` 단계에서 평탄화되지 않은 채 빈 list 로 전달됨 |
+| 7 | `_serialize_explicit` 빈 list 가드 | ✅ 정상 — 빈 입력에 대해 명시적 `ValueError` 발생 (silent failure 아님, 가시성 OK) |
+
+### P1.2/P2.2 단위 테스트가 본 버그를 잡지 못한 이유
+
+- P1.2/P2.2 는 `parse_vibration_source` 까지만 호출했고, **`runner_config.json` 직렬화 → 컴퓨트 노드 재로드 → `_create_step_config` 경로**는 호출하지 않음.
+- prepare 단계는 `runner_config.json` 생성까지만 책임. `base_curve` 평탄화는 **run 시점**에 일어나야 하는데 그 경로가 누락.
+- → P3 진입 전 **`Runner/CumulativeScenarioRunner._create_step_config` 의 vibration_source dispatch 에서 base_curve 평탄화 호출** 추가 필요.
+
+### 필요 fix (P2.11 또는 P3 직전)
+
+1. `parse_vibration_source` 산출물에 평탄화된 `load_curve: list[(t,v)]` 가 항상 포함되도록 보장.
+2. `CumulativeScenarioRunner._create_step_config` 가 runner_config.json 에서 `base_curve` 블록을 다시 읽어 `VibrationLoadSpec(load_curve=...)` 생성 시 주입.
+3. 단위 테스트 추가: `_create_step_config(runner_config, doe_idx=0)` 직접 호출 → `step_config.vibration_load.load_curve` 가 비어 있지 않음을 확인 (3 resolver 모두).
+4. Fix 적용 후 `/data/koopark/Test_VibP{1,2}` 재제출 → Normal termination + `_vib.k` 카드 검증 + 회로별 SF 1.0/0.5/2.0 차등 확인.
+
+### 진척 사항 (P2.9 → P2.10 비교)
+
+| 항목 | P2.9 (`/tmp`) | P2.10 (NFS) |
+|---|---|---|
+| `runner_config.json` 컴퓨트 가시성 | ❌ | ✅ |
+| KooChainRun 런타임 진입 | ❌ | ✅ |
+| `_create_step_config` 호출 | ❌ | ✅ (여기서 실패) |
+| `_vib.k` 산출 | 0 | 0 |
+| 차단 원인 | 인프라 (FS) | **코드 (base_curve 미전달)** |
+
+→ **인프라 차단은 완전히 해소.** 남은 차단은 순수 코드 결함이며 위치/원인 모두 특정됨.
+
+---
+
 ## 메모
 
 - 각 코드 변경 후 `pytest -q` 확인
 - KooMeshModifier 변경 0 보장 (P1~P4)
 - 회귀 위험: elif 추가만, 기존 분기 무수정
-- 검증 한계: 본 P1/P2 코드 검증은 Python 직접 호출 + Nuitka bin prepare 단계까지. 실잡 (LS-DYNA Normal termination) 검증은 Slurm 복구 후 재시도 필수.
+- 검증 한계: 본 P1/P2 코드 검증은 Python 직접 호출 + Nuitka bin prepare 단계까지. 실잡 (LS-DYNA Normal termination) 검증은 P2.10 에서 시도했으나 base_curve 평탄화 누락으로 미달성.
