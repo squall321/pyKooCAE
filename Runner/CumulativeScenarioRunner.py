@@ -1277,11 +1277,24 @@ RampTime,600
             sim_params = self.config.get("simulation_params", {})
             vib_params = sim_params.get("vibration", {})
 
-            # params(step별) > vibration(전역 simulation_params) 순으로 lookup
-            # — step 단위 override가 가능하도록 params를 우선
+            # doe_vibrations 테이블에서 DOE/step별 entry lookup
+            # — CumulativeDesigner.save_runner_config 가 vibration_source 파싱
+            #   결과(spec)를 평탄화하여 직렬화한 곳. doe_angles / doe_positions
+            #   와 동일한 1-based DOE key 컨벤션.
+            doe_vibrations = self.config.get("scenario", {}).get("doe_vibrations", {})
+            doe_vib_entry = {}
+            doe_key = str(doe_index)
+            step_key = str(step_num)
+            if doe_key in doe_vibrations and step_key in doe_vibrations[doe_key]:
+                doe_vib_entry = doe_vibrations[doe_key][step_key]
+
+            # params(step별) > doe_vibrations(DOE 카탈로그) > vibration(전역 simulation_params)
+            # 순으로 lookup — step 단위 override가 가능하도록 params를 최우선.
             def _vib_get(key, default=None):
                 if key in params:
                     return params[key]
+                if key in doe_vib_entry:
+                    return doe_vib_entry[key]
                 return vib_params.get(key, default)
 
             direction = _vib_get("direction", "Z")
@@ -1290,7 +1303,14 @@ RampTime,600
             load_curve = _vib_get("load_curve", [])
             # P1: explicit_factors — [(pid, factor), ...] 튜플 리스트 또는
             #     JSON 호환 [[pid, factor], ...] 리스트 모두 허용
+            # doe_vibrations 의 factors 는 {"<pid>": factor} 딕셔너리이므로
+            # builder 가 기대하는 [(pid, factor), ...] 형태로 정규화.
             part_factors = _vib_get("part_factors", None)
+            if part_factors is None:
+                factors_dict = doe_vib_entry.get("factors")
+                if factors_dict:
+                    part_factors = [(int(pid), float(factor))
+                                    for pid, factor in factors_dict.items()]
             # TODO(P2): part_list / reference_part 추출 (VolumeProportional 모드용)
             part_list = _vib_get("part_list", None)
             reference_part = _vib_get("reference_part", None)

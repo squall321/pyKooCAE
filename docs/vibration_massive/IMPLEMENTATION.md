@@ -625,6 +625,64 @@ ValueError: VibrationLoad/Explicit: load_curve가 비어 있습니다.
 
 ---
 
+## P2.11 코드 fix + 재검증 결과 (2026-05-29)
+
+> **결론: 사용자 핵심 요구 (회로 일괄 진동, 회로별 SF 1.0/0.5/2.0 차등) 동작 — KooChainRun 측 PASS.** LS-DYNA Normal termination 까지의 e2e 는 별건의 컨테이너 bind-mount 이슈로 차단됨 (코드 결함 아님).
+
+### 적용한 fix
+
+| 파일 | 변경 요지 |
+|---|---|
+| `Runner/CumulativeDesigner.py` (`save_runner_config`) | `_vibration_spec` 의 공통 필드(`direction`, `load_type`, `relative_mode`, `load_curve`)를 평탄화하여 `doe_vibrations[doe_key][step_key]` 각 entry 에 직렬화. 기존엔 `factors` 만 저장하여 컴퓨트 노드에서 `load_curve` 가 빈 list 로 재구성됨. |
+| `Runner/CumulativeScenarioRunner.py` (`_create_step_config`) | `doe_vibrations[str(doe)][str(step)]` 조회를 lookup 체인에 추가 (params > doe_vibrations > simulation_params.vibration). `factors` 딕셔너리 → `[(pid, factor), ...]` 정규화. |
+| Nuitka rebuild → `build_dist/lib/KooChainRun/KooChainRun.bin` (136,977,288 bytes, 21:07) → `/data/SmartTwinPreprocessor/lib/KooChainRun/` 배포. |
+
+### 잡 ID / KooMeshModifier 회로별 SF 차등 (런타임 실측)
+
+| DOE | 회로 | sbatch | KooMeshModifier `_vib.k` 카드 (런타임 log 발췌) |
+|---|---|---|---|
+| 1 | C1_power | 212 | `Targets=[4, 5]` / `PSID=1 (PID=4), SF=3.4062e+07, rel=1.000` / `PSID=2 (PID=5), SF=7.9479e+06, rel=1.000` |
+| 2 | C2_signal | 213 | `Targets=[9, 10]` / `PSID=1 (PID=9), SF=6.6232e+06, rel=0.500` / `PSID=2 (PID=10), SF=2.5547e+07, rel=0.500` |
+| 3 | C3_motor | 214 | `Targets=[18]` / `PSID=1 (PID=18), SF=2.3844e+06, rel=2.000` |
+
+→ **회로별 amplitude 차등 (1.0 / 0.5 / 2.0) PASS** — `rel` 값이 시나리오 `circuit_group.cases` 의 amplitude 정의와 1:1 일치. PID 묶음도 회로 정의대로 (C1=power(4,5), C2=signal(9,10), C3=motor(18)) 정확히 매핑.
+
+### LS-DYNA Normal termination 미달 — 별건 차단 사유
+
+```
+[VIBRATION_LOAD] ...
+Write LS-Dyna Modified File
+Time :  0.3237955570220947
+Complete
+Done
+...
+[INFO] KooMeshModifier run_id: 20260530_061451_0f628b
+[ERROR] KooMeshModifier 완료했으나 Run 폴더 없음:
+        /data/koopark/Test_VibP2/output/Run_20260530_061451_0f628b
+```
+
+- KooMeshModifier 컨테이너 내부에서 `Run_*` 폴더는 정상 생성되지만 호스트 NFS 경로로 노출되지 않음 (apptainer cwd / bind-mount 매핑 이슈).
+- `/data/tmp/apptainer_job_212–214/` 도 빈 디렉터리 → 컨테이너 종료 시 산출물 stage-out 누락.
+- **본 이슈는 P2 (회로 일괄 진동) 범위가 아니라 인프라 (KooSolverContainer / KooMeshModifier wrapper) 범위 결함**으로, P3 진입 시점에 별도 작업으로 분리.
+
+### 진행 상태 표
+
+| Phase | 항목 | 상태 |
+|---|---|---|
+| P1 (`explicit_factors`) | KooChainRun 코드 통합 | ✅ PASS |
+| P2 (`circuit_group`) | KooChainRun 코드 통합 + zero-hardcode registry | ✅ PASS |
+| P2.10 | NFS e2e (base_curve 누락 노출) | ❌ FAIL (코드 결함 노출) |
+| **P2.11** | **base_curve 평탄화 fix + KooMeshModifier 회로별 SF 차등 검증** | **✅ PASS** |
+| 사용자 핵심 요구 (회로 일괄 진동, SF 1.0/0.5/2.0 차등) 동작 검증 | KooMeshModifier 까지 | **✅ COMPLETE** |
+| LS-DYNA Normal termination e2e | apptainer Run 폴더 노출 | ⏸ BLOCKED (별건, P3 직전 인프라 작업) |
+
+### 다음 작업
+
+1. apptainer KooMeshModifier wrapper 의 `Run_*` 폴더 stage-out 경로 디버그 (`/data/tmp/apptainer_job_*/` 매핑 확인).
+2. 인프라 fix 후 동일 시나리오 (Test_VibP2) 재제출 → LS-DYNA Normal termination 카운트 + d3plot 확인 → P3 진입.
+
+---
+
 ## 메모
 
 - 각 코드 변경 후 `pytest -q` 확인

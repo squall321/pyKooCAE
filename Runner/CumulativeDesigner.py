@@ -703,6 +703,19 @@ class CumulativeDesigner:
         doe_vibrations = {}
         if hasattr(self, '_vibration_spec') and self._vibration_spec is not None:
             spec = self._vibration_spec
+            # spec 공통 필드 평탄화 — runner_config 에 직렬화하여 Runner 가
+            # spec 객체 없이도 build_vibration_load_config 호출에 필요한 모든
+            # 인자를 복원할 수 있도록 함. (load_curve/direction/load_type/
+            # relative_mode 누락 시 StepConfigBuilder._serialize_explicit
+            # 가 "load_curve가 비어 있습니다." 로 raise 했던 회귀 결함 fix)
+            load_curve_serialized = [[float(t), float(v)]
+                                     for t, v in spec.load_curve]
+            common_fields = {
+                "direction": spec.direction,
+                "load_type": spec.load_type,
+                "relative_mode": spec.relative_mode,
+                "load_curve": load_curve_serialized,
+            }
             for case_idx, (case_name, case_part_factors) in enumerate(spec.doe_factors_list):
                 doe_key = str(case_idx + 1)  # 1-based
                 # part_factors → {"<pid>": factor} 딕셔너리 (JSON-friendly)
@@ -713,7 +726,8 @@ class CumulativeDesigner:
                 doe_vibrations[doe_key] = {
                     "1": {
                         "case_name": case_name,
-                        "factors": factors_dict
+                        "factors": factors_dict,
+                        **common_fields,
                     }
                 }
                 # 누적 step이 있으면 모든 step에 같은 케이스 할당
@@ -723,7 +737,8 @@ class CumulativeDesigner:
                             step_key = str(step.step_number)
                             doe_vibrations[doe_key][step_key] = {
                                 "case_name": case_name,
-                                "factors": factors_dict
+                                "factors": factors_dict,
+                                **common_fields,
                             }
 
         data = {
