@@ -4965,10 +4965,57 @@ class KooDynaAdvancedModification:
         from KooCAEManager.KooImportMerger import import_merge_k
         import_merge_k(simGenerator, option)
 
-    def VibrationLoad(self, option):
-        """다중 파트 동기화 진동 하중 (DEFINE_CURVE + LOAD_BODY_PARTS_<dir> 생성)."""
+    def VibrationLoad(self, option, filePath):
+        """다중 파트 동기화 진동 하중 (DEFINE_CURVE + LOAD_BODY_PARTS_<dir> 생성).
+
+        DropAttitude 패턴 답습 — runDirectoryMode 일 때 Run_<id>/ 폴더 + Output/ + .done 생성.
+        KooMeshModifier 측 공용 폴백을 우회하기 위해 본 메서드가 직접 write 수행.
+        """
+        # ① 진동 카드 적용 (메모리 모델 수정)
         from KooCAEManager.KooVibrationLoad import apply_vibration_load
         apply_vibration_load(self.dynaImporter, option)
+
+        # ② RunDirectoryMode 처리 (DropAttitude line 2976~3056 답습)
+        fileName = os.path.basename(filePath)
+        if not fileName.endswith(".k"):
+            fileName = fileName + ".k"
+
+        if self.runDirectoryMode == True:
+            run_id = self.dynaImporter.GenerateRunID()
+            if len(self.runDirectoryPath) == 0:
+                modifiedKeyword = os.path.join(filePath.replace(".k", ""), "Run_" + run_id)
+            else:
+                if self.runDirectoryPath[0] == "/":
+                    modifiedKeyword = os.path.join(self.runDirectoryPath, "Run_" + run_id)
+                elif len(self.metaDirectoryPath) > 0 and self.metaDirectoryPath[0] == "/":
+                    modifiedKeyword = self.metaDirectoryPath
+                else:
+                    path = os.getcwd()
+                    modifiedKeyword = os.path.join(path, self.runDirectoryPath, "Run_" + run_id)
+
+            folderPath = modifiedKeyword
+            if not os.path.exists(folderPath):
+                os.makedirs(folderPath)
+            outputFolderPath = os.path.join(folderPath, "Output")
+            if not os.path.exists(outputFolderPath):
+                os.makedirs(outputFolderPath)
+
+            if len(self.runDirectoryPath) == 0:
+                modifiedKeyword = os.path.join(modifiedKeyword, fileName)
+            else:
+                modifiedKeyword = os.path.join(modifiedKeyword, "VibrationSet")
+            modifiedKeyword = modifiedKeyword.strip()
+            self.WriteModifiedFile(modifiedKeyword, "", True)
+
+            # DOE 완료 표시 파일 생성 (KooChainRun polling용)
+            done_file = os.path.join(folderPath, ".done")
+            with open(done_file, "w") as df:
+                df.write("done")
+
+            print("VibrationLoad Run_" + run_id + " is Created")
+        else:
+            # runDirectoryMode 비활성: 입력 파일 옆에 _vib.k (standalone 호환)
+            self.WriteModifiedFile(filePath, "_vib", False)
 
     def PartValidationSplit(self, option, output_dir):
         """파트별 낙하 검증용 분할."""

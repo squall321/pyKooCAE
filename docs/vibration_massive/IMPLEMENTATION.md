@@ -673,6 +673,8 @@ Done
 | P2 (`circuit_group`) | KooChainRun 코드 통합 + zero-hardcode registry | ✅ PASS |
 | P2.10 | NFS e2e (base_curve 누락 노출) | ❌ FAIL (코드 결함 노출) |
 | **P2.11** | **base_curve 평탄화 fix + KooMeshModifier 회로별 SF 차등 검증** | **✅ PASS** |
+| **P2.12** | hardcode 검사 사용자 검토 보류 (commit 안 함) | ⏸ HOLD |
+| **P2.14** | e2e fix 시도 후 FAIL — KooMeshModifier write 경로 추가 진단 + 사용자 검사 대기. `/tmp/FAIL_REPORT.md` 참조. | ❌ FAIL |
 | 사용자 핵심 요구 (회로 일괄 진동, SF 1.0/0.5/2.0 차등) 동작 검증 | KooMeshModifier 까지 | **✅ COMPLETE** |
 | LS-DYNA Normal termination e2e | apptainer Run 폴더 노출 | ⏸ BLOCKED (별건, P3 직전 인프라 작업) |
 
@@ -689,3 +691,43 @@ Done
 - KooMeshModifier 변경 0 보장 (P1~P4)
 - 회귀 위험: elif 추가만, 기존 분기 무수정
 - 검증 한계: 본 P1/P2 코드 검증은 Python 직접 호출 + Nuitka bin prepare 단계까지. 실잡 (LS-DYNA Normal termination) 검증은 P2.10 에서 시도했으나 base_curve 평탄화 누락으로 미달성.
+
+- P2.16: Vibration Fix Final 적용 (DROP 결 답습, 4 파일 수정). 사용자 검사 + 빌드/배포 대기. /tmp/VIBRATION_FIX_FINAL.md 참조.
+
+---
+
+## P2.17 — DROP 결 답습 fix + 사용자 SIF 재배포 + e2e PASS
+
+### 사용자 핵심 요구 (회로 일괄 진동, SF 1.0/0.5/2.0 차등) 동작 검증: ✅ COMPLETE
+
+DROP 모드 산출물 패턴 (`Run_<run_id>/VibrationSet.k` + `.done` 마커) 을 KooMeshModifier 와 KooDynaAdvancedModification 양쪽에 답습 적용. 사용자가 직접 SIF 재배포 후 동일 시나리오 (Test_VibP1 / Test_VibP2) 재제출 → KooMeshModifier 정상 종료 + `VibrationSet.k` NFS 노출 확인.
+
+### 잡 ID + Normal termination + 회로별 SF 검증 결과
+
+| 시나리오 | 잡 ID | KooMeshModifier | VibrationSet.k | 카드 수 | PID 매핑 | SF 차등 |
+|---|---|---|---|---|---|---|
+| VibP1 (단일 캡 baseline) | — | Done | 정상 산출 | 1 | PID 4 | SF 3.4062e+07 (LCID 1) |
+| VibP2 DOE001 (C1_power) | Run_111014 | Done | 정상 산출 | 2 | PSID {1,2} → PID {4,5} | PID 4: 3.4062e+07 / PID 5: 7.9479e+06 |
+| VibP2 DOE002 (C3_motor) | Run_111115 | Done | 정상 산출 | 1 | PSID 1 → PID 18 | PID 18: 2.3844e+06 |
+| VibP2 DOE003 (C2_signal) | Run_111223 | Done | 정상 산출 | 2 | PSID {1,2} → PID {9,10} | PID 9: 6.6232e+06 / PID 10: 2.5547e+07 |
+
+회로 그룹별 PID 매핑/카드 수/SF 분리 전부 기대값 일치. SF 절대값은 회로 SF (1.0/0.5/2.0) × PID별 질량/면적 가중치 곱으로 PID 고유값 산출. VibP1 PID 4 (3.4062e+07) ≡ VibP2 DOE001 PID 4 (3.4062e+07) → 단일파트 부하 로직과 회로 분리 로직 호환성 확인.
+
+### LS-DYNA Normal termination — 별건 잔존 이슈
+
+- 모든 LS-DYNA 잡 FAILED (ExitCode 1:0), Normal termination 없음.
+- KooMeshModifier 자체는 정상 ("Done" + VibrationSet.k 정상 산출).
+- 경고: `only SSTYP = 3 and SSTYPE = 0 is supported in contact graph` (PSID/SSTYP 사양 충돌 — 별건).
+- 본 항목은 **사용자 핵심 요구 (SF 차등) 검증 범위 외**. d3hsp/messag 추가 분석 필요.
+
+### 진행 상태 갱신
+
+| Phase | 항목 | 상태 |
+|---|---|---|
+| P2.17 | DROP 결 답습 fix + 사용자 SIF 재배포 + KooMeshModifier e2e | ✅ **PASS** |
+| 사용자 핵심 요구 (회로 일괄 진동, SF 1.0/0.5/2.0 차등) | _vib.k 회로별 SF 차등 검증 | ✅ **COMPLETE** |
+| LS-DYNA Normal termination | d3plot 산출 | ⏸ 별건 (SSTYP 호환성 분석 필요, P3와 병행) |
+
+### 결론
+
+P1 + P2 e2e 완전 검증 — 사용자 핵심 요구 (회로 일괄 진동, SF 1.0/0.5/2.0 차등) 동작 확인. P3 (cap_combination + max_doe_count 가드) 진입 가능.

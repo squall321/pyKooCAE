@@ -2361,8 +2361,10 @@ class KooMeshModifier(KooSimulationGenerator):
         self.advancedModification.ImportMergeK(curOption, self)
 
     def GenerateVibrationLoad(self, modeid):
+        filePath = os.path.join(self.curDir, self.inputFileName)
+        filePath = filePath.replace(".k", "")
         curOption = self.modeIDOption[modeid]
-        self.advancedModification.VibrationLoad(curOption)
+        self.advancedModification.VibrationLoad(curOption, filePath)
 
     def GenerateRemoveDuplicateTiedContacts(self, modeid):
         curOption = self.modeIDOption[modeid]
@@ -2780,7 +2782,7 @@ class KooMeshModifier(KooSimulationGenerator):
                 additionalword += "_imported"
             elif mode == "VIBRATION_LOAD":
                 self.GenerateVibrationLoad(modeid)
-                additionalword += "_vib"
+                self._skip_default_write = True  # advancedModification에서 자체 write 처리 (DECOMPOSE_K 패턴)
 
             self.dynaImporter.SyncronizeMaxID()
         ## write modified File
