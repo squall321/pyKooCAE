@@ -4966,7 +4966,7 @@ class KooDynaAdvancedModification:
         import_merge_k(simGenerator, option)
 
     def VibrationLoad(self, option, filePath):
-        """다중 파트 동기화 진동 하중 (DEFINE_CURVE + LOAD_BODY_PARTS_<dir> 생성).
+        """다중 파트 동기화 진동 하중 (DEFINE_CURVE + LOAD_BODY_GENERALIZED_SET_PART 생성).
 
         DropAttitude 패턴 답습 — runDirectoryMode 일 때 Run_<id>/ 폴더 + Output/ + .done 생성.
         KooMeshModifier 측 공용 폴백을 우회하기 위해 본 메서드가 직접 write 수행.

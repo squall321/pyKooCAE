@@ -1199,6 +1199,7 @@ class CumulativeScenarioRunner:
 
             sim_params = self.config.get("simulation_params", {})
             impact_params = sim_params.get("impact", {})
+            wall_params = sim_params.get("wall", {})
 
             dim_damper = impact_params.get("dimension_damper", [0.001, 0.001, 0.001])
             dim_damper_str = ",".join(str(v) for v in dim_damper)
@@ -1224,9 +1225,12 @@ Type,{impact_params.get('type', 'Sphere')}
 Dimension,{impact_params.get('dimension', 0.008)}
 MeshSize,{impact_params.get('mesh_size', 0.001)}
 DimensionDamper,{dim_damper_str}
-Density,{impact_params.get('density', 7800)}
-YoungsModulus,{impact_params.get('youngs_modulus', 201e9)}
-PoissonRatio,{impact_params.get('poisson_ratio', 0.3)}
+DensityImpactor,{impact_params.get('density', 7.85e-9)}
+YoungsModulusImpactor,{impact_params.get('youngs_modulus', 2.01e5)}
+PoissonRatioImpactor,{impact_params.get('poisson_ratio', 0.3)}
+DensityWall,{wall_params.get('density', 1.0e-9)}
+YoungsModulusWall,{wall_params.get('youngs_modulus', 1.0e4)}
+PoissonRatioWall,{wall_params.get('poisson_ratio', 0.3)}
 tFinal,{impact_params.get('tFinal', 0.001)}
 dt,{impact_params.get('dt', 1e-6)}
 OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
@@ -1573,10 +1577,9 @@ RampTime,600
     def _find_input_file(self, run_dir: str, mode: str) -> str:
         """LS-DYNA 입력 파일 찾기 (절대경로 — cwd가 Output/이므로)
 
-        DROP/IMPACT/THERM은 KooDynaAdvancedModification 측 RunDirectory 분기에서
-        고정 파일명(`DropSet.k` 등)이 강제되지만, VIBRATION은 KooMeshModifier의
-        일반 경로(`additionalword += "_vib"`)를 타기 때문에 입력 모델 파일의
-        베이스명에 `_vib.k` 접미사가 붙는다 (예: `MinimumModel.k` → `MinimumModel_vib.k`).
+        DROP/IMPACT/THERM/VIBRATION 모두 KooDynaAdvancedModification 측
+        runDirectoryMode 분기에서 고정 파일명(`DropSet.k`, `DropWeightImpactTestSet.k`,
+        `ThermalSet.k`, `VibrationSet.k`)이 강제된다. 입력 모델 베이스명과 무관.
         """
         if mode == "DROP":
             fname = "DropSet.k"
@@ -1585,13 +1588,7 @@ RampTime,600
         elif mode == "THERM":
             fname = "ThermalSet.k"
         elif mode == "VIBRATION":
-            # KooMeshModifier 일반경로: `{inputFileName}_vib.k` (replace(".k","") + "_vib" + ".k")
-            # — self.config의 model_file 베이스명에 의존 (DROP과 다른 명명 규칙).
-            model_file = self.config["project"]["model_file"]
-            base = os.path.basename(model_file)
-            if base.endswith(".k"):
-                base = base[:-2]
-            fname = f"{base}_vib.k"
+            fname = "VibrationSet.k"
         else:
             fname = "SimulationSet.k"
         return os.path.join(run_dir, fname)

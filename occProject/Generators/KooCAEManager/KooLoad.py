@@ -121,12 +121,22 @@ class KooLoadBodyRZ(KooLoadBody):
         super().WriteStreamDynaKeyword(stream)
 
 class KooLoadBodyParts:
-    """*LOAD_BODY_PARTS_X/Y/Z — 특정 파트(셋)에 body force(가속도) 적용.
+    """*LOAD_BODY_GENERALIZED_SET_PART — 특정 파트 셋에 base acceleration body load 적용.
+
+    LS-DYNA R16 Vol I, 33-31~33-34 참조. `*LOAD_BODY_PARTS_<dir>`는 비정식
+    가공 키워드라 input phase에서 reject되므로 정식 카드로 emit한다.
+    `*LOAD_BODY_PARTS`는 deck당 1회 제약(33-25)이라 회로별 분리 시나리오
+    부적합 → `*LOAD_BODY_GENERALIZED_SET_PART`로 emit해야 다중 part set 가능.
 
     카드:
-        *LOAD_BODY_PARTS_<dir>
-        $#    PSID      LCID        SF    DRLCID      DRSF
-                <psid>    <lcid>    <sf>     <0>      <1.0>
+        *LOAD_BODY_GENERALIZED_SET_PART
+        $#  N1/SID        N2      LCID    DRLCID        XC        YC        ZC
+                <psid>         0    <lcid>  <drlcid>       0.0       0.0       0.0
+        $#      AX        AY        AZ       OMX       OMY       OMZ       CID    ANGTYP
+                <ax>      <ay>      <az>       0.0       0.0       0.0         0         0
+
+    direction별 (X/Y/Z) sf가 AX/AY/AZ에 들어가고 나머지는 0.
+    drsf는 기존 호환 위해 인자로 받지만 generalized 카드는 동등 필드 없음 — DRLCID 사용.
     """
     def __init__(self, direction, psid, lcid, sf=1.0, drlcid=0, drsf=1.0):
         self.direction = direction.upper()  # 'X' | 'Y' | 'Z'
@@ -137,13 +147,32 @@ class KooLoadBodyParts:
         self.drsf = drsf
 
     def WriteStreamDynaKeyword(self, stream):
-        stream.write(f"*LOAD_BODY_PARTS_{self.direction}\n")
-        stream.write("$#    PSID      LCID        SF    DRLCID      DRSF\n")
+        ax, ay, az = 0.0, 0.0, 0.0
+        if self.direction == "X":
+            ax = float(self.sf)
+        elif self.direction == "Y":
+            ay = float(self.sf)
+        elif self.direction == "Z":
+            az = float(self.sf)
+        stream.write("*LOAD_BODY_GENERALIZED_SET_PART\n")
+        stream.write("$#  N1/SID        N2      LCID    DRLCID        XC        YC        ZC\n")
         stream.write(format(int(self.psid), ">10"))
+        stream.write(format(0, ">10"))
         stream.write(format(int(self.lcid), ">10"))
-        stream.write(format(float(self.sf), ">10.4e"))
         stream.write(format(int(self.drlcid), ">10"))
-        stream.write(format(float(self.drsf), ">10.4e"))
+        stream.write(format(0.0, ">10.4e"))
+        stream.write(format(0.0, ">10.4e"))
+        stream.write(format(0.0, ">10.4e"))
+        stream.write("\n")
+        stream.write("$#      AX        AY        AZ       OMX       OMY       OMZ       CID    ANGTYP\n")
+        stream.write(format(ax, ">10.4e"))
+        stream.write(format(ay, ">10.4e"))
+        stream.write(format(az, ">10.4e"))
+        stream.write(format(0.0, ">10.4e"))
+        stream.write(format(0.0, ">10.4e"))
+        stream.write(format(0.0, ">10.4e"))
+        stream.write(format(0, ">10"))
+        stream.write(format(0, ">10"))
         stream.write("\n")
 
 
@@ -763,7 +792,7 @@ class KooLoadManager:
         return load
 
     def CreateLoadBodyParts(self, direction, psid, lcid, sf=1.0, drlcid=0, drsf=1.0):
-        """*LOAD_BODY_PARTS_<X|Y|Z> 카드 추가."""
+        """*LOAD_BODY_GENERALIZED_SET_PART 카드 추가 (direction X/Y/Z → AX/AY/AZ)."""
         load = KooLoadBodyParts(direction, psid, lcid, sf, drlcid, drsf)
         self.bodyLoads.append(load)
         return load

@@ -477,10 +477,13 @@ def _write_dwi_step_config(config_path, model_file, output_dir,
                             sim_params, preserve_includes=None):
     """단일 충격 위치용 step_config 작성."""
     imp_type = impactor.get("type", "Sphere")
-    imp_radius = impactor.get("radius", 5.0)
-    imp_height = impactor.get("height", 100)
-    imp_density = impactor.get("density", 7850)
-    imp_E = impactor.get("youngs_modulus", 200e9)
+    imp_radius = impactor.get("radius", 5.0)              # mm
+    imp_height = impactor.get("height", 100)              # mm
+    # Defaults are in the LS-DYNA [tonne, mm, s, MPa] convention to stay
+    # consistent with `g = 9810 mm/s²` below and with the rest of the deck.
+    # Steel reference: ρ = 7.85e-9 tonne/mm³, E = 2.0e5 MPa.
+    imp_density = impactor.get("density", 7.85e-9)         # tonne/mm³
+    imp_E = impactor.get("youngs_modulus", 2.0e5)          # MPa
     imp_nu = impactor.get("poisson_ratio", 0.3)
 
     # 속도 계산 (자유낙하)
@@ -540,11 +543,13 @@ def _write_dwi_step_config(config_path, model_file, output_dir,
     offset_dist = sim_params.get("offset_distance", 0.05)
     lines.append(f"OffsetDistance,{offset_dist}")
 
-    # 바닥판 설정
+    # 바닥판 설정 — defaults in [tonne, mm, s, MPa] (matches impactor block above).
+    # Wall is typically *MAT_RIGID so density barely affects dynamics, but we
+    # keep the units consistent for correctness.
     wall = sim_params.get("wall", {})
-    wall_E = wall.get("youngs_modulus", 200e9)
+    wall_E = wall.get("youngs_modulus", 1.0e4)            # MPa
     wall_nu = wall.get("poisson_ratio", 0.3)
-    wall_density = wall.get("density", 7850)
+    wall_density = wall.get("density", 1.0e-9)            # tonne/mm³
     lines.extend([
         f"YoungsModulusWall,{wall_E}",
         f"PoissonRatioWall,{wall_nu}",

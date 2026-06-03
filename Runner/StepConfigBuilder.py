@@ -37,12 +37,14 @@ def build_drop_attitude_config(
         step_config 파일 내용 문자열
     """
     # simulation_params에서 값 가져오기
-    tFinal = sim_params.get("tFinal", 0.005)
-    dt = sim_params.get("dt", 0.000001)
-    density = sim_params.get("density", 7850)
-    youngs_modulus = sim_params.get("youngs_modulus", 200000000000)
+    # Unit system: [tonne, mm, s, MPa] — matches the rest of the deck
+    # (height in mm, tFinal in s). Steel ref: ρ=7.85e-9, E=2.0e5.
+    tFinal = sim_params.get("tFinal", 0.005)               # s
+    dt = sim_params.get("dt", 0.000001)                    # s
+    density = sim_params.get("density", 7.85e-9)            # tonne/mm³
+    youngs_modulus = sim_params.get("youngs_modulus", 2.0e5)  # MPa
     poisson_ratio = sim_params.get("poisson_ratio", 0.3)
-    sim_height = sim_params.get("height", 1500)
+    sim_height = sim_params.get("height", 1500)            # mm
     offset_distance = sim_params.get("offset_distance", 0.05)
 
     # drop_surface 설정

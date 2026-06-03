@@ -4,12 +4,12 @@
 - 파트마다 상대 진동력 (Explicit) 또는 볼륨 비례 (VolumeProportional)
 - 동일 시간 곡선 (DEFINE_CURVE 1개) + 파트별 다른 SF
 - 파트 합력 = 사용자 입력 곡선 × relative_factor
-- LS-DYNA *LOAD_BODY_PARTS_<dir> 카드 생성 (가속도 = 합력 / mass)
+- LS-DYNA *LOAD_BODY_GENERALIZED_SET_PART 카드 생성 (방향별 AX/AY/AZ에 SF)
 
-LS-DYNA 카드:
+LS-DYNA 카드 (Vol I 33-31~33-34):
     *DEFINE_CURVE  (1개, 시간-가속도)
     *SET_PART_LIST (파트당 1개, 단일 PID 포함)
-    *LOAD_BODY_PARTS_<dir> (파트당 1개, PSID + LCID + SF)
+    *LOAD_BODY_GENERALIZED_SET_PART (파트당 1개, SID + LCID + AX/AY/AZ)
 """
 import os
 import numpy as np
@@ -87,7 +87,7 @@ def apply_vibration_load(dynaImporter, option):
         rel_factors = {pid: part_props[pid]['volume'] / v_ref for pid in target_pids}
 
     # 4. SF 계산 (LoadType에 따라)
-    # *LOAD_BODY_PARTS_<dir>의 LCID는 가속도 곡선
+    # *LOAD_BODY_GENERALIZED_SET_PART의 LCID는 가속도 곡선 (AX/AY/AZ에 SF 들어감)
     # LoadType=Force: 사용자 곡선 = 합력 → 가속도 = 합력 / mass
     #                 → SF_i = rel_factor_i / mass_i (curve는 정규화 후 곱셈)
     # LoadType=Acceleration: 사용자 곡선 = 가속도 그대로
@@ -116,14 +116,14 @@ def apply_vibration_load(dynaImporter, option):
         raise RuntimeError("[VIBRATION_LOAD] DefineManager.CreateDefineCurvewithID not found")
     print(f"  → *DEFINE_CURVE LCID={new_lcid} ({len(a1)} points)")
 
-    # 6. 파트마다 *SET_PART (단일 PID) + *LOAD_BODY_PARTS_<dir>
+    # 6. 파트마다 *SET_PART (단일 PID) + *LOAD_BODY_GENERALIZED_SET_PART
     partMan = dynaImporter.partManager
     loadMan = dynaImporter.loadManager
     for pid in target_pids:
         # 단일 파트만 포함하는 PartSet 생성
         new_psid = _alloc_psid(partMan)
         ps = _create_single_part_set(partMan, new_psid, [pid], name=f"VibLoad_PSID_{pid}")
-        # LOAD_BODY_PARTS
+        # LOAD_BODY_GENERALIZED_SET_PART (CreateLoadBodyParts 시그니처 유지)
         loadMan.CreateLoadBodyParts(
             direction=direction,
             psid=new_psid,
