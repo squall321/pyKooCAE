@@ -94,50 +94,70 @@ class SlurmSubmitter:
             print(f"  {scenario_id}: {job_id}")
         print()
 
-        # postprocess.enabled && auto_sphere이면 sphere dependent job 제출
+        # postprocess.enabled이면 scenario mode 로 sphere(DROP) / impact(IMPACT)
+        # 중 하나를 dependent job 으로 제출
         self._maybe_submit_sphere_job(job_ids)
 
         return job_ids
 
     def _maybe_submit_sphere_job(self, job_ids):
-        """postprocess.auto_sphere=true 시 sphere_report dependent Slurm job 제출.
+        """postprocess 종합 리포트 dependent Slurm job 제출 (scenario mode 로 routing).
 
-        sphere_report.sh 자체는 항상 prepare 시점에 생성되어 있다고 가정 (Phase 5).
+        DROP→sphere_report(auto_sphere), IMPACT→impact_report(auto_impact). 둘 다
+        돌지 않는다 — 과거에는 auto_sphere 만 검사해 IMPACT 데이터에도 sphere 가
+        돌던 버그가 있었다. 해당 .sh 자체는 prepare 시점에 항상 생성되어 있다고 가정.
         이 함수는 sbatch 텍스트 생성 + Slurm 제출만 담당.
         """
         pp = self.runner_config.get("postprocess")
-        if not pp or not pp.get("enabled") or not pp.get("auto_sphere", True):
+        if not pp or not pp.get("enabled"):
             return
 
         try:
-            from Runner.PostprocessShellGenerator import build_sphere_sbatch
+            from Runner.PostprocessShellGenerator import (
+                build_sphere_sbatch, build_impact_sbatch, report_mode_from_runner_config,
+            )
         except Exception as e:
-            print(f"  Warning: sphere_report import 실패 (skip): {e}")
+            print(f"  Warning: PostprocessShellGenerator import 실패 (skip): {e}")
             return
 
-        # 각 시나리오 base_dir에 sphere_report 적용
+        # scenario mode 로 sphere vs impact 선택
+        mode = report_mode_from_runner_config(self.runner_config)
+        if mode == "IMPACT":
+            if not pp.get("auto_impact", True):
+                return
+            report_label = "Impact"
+            sbatch_builder = build_impact_sbatch
+            sbatch_name = "impact_report.sbatch"
+        else:
+            if not pp.get("auto_sphere", True):
+                return
+            report_label = "Sphere"
+            sbatch_builder = build_sphere_sbatch
+            sbatch_name = "sphere_report.sbatch"
+
+        # 각 시나리오 base_dir에 종합 리포트 적용
         # (단순화: 단일 base_dir 가정 — 첫 시나리오 기준)
         output_dir = self.base_dir
         # job_ids는 [(scenario_id, job_id_str), ...] 형태
         dep_ids = [str(jid) for _, jid in job_ids if jid]
         if not dep_ids:
-            print("  Warning: dependency용 job_id 없음 (sphere job 제출 skip)")
+            print(f"  Warning: dependency용 job_id 없음 ({report_label.lower()} job 제출 skip)")
             return
 
-        env_for_sphere = dict(self.environment)
-        env_for_sphere.setdefault("partition", self.partition)
-        sbatch_text = build_sphere_sbatch(
+        env_for_report = dict(self.environment)
+        env_for_report.setdefault("partition", self.partition)
+        sbatch_text = sbatch_builder(
             output_dir=output_dir,
             sif_path=pp.get("sif_path"),
             options=pp,
-            environment=env_for_sphere,
+            environment=env_for_report,
             dependency_ids=dep_ids,
         )
-        sbatch_path = os.path.join(output_dir, "sphere_report.sbatch")
+        sbatch_path = os.path.join(output_dir, sbatch_name)
         with open(sbatch_path, 'w') as f:
             f.write(sbatch_text)
         os.chmod(sbatch_path, 0o755)
-        print(f"\n[Sphere Postprocess] sbatch 생성: {sbatch_path}")
+        print(f"\n[{report_label} Postprocess] sbatch 생성: {sbatch_path}")
         print(f"  Dependency: afterany:{':'.join(dep_ids)}")
 
         if self.dry_run:
@@ -149,10 +169,10 @@ class SlurmSubmitter:
                 ["sbatch", sbatch_path],
                 capture_output=True, text=True, check=True
             )
-            sphere_job_id = result.stdout.strip().split()[-1]
-            print(f"  → Sphere Job ID: {sphere_job_id}")
+            report_job_id = result.stdout.strip().split()[-1]
+            print(f"  → {report_label} Job ID: {report_job_id}")
         except Exception as e:
-            print(f"  Warning: sphere job 제출 실패: {e}")
+            print(f"  Warning: {report_label.lower()} job 제출 실패: {e}")
 
     def _submit_scenario_sequential(self, scenario: Dict[str, Any]) -> str:
         """

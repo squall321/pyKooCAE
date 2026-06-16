@@ -818,12 +818,14 @@ class CumulativeDesigner:
 
         print(f"runner_config.json 생성 완료: {output_path}")
 
-        # postprocess 옵션이 있으면 sphere_report.sh를 항상 생성 (수동 trigger 보장)
-        # enabled 무관 — sh는 항상 만들어 두고 사용자가 언제든 bash로 실행 가능
+        # postprocess 옵션이 있으면 sphere_report.sh + impact_report.sh를 항상 생성
+        # (수동 trigger 보장). enabled 무관 — sh는 항상 만들어 두고 사용자가 언제든
+        # bash로 실행 가능. 실제 어느 것이 자동 실행될지는 scenario mode 로 routing
+        # (DROP→sphere, IMPACT→impact) — report_mode_from_runner_config 참조.
         if runner_config.postprocess:
+            output_dir = data["project"].get("output_dir", str(Path(output_path).parent / "output"))
             try:
                 from Runner.PostprocessShellGenerator import build_sphere_report_sh
-                output_dir = data["project"].get("output_dir", str(Path(output_path).parent / "output"))
                 os.makedirs(output_dir, exist_ok=True)
                 sh_text = build_sphere_report_sh(
                     output_dir=output_dir,
@@ -837,6 +839,22 @@ class CumulativeDesigner:
                 print(f"sphere_report.sh 생성 (수동 실행 가능): {sh_path}")
             except Exception as e:
                 print(f"  Warning: sphere_report.sh 생성 실패 (skip): {e}")
+
+            try:
+                from Runner.PostprocessShellGenerator import build_impact_report_sh
+                os.makedirs(output_dir, exist_ok=True)
+                impact_sh_text = build_impact_report_sh(
+                    output_dir=output_dir,
+                    sif_path=runner_config.postprocess.get("sif_path"),
+                    options=runner_config.postprocess,
+                )
+                impact_sh_path = os.path.join(output_dir, "impact_report.sh")
+                with open(impact_sh_path, 'w') as f:
+                    f.write(impact_sh_text)
+                os.chmod(impact_sh_path, 0o755)
+                print(f"impact_report.sh 생성 (수동 실행 가능): {impact_sh_path}")
+            except Exception as e:
+                print(f"  Warning: impact_report.sh 생성 실패 (skip): {e}")
 
 
 def main():

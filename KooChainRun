@@ -311,9 +311,11 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     pp_group.add_argument('--deep', action='store_true',
                           help='각 Run_*/deep_report.sh 만 순차 실행')
     pp_group.add_argument('--sphere', action='store_true',
-                          help='sphere_report.sh 만 실행')
+                          help='sphere_report.sh 만 실행 (전각도 DROP)')
+    pp_group.add_argument('--impact', action='store_true',
+                          help='impact_report.sh 만 실행 (전위치 부분충격 IMPACT)')
     pp_group.add_argument('--all', action='store_true',
-                          help='deep 모두 실행 후 sphere (default)')
+                          help='deep 모두 실행 후 종합 리포트 (scenario mode 로 sphere|impact 자동 선택, default)')
 
     # Parse arguments
     args = parser.parse_args()
@@ -821,7 +823,11 @@ def cmd_submit(args):
 
 
 def _maybe_submit_sphere_after(runner_config, config_path):
-    """Submit 끝난 후 postprocess.auto_sphere=true이면 sphere dependent job 제출.
+    """Submit 끝난 후 종합 리포트 dependent job 제출 (scenario mode 로 routing).
+
+    DROP 시나리오 → sphere_report (postprocess.auto_sphere), IMPACT 시나리오 →
+    impact_report (postprocess.auto_impact). 둘 다 돌지 않는다 — 과거에는
+    auto_sphere 만 검사해 IMPACT 데이터에도 sphere 가 돌던 버그가 있었다.
 
     어느 submit 경로 (large_scale / cumulative / part_validation / dwi) 끝나든
     공통으로 호출하여 통합. job_id는 jobs.json에서 읽음.
@@ -829,8 +835,31 @@ def _maybe_submit_sphere_after(runner_config, config_path):
     import json
     import subprocess
     pp = runner_config.get("postprocess")
-    if not pp or not pp.get("enabled") or not pp.get("auto_sphere", True):
+    if not pp or not pp.get("enabled"):
         return
+
+    try:
+        from Runner.PostprocessShellGenerator import (
+            build_sphere_sbatch, build_impact_sbatch, report_mode_from_runner_config,
+        )
+    except Exception as e:
+        print(f"[Postprocess] Warning: PostprocessShellGenerator import 실패: {e}")
+        return
+
+    # scenario mode 로 sphere vs impact 선택
+    mode = report_mode_from_runner_config(runner_config)
+    if mode == "IMPACT":
+        if not pp.get("auto_impact", True):
+            return
+        report_label = "Impact"
+        sbatch_builder = build_impact_sbatch
+        sbatch_name = "impact_report.sbatch"
+    else:
+        if not pp.get("auto_sphere", True):
+            return
+        report_label = "Sphere"
+        sbatch_builder = build_sphere_sbatch
+        sbatch_name = "sphere_report.sbatch"
 
     # output_dir 결정
     project = runner_config.get("project", {})
@@ -857,28 +886,22 @@ def _maybe_submit_sphere_after(runner_config, config_path):
             if isinstance(v, dict) and v.get("job_id"):
                 dep_ids.append(str(v["job_id"]))
     except Exception as e:
-        print(f"\n[Sphere Postprocess] Warning: jobs.json 읽기 실패 ({e}) — dependency 없이 제출")
+        print(f"\n[{report_label} Postprocess] Warning: jobs.json 읽기 실패 ({e}) — dependency 없이 제출")
 
-    try:
-        from Runner.PostprocessShellGenerator import build_sphere_sbatch
-    except Exception as e:
-        print(f"[Sphere Postprocess] Warning: PostprocessShellGenerator import 실패: {e}")
-        return
-
-    env_for_sphere = dict(runner_config.get("environment", {}))
-    sbatch_text = build_sphere_sbatch(
+    env_for_report = dict(runner_config.get("environment", {}))
+    sbatch_text = sbatch_builder(
         output_dir=output_dir,
         sif_path=pp.get("sif_path"),
         options=pp,
-        environment=env_for_sphere,
+        environment=env_for_report,
         dependency_ids=dep_ids if dep_ids else None,
     )
-    sbatch_path = os.path.join(output_dir, "sphere_report.sbatch")
+    sbatch_path = os.path.join(output_dir, sbatch_name)
     os.makedirs(output_dir, exist_ok=True)
     with open(sbatch_path, 'w') as f:
         f.write(sbatch_text)
     os.chmod(sbatch_path, 0o755)
-    print(f"\n[Sphere Postprocess] sbatch 생성: {sbatch_path}")
+    print(f"\n[{report_label} Postprocess] sbatch 생성: {sbatch_path}")
     if dep_ids:
         print(f"  Dependency: afterany:{':'.join(dep_ids)}")
     else:
@@ -889,10 +912,10 @@ def _maybe_submit_sphere_after(runner_config, config_path):
             ["sbatch", sbatch_path],
             capture_output=True, text=True, check=True
         )
-        sphere_job_id = result.stdout.strip().split()[-1]
-        print(f"  → Sphere Job ID: {sphere_job_id}")
+        report_job_id = result.stdout.strip().split()[-1]
+        print(f"  → {report_label} Job ID: {report_job_id}")
     except Exception as e:
-        print(f"  Warning: sphere job 제출 실패: {e}")
+        print(f"  Warning: {report_label.lower()} job 제출 실패: {e}")
 
 
 def _submit_large_scale(args, config_path):
@@ -2531,14 +2554,25 @@ def cmd_postprocess(args):
         print(f"Error: output_dir not found: {output_dir}")
         sys.exit(1)
 
-    do_deep = args.deep or args.all or not (args.sphere)
-    do_sphere = args.sphere or args.all or not (args.deep)
-    # 둘 다 명시 안 하면 default = all
-    if not (args.deep or args.sphere or args.all):
-        do_deep = do_sphere = True
+    # 종합 리포트 routing: scenario mode 로 sphere(DROP) vs impact(IMPACT) 선택.
+    from Runner.PostprocessShellGenerator import report_mode_from_runner_config
+    report_mode = report_mode_from_runner_config(runner_config)
+
+    if args.deep:
+        do_deep, do_sphere, do_impact = True, False, False
+    elif args.sphere:
+        do_deep, do_sphere, do_impact = False, True, False
+    elif getattr(args, "impact", False):
+        do_deep, do_sphere, do_impact = False, False, True
+    else:
+        # --all 또는 무플래그: deep 전부 + scenario mode 에 맞는 종합 리포트 1개
+        do_deep = True
+        do_impact = (report_mode == "IMPACT")
+        do_sphere = not do_impact
 
     print("=" * 80)
-    print(f"KooChainRun - Postprocess (deep={do_deep}, sphere={do_sphere})")
+    print(f"KooChainRun - Postprocess (deep={do_deep}, sphere={do_sphere}, "
+          f"impact={do_impact}, mode={report_mode})")
     print(f"output_dir: {output_dir}")
     print("=" * 80)
 
@@ -2598,6 +2632,24 @@ def cmd_postprocess(args):
             with open(log_path, 'w') as logf:
                 rc = subprocess.run(
                     ["bash", str(sphere_sh)], cwd=output_dir,
+                    stdout=logf, stderr=subprocess.STDOUT
+                )
+            if rc.returncode == 0:
+                print(f"  ✓ done")
+            else:
+                print(f"  ✗ rc={rc.returncode}, log={log_path}")
+
+    if do_impact:
+        impact_sh = Path(output_dir) / "impact_report.sh"
+        if not impact_sh.exists():
+            print(f"\n[Impact] impact_report.sh 없음: {impact_sh}")
+            print("  prepare 시 postprocess 옵션이 있어야 자동 생성됨")
+        else:
+            print(f"\n[Impact] running: {impact_sh}")
+            log_path = Path(output_dir) / "impact_report.log"
+            with open(log_path, 'w') as logf:
+                rc = subprocess.run(
+                    ["bash", str(impact_sh)], cwd=output_dir,
                     stdout=logf, stderr=subprocess.STDOUT
                 )
             if rc.returncode == 0:
