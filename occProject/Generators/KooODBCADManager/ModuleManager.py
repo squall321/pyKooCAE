@@ -15,9 +15,9 @@ class ModuleManager():
         self.modules[self.maxid] = module
         return module
     
-    def CreateCylinderwithMassImpactModule(self, name, radius = 0.008, outerRadius = 0.01, heightFront = 0.02, heightBack = 0.01, center=(0.0, 0.0, 0.0), zDir = (0.0, 0.0, 1.0), backRadius = 0.01):
+    def CreateCylinderwithMassImpactModule(self, name, radius = 0.008, outerRadius = 0.01, heightFront = 0.02, heightBack = 0.01, center=(0.0, 0.0, 0.0), zDir = (0.0, 0.0, 1.0), backRadius = 0.01, midRadius = 0, heightMid = 0):
         self.maxid += 1
-        module = CylinderwithMassImpactModule(self.maxid, name, radius, outerRadius, heightFront, heightBack, center, zDir, backRadius)
+        module = CylinderwithMassImpactModule(self.maxid, name, radius, outerRadius, heightFront, heightBack, center, zDir, backRadius, midRadius, heightMid)
         self.modules[self.maxid] = module
         return module
     

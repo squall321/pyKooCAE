@@ -192,18 +192,68 @@ class CumulativeDesigner:
         has_vibration = any(
             m in (SimulationMode.VIB, SimulationMode.VIBRATION) for m in mode_sequence
         )
+        # THERM 모드 여부 (고온 열전달·열응력 — angle/position 없음, conditions 개수가 DOE)
+        has_thermal = any(m == SimulationMode.THERM for m in mode_sequence)
 
         # VIBRATION을 IMPACT보다 먼저 분기 (혼합 시퀀스는 P2에서 정책 결정).
         # P1 범위: 시퀀스 전체가 VIB-only일 때만 vibration 처리 진입.
         if has_vibration:
             return self._process_vibration_scenario(scenario_cfg, scenario_name,
                                                      cumulative_cfg, num_steps, mode_sequence)
+        elif has_thermal:
+            return self._process_thermal_scenario(scenario_cfg, scenario_name,
+                                                   cumulative_cfg, num_steps, mode_sequence)
         elif has_impact:
             return self._process_impact_scenario(scenario_cfg, scenario_name,
                                                   cumulative_cfg, num_steps, mode_sequence)
         else:
             return self._process_drop_scenario(scenario_cfg, scenario_name,
                                                 cumulative_cfg, num_steps, mode_sequence)
+
+    def _process_thermal_scenario(self, scenario_cfg: Dict[str, Any],
+                                  scenario_name: str,
+                                  cumulative_cfg: Dict[str, Any],
+                                  num_steps: int,
+                                  mode_sequence: List[SimulationMode]) -> ScenarioConfig:
+        """고온 열전달·열응력(THERM) 시나리오 처리 (P1: T1 균일온도).
+
+        angle_source/position_source 없음 — `thermal_conditions` 리스트 개수가 DOE 수.
+        조건 미지정 시 단일 DOE(condition="THERM"). VIBRATION 결 답습하되 더 단순.
+        """
+        templates = select_template_for_scenario(mode_sequence)
+        # thermal_conditions: ["HOT85", "COLD-40"] 등. 없으면 단일 DOE.
+        conditions = scenario_cfg.get("thermal_conditions", [])
+        if not conditions:
+            conditions = ["THERM"]
+
+        steps = []
+        for doe_idx, cond in enumerate(conditions):
+            for i in range(num_steps):
+                step_number = i + 1
+                template = templates[i]
+                mode = mode_sequence[i]
+                step_cfg = StepConfig(
+                    step_number=step_number,
+                    template=template.value,
+                    mode=mode.value,
+                    angle_name=str(cond),       # condition 식별자를 angle_name에 보존
+                    angle_roll=0.0,
+                    angle_pitch=0.0,
+                    angle_yaw=0.0,
+                    input_file=f"Step{step_number:03d}.k",
+                    output_dir=f"Step{step_number:03d}",
+                    dynain_source=f"Step{step_number-1:03d}/dynain" if step_number > 1 else None,
+                    doe_index=doe_idx
+                )
+                steps.append(step_cfg)
+
+        scenario_id = f"{scenario_name}_S{num_steps:03d}"
+        return ScenarioConfig(
+            scenario_id=scenario_id,
+            scenario_name=scenario_name,
+            total_steps=num_steps,
+            steps=steps
+        )
 
     def _process_drop_scenario(self, scenario_cfg: Dict[str, Any],
                                 scenario_name: str,

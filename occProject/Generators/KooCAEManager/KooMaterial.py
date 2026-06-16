@@ -253,6 +253,72 @@ class KooMaterialAddErosion(KooMaterial):
         self.SetDynaKeyword(keywordString)
         return keywordString            
     
+class KooMaterialAddThermalExpansion(KooMaterial):
+    """*MAT_ADD_THERMAL_EXPANSION — 열팽창계수(CTE) 부여 (열응력의 근원).
+
+    Vol II 03_MAT_Part1.pdf p.129~. PID에 등방 CTE(MULT) 또는 (온도,CTE) 곡선(LCID).
+    이방성은 LCIDY/MULTY/LCIDZ/MULTZ 사용 (FR4 z방향 등).
+    단위: ton-mm-s에서 CTE는 [1/K]로 수치 동일.
+    """
+    def __init__(self, pid=0, lcid=0, mult=1.0, lcidy=0, multy=None, lcidz=0, multz=None):
+        super(KooMaterialAddThermalExpansion, self).__init__(pid, "ThermExp{0}".format(pid))
+        self.pid = pid
+        self.lcid = lcid
+        self.mult = mult
+        # 이방성 미지정이면 등방(기본=주방향과 동일) — LS-DYNA default 규칙
+        self.lcidy = lcidy
+        self.multy = multy if multy is not None else mult
+        self.lcidz = lcidz
+        self.multz = multz if multz is not None else mult
+
+    def GenerateDynaKeyword(self):
+        keywordString = "*MAT_ADD_THERMAL_EXPANSION\n"
+        keywordString += format(int(self.pid), ">10")
+        keywordString += format(int(self.lcid), ">10")
+        keywordString += format(float(self.mult), ">10.3e")
+        keywordString += format(int(self.lcidy), ">10")
+        keywordString += format(float(self.multy), ">10.3e")
+        keywordString += format(int(self.lcidz), ">10")
+        keywordString += format(float(self.multz), ">10.3e")
+        keywordString += "\n"
+        self.SetDynaKeyword(keywordString)
+        return keywordString
+
+
+class KooMaterialThermalIsotropic(KooMaterial):
+    """*MAT_THERMAL_ISOTROPIC (MAT_T01) — 등방 열물성 (열해석용, P2부터 사용).
+
+    Vol II 04_MAT_THERMAL.pdf p.2-3. *PART의 TMID에서 참조.
+    Card1: TMID, TRO, TGRLC, TGMULT, TLAT, HLAT / Card2: HC, TC
+    단위(ton-mm-s): TRO[ton/mm³], HC[mJ/ton·K], TC[mW/mm·K].
+    """
+    def __init__(self, tmid=0, tro=0.0, hc=0.0, tc=0.0, tgrlc=0, tgmult=0.0, tlat=0.0, hlat=0.0):
+        super(KooMaterialThermalIsotropic, self).__init__(tmid, "TMat{0}".format(tmid))
+        self.tmid = tmid
+        self.tro = tro
+        self.tgrlc = tgrlc
+        self.tgmult = tgmult
+        self.tlat = tlat
+        self.hlat = hlat
+        self.hc = hc
+        self.tc = tc
+
+    def GenerateDynaKeyword(self):
+        keywordString = "*MAT_THERMAL_ISOTROPIC\n"
+        keywordString += format(int(self.tmid), ">10")
+        keywordString += format(float(self.tro), ">10.3e")
+        keywordString += format(int(self.tgrlc), ">10")
+        keywordString += format(float(self.tgmult), ">10.3e")
+        keywordString += format(float(self.tlat), ">10.3e")
+        keywordString += format(float(self.hlat), ">10.3e")
+        keywordString += "\n"
+        keywordString += format(float(self.hc), ">10.3e")
+        keywordString += format(float(self.tc), ">10.3e")
+        keywordString += "\n"
+        self.SetDynaKeyword(keywordString)
+        return keywordString
+
+
 class KooMaterialAddPZElectric(KooMaterial):
     def __init__(self, mid, dtype, gpt, aopt, DMat, PXMat, PYMat, PZMat,Pnt,AVec,DVec):
         
@@ -828,6 +894,8 @@ class KooMaterialManager():
         self.eos = {}
         self.addErosions = {}
         self.addPZElectric = {}
+        self.addThermalExpansions = {}   # pid -> KooMaterialAddThermalExpansion (열응력 CTE)
+        self.thermalMaterials = {}       # tmid -> KooMaterialThermalIsotropic (열물성)
 
     def OffsetID(self, offsetID):
         for key in self.materials:
@@ -998,6 +1066,18 @@ class KooMaterialManager():
         addErosion = KooMaterialAddErosion(mid, EXCL, MXPRES, MNEPS, EFFEPS, VOLEPS, NUMFIP, NCS,MNPRES, SIGP1, SIGVM, MXEPS, EPSSH, SIGTH, IMPULSE, FAILTM, IDAM, LCREGD, LCFLD, NSFF, EPSTHIN, ENGCRT, RADCRT, LCEPS12, LCEPS13, LCEPSMX, DTEFLT, VOLFRAC, MXTMP, DTMIN)
         self.addErosions[mid] = addErosion
         return addErosion
+
+    def CreateAddThermalExpansionMaterial(self, pid=0, lcid=0, mult=1.0, lcidy=0, multy=None, lcidz=0, multz=None):
+        """*MAT_ADD_THERMAL_EXPANSION 추가 — pid에 CTE 부여 (열응력)."""
+        cte = KooMaterialAddThermalExpansion(pid, lcid, mult, lcidy, multy, lcidz, multz)
+        self.addThermalExpansions[pid] = cte
+        return cte
+
+    def CreateThermalIsotropicMaterial(self, tmid=0, tro=0.0, hc=0.0, tc=0.0, tgrlc=0, tgmult=0.0, tlat=0.0, hlat=0.0):
+        """*MAT_THERMAL_ISOTROPIC 추가 — tmid 열물성 (P2 열해석)."""
+        tmat = KooMaterialThermalIsotropic(tmid, tro, hc, tc, tgrlc, tgmult, tlat, hlat)
+        self.thermalMaterials[tmid] = tmat
+        return tmat
 
     def CreateAddPZElectricMaterial(self, mid = 0, dtype = "S", gpt = 8, aopt = 0, DMat = [[0.0,0.0,0.0],[0.0,0.0,0.0],[0.0,0.0,0.0]], PXMat = [[0.0,0.0,0.0],[0.0,0.0,0.0],[0.0,0.0,0.0]], PYMat = [[0.0,0.0,0.0],[0.0,0.0,0.0],[0.0,0.0,0.0]], PZMat = [[0.0,0.0,0.0],[0.0,0.0,0.0],[0.0,0.0,0.0]], Pnt = [0.0,0.0,0.0], AVec = [0.0,0.0,0.0], DVec = [0.0,0.0,0.0]):
         addPZElectric = KooMaterialAddPZElectric(mid, dtype, gpt, aopt, DMat, PXMat, PYMat, PZMat, Pnt, AVec, DVec)
@@ -1720,6 +1800,14 @@ class KooMaterialManager():
             addErosion = self.addErosions[id]
             addErosion.GenerateDynaKeyword()
             stream.write(addErosion.dynaKeywordString)
+        for tmid in self.thermalMaterials:
+            tmat = self.thermalMaterials[tmid]
+            tmat.GenerateDynaKeyword()
+            stream.write(tmat.dynaKeywordString)
+        for pid in self.addThermalExpansions:
+            cte = self.addThermalExpansions[pid]
+            cte.GenerateDynaKeyword()
+            stream.write(cte.dynaKeywordString)
         for eosid in self.eos:
             eos = self.eos[eosid]
             eos.GenerateDynaKeyword()

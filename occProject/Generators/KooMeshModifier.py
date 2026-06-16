@@ -324,6 +324,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "vibration_load" in svector[0].lower():
                             self.modeList.append("VIBRATION_LOAD")
                             self.modeIDList.append(int(svector[1]))
+                        elif "thermal_load" in svector[0].lower():
+                            self.modeList.append("THERMAL_LOAD")
+                            self.modeIDList.append(int(svector[1]))
                         elif "import_merge_k" in svector[0].lower():
                             # import_merge_k를 merge_k보다 먼저 체크 (substring 충돌 방지)
                             self.modeList.append("IMPORT_MERGE_K")
@@ -1086,6 +1089,8 @@ class KooMeshModifier(KooSimulationGenerator):
                             svector = line.split(",")
                             youngsModulusImpactorFront = KooDynaFloat(svector[1])
                             curOptions["YoungsModulusImpactorFront"] = youngsModulusImpactorFront
+                        elif "youngsmodulusimpactormid" in line.lower():
+                            curOptions["YoungsModulusImpactorMid"] = KooDynaFloat(line.split(",")[1])
                         elif "youngsmodulusdamper" in line.lower():
                             svector = line.split(",")
                             youngsModulusDamper = KooDynaFloat(svector[1])
@@ -1102,6 +1107,8 @@ class KooMeshModifier(KooSimulationGenerator):
                             svector = line.split(",")
                             poissonRatioImpactorFront = KooDynaFloat(svector[1])
                             curOptions["PoissonRatioImpactorFront"] = poissonRatioImpactorFront
+                        elif "poissonratioimpactormid" in line.lower():
+                            curOptions["PoissonRatioImpactorMid"] = KooDynaFloat(line.split(",")[1])
                         elif "poissonratiodamper" in line.lower():
                             svector = line.split(",")
                             poissonRatioDamper = KooDynaFloat(svector[1])
@@ -1118,6 +1125,8 @@ class KooMeshModifier(KooSimulationGenerator):
                             svector = line.split(",")
                             materialIDImpactorFront = KooDynaInt(svector[1])
                             curOptions["MaterialIDImpactorFront"] = materialIDImpactorFront
+                        elif "materialidimpactormid" in line.lower():
+                            curOptions["MaterialIDImpactorMid"] = KooDynaInt(line.split(",")[1])
                         elif "materialiddamper" in line.lower():
                             svector = line.split(",")
                             materialIDDamper = KooDynaInt(svector[1])
@@ -1134,6 +1143,8 @@ class KooMeshModifier(KooSimulationGenerator):
                             svector = line.split(",")
                             densityImpactorFront = KooDynaFloat(svector[1])
                             curOptions["DensityImpactorFront"] = densityImpactorFront
+                        elif "densityimpactormid" in line.lower():
+                            curOptions["DensityImpactorMid"] = KooDynaFloat(line.split(",")[1])
                         elif "densitydamper" in line.lower():
                             svector = line.split(",")
                             densityDamper = KooDynaFloat(svector[1])
@@ -1217,22 +1228,29 @@ class KooMeshModifier(KooSimulationGenerator):
                                 v1 = KooDynaFloat(svector[1])
                                 curOptions["Dimension"] = [v1]
                             elif curOptions["Type"].lower() == "cylinder":
-                                v1 = KooDynaFloat(svector[1])
-                                v2 = KooDynaFloat(svector[2])
-                                v3 = KooDynaFloat(svector[3])
-                                v4 = KooDynaFloat(svector[4])
-                                if len(svector) > 5:
-                                    v5 = KooDynaFloat(svector[5])
-                                    curOptions["Dimension"] = [v1, v2, v3, v4, v5]
+                                # 2단(5값): radius,outerRadius,hFront,hBack,backRadius
+                                # 3단(7값): radius,outerRadius,hFront,midRadius,hMid,backRadius,hBack
+                                vals = [KooDynaFloat(svector[k]) for k in range(1, len(svector))]
+                                if len(vals) >= 7:
+                                    curOptions["Dimension"] = vals[:7]   # 3단
+                                elif len(vals) >= 5:
+                                    curOptions["Dimension"] = vals[:5]   # 2단
+                                elif len(vals) == 4:
+                                    curOptions["Dimension"] = vals + [vals[1]]  # v5=v2 보정 (기존 호환)
                                 else:
-                                    v5 = v2
-                                    curOptions["Dimension"] = [v1, v2, v3, v4, v5]
+                                    curOptions["Dimension"] = vals
+                        elif "wallnumx" in line.lower():
+                            curOptions["WallNumX"] = KooDynaInt(line.split(",")[1])
+                        elif "wallnumy" in line.lower():
+                            curOptions["WallNumY"] = KooDynaInt(line.split(",")[1])
+                        elif "wallnumz" in line.lower():
+                            curOptions["WallNumZ"] = KooDynaInt(line.split(",")[1])
                         elif "meshsize" in line.lower():
                             svector = line.split(",")
                             meshSize = KooDynaFloat(svector[1])
                             curOptions["MeshSize"] = meshSize
                     self.modeIDOption[curModeID] = curOptions
-                    
+
                 elif "**translation_doe" in line.lower():
                     svector = line.split(",")
                     curModeID = int(svector[1])
@@ -2294,6 +2312,72 @@ class KooMeshModifier(KooSimulationGenerator):
                             print(f"  Warning: unknown VibrationLoad option line: {line}")
                     self.modeIDOption[curModeID] = curOptions
 
+                elif "**thermalload" in line.lower():
+                    # **ThermalLoad,<modeID> — 고온 열전달·열응력 (P1 T1: 균일온도)
+                    svector = line.split(",")
+                    curModeID = int(svector[1])
+                    curOptions = {
+                        "ThermalType": "UniformChamber",
+                        "BaseTempC": 25.0,
+                        "TargetTempC": 85.0,
+                        "RampTimeS": 1.0e-3,
+                        "DT": 1.0e-6,
+                        "TempCurve": [],
+                        "PartCTE": {},
+                        "DefaultCTE": 1.7e-5,
+                    }
+                    in_curve = False
+                    in_cte = False
+                    while True:
+                        line = f.readline()
+                        if not line:
+                            break
+                        line = line.strip().replace('\n', '')
+                        if not line or line.startswith('$'):
+                            continue
+                        if "**end" in line.lower():
+                            break
+                        low = line.lower()
+                        if low.startswith("endtempcurve"):
+                            in_curve = False; continue
+                        if low.startswith("endpartcte"):
+                            in_cte = False; continue
+                        if low == "tempcurve":
+                            in_curve = True; continue
+                        if low == "partcte":
+                            in_cte = True; continue
+                        if in_curve:
+                            parts = [p.strip() for p in line.split(",")]
+                            if len(parts) >= 2:
+                                try:
+                                    curOptions["TempCurve"].append([float(parts[0]), float(parts[1])])
+                                except ValueError:
+                                    pass
+                            continue
+                        if in_cte:
+                            parts = [p.strip() for p in line.split(",")]
+                            if len(parts) >= 2:
+                                try:
+                                    curOptions["PartCTE"][int(parts[0])] = float(parts[1])
+                                except ValueError:
+                                    pass
+                            continue
+                        if low.startswith("thermaltype,"):
+                            curOptions["ThermalType"] = line.split(",", 1)[1].strip()
+                        elif low.startswith("basetempc,"):
+                            curOptions["BaseTempC"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("targettempc,"):
+                            curOptions["TargetTempC"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("ramptimes,"):
+                            curOptions["RampTimeS"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("dt,"):
+                            curOptions["DT"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("defaultcte,"):
+                            curOptions["DefaultCTE"] = float(line.split(",", 1)[1].strip())
+                        else:
+                            print(f"  Warning: unknown ThermalLoad option line: {line}")
+                    self.modeIDOption[curModeID] = curOptions
+
                 elif "**importmergek" in line.lower():
                     # **ImportMergeK,<modeID> 옵션 블록 파서 (mergek 보다 먼저 체크)
                     svector = line.split(",")
@@ -2365,6 +2449,12 @@ class KooMeshModifier(KooSimulationGenerator):
         filePath = filePath.replace(".k", "")
         curOption = self.modeIDOption[modeid]
         self.advancedModification.VibrationLoad(curOption, filePath)
+
+    def GenerateThermalLoad(self, modeid):
+        filePath = os.path.join(self.curDir, self.inputFileName)
+        filePath = filePath.replace(".k", "")
+        curOption = self.modeIDOption[modeid]
+        self.advancedModification.ThermalLoad(curOption, filePath)
 
     def GenerateRemoveDuplicateTiedContacts(self, modeid):
         curOption = self.modeIDOption[modeid]
@@ -2783,6 +2873,9 @@ class KooMeshModifier(KooSimulationGenerator):
             elif mode == "VIBRATION_LOAD":
                 self.GenerateVibrationLoad(modeid)
                 self._skip_default_write = True  # advancedModification에서 자체 write 처리 (DECOMPOSE_K 패턴)
+            elif mode == "THERMAL_LOAD":
+                self.GenerateThermalLoad(modeid)
+                self._skip_default_write = True  # ThermalSet.k 자체 write (VibrationLoad 결)
 
             self.dynaImporter.SyncronizeMaxID()
         ## write modified File

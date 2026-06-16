@@ -176,6 +176,70 @@ class KooLoadBodyParts:
         stream.write("\n")
 
 
+class KooLoadThermalVariable:
+    """*LOAD_THERMAL_VARIABLE — 노드 온도장 부여 (T1 균일온도 열응력, 구조 only).
+
+    Vol I 33_LOAD.pdf p.33-168. T = TB + TS·f(t). NSID=0이면 전체 노드.
+    LCID는 (time, factor) 곡선. 구조 explicit 해석에서 CTE와 결합해 열변형/응력 발생.
+    Card1: NSID, NSIDEX, BOXID / Card2: TS, TB, LCID, TSE, TBE, LCIDE, LCIDR, LCIDEDR
+    """
+    def __init__(self, ts=1.0, tb=0.0, lcid=0, nsid=0, nsidex=0, boxid=0):
+        self.ts = ts      # scale (T = tb + ts*f(t))
+        self.tb = tb      # base temperature (t=0 기준온도)
+        self.lcid = lcid  # (time, factor) 곡선
+        self.nsid = nsid
+        self.nsidex = nsidex
+        self.boxid = boxid
+
+    def WriteStreamDynaKeyword(self, stream):
+        stream.write("*LOAD_THERMAL_VARIABLE\n")
+        stream.write("$#    nsid    nsidex     boxid\n")
+        stream.write(format(int(self.nsid), ">10"))
+        stream.write(format(int(self.nsidex), ">10"))
+        stream.write(format(int(self.boxid), ">10"))
+        stream.write("\n")
+        stream.write("$#      ts        tb      lcid\n")
+        stream.write(format(float(self.ts), ">10.3e"))
+        stream.write(format(float(self.tb), ">10.3e"))
+        stream.write(format(int(self.lcid), ">10"))
+        stream.write("\n")
+
+
+class KooLoadThermalD3plot:
+    """*LOAD_THERMAL_D3PLOT — 선행 thermal d3plot 온도장 로드 (T2/T3 pass2).
+
+    Vol I 33_LOAD.pdf p.33-159. 필드 없음 — 실행라인에 `T=<rootname>` 필요(Runner 처리).
+    """
+    def WriteStreamDynaKeyword(self, stream):
+        stream.write("*LOAD_THERMAL_D3PLOT\n")
+
+
+class KooLoadHeatGenerationSetSolid:
+    """*LOAD_HEAT_GENERATION_SET_SOLID — 체적 발열원 (IC 칩, P2부터).
+
+    Vol I 33_LOAD.pdf p.33-67. SID=요소 set ID. MULT=q'''[mW/mm³] (총W/체적).
+    LCID=0이면 MULT 상수, >0이면 (time, q''') 곡선.
+    """
+    def __init__(self, sid=0, lcid=0, mult=0.0, wblcid=0, cblcid=0, tblcid=0):
+        self.sid = sid
+        self.lcid = lcid
+        self.mult = mult
+        self.wblcid = wblcid
+        self.cblcid = cblcid
+        self.tblcid = tblcid
+
+    def WriteStreamDynaKeyword(self, stream):
+        stream.write("*LOAD_HEAT_GENERATION_SET_SOLID\n")
+        stream.write("$#     sid      lcid      mult    wblcid    cblcid    tblcid\n")
+        stream.write(format(int(self.sid), ">10"))
+        stream.write(format(int(self.lcid), ">10"))
+        stream.write(format(float(self.mult), ">10.3e"))
+        stream.write(format(int(self.wblcid), ">10"))
+        stream.write(format(int(self.cblcid), ">10"))
+        stream.write(format(int(self.tblcid), ">10"))
+        stream.write("\n")
+
+
 class KooLoadBodyVector(KooLoadBody):
     def __init__(self, lcid, sf =1.0, lciddr = "", xc = 0.0, yc = 0.0, zc = 0.0, cid = 0, fx = 0.0, fy = 0.0, fz = 0.0): 
         super(KooLoadBodyVector,self).__init__(lcid, sf, lciddr, xc, yc, zc, cid)
@@ -797,7 +861,25 @@ class KooLoadManager:
         self.bodyLoads.append(load)
         return load
 
-    
+    def CreateLoadThermalVariable(self, ts=1.0, tb=0.0, lcid=0, nsid=0, nsidex=0, boxid=0):
+        """*LOAD_THERMAL_VARIABLE 추가 — T = tb + ts·f(t) 노드 온도장 (T1 열응력)."""
+        load = KooLoadThermalVariable(ts, tb, lcid, nsid, nsidex, boxid)
+        self.bodyLoads.append(load)
+        return load
+
+    def CreateLoadThermalD3plot(self):
+        """*LOAD_THERMAL_D3PLOT 추가 — 선행 thermal d3plot 온도 로드 (pass2)."""
+        load = KooLoadThermalD3plot()
+        self.bodyLoads.append(load)
+        return load
+
+    def CreateLoadHeatGenerationSetSolid(self, sid=0, lcid=0, mult=0.0, wblcid=0, cblcid=0, tblcid=0):
+        """*LOAD_HEAT_GENERATION_SET_SOLID 추가 — 체적 발열원 q'''[mW/mm³] (IC 칩)."""
+        load = KooLoadHeatGenerationSetSolid(sid, lcid, mult, wblcid, cblcid, tblcid)
+        self.bodyLoads.append(load)
+        return load
+
+
     def CreateLoadNodalPoint(self, name, lcid=None, cid = 0, fx = 0.0, fy = 0.0, fz = 0.0, nodeid = 0):
         self.maxid += 1
         load = KooLoadNodalPoint(self.maxid,name,lcid,cid,fx,fy,fz,nodeid)

@@ -1205,6 +1205,44 @@ class CumulativeScenarioRunner:
             dim_damper_str = ",".join(str(v) for v in dim_damper)
             preserve_block = self._build_preserve_block()
 
+            # 실린더 3단(cylinder_stages) → dimension 직렬화 + mid 재질 라인
+            # stages = [front, (mid), back] 각 {diameter, outer_diameter?, height, density, ...}
+            # dimension 매핑: 2단=[r,outerR,hF,hB,backR](5), 3단=[r,outerR,hF,midR,hMid,backR,hB](7)
+            # 반경=직경/2. front fillet은 diameter(평탄부)→outer_diameter(필렛후) 사용.
+            cyl_stages = impact_params.get("cylinder_stages", None)
+            impactor_type = impact_params.get("type", "Sphere")
+            dimension_str = str(impact_params.get("dimension", 0.008))
+            mid_material_block = ""
+            front_material_block = ""
+            if cyl_stages and impactor_type.lower() == "cylinder":
+                front = cyl_stages[0]
+                back = cyl_stages[-1]
+                f_dia = front.get("diameter")
+                f_outer = front.get("outer_diameter", f_dia)
+                radius = f_dia / 2.0                  # fillet 평탄부 반경
+                outerRadius = f_outer / 2.0           # front 외경 반경
+                hFront = front.get("height")
+                backRadius = back.get("diameter") / 2.0
+                hBack = back.get("height")
+                if len(cyl_stages) >= 3:
+                    mid = cyl_stages[1]
+                    midRadius = mid.get("diameter") / 2.0
+                    hMid = mid.get("height")
+                    dim_vals = [radius, outerRadius, hFront, midRadius, hMid, backRadius, hBack]
+                    mid_material_block = (
+                        f"DensityImpactorMid,{mid.get('density', 7.85e-9)}\n"
+                        f"YoungsModulusImpactorMid,{mid.get('youngs_modulus', 2.01e5)}\n"
+                        f"PoissonRatioImpactorMid,{mid.get('poisson', 0.3)}\n"
+                    )
+                else:
+                    dim_vals = [radius, outerRadius, hFront, hBack, backRadius]
+                dimension_str = ",".join(str(v) for v in dim_vals)
+                front_material_block = (
+                    f"DensityImpactorFront,{front.get('density', 1.18e-9)}\n"
+                    f"YoungsModulusImpactorFront,{front.get('youngs_modulus', 7.8)}\n"
+                    f"PoissonRatioImpactorFront,{front.get('poisson', 0.49)}\n"
+                )
+
             config_content = f"""*Inputfile
 {model_file}
 *RunDirectoryMode,True,{self.output_dir}
@@ -1222,15 +1260,18 @@ InitialVelocityX,0
 InitialVelocityY,0
 InitialVelocityZ,0
 Type,{impact_params.get('type', 'Sphere')}
-Dimension,{impact_params.get('dimension', 0.008)}
+Dimension,{dimension_str}
 MeshSize,{impact_params.get('mesh_size', 0.001)}
 DimensionDamper,{dim_damper_str}
 DensityImpactor,{impact_params.get('density', 7.85e-9)}
 YoungsModulusImpactor,{impact_params.get('youngs_modulus', 2.01e5)}
 PoissonRatioImpactor,{impact_params.get('poisson_ratio', 0.3)}
-DensityWall,{wall_params.get('density', 1.0e-9)}
+{front_material_block}{mid_material_block}DensityWall,{wall_params.get('density', 1.0e-9)}
 YoungsModulusWall,{wall_params.get('youngs_modulus', 1.0e4)}
 PoissonRatioWall,{wall_params.get('poisson_ratio', 0.3)}
+WallNumX,{wall_params.get('num_x', 10)}
+WallNumY,{wall_params.get('num_y', 10)}
+WallNumZ,{wall_params.get('num_z', 10)}
 tFinal,{impact_params.get('tFinal', 0.001)}
 dt,{impact_params.get('dt', 1e-6)}
 OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
@@ -1239,10 +1280,32 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
 """
 
         elif mode == "THERM":
-            # 열응력 시뮬레이션 설정 (기본 템플릿)
-            target_temp = params.get("target_temp_C", 85)
-            hold_time = params.get("hold_time_s", 1800)
+            # 고온 열전달·열응력 (P1 T1: 균일온도 열응력, explicit 구조 only)
+            # — KooMeshModifier THERMAL_LOAD 모드 호출 → Run_<id>/ThermalSet.k
+            # 단위계 ton-mm-s. double precision SIF 필수 (단정밀 thermal 거부).
+            sim_params = self.config.get("simulation_params", {})
+            thermal_params = sim_params.get("thermal", {})
+            # params(스텝별) > simulation_params.thermal > default 3-tier
+            def _therm_get(key, default):
+                if key in params:
+                    return params[key]
+                if key in thermal_params:
+                    return thermal_params[key]
+                return default
+
+            thermal_type = _therm_get("thermal_type", "UniformChamber")
+            base_temp = _therm_get("base_temp_C", _therm_get("initial_temp_C", 25))
+            target_temp = _therm_get("target_temp_C", 85)
+            ramp_time = _therm_get("ramp_time_s", 1.0e-3)
+            dt = _therm_get("dt", 1.0e-6)
+            default_cte = _therm_get("default_cte_1_K", 1.7e-5)
+            part_cte = _therm_get("part_cte", {})  # {pid: cte}
             preserve_block = self._build_preserve_block()
+
+            cte_block = ""
+            if part_cte:
+                cte_lines = "\n".join(f"{pid},{cte}" for pid, cte in part_cte.items())
+                cte_block = f"PartCTE\n{cte_lines}\nEndPartCTE\n"
 
             config_content = f"""*Inputfile
 {model_file}
@@ -1251,13 +1314,15 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition} T={target_temp}C
 *Creator,automation,auto@system.com,CAE,AUTO
 {preserve_block}*Mode
-THERMAL_CYCLE,1
-**ThermalCycle,1
-TargetTemperature,{target_temp}
-HoldTime,{hold_time}
-InitialTemperature,25
-RampTime,600
-**EndThermalCycle
+THERMAL_LOAD,1
+**ThermalLoad,1
+ThermalType,{thermal_type}
+BaseTempC,{base_temp}
+TargetTempC,{target_temp}
+RampTimeS,{ramp_time}
+DT,{dt}
+DefaultCTE,{default_cte}
+{cte_block}**EndThermalLoad
 *End
 """
 

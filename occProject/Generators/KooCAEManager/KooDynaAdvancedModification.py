@@ -3319,11 +3319,12 @@ class KooDynaAdvancedModification:
          
         zDir = np.array([0.0, 0.0, -1.0])
         xDir = np.array([1.0, 0.0, 0.0])
-        numX = 10
-        numY = 10
-        numZ = 10
+        # Wall 요소 분할 — scenario.json WallNumX/Y/Z 노출 (기존 10 하드코딩 → 옵션화)
+        numX = int(option.get("WallNumX", 10))
+        numY = int(option.get("WallNumY", 10))
+        numZ = int(option.get("WallNumZ", 10))
         SSID = 0
-       
+
         SSTYP = 5
         MSTYP = 3
         SBOXID = 0
@@ -3361,29 +3362,42 @@ class KooDynaAdvancedModification:
         secMan = self.dynaImporter.sectionManager
         
         ########################################
+        # 3단 실린더 여부 — dimension 7값이면 mid 단 활성 (5값=2단 하위호환)
+        use_mid_cyl = (impactorType.lower() == "cylinder" and len(dimension) >= 7)
+        impactMidPart = None
         if impactorType.lower() == "cylinder":
             if matIDImpactorFront != 0:
                 materialImpactorFront = matMan.materials[matIDImpactorFront]
             else:
                 materialImpactorFront = matMan.CreateElasticMaterial("ImpactorFrontMaterial", rhoImpactorFront, EImpactorFront, nuImpactorFront)
-            sectionImpactorFront : KooSectionSolid = secMan.CreateSolidSection("ImpactorFrontSection", 1)    
+            sectionImpactorFront : KooSectionSolid = secMan.CreateSolidSection("ImpactorFrontSection", 1)
             impactFrontElemMan : ElementManager = ElementManager(nodeMan)
             impactFrontPart = KooPart(nodeMan, impactFrontElemMan, materialImpactorFront, sectionImpactorFront, nodeSetMan)
-            self.dynaImporter.partManager.CreatePartfromKooPart(impactFrontPart)        
-        ########################################                    
-        boundaryBox = nodeMan.GetBoundingBox()        
+            self.dynaImporter.partManager.CreatePartfromKooPart(impactFrontPart)
+            # 3단 중간단 part (mid 활성 시)
+            if use_mid_cyl:
+                if matIDImpactorMid != 0:
+                    materialImpactorMid = matMan.materials[matIDImpactorMid]
+                else:
+                    materialImpactorMid = matMan.CreateElasticMaterial("ImpactorMidMaterial", rhoImpactorMid, EImpactorMid, nuImpactorMid)
+                sectionImpactorMid : KooSectionSolid = secMan.CreateSolidSection("ImpactorMidSection", 1)
+                impactMidElemMan : ElementManager = ElementManager(nodeMan)
+                impactMidPart = KooPart(nodeMan, impactMidElemMan, materialImpactorMid, sectionImpactorMid, nodeSetMan)
+                self.dynaImporter.partManager.CreatePartfromKooPart(impactMidPart)
+        ########################################
+        boundaryBox = nodeMan.GetBoundingBox()
         zMax = boundaryBox[5]
-        zMin = boundaryBox[2]                       
-        
-        ########## Impactor 
+        zMin = boundaryBox[2]
+
+        ########## Impactor
         if matIDImpactor != 0:
             materialImpactor = matMan.materials[matIDImpactor]
         else:
-            materialImpactor = matMan.CreateElasticMaterial("ImpactorMaterial", rhoImpactor, EImpactor, nuImpactor)            
+            materialImpactor = matMan.CreateElasticMaterial("ImpactorMaterial", rhoImpactor, EImpactor, nuImpactor)
         sectionImpactor : KooSectionSolid = secMan.CreateSolidSection("ImpactorSection", 1)
         impactElemMan : ElementManager = ElementManager(nodeMan)
         impactorPart = KooPart(nodeMan, impactElemMan, materialImpactor, sectionImpactor, nodeSetMan)
-        self.dynaImporter.partManager.CreatePartfromKooPart(impactorPart)                        
+        self.dynaImporter.partManager.CreatePartfromKooPart(impactorPart)
         
         ########## Wall
         sectionWall = secMan.CreateSolidSection("WallSection", 1)
@@ -3420,7 +3434,10 @@ class KooDynaAdvancedModification:
             Vy = VyList[i]
             Vz = VzList[i]
             height = heightList[i]
-            velocity = [Vx, Vy, Vz-9.81*height]
+            # 자유낙하 속도 v = √(2·g·h) (DROP_ATTITUDE line 2231 결 동일).
+            # height>100이면 mm(g=9810 mm/s²), 이하면 m(g=9.81 m/s²) 자동 추정.
+            g_fall = 9810.0 if height > 100 else 9.81
+            velocity = [Vx, Vy, Vz - np.sqrt(2.0 * g_fall * height)]
                 
             if i != 0:                
                 self.dynaImporter.SyncronizeMaxID()                             
@@ -3485,17 +3502,31 @@ class KooDynaAdvancedModification:
             elif impactorType.lower() == "cylinder":
                 radius = dimension[0]
                 outerRadius = dimension[1]
-                height1 = dimension[2]
-                height2 = dimension[3]
-                backRadius = dimension[4]
+                # 3단(7값): [radius, outerRadius, hFront, midRadius, hMid, backRadius, hBack]
+                # 2단(5값): [radius, outerRadius, hFront, hBack, backRadius]
+                if len(dimension) >= 7:
+                    height1 = dimension[2]
+                    midRadius = dimension[3]
+                    heightMid = dimension[4]
+                    backRadius = dimension[5]
+                    height2 = dimension[6]
+                else:
+                    height1 = dimension[2]
+                    height2 = dimension[3]
+                    backRadius = dimension[4]
+                    midRadius = 0
+                    heightMid = 0
                 impactLoc = [locX[i], locY[i], zMax+offset_distance]
                 zDir = np.array([0.0, 0.0, 1.0])
-                simodule = self.moduleManager.CreateCylinderwithMassImpactModule("Impact Cylinder", radius, outerRadius, height1, height2, impactLoc, zDir, backRadius)
+                simodule = self.moduleManager.CreateCylinderwithMassImpactModule("Impact Cylinder", radius, outerRadius, height1, height2, impactLoc, zDir, backRadius, midRadius, heightMid)
                 simodule.SetMeshSize(meshSize)
                 simodule.GenerateShape()
                 impactorPart.GenerateTetraMeshfromShapes(simodule.shapesBack, meshSize, meshSize, 3)
                 self.dynaImporter.SyncronizeMaxID()
                 impactFrontPart.GenerateTetraMeshfromShapes(simodule.shapesFront, meshSize, meshSize, 3)
+                if use_mid_cyl and impactMidPart is not None:
+                    self.dynaImporter.SyncronizeMaxID()
+                    impactMidPart.GenerateTetraMeshfromShapes(simodule.shapesMid, meshSize, meshSize, 3)
                 
                 
                                         
@@ -3522,10 +3553,22 @@ class KooDynaAdvancedModification:
                 contactImpactortoObjects.SetOptCardA(2)
                 
                 initVFront = self.dynaImporter.initialManager.CreateInitialVelocityGeneration(impactFrontPart.id, 2, 0, velocity[0], velocity[1], velocity[2])
-                
-                MSID = impactorPart.id
-                SSID = impactFrontPart.id            
-                tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
+
+                if use_mid_cyl and impactMidPart is not None:
+                    # 3단: front↔mid↔back tied 2개 + mid 초기속도
+                    initVMid = self.dynaImporter.initialManager.CreateInitialVelocityGeneration(impactMidPart.id, 2, 0, velocity[0], velocity[1], velocity[2])
+                    # front↔mid
+                    MSID = impactMidPart.id
+                    SSID = impactFrontPart.id
+                    tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
+                    # mid↔back
+                    MSID = impactorPart.id
+                    SSID = impactMidPart.id
+                    tiedContactMidtoBack = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
+                else:
+                    MSID = impactorPart.id
+                    SSID = impactFrontPart.id
+                    tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
             
             
             if len(locX) > 1: 
@@ -3611,8 +3654,14 @@ class KooDynaAdvancedModification:
             rhoImpactorFront = option["DensityImpactorFront"]
         else:
             rhoImpactorFront = 7800.0
-            
-            
+
+        # 3단 실린더 중간단(mid) 재질 — MaterialIDImpactorMid/E/nu/Density (없으면 Impactor 본체 값 상속)
+        matIDImpactorMid = option.get("MaterialIDImpactorMid", 0)
+        EImpactorMid = option.get("YoungsModulusImpactorMid", option.get("YoungsModulusImpactor", 2.07e11))
+        nuImpactorMid = option.get("PoissonRatioImpactorMid", option.get("PoissonRatioImpactor", 0.3))
+        rhoImpactorMid = option.get("DensityImpactorMid", option.get("DensityImpactor", 7800.0))
+
+
         if "YoungsModulusDamper" in option:
             EDamp = option["YoungsModulusDamper"]
         else:
@@ -3625,7 +3674,7 @@ class KooDynaAdvancedModification:
             rhoDamp = option["DensityDamper"]
         else:
             rhoDamp = 1000.0
-            
+
         if "YoungsModulusWall" in option:
             EWall = option["YoungsModulusWall"]
         else:
@@ -3703,9 +3752,10 @@ class KooDynaAdvancedModification:
          
         zDir = np.array([0.0, 0.0, -1.0])
         xDir = np.array([1.0, 0.0, 0.0])
-        numX = 10
-        numY = 10
-        numZ = 10
+        # Wall 요소 분할 — scenario.json WallNumX/Y/Z 노출 (기존 10 하드코딩 → 옵션화)
+        numX = int(option.get("WallNumX", 10))
+        numY = int(option.get("WallNumY", 10))
+        numZ = int(option.get("WallNumZ", 10))
 
         # DropContact 옵션 (DropAttitude와 동일 구조)
         drop_contact = option.get("DropContact", {})
@@ -3772,17 +3822,30 @@ class KooDynaAdvancedModification:
         secMan = self.dynaImporter.sectionManager
         
         ########################################
+        # 3단 실린더 여부 — dimension 7값이면 mid 단 활성 (5값=2단 하위호환)
+        use_mid_cyl = (impactorType.lower() == "cylinder" and len(dimension) >= 7)
+        impactMidPart = None
         if impactorType.lower() == "cylinder":
             if matIDImpactorFront != 0:
                 materialImpactorFront = matMan.materials[matIDImpactorFront]
             else:
-                materialImpactorFront = matMan.CreateElasticMaterial("ImpactorFrontMaterial", rhoImpactorFront, EImpactorFront, nuImpactorFront)            
-            sectionImpactorFront : KooSectionSolid = secMan.CreateSolidSection("ImpactorFrontSection", 1)    
+                materialImpactorFront = matMan.CreateElasticMaterial("ImpactorFrontMaterial", rhoImpactorFront, EImpactorFront, nuImpactorFront)
+            sectionImpactorFront : KooSectionSolid = secMan.CreateSolidSection("ImpactorFrontSection", 1)
             impactFrontElemMan : ElementManager = ElementManager(nodeMan)
             impactFrontPart = KooPart(nodeMan, impactFrontElemMan, materialImpactorFront, sectionImpactorFront, nodeSetMan)
-            self.dynaImporter.partManager.CreatePartfromKooPart(impactFrontPart)        
+            self.dynaImporter.partManager.CreatePartfromKooPart(impactFrontPart)
+            # 3단 중간단 part (mid 활성 시)
+            if use_mid_cyl:
+                if matIDImpactorMid != 0:
+                    materialImpactorMid = matMan.materials[matIDImpactorMid]
+                else:
+                    materialImpactorMid = matMan.CreateElasticMaterial("ImpactorMidMaterial", rhoImpactorMid, EImpactorMid, nuImpactorMid)
+                sectionImpactorMid : KooSectionSolid = secMan.CreateSolidSection("ImpactorMidSection", 1)
+                impactMidElemMan : ElementManager = ElementManager(nodeMan)
+                impactMidPart = KooPart(nodeMan, impactMidElemMan, materialImpactorMid, sectionImpactorMid, nodeSetMan)
+                self.dynaImporter.partManager.CreatePartfromKooPart(impactMidPart)
         ########################################
-        
+
         if matIDDamp != 0:
             materialBeam = matMan.materials[matIDDamp]
         else:
@@ -3859,7 +3922,10 @@ class KooDynaAdvancedModification:
             Vy = VyList[i]
             Vz = VzList[i]
             height = heightList[i]
-            velocity = [Vx, Vy, Vz-9.81*height]
+            # 자유낙하 속도 v = √(2·g·h) (DROP_ATTITUDE line 2231 결 동일).
+            # height>100이면 mm(g=9810 mm/s²), 이하면 m(g=9.81 m/s²) 자동 추정.
+            g_fall = 9810.0 if height > 100 else 9.81
+            velocity = [Vx, Vy, Vz - np.sqrt(2.0 * g_fall * height)]
 
             if not use_fast_mode:
                 self.dynaImporter.SyncronizeMaxID()
@@ -4003,17 +4069,31 @@ class KooDynaAdvancedModification:
             elif impactorType.lower() == "cylinder":
                 radius = dimension[0]
                 outerRadius = dimension[1]
-                height1 = dimension[2]
-                height2 = dimension[3]
-                backRadius = dimension[4]
+                # 3단(7값): [radius, outerRadius, hFront, midRadius, hMid, backRadius, hBack]
+                # 2단(5값): [radius, outerRadius, hFront, hBack, backRadius]
+                if len(dimension) >= 7:
+                    height1 = dimension[2]
+                    midRadius = dimension[3]
+                    heightMid = dimension[4]
+                    backRadius = dimension[5]
+                    height2 = dimension[6]
+                else:
+                    height1 = dimension[2]
+                    height2 = dimension[3]
+                    backRadius = dimension[4]
+                    midRadius = 0
+                    heightMid = 0
                 impactLoc = [locX[i], locY[i], zMax+offset_distance]
                 zDir = np.array([0.0, 0.0, 1.0])
-                simodule = self.moduleManager.CreateCylinderwithMassImpactModule("Impact Cylinder", radius, outerRadius, height1, height2, impactLoc, zDir, backRadius)
+                simodule = self.moduleManager.CreateCylinderwithMassImpactModule("Impact Cylinder", radius, outerRadius, height1, height2, impactLoc, zDir, backRadius, midRadius, heightMid)
                 simodule.SetMeshSize(meshSize)
                 simodule.GenerateShape()
                 impactorPart.GenerateTetraMeshfromShapes(simodule.shapesBack, meshSize, meshSize, 3)
                 self.dynaImporter.SyncronizeMaxID()
                 impactFrontPart.GenerateTetraMeshfromShapes(simodule.shapesFront, meshSize, meshSize, 3)
+                if use_mid_cyl and impactMidPart is not None:
+                    self.dynaImporter.SyncronizeMaxID()
+                    impactMidPart.GenerateTetraMeshfromShapes(simodule.shapesMid, meshSize, meshSize, 3)
                 
                 
                                         
@@ -4042,11 +4122,24 @@ class KooDynaAdvancedModification:
                 contactImpactortoObjects = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(SSID, MSID, SSTYP, MSTYP, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
                 contactImpactortoObjects.SetOptCardA(opt_SOFT, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
                 contactImpactortoObjects.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
-                initVFront = self.dynaImporter.initialManager.CreateInitialVelocityGeneration(impactFrontPart.id, 2, 0, velocity[0], velocity[1], velocity[2])            
-                MSID = impactorPart.id
-                SSID = impactFrontPart.id            
-                tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
-                
+                initVFront = self.dynaImporter.initialManager.CreateInitialVelocityGeneration(impactFrontPart.id, 2, 0, velocity[0], velocity[1], velocity[2])
+
+                if use_mid_cyl and impactMidPart is not None:
+                    # 3단: front↔mid↔back tied 2개 + mid 초기속도
+                    initVMid = self.dynaImporter.initialManager.CreateInitialVelocityGeneration(impactMidPart.id, 2, 0, velocity[0], velocity[1], velocity[2])
+                    # front↔mid
+                    MSID = impactMidPart.id
+                    SSID = impactFrontPart.id
+                    tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
+                    # mid↔back
+                    MSID = impactorPart.id
+                    SSID = impactMidPart.id
+                    tiedContactMidtoBack = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
+                else:
+                    MSID = impactorPart.id
+                    SSID = impactFrontPart.id
+                    tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
+
             
             # ── Phase 1 메타데이터: impactor, energy, location, doe ──
             self.dynaImporter.metaData["scenario_mode"] = "DropWeightImpactTest"
@@ -4317,10 +4410,17 @@ class KooDynaAdvancedModification:
                         self.WriteModifiedFile(filePath, modifiedKeyword)
 
     def DropWeightImpactTestbyPart(self, option, filePath):
+        # 3단 실린더(dimension 7값)는 byPart(GenerationMode=Part) 경로 미지원.
+        # 주 경로(DampingSpring/OutsideRigid)를 사용하거나 2단으로 입력할 것.
+        _dim = option.get("Dimension", [])
+        if option.get("Type", "").lower() == "cylinder" and len(_dim) >= 7:
+            raise NotImplementedError(
+                "[IMPACT] 3단 실린더(7값 dimension)는 GenerationMode=Part(byPart) 미지원. "
+                "GenerationMode를 DampingSpring 또는 OutsideRigidElement로 사용하세요.")
         if "TFinal" in option:
             tfinal = option["TFinal"]
         else:
-            tfinal = 0.0 
+            tfinal = 0.0
         if "DT" in option:
             dt = option["DT"]
         else:
@@ -4408,10 +4508,11 @@ class KooDynaAdvancedModification:
         
         zDir = np.array([0.0, 0.0, -1.0])
         xDir = np.array([1.0, 0.0, 0.0])
-        numX = 10           
-        numY = 10
-        numZ = 10
-        
+        # Wall 요소 분할 — scenario.json WallNumX/Y/Z 노출 (기존 10 하드코딩 → 옵션화)
+        numX = int(option.get("WallNumX", 10))
+        numY = int(option.get("WallNumY", 10))
+        numZ = int(option.get("WallNumZ", 10))
+
         SSID = 0
         SSTYP = 5   
         MSTYP = 3
@@ -4515,7 +4616,10 @@ class KooDynaAdvancedModification:
             Vy = VyList[i]
             Vz = VzList[i]
             height = heightList[i]
-            velocity = [Vx, Vy, Vz-9.81*height]
+            # 자유낙하 속도 v = √(2·g·h) (DROP_ATTITUDE line 2231 결 동일).
+            # height>100이면 mm(g=9810 mm/s²), 이하면 m(g=9.81 m/s²) 자동 추정.
+            g_fall = 9810.0 if height > 100 else 9.81
+            velocity = [Vx, Vy, Vz - np.sqrt(2.0 * g_fall * height)]
         
             for j in range(len(locX)):
                 if not use_fast_mode:
@@ -5016,6 +5120,63 @@ class KooDynaAdvancedModification:
         else:
             # runDirectoryMode 비활성: 입력 파일 옆에 _vib.k (standalone 호환)
             self.WriteModifiedFile(filePath, "_vib", False)
+
+    def ThermalLoad(self, option, filePath):
+        """고온 열전달·열응력 하중 (P1 T1: DEFINE_CURVE + LOAD_THERMAL_VARIABLE + CTE).
+
+        VibrationLoad 결 답습 — runDirectoryMode 일 때 Run_<id>/ThermalSet.k + Output/ + .done.
+        T1(균일온도)은 explicit 구조해석 (implicit는 MPP_d 빌드 MPI_Comm_dup 결함).
+        double precision SIF 필수 (scenario.json environment.lsdyna_apptainer_sif = *_mpp_d.sif).
+        """
+        # ① 열하중 카드 적용 (메모리 모델 수정)
+        from KooCAEManager.KooThermalLoad import apply_thermal_load
+        apply_thermal_load(self.dynaImporter, option)
+
+        # ② explicit control + database (DROP/IMPACT/VIB 결)
+        tFinal = float(option.get("RampTimeS", 1.0e-3))
+        dt = float(option.get("DT", 1.0e-6))
+        if dt != 0.0 and tFinal != 0.0:
+            self.SetControlandDatabaseExplicit(tFinal, dt)
+
+        # ③ RunDirectoryMode 처리 (VibrationLoad 결 그대로)
+        fileName = os.path.basename(filePath)
+        if not fileName.endswith(".k"):
+            fileName = fileName + ".k"
+
+        if self.runDirectoryMode == True:
+            run_id = self.dynaImporter.GenerateRunID()
+            if len(self.runDirectoryPath) == 0:
+                modifiedKeyword = os.path.join(filePath.replace(".k", ""), "Run_" + run_id)
+            else:
+                if self.runDirectoryPath[0] == "/":
+                    modifiedKeyword = os.path.join(self.runDirectoryPath, "Run_" + run_id)
+                elif len(self.metaDirectoryPath) > 0 and self.metaDirectoryPath[0] == "/":
+                    modifiedKeyword = self.metaDirectoryPath
+                else:
+                    path = os.getcwd()
+                    modifiedKeyword = os.path.join(path, self.runDirectoryPath, "Run_" + run_id)
+
+            folderPath = modifiedKeyword
+            if not os.path.exists(folderPath):
+                os.makedirs(folderPath)
+            outputFolderPath = os.path.join(folderPath, "Output")
+            if not os.path.exists(outputFolderPath):
+                os.makedirs(outputFolderPath)
+
+            if len(self.runDirectoryPath) == 0:
+                modifiedKeyword = os.path.join(modifiedKeyword, fileName)
+            else:
+                modifiedKeyword = os.path.join(modifiedKeyword, "ThermalSet")
+            modifiedKeyword = modifiedKeyword.strip()
+            self.WriteModifiedFile(modifiedKeyword, "", True)
+
+            done_file = os.path.join(folderPath, ".done")
+            with open(done_file, "w") as df:
+                df.write("done")
+
+            print("ThermalLoad Run_" + run_id + " is Created")
+        else:
+            self.WriteModifiedFile(filePath, "_therm", False)
 
     def PartValidationSplit(self, option, output_dir):
         """파트별 낙하 검증용 분할."""
