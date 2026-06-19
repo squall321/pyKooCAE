@@ -367,13 +367,16 @@ class CumulativeScenarioRunner:
     """누적 시나리오 실행자"""
 
     def __init__(self, config_path: str, doe_filter: Optional[int] = None,
-                 skip_koomeshmodifier: bool = False, pregenerated_dir: Optional[str] = None):
+                 skip_koomeshmodifier: bool = False, pregenerated_dir: Optional[str] = None,
+                 resume: bool = True):
         """
         Args:
             config_path: runner_config.json 경로
             doe_filter: 특정 DOE만 실행 (병렬 실행 시 사용)
             skip_koomeshmodifier: KooMeshModifier 실행 생략 (batch 사전 생성 모드)
             pregenerated_dir: 사전 생성된 DropSet.k 파일 디렉토리
+            resume: True면 기존 checkpoint에서 이어서 진행, False면 checkpoint를
+                    무시하고 처음부터 스캔(완료된 run은 simulation_index status로 계속 skip).
         """
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
@@ -396,7 +399,7 @@ class CumulativeScenarioRunner:
             self.checkpoint_file = base_checkpoint
 
         self._setup_logging()
-        self._load_checkpoint()
+        self._load_checkpoint(resume=resume)
         self._load_index()
 
     def _setup_logging(self):
@@ -417,9 +420,14 @@ class CumulativeScenarioRunner:
             ]
         )
 
-    def _load_checkpoint(self):
-        """체크포인트 로드"""
-        if os.path.exists(self.checkpoint_file):
+    def _load_checkpoint(self, resume: bool = True):
+        """체크포인트 로드.
+
+        resume=False면 기존 checkpoint 파일을 읽지 않고 새로 초기화한다.
+        (완료된 run은 simulation_index status="completed"로 계속 skip되므로
+        비싼 재실행은 발생하지 않고, 진행 포인터만 처음부터 재스캔한다.)
+        """
+        if resume and os.path.exists(self.checkpoint_file):
             try:
                 with open(self.checkpoint_file, 'r', encoding='utf-8') as f:
                     content = f.read().strip()

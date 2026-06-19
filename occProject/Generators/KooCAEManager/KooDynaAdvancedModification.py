@@ -5583,9 +5583,15 @@ class KooDynaAdvancedModification:
             part: KooPart  = self.dynaImporter.partManager.parts[pid] 
         else:
             print("Part ID is not found")
-            return 
-        
-        boundaryBox = part.elementManager.GetBoundaryBox()
+            return
+
+        # 박스 영역: TargetPID가 유효하면 그 파트의 bbox로 박스를 정의하고,
+        # 아니면(0/자기자신/없음) morph 대상 파트 자신의 bbox 사용 (기존 동작).
+        targetPID = option.get("TargetPID", 0)
+        boxPart = part
+        if targetPID and targetPID != pid and targetPID in self.dynaImporter.partManager.parts:
+            boxPart = self.dynaImporter.partManager.parts[targetPID]
+        boundaryBox = boxPart.elementManager.GetBoundaryBox()
         xMin = boundaryBox[0]
         xMax = boundaryBox[1]
         yMin = boundaryBox[2]
@@ -5606,6 +5612,28 @@ class KooDynaAdvancedModification:
         pushDistance = option["PushDistance"]
         mode = option["Mode"]
         effectRadius = option["EffectRadius"]
+
+        # numX x numY 격자로 박스를 분할해 각 셀에 morph 적용 (1x1이면 단일 박스 = 기존 동작).
+        # 의미는 옵션명(NumberofBoxX/YDirection) 기반 추론 — 실모델 검증 필요.
+        nx = max(1, int(option.get("NumberofBoxXDirection", 1) or 1))
+        ny = max(1, int(option.get("NumberofBoxYDirection", 1) or 1))
+        yDirVec = np.cross(np.array(zDir), np.array(xDir))
+        _ynorm = np.linalg.norm(yDirVec)
+        if _ynorm > 0:
+            yDirVec = yDirVec / _ynorm
+        subxL = xLength / nx
+        subyL = yLength / ny
+
+        def _morph(targetPart):
+            if nx == 1 and ny == 1:
+                targetPart.MorphwithBox(location, [xLength, yLength, zLength], xDir, zDir, pushDistance, mode, effectRadius, angle)
+                return
+            for ix in range(nx):
+                ox = -xLength / 2.0 + subxL * (ix + 0.5)
+                for iy in range(ny):
+                    oy = -yLength / 2.0 + subyL * (iy + 0.5)
+                    subloc = [location[k] + xDir[k] * ox + yDirVec[k] * oy for k in range(3)]
+                    targetPart.MorphwithBox(subloc, [subxL, subyL, zLength], xDir, zDir, pushDistance, mode, effectRadius, angle)
         
         unitscale = subOption["UnitScale"]
         meshSize = subOption["MeshSize"]
@@ -5632,10 +5660,10 @@ class KooDynaAdvancedModification:
             
             part.GenerateSolidMeshfromSurfaceMesh(meshSize,meshSize)
             #part.MorphwithBox(location, [xLength, yLength, zLength], xDir, zDir, pushDistance, mode, effectRadius)
-            part.MorphwithBox(location, [xLength, yLength, zLength], xDir, zDir, pushDistance, mode, effectRadius, angle)
+            _morph(part)
         else:
             part : KooPart = partManager.parts[pid]
-            part.MorphwithBox(location, [xLength, yLength, zLength], xDir, zDir, pushDistance, mode, effectRadius, angle)
+            _morph(part)
         
            
 

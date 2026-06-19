@@ -1967,7 +1967,8 @@ def cmd_run(args):
             str(config_path),
             doe_filter=args.doe,
             skip_koomeshmodifier=skip_koomesh,
-            pregenerated_dir=pregenerated_dir
+            pregenerated_dir=pregenerated_dir,
+            resume=args.resume
         )
         success = runner.run_all()
         if success:
