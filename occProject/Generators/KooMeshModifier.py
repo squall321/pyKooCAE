@@ -832,6 +832,7 @@ class KooMeshModifier(KooSimulationGenerator):
                     curOptions["AxisDirection"] = "Auto"
                     curOptions["InnerRadiusRatio"] = 0.3
                     curOptions["ZTolerance"] = 0.01
+                    curOptions["RTolerance"] = 0.5
                     while True:
                         line = f.readline().strip()
                         line = line.replace('\n','')
@@ -869,6 +870,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "ztolerance" in line.lower():
                             svector = line.split(",")
                             curOptions["ZTolerance"] = KooDynaFloat(svector[1])
+                        elif "rtolerance" in line.lower():
+                            svector = line.split(",")
+                            curOptions["RTolerance"] = KooDynaFloat(svector[1])
 
                     self.modeIDOption[curModeID] = curOptions
 
@@ -1268,7 +1272,8 @@ class KooMeshModifier(KooSimulationGenerator):
 
                             svector = line.split(",")[2:]
                             transXList = [KooDynaFloat(x) for x in svector]
-                            if pid not in curOptions["Translation"]:                                
+                            if pid not in curOptions["Translation"]:
+                                curOptions["Translation"][pid] = {}
                                 # add 0 list for y and z
                                 curOptions["Translation"][pid]["Y"] = [0.0] * len(transXList)
                                 curOptions["Translation"][pid]["Z"] = [0.0] * len(transXList)
@@ -1278,7 +1283,8 @@ class KooMeshModifier(KooSimulationGenerator):
                             pid = int(line.split(",")[1])
                             svector = line.split(",")[2:]
                             transYList = [KooDynaFloat(x) for x in svector]
-                            if pid not in curOptions["Translation"]:                                
+                            if pid not in curOptions["Translation"]:
+                                curOptions["Translation"][pid] = {}
                                 # add 0 list for x and z
                                 curOptions["Translation"][pid]["X"] = [0.0] * len(transYList)
                                 curOptions["Translation"][pid]["Z"] = [0.0] * len(transYList)
@@ -1287,7 +1293,8 @@ class KooMeshModifier(KooSimulationGenerator):
                             pid = int(line.split(",")[1])
                             svector = line.split(",")[2:]
                             transZList = [KooDynaFloat(x) for x in svector]
-                            if pid not in curOptions["Translation"]:                                
+                            if pid not in curOptions["Translation"]:
+                                curOptions["Translation"][pid] = {}
                                 # add 0 list for x and y
                                 curOptions["Translation"][pid]["X"] = [0.0] * len(transZList)
                                 curOptions["Translation"][pid]["Y"] = [0.0] * len(transZList)
@@ -1689,10 +1696,12 @@ class KooMeshModifier(KooSimulationGenerator):
                                     svector = parse_whole(line, [10, 10, 10, 10, 10, 10, 10, 10])
                                     curKeyword.append(svector)
                                 i = i + 1
-                    curOptions["MIDs"][name] = curKeyword
+                            # 각 *mid 블록을 고유 MID id 키로 저장 (다중 블록 누적; 과거엔
+                            # 루프 밖 단일 저장이라 마지막 블록만 남았음)
+                            curOptions["MIDs"][curKeywordName] = curKeyword
                     self.modeIDOption[curModeID] = curOptions
                     line = line.strip()
-                    continue      
+                    continue
                 elif "**partlocationdoe" in line.lower():
                     svector = line.split(",")
                     curModeID = int(svector[1])
@@ -2531,7 +2540,7 @@ class KooMeshModifier(KooSimulationGenerator):
     
     def GenerateErodingMinDT(self, modeid):
         curOption = self.modeIDOption[modeid]
-        dt = curOption["DT"]
+        dt = curOption.get("DT", 1.0e-9)
         self.advancedModification.ErodingMinDT(dt)
 
     def GenerateRigidifySmallDT(self, modeid):

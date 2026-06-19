@@ -114,8 +114,8 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     )
     submit_parser.add_argument(
         '--partition',
-        default='normal',
-        help='Slurm partition (default: normal)'
+        default=None,
+        help='Slurm partition (default: from runner_config.json environment.partition, or normal)'
     )
     submit_parser.add_argument(
         '--memory',
@@ -124,8 +124,8 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     )
     submit_parser.add_argument(
         '--time-limit',
-        default='24:00:00',
-        help='Time limit per DOE job (default: 24:00:00)'
+        default=None,
+        help='Time limit per DOE job (default: from runner_config.json environment.time_limit, or 24:00:00)'
     )
     submit_parser.add_argument(
         '--data-root',
@@ -1189,8 +1189,8 @@ def _submit_cumulative(args, config_path):
 
     # CLI 인자가 없으면 runner_config.json의 환경 설정에서 읽기
     memory = args.memory or env.get("memory", "64G")
-    partition = args.partition if args.partition != 'normal' else env.get("partition", "normal")
-    time_limit = args.time_limit if args.time_limit != '24:00:00' else env.get("time_limit", "24:00:00")
+    partition = args.partition if args.partition is not None else env.get("partition", "normal")
+    time_limit = args.time_limit if args.time_limit is not None else env.get("time_limit", "24:00:00")
 
     # 파티션 최대 시간 확인 → time_limit 자동 cap
     try:
@@ -1984,31 +1984,46 @@ def cmd_run(args):
 
 def cmd_status(args):
     """Execute status command"""
-    print("=" * 80)
-    print("KooChainRun - Execution Status")
-    print("=" * 80)
-    print()
+    import time
+    watch = getattr(args, 'watch', False)
+    while True:
+        if watch:
+            os.system("clear 2>/dev/null || true")
+        print("=" * 80)
+        print("KooChainRun - Execution Status" + (" [watch]" if watch else ""))
+        print("=" * 80)
+        print()
 
-    # Check Slurm queue
-    print("📊 Slurm Queue Status:")
-    print("-" * 80)
-    os.system("squeue -u $USER")
-    print()
+        # Check Slurm queue
+        print("📊 Slurm Queue Status:")
+        print("-" * 80)
+        os.system("squeue -u $USER")
+        print()
 
-    if args.config:
-        config_path = Path(args.config).resolve()
-        if config_path.exists():
-            # TODO: Parse runner_config.json and show detailed progress
-            print(f"Config: {config_path}")
-            print("(Detailed progress monitoring coming soon)")
-        else:
-            print(f"⚠️  Warning: Config file not found: {config_path}")
+        if args.config:
+            config_path = Path(args.config).resolve()
+            if config_path.exists():
+                # TODO: Parse runner_config.json and show detailed progress
+                print(f"Config: {config_path}")
+                print("(Detailed progress monitoring coming soon)")
+            else:
+                print(f"⚠️  Warning: Config file not found: {config_path}")
 
-    print()
-    print("Commands:")
-    print("  squeue -u $USER              # Check Slurm jobs")
-    print("  scancel <job_id>             # Cancel a job")
-    print("  find RUNDIR -name '*.lock'   # Count completed cases")
+        print()
+        print("Commands:")
+        print("  squeue -u $USER              # Check Slurm jobs")
+        print("  scancel <job_id>             # Cancel a job")
+        print("  find RUNDIR -name '*.lock'   # Count completed cases")
+
+        if not watch:
+            break
+        try:
+            print()
+            print("(--watch) 60초마다 갱신, 종료: Ctrl+C")
+            time.sleep(60)
+        except KeyboardInterrupt:
+            print("\n중단됨.")
+            break
 
 
 def cmd_collect(args):

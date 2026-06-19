@@ -130,14 +130,14 @@ class KooDynaAdvancedModification:
             nodes = nodeSet.nodes
             for i in nodes:
                 node = nodes[i]
-                points[node.id] = tuple(node.x, node.y, node.z)
+                points[node.id] = (node.x, node.y, node.z)
         elif setMode == "SegmentSet":
             segmentSet : KooSegmentSet = self.dynaImporter.segmentSetManager.segmentSetList[setID]
             for i in range(len(segmentSet.segments)):
                 segment = segmentSet.segments[i]
                 for nodeid in segment:
                     node = self.dynaImporter.nodeManager.nodes[nodeid]
-                    points[node.id] = tuple(node.x, node.y, node.z)
+                    points[node.id] = (node.x, node.y, node.z)
         times = self.dynaImporter.externalDynaResultManager.GetTimeData()
         point_disps = self.dynaImporter.externalDynaResultManager.InterpolateDisplacement(points)
         for nid in points:    
@@ -516,7 +516,8 @@ class KooDynaAdvancedModification:
             
             mesh_data = mesh.Mesh(triangles_array)
             curdir = os.getcwd()
-            curPath = os.path.join(curdir, "output.stl")
+            stl_name = "output_pid{0}.stl".format(pid)
+            curPath = os.path.join(curdir, stl_name)
             mesh_data.save(curPath)
             
             from KooCAEManager.KooMeshManagerGMSH import KooMeshManagerGMSH            
@@ -527,7 +528,7 @@ class KooDynaAdvancedModification:
             part.nodeManager.RemoveNodesExceptNodes(nodes)  
             
             meshMan.SetPath(curdir)
-            meshMan.mesh_shape_from_stl("output.stl",minLength,curMaxLength,None,nodeMan.maxID+1, elemMan.maxID+1)
+            meshMan.mesh_shape_from_stl(stl_name,minLength,curMaxLength,None,nodeMan.maxID+1, elemMan.maxID+1)
             
             # Mesh 객체 생성
             '''mesh_data = mesh.Mesh(triangles_array)
@@ -6441,7 +6442,12 @@ class KooDynaAdvancedModification:
         중복된 Tied Contact를 제거합니다.
         SSID/MSID 순서에 상관없이 동일한 페어에 대해 중복된 Tied Contact가 있으면
         먼저 읽힌 것만 남기고 나머지는 삭제합니다.
+
+        option["RemoveDuplicateTiedContacts"] == False 이면 제거를 건너뜁니다.
         """
+        if isinstance(option, dict) and not option.get("RemoveDuplicateTiedContacts", True):
+            print("[RemoveDuplicateTiedContacts] flag=False — skip")
+            return 0
         return self.dynaImporter.contactManager.RemoveDuplicateTiedContacts()
 
     def FEMtoIGA(self, option):
