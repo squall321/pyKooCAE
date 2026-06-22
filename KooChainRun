@@ -1022,6 +1022,59 @@ def _prepare_batch_koomeshmodifier(runner_config, output_dir, env):
     d2r_enabled = drop_surface.get("deformable_to_rigid", False)
     d2r_line = "\nDeformableToRigid,True" if d2r_enabled else ""
 
+    # ── Contact/접촉 옵션 (StepConfigBuilder.build_drop_attitude_config 와 동일 키) ──
+    # batch 경로가 자체 config를 쓰면서 이 옵션들을 누락하면, non-batch와 달리
+    # SINGLE_SURFACE 자가접촉 part set 이 생성되지 않는다(EnsureSingleSurface 기본 False).
+    # StepConfigBuilder(76-131행)와 반드시 동기화할 것.
+    convert_to_ss = sim_params.get("convert_general_to_single_surface", True)
+    ensure_ss = sim_params.get("ensure_single_surface", False)
+    decompose_general = sim_params.get("decompose_general_contact", False)
+    robust_contact = sim_params.get("robust_contact", False)
+    include_wall_in_general = sim_params.get("include_wall_in_general", False)
+    decompose_margin = sim_params.get("decompose_contact_margin", 1.5)
+    decompose_abs_margin_x = sim_params.get("decompose_contact_absolute_margin_x", 5.0)
+    decompose_abs_margin_y = sim_params.get("decompose_contact_absolute_margin_y", 5.0)
+    decompose_abs_margin_z = sim_params.get("decompose_contact_absolute_margin_z", 0.5)
+    contact_opt_line = ""
+    if not convert_to_ss:
+        contact_opt_line += "\nConvertGeneralToSingleSurface,False"
+    if ensure_ss:
+        contact_opt_line += "\nEnsureSingleSurface,True"
+    if decompose_general:
+        contact_opt_line += "\nDecomposeGeneralContact,True"
+    if decompose_margin != 1.5:
+        contact_opt_line += f"\nDecomposeContactMargin,{decompose_margin}"
+    if decompose_abs_margin_x != 5.0:
+        contact_opt_line += f"\nDecomposeContactAbsoluteMarginX,{decompose_abs_margin_x}"
+    if decompose_abs_margin_y != 5.0:
+        contact_opt_line += f"\nDecomposeContactAbsoluteMarginY,{decompose_abs_margin_y}"
+    if decompose_abs_margin_z != 0.5:
+        contact_opt_line += f"\nDecomposeContactAbsoluteMarginZ,{decompose_abs_margin_z}"
+    if robust_contact:
+        contact_opt_line += "\nRobustContact,True"
+        rc_tolerance = sim_params.get("robust_contact_tolerance", 0.1)
+        if rc_tolerance != 1.0:
+            contact_opt_line += f"\nRobustContactTolerance,{rc_tolerance}"
+    if include_wall_in_general:
+        contact_opt_line += "\nIncludeWallInGeneral,True"
+    if sim_params.get("non_reflecting_boundary", False):
+        contact_opt_line += "\nNonReflectingBoundary,True"
+    rigidify_dt = sim_params.get("rigidify_small_dt_threshold", 0.0)
+    if rigidify_dt > 0:
+        contact_opt_line += f"\nRigidifySmallDtThreshold,{rigidify_dt}"
+    rigidify_ar = sim_params.get("rigidify_max_aspect_ratio", 0.0)
+    if rigidify_ar > 0:
+        contact_opt_line += f"\nRigidifyMaxAspectRatio,{rigidify_ar}"
+    rigidify_eids = sim_params.get("rigidify_element_ids", [])
+    if rigidify_eids:
+        contact_opt_line += "\nRigidifyElementIDs," + ",".join(str(e) for e in rigidify_eids)
+    tied_opt_line = ""
+    for key, val in sim_params.get("tied_options", {}).items():
+        tied_opt_line += f"\nTiedOptions.{key},{val}"
+    drop_contact_line = ""
+    for key, val in sim_params.get("drop_contact", {}).items():
+        drop_contact_line += f"\nDropContact.{key},{val}"
+
     n = doe_count
     height_list = ",".join([str(height)] * n)
     zeros = ",".join(["0"] * n)
@@ -1053,7 +1106,7 @@ YoungsModulus,{youngs_modulus}
 PoissonRatio,{poisson_ratio}
 tFinal,{tFinal}
 dt,{dt}
-{drop_surface_line}{d2r_line}
+{drop_surface_line}{d2r_line}{contact_opt_line}{tied_opt_line}{drop_contact_line}
 **EndDropAttitude
 *End
 """
