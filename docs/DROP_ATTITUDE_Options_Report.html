@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<!-- DROP_ATTITUDE 모드의 낙하면·낙하조건·접촉·옵션 전체 레퍼런스 (코드 근거 기반) -->
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DROP_ATTITUDE 옵션 종합 레퍼런스 — pyKooCAE</title>
+<style>
+  :root{--bg:#0f1419;--card:#1a2330;--ink:#e6edf3;--mut:#9fb0c0;--acc:#4aa3ff;--acc2:#5ad19a;--warn:#ffb454;--bad:#ff6b6b;--line:#2a3947;--code:#0b1118;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",sans-serif;line-height:1.6;font-size:15px}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 20px 80px}
+  h1{font-size:28px;margin:0 0 4px;letter-spacing:-.5px}
+  .sub{color:var(--mut);margin:0 0 24px}
+  h2{font-size:21px;margin:38px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line);color:var(--acc)}
+  h3{font-size:16px;margin:22px 0 8px;color:var(--acc2)}
+  p{margin:8px 0}
+  code{background:var(--code);padding:1px 6px;border-radius:4px;font-family:"SF Mono",Consolas,monospace;font-size:13px;color:#ffd9a0}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;font-size:13px;font-family:"SF Mono",Consolas,monospace;color:#cfe3f5}
+  table{width:100%;border-collapse:collapse;margin:10px 0 18px;font-size:13.5px;background:var(--card);border-radius:8px;overflow:hidden}
+  th,td{text-align:left;padding:8px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#22303f;color:#cfe3f5;font-weight:600;white-space:nowrap}
+  td:first-child{white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  .def{color:var(--acc2);font-family:"SF Mono",monospace;font-size:12.5px}
+  .src{color:var(--mut);font-size:12px;font-family:"SF Mono",monospace}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0;font-size:13px}
+  .flow span{background:#22303f;padding:6px 12px;border-radius:6px;border:1px solid var(--line)}
+  .flow b{color:var(--acc)}
+  .arrow{color:var(--mut)}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;font-weight:600}
+  .t-ok{background:#11331f;color:#5ad19a;border:1px solid #1f5a36}
+  .t-no{background:#3a1414;color:#ff8d8d;border:1px solid #6b2222}
+  .t-warn{background:#3a2c10;color:#ffb454;border:1px solid #6b4c1a}
+  .note{border-left:3px solid var(--warn);background:#221c10;padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;color:#f0dcb8}
+  .toc{columns:2;column-gap:28px;font-size:13.5px}
+  .toc a{color:var(--acc);text-decoration:none;display:block;padding:2px 0}
+  .toc a:hover{text-decoration:underline}
+  footer{margin-top:50px;color:var(--mut);font-size:12px;border-top:1px solid var(--line);padding-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>DROP_ATTITUDE 옵션 종합 레퍼런스</h1>
+<p class="sub">pyKooCAE 전각도 낙하(DROP_ATTITUDE) 모드 — 낙하면·낙하조건·접촉·기타 옵션 전체. 모든 항목은 실제 코드(파서·핸들러)에서 추출했습니다.</p>
+
+<div class="card">
+<b>코드 출처 (file:line)</b>
+<ul style="margin:8px 0">
+<li><span class="src">Runner/StepConfigBuilder.py:9-175</span> — scenario <code>simulation_params</code> → step_config 직렬화 (시나리오 키 정본)</li>
+<li><span class="src">occProject/Generators/KooMeshModifier.py:1354-1587</span> — <code>**DropAttitude</code> 블록 파서 (허용 키 전체)</li>
+<li><span class="src">occProject/Generators/KooCAEManager/KooDynaAdvancedModification.py:2036-2660</span> — <code>DropAttitude()</code> 핸들러 (동작·기본값·OptCard·RigidWall)</li>
+</ul>
+</div>
+
+<h2 id="flow">0. 옵션 입력 흐름</h2>
+<div class="flow">
+<span><b>scenario.json</b><br><code>simulation_params</code></span><span class="arrow">→</span>
+<span>StepConfigBuilder<br>(step_config.txt)</span><span class="arrow">→</span>
+<span>KooMeshModifier<br><code>**DropAttitude</code> 파서</span><span class="arrow">→</span>
+<span><b>DropAttitude()</b><br>핸들러 (.k 생성)</span>
+</div>
+<p>사용자는 <code>simulation_params</code>(+ 하위 <code>drop_surface</code>, <code>drop_contact</code>, <code>tied_options</code>)에만 값을 넣습니다. 표의 <b>시나리오 키</b>가 입력 위치이고, <b>기본값</b>은 미입력 시 적용되는 값입니다.</p>
+
+<div class="toc card">
+<a href="#attitude">1. 낙하 자세 · 낙하 조건</a>
+<a href="#material">2. 충돌체 재료 · 해석 시간</a>
+<a href="#surface">3. 낙하면 (DropSurface) 4종</a>
+<a href="#d2r">4. DeformableToRigid</a>
+<a href="#contact">5. 접촉 변환 옵션 (SINGLE_SURFACE)</a>
+<a href="#robust">6. robust_contact</a>
+<a href="#dropcontact">7. 바닥판 접촉 drop_contact (OptCard A/B/C/D)</a>
+<a href="#rigidwall">8. RigidWall 세부 옵션</a>
+<a href="#tied">9. Tied 접촉 옵션</a>
+<a href="#rigidify">10. 요소 강체화 · 무반사 경계</a>
+<a href="#control">11. 제어 카드 (TSSFAC 등)</a>
+<a href="#example">12. scenario.json 종합 예시</a>
+</div>
+
+<h2 id="attitude">1. 낙하 자세 · 낙하 조건</h2>
+<p>각도는 DOE(각도 소스)에서 자동 생성되며, 아래 값들은 <code>simulation_params</code> 공통값입니다.</p>
+<table>
+<tr><th>시나리오 키</th><th>config 키</th><th>기본값</th><th>설명</th></tr>
+<tr><td>(각도 소스)</td><td>EulerRolling / EulerPitching / EulerYawing</td><td class="def">DOE 생성</td><td>낙하 자세(roll/pitch/yaw, deg). angle_source(fibonacci/cuboid 등)로 자동.</td></tr>
+<tr><td><code>height</code></td><td>Height</td><td class="def">1500 (mm)</td><td>낙하 높이. 충돌체를 바닥 위 이 높이에 배치하고 자유낙하 속도 부여.</td></tr>
+<tr><td><code>offset_distance</code></td><td>OffsetDistance</td><td class="def">0.05</td><td>충돌체와 바닥면 사이 초기 간격(mm). 초기 관통 방지.</td></tr>
+<tr><td>(고정 0)</td><td>InitialVelocityX/Y/Z</td><td class="def">0</td><td>초기 병진속도. StepConfigBuilder는 0 고정(파서는 리스트 입력 지원).</td></tr>
+<tr><td>(고정 0)</td><td>InitialAngularVelocityX/Y/Z</td><td class="def">0</td><td>초기 각속도. 동일하게 0 고정.</td></tr>
+</table>
+<div class="note">참고 — <code>InitialVelocity*</code>/<code>InitialAngularVelocity*</code>는 파서(<span class="src">KooMeshModifier.py:1402-1443</span>)는 다값 리스트를 받지만, StepConfigBuilder는 항상 0으로 직렬화합니다(<span class="src">StepConfigBuilder.py:159-164</span>). 초기속도를 주려면 step_config를 직접 편집하거나 빌더 확장이 필요합니다.</div>
+
+<h2 id="material">2. 충돌체 재료 · 해석 시간</h2>
+<p>단위계 <b>[tonne, mm, s, MPa]</b>. 강철 기준 ρ=7.85e-9, E=2.0e5.</p>
+<table>
+<tr><th>시나리오 키</th><th>config 키</th><th>기본값</th><th>설명</th></tr>
+<tr><td><code>density</code></td><td>Density</td><td class="def">7.85e-9 (tonne/mm³)</td><td>바닥판(생성형 Plane) 재료 밀도. RigidWall이면 불필요.</td></tr>
+<tr><td><code>youngs_modulus</code></td><td>YoungsModulus</td><td class="def">2.0e5 (MPa)</td><td>바닥판 영률.</td></tr>
+<tr><td><code>poisson_ratio</code></td><td>PoissonRatio</td><td class="def">0.3</td><td>바닥판 포아송비.</td></tr>
+<tr><td><code>tFinal</code></td><td>tFinal</td><td class="def">0.005 (s)</td><td>해석 종료 시간.</td></tr>
+<tr><td><code>dt</code></td><td>dt</td><td class="def">1e-6 (s)</td><td>출력(D3PLOT) 시간 간격.</td></tr>
+</table>
+
+<h2 id="surface">3. 낙하면 (DropSurface) 4종</h2>
+<p>낙하면은 <code>simulation_params.drop_surface.type</code>으로 선택합니다 — <b>Plane / PlaneGraded / PlanewithRoughness / RigidWall</b>. (파서 <span class="src">KooMeshModifier.py:1471-1513</span>)</p>
+
+<h3>3-1. Plane (기본) — 균일 메시 평판</h3>
+<table>
+<tr><th>키 (drop_surface.*)</th><th>기본값</th><th>설명</th></tr>
+<tr><td><code>type</code></td><td class="def">"Plane"</td><td>균일 메시 직육면체 바닥판.</td></tr>
+<tr><td><code>size</code></td><td class="def">[300, 300, 20]</td><td>[X, Y, 두께] (mm).</td></tr>
+<tr><td><code>mesh</code></td><td class="def">[30, 30, 2]</td><td>[nx, ny, nz] 요소 분할 수.</td></tr>
+</table>
+
+<h3>3-2. PlaneGraded — 중심 균일 + 외곽 graded</h3>
+<table>
+<tr><th>키 (drop_surface.*)</th><th>기본값</th><th>설명</th></tr>
+<tr><td><code>type</code></td><td class="def">"PlaneGraded"</td><td>중심부 균일 메시 + 외곽으로 갈수록 커지는 graded 메시.</td></tr>
+<tr><td><code>size</code></td><td class="def">[200, 200, 20]</td><td>중심 균일부 [X, Y, 두께].</td></tr>
+<tr><td><code>mesh</code></td><td class="def">[10, 10, 2]</td><td>중심부 [nx, ny, nz].</td></tr>
+<tr><td><code>num_outer_layers</code></td><td class="def">5</td><td>외곽 graded 레이어 수.</td></tr>
+<tr><td><code>ratio</code></td><td class="def">1.5</td><td>외곽 레이어 크기 증가율.</td></tr>
+</table>
+
+<h3>3-3. PlanewithRoughness — 거칠기 부여 평판</h3>
+<table>
+<tr><th>키 (drop_surface.*)</th><th>기본값</th><th>설명</th></tr>
+<tr><td><code>type</code></td><td class="def">"PlanewithRoughness"</td><td>표면 거칠기(요철)를 부여한 평판.</td></tr>
+<tr><td><code>size</code> / <code>mesh</code></td><td class="def">[300,300,20] / [30,30,2]</td><td>Plane과 동일.</td></tr>
+<tr><td><code>roughness_mode</code></td><td class="def">"Random"</td><td>거칠기 패턴 — Random / XRandom / YRandom / XSin / YSin / XYSin (파서 주석 <span class="src">:1506</span>).</td></tr>
+<tr><td><code>r_max</code></td><td class="def">0.0</td><td>최대 요철 높이(mm).</td></tr>
+<tr><td><code>shape_factor</code></td><td class="def">0.0</td><td>형상 계수 1.</td></tr>
+<tr><td><code>shape_factor2</code></td><td class="def">shape_factor</td><td>형상 계수 2 (생략 시 shape_factor와 동일).</td></tr>
+</table>
+
+<h3>3-4. RigidWall — 무한 강체 평면 (메시 없음)</h3>
+<p>메시 바닥판 대신 <code>*RIGIDWALL_PLANAR_MOVING_FORCES</code> 사용. 바닥판 파트·접촉을 만들지 않습니다(<span class="src">:2638-2661</span>). 세부 옵션은 <a href="#rigidwall">8장</a> 참조.</p>
+<table>
+<tr><th>키</th><th>기본값</th><th>설명</th></tr>
+<tr><td><code>type</code></td><td class="def">"RigidWall"</td><td>config는 <code>DropSurface,RigidWall,0,0,0,0,0,0</code>로 직렬화.</td></tr>
+</table>
+
+<h2 id="d2r">4. DeformableToRigid</h2>
+<table>
+<tr><th>시나리오 키</th><th>config 키</th><th>기본값</th><th>설명</th></tr>
+<tr><td><code>drop_surface.deformable_to_rigid</code></td><td>DeformableToRigid</td><td class="def">false</td><td>true면 변형체 바닥판을 강체로 전환(*DEFORMABLE_TO_RIGID). 계산 비용↓.</td></tr>
+</table>
+
+<h2 id="contact">5. 접촉 변환 옵션 (SINGLE_SURFACE 자가접촉)</h2>
+<p>모델 자가접촉(전체 파트 SINGLE_SURFACE) 생성을 제어합니다. <span class="t-warn tag">중요</span> 이 옵션들이 빠지면 자가접촉 part set이 안 생길 수 있습니다(핸들러 <span class="src">:2272-2274</span>).</p>
+<table>
+<tr><th>시나리오 키</th><th>config 키</th><th>기본값</th><th>설명</th></tr>
+<tr><td><code>convert_general_to_single_surface</code></td><td>ConvertGeneralToSingleSurface</td><td class="def">true</td><td>모델의 AUTOMATIC_GENERAL 접촉을 SINGLE_SURFACE(SOFT=2)로 변환(part set 생성).</td></tr>
+<tr><td><code>ensure_single_surface</code></td><td>EnsureSingleSurface</td><td class="def">false</td><td>GENERAL도 SINGLE_SURFACE도 없을 때 <b>전체 파트로 SINGLE_SURFACE 강제 생성</b>. GENERAL 접촉이 없는 모델은 이 값을 true로 줘야 자가접촉이 생김.</td></tr>
+<tr><td><code>decompose_general_contact</code></td><td>DecomposeGeneralContact</td><td class="def">false</td><td>GENERAL 접촉을 개별 S2S 페어로 분해.</td></tr>
+<tr><td><code>decompose_contact_margin</code></td><td>DecomposeContactMargin</td><td class="def">1.5</td><td>분해 시 상대 마진.</td></tr>
+<tr><td><code>decompose_contact_absolute_margin_x/y/z</code></td><td>DecomposeContactAbsoluteMarginX/Y/Z</td><td class="def">5.0 / 5.0 / 0.5</td><td>분해 시 절대 마진(mm).</td></tr>
+<tr><td><code>include_wall_in_general</code></td><td>IncludeWallInGeneral</td><td class="def">false</td><td>바닥판을 GENERAL 접촉에 포함.</td></tr>
+</table>
+<div class="note">자가접촉 part set이 생성되는 조건 — (a) 모델에 GENERAL 접촉이 있어 <code>convert_general_to_single_surface</code>(기본 on)가 변환하거나, (b) <code>ensure_single_surface: true</code>로 강제. 둘 다 아니면 자가접촉이 안 만들어집니다.</div>
+
+<h2 id="robust">6. robust_contact</h2>
+<table>
+<tr><th>시나리오 키</th><th>config 키</th><th>기본값</th><th>설명</th></tr>
+<tr><td><code>robust_contact</code></td><td>RobustContact</td><td class="def">false</td><td>Tied 면을 제외한 Segment Set으로 SINGLE_SURFACE 교체 + <b>SOFT=2, DEPTH=3 강제</b> + 중복 Tied 제거(<span class="src">:2631-2636</span>).</td></tr>
+<tr><td><code>robust_contact_tolerance</code></td><td>RobustContactTolerance</td><td class="def">0.1</td><td>Tied 면 판정 tolerance(mm). (값이 1.0이면 라인 생략)</td></tr>
+</table>
+
+<h2 id="dropcontact">7. 바닥판 접촉 drop_contact (OptCard A/B/C/D)</h2>
+<p><code>simulation_params.drop_contact.{KEY}</code> 형태로 LS-DYNA <code>*CONTACT</code> 카드 파라미터를 직접 제어합니다(<span class="src">파서 :1560-1569</span>, <span class="src">핸들러 :2275-2317</span>). 미입력 시 아래 기본값.</p>
+
+<h3>7-1. SINGLE_SURFACE 변환 접촉</h3>
+<table>
+<tr><th>KEY</th><th>기본값</th><th>설명</th></tr>
+<tr><td>SOFT</td><td class="def">2</td><td>soft constraint 방식(2=segment 기반).</td></tr>
+<tr><td>SOFSCL</td><td class="def">0.1</td><td>soft constraint 강성 스케일.</td></tr>
+<tr><td>SBOPT</td><td class="def">3</td><td>segment 기반 옵션.</td></tr>
+<tr><td>DEPTH</td><td class="def">35</td><td>관통 탐색 깊이.</td></tr>
+<tr><td>BSORT</td><td class="def">100</td><td>bucket sort 주기.</td></tr>
+<tr><td>FRCFRQ</td><td class="def">1</td><td>접촉력 계산 빈도.</td></tr>
+</table>
+
+<h3>7-2. OptCard A — 바닥판 접촉</h3>
+<table>
+<tr><th>KEY</th><th>기본값</th><th>KEY</th><th>기본값</th></tr>
+<tr><td>SOFT</td><td class="def">1</td><td>SBOPT</td><td class="def">0</td></tr>
+<tr><td>SOFSCL</td><td class="def">0.1</td><td>DEPTH</td><td class="def">0</td></tr>
+<tr><td>LCIDAB</td><td class="def">0</td><td>BSORT</td><td class="def">100</td></tr>
+<tr><td>MAXPAR</td><td class="def">1.025</td><td>FRCFRQ</td><td class="def">1</td></tr>
+</table>
+
+<h3>7-3. OptCard B</h3>
+<table>
+<tr><th>KEY</th><th>기본값</th><th>KEY</th><th>기본값</th></tr>
+<tr><td>PENMAX</td><td class="def">0.0</td><td>ISYM</td><td class="def">0</td></tr>
+<tr><td>THKOPT</td><td class="def">1</td><td>I2D3D</td><td class="def">0</td></tr>
+<tr><td>SHLTHK</td><td class="def">1</td><td>SLDTHK</td><td class="def">0.0</td></tr>
+<tr><td>SNLOG</td><td class="def">0</td><td>SLDSTF</td><td class="def">0.0</td></tr>
+</table>
+
+<h3>7-4. OptCard C <span class="src">(하나라도 주면 카드 활성)</span></h3>
+<table>
+<tr><th>KEY</th><th>기본값</th><th>KEY</th><th>기본값</th></tr>
+<tr><td>IGAP</td><td class="def">1</td><td>EDGEK</td><td class="def">0.0</td></tr>
+<tr><td>IGNORE</td><td class="def">0</td><td>FLANGL</td><td class="def">0.0</td></tr>
+<tr><td>DPRFAC</td><td class="def">0.0</td><td>CID_RCF</td><td class="def">0</td></tr>
+<tr><td>DTSTIF</td><td class="def">0.0</td><td></td><td></td></tr>
+</table>
+
+<h3>7-5. OptCard D <span class="src">(하나라도 주면 카드 활성)</span></h3>
+<table>
+<tr><th>KEY</th><th>기본값</th><th>KEY</th><th>기본값</th></tr>
+<tr><td>Q2TRI</td><td class="def">0</td><td>DNLSCL</td><td class="def">0.0</td></tr>
+<tr><td>DTPCHK</td><td class="def">0.0</td><td>TCSO</td><td class="def">0</td></tr>
+<tr><td>SFNBR</td><td class="def">0.0</td><td>TIEDID</td><td class="def">0</td></tr>
+<tr><td>FNLSCL</td><td class="def">0.0</td><td>SHLEDG</td><td class="def">0</td></tr>
+</table>
+
+<h3>7-6. 마찰 (자가접촉 SINGLE_SURFACE 생성 시)</h3>
+<table>
+<tr><th>KEY</th><th>기본값</th><th>설명</th></tr>
+<tr><td>FS</td><td class="def">0.3</td><td>정지 마찰계수.</td></tr>
+<tr><td>FD</td><td class="def">0.2</td><td>운동 마찰계수.</td></tr>
+<tr><td>VDC</td><td class="def">10.0</td><td>점성 감쇠계수(%).</td></tr>
+</table>
+
+<h2 id="rigidwall">8. RigidWall 세부 옵션</h2>
+<p><code>drop_surface.type="RigidWall"</code>일 때, 아래 값은 <code>drop_contact</code> 안에 둡니다(<span class="src">:2640-2657</span>).</p>
+<table>
+<tr><th>KEY (drop_contact.*)</th><th>기본값</th><th>설명</th></tr>
+<tr><td>FS</td><td class="def">0.3</td><td>강체벽 마찰계수(FRIC).</td></tr>
+<tr><td>RWKSF</td><td class="def">1.0</td><td>강체벽 강성 스케일.</td></tr>
+<tr><td>RW_SOFT</td><td class="def">0</td><td>강체벽 soft 옵션.</td></tr>
+<tr><td>RW_MASS</td><td class="def">0.0</td><td>강체벽 질량(이동벽).</td></tr>
+<tr><td>RW_V0</td><td class="def">0.0</td><td>강체벽 초기 속도.</td></tr>
+<tr><td>RW_BIRTH</td><td class="def">0.0</td><td>활성 시작 시간.</td></tr>
+<tr><td>RW_DEATH</td><td class="def">1.0e20</td><td>활성 종료 시간.</td></tr>
+</table>
+
+<h2 id="tied">9. Tied 접촉 옵션</h2>
+<p><code>simulation_params.tied_options.{KEY}</code> → <code>TiedOptions.{KEY}</code> (<span class="src">파서 :1570-1585</span>).</p>
+<table>
+<tr><th>KEY</th><th>타입</th><th>설명</th></tr>
+<tr><td>ConvertToSegment</td><td>bool</td><td>Tied 접촉을 segment 기반으로 변환.</td></tr>
+<tr><td>(그 외 LS-DYNA contact 카드 키)</td><td>숫자/문자</td><td>SST, MST, SFST, SFMT, FS, FD 등 Tied 카드 전체 필드 + 제어 옵션을 그대로 전달.</td></tr>
+</table>
+
+<h2 id="rigidify">10. 요소 강체화 · 무반사 경계</h2>
+<table>
+<tr><th>시나리오 키</th><th>config 키</th><th>기본값</th><th>설명</th></tr>
+<tr><td><code>rigidify_small_dt_threshold</code></td><td>RigidifySmallDtThreshold</td><td class="def">0.0 (off)</td><td>이 stable dt 이하 요소를 MAT_RIGID로 강체화(<span class="src">:2261-2269</span>).</td></tr>
+<tr><td><code>rigidify_max_aspect_ratio</code></td><td>RigidifyMaxAspectRatio</td><td class="def">0.0 (off)</td><td>이 종횡비 초과 요소 강체화.</td></tr>
+<tr><td><code>rigidify_element_ids</code></td><td>RigidifyElementIDs</td><td class="def">[] (off)</td><td>지정 요소 ID 목록 강체화.</td></tr>
+<tr><td><code>non_reflecting_boundary</code></td><td>NonReflectingBoundary</td><td class="def">false</td><td>바닥판 하면에 응력파 무반사 경계 부여.</td></tr>
+</table>
+
+<h2 id="control">11. 제어 카드</h2>
+<p>아래 카드는 핸들러가 <b>모델에 해당 카드가 없을 때만</b> 자동 생성합니다. 모델에 이미 있으면 그 값이 보존됩니다. <span class="t-ok tag">제어 가능</span> 항목은 <code>simulation_params.control_timestep</code> / <code>control_hourglass</code> dict로 override합니다(<span class="src">handler :1886-1900</span>).</p>
+<table>
+<tr><th>카드 / 값</th><th>제어</th><th>시나리오 키 / 기본값</th></tr>
+<tr><td>*CONTROL_TIMESTEP TSSFAC</td><td><span class="t-ok tag">가능</span></td><td><code>control_timestep.TSSFAC</code> · 기본 <b>0.7</b></td></tr>
+<tr><td>*CONTROL_TIMESTEP DT2MS</td><td><span class="t-ok tag">가능</span></td><td><code>control_timestep.DT2MS</code> · 기본 0.0 (질량 스케일링)</td></tr>
+<tr><td>*CONTROL_TIMESTEP DTINIT/ISDO/TSLIMT/LCTM/ERODE/MS1ST</td><td><span class="t-ok tag">가능</span></td><td><code>control_timestep.{KEY}</code> · ERODE 기본 1, 그 외 0</td></tr>
+<tr><td>*CONTROL_HOURGLASS IHQ / QH</td><td><span class="t-ok tag">가능</span></td><td><code>control_hourglass.IHQ</code>(기본 5) / <code>control_hourglass.QH</code>(기본 0.1)</td></tr>
+<tr><td>SOFSCL (접촉)</td><td><span class="t-ok tag">가능</span></td><td><code>drop_contact.SOFSCL</code> · 기본 0.1 (7장)</td></tr>
+</table>
+<pre>"simulation_params": {
+  "control_timestep": { "TSSFAC": 0.9, "DT2MS": -1e-07 },
+  "control_hourglass": { "IHQ": 6, "QH": 0.05 }
+}</pre>
+<div class="note">override는 <b>모델에 해당 CONTROL 카드가 없을 때</b>만 적용됩니다(있으면 모델 값 보존). 공유 헬퍼 <code>SetControlandDatabaseExplicit</code>에 배선되어 DROP뿐 아니라 동일 키로 확장 가능합니다.</div>
+
+<h2 id="example">12. scenario.json 종합 예시</h2>
+<pre>{
+  "simulation_params": {
+    "height": 1500,
+    "tFinal": 0.005,
+    "dt": 1e-06,
+    "density": 7.85e-09,
+    "youngs_modulus": 2.0e5,
+    "poisson_ratio": 0.3,
+    "offset_distance": 0.05,
+
+    "drop_surface": {
+      "type": "Plane",
+      "size": [300, 300, 20],
+      "mesh": [30, 30, 2],
+      "deformable_to_rigid": false
+    },
+
+    "convert_general_to_single_surface": true,
+    "ensure_single_surface": true,
+    "robust_contact": true,
+    "robust_contact_tolerance": 0.1,
+
+    "drop_contact": {
+      "SOFT": 2, "SOFSCL": 0.1, "DEPTH": 35,
+      "FS": 0.3, "FD": 0.2, "VDC": 10.0
+    },
+
+    "tied_options": { "ConvertToSegment": true },
+
+    "rigidify_small_dt_threshold": 0.0,
+    "non_reflecting_boundary": false
+  }
+}</pre>
+<p>RigidWall 예시 (메시 바닥판 대신 무한 강체 평면)</p>
+<pre>"drop_surface": { "type": "RigidWall" },
+"drop_contact": { "FS": 0.3, "RWKSF": 1.0, "RW_SOFT": 0 }</pre>
+
+<footer>
+생성: pyKooCAE 코드 정적 분석 (StepConfigBuilder / KooMeshModifier / KooDynaAdvancedModification). 기본값·라인번호는 작성 시점 소스 기준이며, 코드 변경 시 재확인 필요.
+</footer>
+
+</div>
+</body>
+</html>
