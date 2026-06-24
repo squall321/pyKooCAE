@@ -523,7 +523,8 @@ class CumulativeDesigner:
             config = AngleSourceConfig(
                 source_type=source_type,
                 fibonacci_lattice=FibonacciLatticeConfig(
-                    num_points=num_pts
+                    num_points=num_pts,
+                    progressive=bool(fib_cfg.get("progressive", False))
                 )
             )
 

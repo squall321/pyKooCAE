@@ -42,6 +42,8 @@ class FibonacciLatticeConfig:
     """Fibonacci Lattice 설정"""
     num_points: int                 # 포인트 개수 (26, 103, 413, ...)
     angle_spacing: Optional[float] = None  # 각도 간격 (deg) - num_points 대신 사용 가능
+    progressive: bool = False       # True면 점진적(farthest-point) 샘플링 순서로 재정렬
+                                    # → prefix(앞 k개)가 항상 전구면 균일, 나머지가 빈틈을 채움
 
 
 @dataclass
@@ -179,18 +181,16 @@ def parse_fibonacci_lattice(config: FibonacciLatticeConfig) -> List[Tuple[str, f
     N = config.num_points
     golden_angle = math.pi * (3.0 - math.sqrt(5.0))  # ≈ 137.508°
 
-    angles = []
-
+    # 1) 구면 균등 분포 점 + 오일러 각 생성 (스파이럴 순서)
+    vecs = []      # 단위 벡터 (재정렬용)
+    eulers = []    # (roll, pitch, yaw)
     for i in range(N):
-        # 구면 균등 분포 점 생성
         y = 1 - (i / float(N - 1)) * 2 if N > 1 else 0
-        radius = math.sqrt(1 - y * y)
+        radius = math.sqrt(max(0.0, 1 - y * y))
         theta = golden_angle * i
-
         x = math.cos(theta) * radius
         z = math.sin(theta) * radius
 
-        # 오일러 각도 변환
         r = math.sqrt(x*x + y*y + z*z)
         if r == 0:
             roll, pitch, yaw = 0.0, 0.0, 0.0
@@ -200,11 +200,55 @@ def parse_fibonacci_lattice(config: FibonacciLatticeConfig) -> List[Tuple[str, f
             roll = round(math.degrees(lat) - 90, 2)
             pitch = round(-math.degrees(lon), 2)
             yaw = 0.0
+        vecs.append((x, y, z))
+        eulers.append((roll, pitch, yaw))
 
-        name = f"P{i+1:04d}"
-        angles.append((name, roll, pitch, yaw))
+    # 2) 샘플링 순서 결정
+    #    progressive=True → farthest-point(max-min) 순서: prefix(앞 k개)가 항상
+    #    전구면에 균일하게 퍼지고, 뒤로 갈수록 그 사이 빈틈을 채운다. 중간까지만
+    #    돌려도 의미 있는 균등 커버리지를 얻는다. (스파이럴 기본 순서는 prefix가
+    #    상단 캡만 덮어 부분 실행 시 편향됨.)
+    order = list(range(N))
+    if getattr(config, "progressive", False) and N > 2:
+        order = _farthest_point_order(vecs)
+
+    # 3) 결정된 순서대로 출력 (이름은 샘플링 순번 = doe 순서)
+    angles = []
+    for new_i, orig_i in enumerate(order):
+        roll, pitch, yaw = eulers[orig_i]
+        angles.append((f"P{new_i+1:04d}", roll, pitch, yaw))
 
     return angles
+
+
+def _farthest_point_order(vecs: List[Tuple[float, float, float]]) -> List[int]:
+    """단위 벡터 집합을 farthest-point(greedy max-min) 순서로 재정렬한 인덱스 리스트.
+
+    각 단계에서 "이미 선택된 점들로부터 최소 각거리가 가장 큰" 점을 추가한다.
+    → 어떤 prefix 도 전구면에 고르게 분포(progressive/저불일치). O(N^2), 순수 파이썬.
+    """
+    n = len(vecs)
+    if n <= 2:
+        return list(range(n))
+
+    def dot(a, b):
+        return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+
+    selected = [0]
+    remaining = set(range(1, n))
+    # nearest_dot[i] = 선택집합 중 i와의 최대 내적(=최소 각거리). 작을수록 멀다.
+    nearest_dot = [dot(vecs[i], vecs[0]) for i in range(n)]
+    while remaining:
+        # 선택집합에서 가장 먼(=nearest_dot 최소) 점 선택
+        best = min(remaining, key=lambda i: nearest_dot[i])
+        selected.append(best)
+        remaining.discard(best)
+        vb = vecs[best]
+        for i in remaining:
+            d = dot(vecs[i], vb)
+            if d > nearest_dot[i]:
+                nearest_dot[i] = d
+    return selected
 
 
 def parse_pitching_sweep(config: PitchingSweepConfig) -> List[Tuple[str, float, float, float]]:
