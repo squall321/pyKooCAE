@@ -1464,6 +1464,27 @@ class KooMeshModifier(KooSimulationGenerator):
                             svector = line.split(",")
                             tFinal = KooDynaFloat(svector[1])
                             curOptions["TFinal"] = tFinal
+                        elif "controltimestep." in line.lower():
+                            # *CONTROL_TIMESTEP override (TSSFAC/DT2MS/ERODE 등).
+                            # "dt" 검사보다 먼저 와야 DT2MS 등이 dt로 오인되지 않음.
+                            key = line.split(",")[0].split(".")[1].strip()
+                            val = line.split(",")[1].strip()
+                            if "ControlTimestep" not in curOptions:
+                                curOptions["ControlTimestep"] = {}
+                            try:
+                                curOptions["ControlTimestep"][key] = float(val)
+                            except ValueError:
+                                curOptions["ControlTimestep"][key] = val
+                        elif "controlhourglass." in line.lower():
+                            # *CONTROL_HOURGLASS override (IHQ/QH)
+                            key = line.split(",")[0].split(".")[1].strip()
+                            val = line.split(",")[1].strip()
+                            if "ControlHourglass" not in curOptions:
+                                curOptions["ControlHourglass"] = {}
+                            try:
+                                curOptions["ControlHourglass"][key] = float(val)
+                            except ValueError:
+                                curOptions["ControlHourglass"][key] = val
                         elif "dt" in line.lower():
                             svector = line.split(",")
                             dt = KooDynaFloat(svector[1])

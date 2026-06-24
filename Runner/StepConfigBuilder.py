@@ -130,6 +130,13 @@ def build_drop_attitude_config(
     for key, val in drop_contact.items():
         drop_contact_line += f"\nDropContact.{key},{val}"
 
+    # CONTROL 카드 override (*CONTROL_TIMESTEP TSSFAC/DT2MS/ERODE…, *CONTROL_HOURGLASS IHQ/QH)
+    control_line = ""
+    for key, val in sim_params.get("control_timestep", {}).items():
+        control_line += f"\nControlTimestep.{key},{val}"
+    for key, val in sim_params.get("control_hourglass", {}).items():
+        control_line += f"\nControlHourglass.{key},{val}"
+
     # RunDirectoryMode
     if run_directory_mode:
         run_dir_line = f"*RunDirectoryMode,True,{output_dir}"
@@ -168,7 +175,7 @@ YoungsModulus,{youngs_modulus}
 PoissonRatio,{poisson_ratio}
 tFinal,{tFinal}
 dt,{dt}
-{drop_surface_line}{d2r_line}{contact_opt_line}{drop_contact_line}{tied_opt_line}
+{drop_surface_line}{d2r_line}{contact_opt_line}{drop_contact_line}{tied_opt_line}{control_line}
 **EndDropAttitude
 *End
 """

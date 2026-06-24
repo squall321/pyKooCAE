@@ -1871,8 +1871,11 @@ class KooDynaAdvancedModification:
         
         return part
     
-    def SetControlandDatabaseExplicit(self, tFinal, dt):
+    def SetControlandDatabaseExplicit(self, tFinal, dt, control_timestep=None, control_hourglass=None):
         cm = self.dynaImporter.controlManager
+        # 시나리오에서 넘어온 CONTROL 카드 override (없으면 기존 기본값 유지)
+        ct = control_timestep or {}
+        ch = control_hourglass or {}
 
         # CONTROL_TERMINATION: 기존 값 보존, tFinal만 업데이트. 없으면 새로 생성
         if cm.controlTermination is not None:
@@ -1882,15 +1885,17 @@ class KooDynaAdvancedModification:
                 ENDTIM=tFinal, ENDCYC=0, DTMIN=1.0E-10,
                 ENDENG=0.0, ENDMAS=10000000.0, NOSOL=0)
 
-        # CONTROL_TIMESTEP: 기존 값 보존. 없으면 새로 생성
+        # CONTROL_TIMESTEP: 기존 값 보존. 없으면 새로 생성 (override 가능)
         if cm.controlTimeStep is None:
             cm.SetControlTimeStep(
-                DTINIT=0.0, TSSFAC=0.7, ISDO=0, TSLIMT=0.0,
-                DT2MS=0.0, LCTM=0, ERODE=1, MS1ST=0)
+                DTINIT=ct.get("DTINIT", 0.0), TSSFAC=ct.get("TSSFAC", 0.7),
+                ISDO=int(ct.get("ISDO", 0)), TSLIMT=ct.get("TSLIMT", 0.0),
+                DT2MS=ct.get("DT2MS", 0.0), LCTM=int(ct.get("LCTM", 0)),
+                ERODE=int(ct.get("ERODE", 1)), MS1ST=int(ct.get("MS1ST", 0)))
 
-        # CONTROL_HOURGLASS: 기존 값 보존. 없으면 새로 생성
+        # CONTROL_HOURGLASS: 기존 값 보존. 없으면 새로 생성 (override 가능)
         if cm.controlHourglass is None:
-            cm.SetControlHourglass(IHQ=5, QH=0.1)
+            cm.SetControlHourglass(IHQ=int(ch.get("IHQ", 5)), QH=ch.get("QH", 0.1))
 
         # DAMPING_PART_STIFFNESS 보정: coef=0.0이면 0.01(최소 권장값)로 설정
         # LS-DYNA explicit에서 COEF > 0: unitless stiffness-weighted damping (권장 0.01~0.25)
@@ -2057,7 +2062,10 @@ class KooDynaAdvancedModification:
         dropSurface = option["DropSurface"]
 
         if dt != 0.0 and tFinal != 0.0:
-            self.SetControlandDatabaseExplicit(tFinal, dt)
+            self.SetControlandDatabaseExplicit(
+                tFinal, dt,
+                control_timestep=option.get("ControlTimestep"),
+                control_hourglass=option.get("ControlHourglass"))
 
 
         # Select All Nodes as node set

@@ -1074,6 +1074,12 @@ def _prepare_batch_koomeshmodifier(runner_config, output_dir, env):
     drop_contact_line = ""
     for key, val in sim_params.get("drop_contact", {}).items():
         drop_contact_line += f"\nDropContact.{key},{val}"
+    # *CONTROL_TIMESTEP / *CONTROL_HOURGLASS override (StepConfigBuilder 와 동기화)
+    control_line = ""
+    for key, val in sim_params.get("control_timestep", {}).items():
+        control_line += f"\nControlTimestep.{key},{val}"
+    for key, val in sim_params.get("control_hourglass", {}).items():
+        control_line += f"\nControlHourglass.{key},{val}"
 
     n = doe_count
     height_list = ",".join([str(height)] * n)
@@ -1106,7 +1112,7 @@ YoungsModulus,{youngs_modulus}
 PoissonRatio,{poisson_ratio}
 tFinal,{tFinal}
 dt,{dt}
-{drop_surface_line}{d2r_line}{contact_opt_line}{tied_opt_line}{drop_contact_line}
+{drop_surface_line}{d2r_line}{contact_opt_line}{tied_opt_line}{drop_contact_line}{control_line}
 **EndDropAttitude
 *End
 """
