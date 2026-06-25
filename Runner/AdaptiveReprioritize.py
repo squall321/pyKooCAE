@@ -30,22 +30,36 @@ from Runner.AdaptiveOrientation import (
 
 
 def _doe_orientations(runner_config: dict) -> Dict[int, tuple]:
-    """runner_config → {doe_index: (roll,pitch,yaw)} = 고정 격자."""
+    """runner_config → {doe(1-based): (roll,pitch,yaw)} = 고정 격자.
+
+    권위 소스는 scenario.doe_angles = {doe(1-based str): {step: {roll,pitch,yaw}}}.
+    DROP 단일 스텝이면 step 1 의 각도. 없으면 scenarios(plural) doe_index(0-based)+1 폴백.
+    """
     out = {}
-    for sc in runner_config.get("scenarios", []):
-        for st in sc.get("steps", []):
+    sc = runner_config.get("scenario") or {}
+    for doe_str, steps in (sc.get("doe_angles") or {}).items():
+        if not isinstance(steps, dict) or not steps:
+            continue
+        first = steps[sorted(steps, key=lambda x: int(x))[0]]
+        roll, pitch, yaw = first.get("roll"), first.get("pitch"), first.get("yaw", 0.0)
+        if roll is not None and pitch is not None:
+            out[int(doe_str)] = (float(roll), float(pitch), float(yaw or 0.0))
+    if out:
+        return out
+    for s in runner_config.get("scenarios", []):  # 폴백: doe_index 0-based → +1
+        for st in s.get("steps", []):
             ang = st.get("angle") or {}
-            roll = ang.get("angle_roll", ang.get("roll"))
-            pitch = ang.get("angle_pitch", ang.get("pitch"))
-            yaw = ang.get("angle_yaw", ang.get("yaw", 0.0))
-            doe = int(st.get("doe_index", -1))
-            if roll is not None and pitch is not None and doe >= 0:
-                out[doe] = (float(roll), float(pitch), float(yaw or 0.0))
+            roll = ang.get("roll", ang.get("angle_roll"))
+            pitch = ang.get("pitch", ang.get("angle_pitch"))
+            yaw = ang.get("yaw", ang.get("angle_yaw", 0.0))
+            di = st.get("doe_index")
+            if roll is not None and pitch is not None and di is not None:
+                out[int(di) + 1] = (float(roll), float(pitch), float(yaw or 0.0))
     return out
 
 
 def _doe_jobs(jobs_json: dict) -> Dict[int, dict]:
-    """jobs.json → {doe: {job_id, status}} (job_name '..._DOE%03d' 에서 doe 추출)."""
+    """jobs.json → {doe(1-based): {job_id, status}} (job_name '..._DOE%03d')."""
     out = {}
     jobs = jobs_json.get("jobs", {})
     items = jobs.values() if isinstance(jobs, dict) else jobs
@@ -56,10 +70,33 @@ def _doe_jobs(jobs_json: dict) -> Dict[int, dict]:
     return out
 
 
-def _doe_of_path(p: str) -> Optional[int]:
-    """result.json 경로 .../Run_<doe>/... 에서 doe 추출 (cumulative DROP layout)."""
-    m = re.search(r"Run_0*(\d+)\b", p.replace("\\", "/"))
-    return int(m.group(1)) if m else None
+def _run_doe_index(output_dir: str):
+    """simulation_index.json → ({folder(=harvest run_id): doe(1-based)}, 완료 doe set).
+
+    Run 디렉토리는 Run_<타임스탬프>_<해시> 라 경로에서 doe 를 못 뽑는다. simulation_index
+    의 alias('..._DOE001_...')→folder('Run_<ts>') 매핑으로 run↔doe 를 잇는다.
+    """
+    folder2doe: Dict[str, int] = {}
+    completed = set()
+    p = os.path.join(output_dir, "simulation_index.json")
+    if not os.path.exists(p):
+        return folder2doe, completed
+    try:
+        d = json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return folder2doe, completed
+    for sc in d.get("scenarios", []):
+        for alias, info in (sc.get("runs") or {}).items():
+            m = re.search(r"DOE0*(\d+)", alias)
+            if not m:
+                continue
+            doe = int(m.group(1))
+            folder = info.get("folder") or (f"Run_{info['run_id']}" if info.get("run_id") else None)
+            if folder:
+                folder2doe[folder] = doe
+            if info.get("status") == "completed":
+                completed.add(doe)
+    return folder2doe, completed
 
 
 def plan(test_dir: str, runner_config: dict, jobs_json: dict,
@@ -71,11 +108,12 @@ def plan(test_dir: str, runner_config: dict, jobs_json: dict,
     doe_jobs = _doe_jobs(jobs_json)
     output_dir = (runner_config.get("project", {}) or {}).get("output_dir") \
         or os.path.join(test_dir, "output")
+    folder2doe, completed = _run_doe_index(output_dir)
 
-    # 완료 결과 → 실행 DOE + 리스크
+    # 완료 결과 → 실행 DOE + 리스크 (run_id=folder 로 doe 매핑)
     run_samples = []
     for s in harvest(output_dir):
-        doe = _doe_of_path(s["result_path"])
+        doe = folder2doe.get(s["run_id"])
         if doe is None or doe not in orient:
             continue
         s["doe"] = doe
@@ -90,8 +128,10 @@ def plan(test_dir: str, runner_config: dict, jobs_json: dict,
     top, hold = [], []
     for r in ranked:
         d = int(r["name"][3:])
+        if d in completed:  # 이미 완료된 doe (결과 삭제 등) → 재배치 대상 아님
+            continue
         jb = doe_jobs.get(d)
-        if not jb:  # 잡 없음(이미 끝났거나 미제출) → 건너뜀
+        if not jb:  # 잡 없음(미제출) → 건너뜀
             continue
         if r["priority"] > 0:
             top.append({"doe": d, "job_id": jb["job_id"], "priority": r["priority"]})
@@ -103,7 +143,7 @@ def plan(test_dir: str, runner_config: dict, jobs_json: dict,
         "top": top, "hold": hold,
         "n_doe": len(orient), "n_run": len(run_samples),
         "n_hot": sum(1 for s in run_samples if s.get("is_hot")),
-        "n_pending_jobs": len([d for d in doe_jobs]),
+        "n_pending_jobs": len([d for d in doe_jobs if d not in completed]),
     }
 
 
