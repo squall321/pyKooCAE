@@ -317,6 +317,29 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     pp_group.add_argument('--all', action='store_true',
                           help='deep 모두 실행 후 종합 리포트 (scenario mode 로 sphere|impact 자동 선택, default)')
 
+    # ========================================================================
+    # KooChainRun reprioritize: 완료 결과 기반 대기 잡 우선순위 재배치 (적응 샘플링)
+    # ========================================================================
+    reprio_parser = subparsers.add_parser(
+        'reprioritize',
+        help='완료 결과 기반 대기 잡 우선순위 재배치 (위험영역 근처 우선)',
+        description='완료된 deep_report 의 per-part 응력 위험을 분석해, 아직 대기 중인 DOE '
+                    '잡을 위험영역 근처 방향부터 실행되도록 scontrol top/hold 로 재배치합니다. '
+                    '새 잡을 만들지 않습니다(고정 격자 모델 C).'
+    )
+    reprio_parser.add_argument('test_dir', nargs='?', default='.',
+                               help='테스트 디렉토리 (runner_config.json + jobs.json)')
+    reprio_parser.add_argument('--apply', action='store_true',
+                               help='실제 scontrol 실행 (기본: dry-run)')
+    reprio_parser.add_argument('--radius-deg', type=float, default=25.0,
+                               help='핫 방향 근접 커널 반경(deg, 기본 25)')
+    reprio_parser.add_argument('--z-thr', type=float, default=1.5,
+                               help='핫 판정 z-score 임계(기본 1.5)')
+    reprio_parser.add_argument('--yield-factor', type=float, default=1.0,
+                               help='핫 판정 yield 절대비 임계(기본 1.0)')
+    reprio_parser.add_argument('--top-n', type=int, default=None,
+                               help='top 으로 올릴 최대 잡 수(기본 전체)')
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -339,9 +362,49 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         cmd_diagnose(args)
     elif args.command == 'postprocess':
         cmd_postprocess(args)
+    elif args.command == 'reprioritize':
+        cmd_reprioritize(args)
     else:
         parser.print_help()
         sys.exit(1)
+
+
+def cmd_reprioritize(args):
+    """완료 결과 기반으로 대기 잡 우선순위 재배치 (적응 샘플링 모델 C)"""
+    import json
+    from Runner.AdaptiveReprioritize import plan, apply
+
+    test_dir = Path(args.test_dir).resolve()
+    rc_path = test_dir / "runner_config.json"
+    jj_path = test_dir / "jobs.json"
+    if not rc_path.exists() or not jj_path.exists():
+        print(f"❌ runner_config.json / jobs.json 필요: {test_dir}")
+        sys.exit(1)
+
+    rc = json.load(open(rc_path, encoding="utf-8"))
+    jj = json.load(open(jj_path, encoding="utf-8"))
+    pl = plan(str(test_dir), rc, jj, radius_deg=args.radius_deg,
+              z_thr=args.z_thr, yield_factor=args.yield_factor, top_n=args.top_n)
+
+    print("=" * 80)
+    print("KooChainRun - 적응 우선순위 재배치")
+    print("=" * 80)
+    print(f"DOE {pl['n_doe']} / 실행 {pl['n_run']} / 핫 {pl['n_hot']} / 대기잡 {pl['n_pending_jobs']}")
+    print(f"top(우선) {len(pl['top'])}개, hold(후순위) {len(pl['hold'])}개")
+    for t in pl['top'][:15]:
+        print(f"  TOP doe={t['doe']:3d} job={t['job_id']} priority={t['priority']:.3f}")
+
+    if pl['n_run'] == 0:
+        print("\n완료 결과가 없습니다. 첫 사이클 일부 완료 후 다시 실행하세요.")
+        return
+
+    cmds = apply(pl, dry_run=not args.apply)
+    if args.apply:
+        print(f"\n✅ scontrol 명령 {len(cmds)}개 적용 완료")
+    else:
+        print(f"\n[DRY-RUN] scontrol 명령 {len(cmds)}개 (실제 적용: --apply 추가):")
+        for c in cmds[:20]:
+            print("  ", " ".join(c))
 
 
 def cmd_prepare(args):
@@ -421,6 +484,7 @@ def _generate_helper_scripts(script_dir: Path, runner_config: dict = None):
         "rerun.sh":   '"$KOOCR" rerun "$SCRIPT_DIR" "$@"',
         "stop.sh":    'if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then "$KOOCR" stop --help; exit; fi\n"$KOOCR" stop "$SCRIPT_DIR" "$@"\n"$SCRIPT_DIR/kill_dyna.sh"',
         "diagnose.sh": 'if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then "$KOOCR" diagnose --help; exit; fi\n"$KOOCR" diagnose "$SCRIPT_DIR" "$@"',
+        "reprioritize.sh": 'if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then "$KOOCR" reprioritize --help; exit; fi\n"$KOOCR" reprioritize "$SCRIPT_DIR" "$@"',
     }
     header = (
         '#!/bin/bash\n'
