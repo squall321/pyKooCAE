@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<!-- 전각도 낙하 시뮬레이션 전체 메커니즘(샘플링/전처리/후처리)을 1페이지로 보여주는 프레젠테이션 -->
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>전각도 낙하 시뮬레이션 · 전체 메커니즘 플로우</title>
+<style>
+  :root{
+    --bg0:#0b1020; --bg1:#11193a; --ink:#e8edff; --muted:#9aa6d6;
+    --line:rgba(255,255,255,.10); --card:rgba(255,255,255,.045);
+    --c-prep:#38bdf8; --c-sample:#a78bfa; --c-run:#f59e0b; --c-post:#34d399; --c-adapt:#fb7185;
+    --hot:#ef4444; --warm:#f59e0b; --cool:#22d3ee;
+    --r:18px; --shadow:0 10px 40px rgba(0,0,0,.45);
+    font-synthesis:none;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 700px at 80% -10%, rgba(167,139,250,.18), transparent 60%),
+      radial-gradient(1000px 600px at -10% 20%, rgba(56,189,248,.16), transparent 55%),
+      linear-gradient(160deg,var(--bg0),var(--bg1) 60%,#0a0f24);
+    color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased; letter-spacing:-.01em;
+    padding:34px clamp(16px,3vw,46px) 60px;
+  }
+  .wrap{max-width:1680px;margin:0 auto}
+
+  /* ── header ── */
+  header.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:22px}
+  .hero h1{font-size:clamp(26px,3.2vw,44px);line-height:1.05;margin:0;font-weight:800;
+    background:linear-gradient(90deg,#fff,#c9d4ff 40%,#a78bfa);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero .sub{color:var(--muted);font-size:15px;margin-top:8px;max-width:760px;line-height:1.5}
+  .legend{display:flex;gap:10px;flex-wrap:wrap}
+  .pill{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;
+    padding:7px 12px;border-radius:999px;background:var(--card);border:1px solid var(--line)}
+  .dot{width:9px;height:9px;border-radius:50%}
+
+  /* ── master pipeline ── */
+  .pipe{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:6px 0 26px;position:relative}
+  .stage{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 16px 15px;
+    box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .stage::before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:var(--ac,#888)}
+  .stage .k{font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+  .stage .t{font-size:17px;font-weight:800;margin:5px 0 4px}
+  .stage .d{font-size:12.5px;color:var(--muted);line-height:1.45}
+  .stage .cli{margin-top:9px;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;color:#cfe0ff;
+    background:rgba(0,0,0,.32);border:1px solid var(--line);border-radius:9px;padding:5px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stage .num{position:absolute;top:11px;right:13px;font-size:12px;font-weight:800;color:var(--ac);opacity:.65}
+  .arrow{position:absolute;top:50%;right:-11px;transform:translateY(-50%);z-index:3;color:var(--muted);font-size:18px}
+  @media(max-width:1100px){.pipe{grid-template-columns:repeat(3,1fr)}.arrow{display:none}}
+
+  /* ── 3 column body ── */
+  .grid3{display:grid;grid-template-columns:1.15fr 1fr 1.1fr;gap:18px}
+  @media(max-width:1200px){.grid3{grid-template-columns:1fr}}
+  .col{display:flex;flex-direction:column;gap:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 18px 16px;box-shadow:var(--shadow)}
+  .card h2{margin:0 0 3px;font-size:18px;font-weight:800;display:flex;align-items:center;gap:9px}
+  .card h2 .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px;flex:none}
+  .card .cap{color:var(--muted);font-size:12.5px;margin:0 0 13px;line-height:1.45}
+  .badge{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:6px;letter-spacing:.04em}
+
+  /* steps list */
+  .steps{list-style:none;margin:0;padding:0;counter-reset:s}
+  .steps li{counter-increment:s;position:relative;padding:8px 0 8px 38px;border-bottom:1px dashed var(--line)}
+  .steps li:last-child{border-bottom:0}
+  .steps li::before{content:counter(s);position:absolute;left:0;top:7px;width:26px;height:26px;border-radius:8px;
+    background:linear-gradient(180deg,rgba(56,189,248,.25),rgba(56,189,248,.08));border:1px solid rgba(56,189,248,.35);
+    color:#cfeeff;font-size:12px;font-weight:800;display:grid;place-items:center}
+  .steps b{font-size:13.5px}
+  .steps .why{display:block;color:var(--muted);font-size:11.8px;margin-top:2px;line-height:1.4}
+  .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+  .tag{font-size:10.5px;font-family:ui-monospace,monospace;color:#bcd;background:rgba(255,255,255,.05);
+    border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+
+  /* sampling compare */
+  .vs{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px}
+  .opt{border-radius:14px;border:1px solid var(--line);padding:13px;background:rgba(0,0,0,.18)}
+  .opt h3{margin:0 0 7px;font-size:13.5px;display:flex;align-items:center;gap:7px}
+  .opt ul{margin:0;padding-left:16px;color:var(--muted);font-size:12px;line-height:1.55}
+  .opt ul li{margin:2px 0}
+  .opt.legacy{border-color:rgba(148,163,184,.35)}
+  .opt.smart{border-color:rgba(251,113,133,.4);background:linear-gradient(180deg,rgba(251,113,133,.07),rgba(0,0,0,.2))}
+
+  /* sphere svg block */
+  .sphere-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:center;margin-top:6px}
+  .svgcard{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:14px;padding:10px;text-align:center}
+  .svgcard .lab{font-size:11.5px;color:var(--muted);margin-top:4px}
+
+  /* adaptive loop */
+  .loop{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+  .loopstep{display:flex;gap:10px;align-items:flex-start;background:rgba(0,0,0,.18);border:1px solid var(--line);
+    border-radius:12px;padding:9px 11px}
+  .loopstep .ph{flex:none;font-size:11px;font-weight:800;color:#fff;background:var(--c-adapt);border-radius:7px;padding:3px 8px;margin-top:1px}
+  .loopstep .x b{font-size:12.8px}
+  .loopstep .x p{margin:2px 0 0;color:var(--muted);font-size:11.6px;line-height:1.4}
+
+  /* reports */
+  .rep{border-radius:14px;border:1px solid var(--line);padding:12px 13px;margin-bottom:11px;background:rgba(0,0,0,.18);position:relative}
+  .rep:last-child{margin-bottom:0}
+  .rep .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .rep .name{font-size:14.5px;font-weight:800;display:flex;align-items:center;gap:8px}
+  .rep .scope{font-size:10.5px;font-weight:700;color:#0a0f24;border-radius:6px;padding:3px 8px}
+  .rep .io{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:4px}
+  .rep .io code{font-family:ui-monospace,monospace;font-size:10.8px;color:#cfe0ff;background:rgba(255,255,255,.05);border:1px solid var(--line);padding:1px 6px;border-radius:6px}
+  .rep .body{font-size:12px;color:var(--muted);line-height:1.5;margin-top:5px}
+  .chip{font-size:10px;font-family:ui-monospace,monospace;padding:1px 6px;border-radius:5px;background:rgba(255,255,255,.05);border:1px solid var(--line)}
+  .flowio{display:inline-flex;align-items:center;gap:5px}
+  .ar{color:#5b6aa0}
+
+  /* formula strip */
+  .formbar{margin-top:20px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:1100px){.formbar{grid-template-columns:repeat(2,1fr)}}
+  .fcard{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid var(--line);
+    border-radius:14px;padding:13px 15px}
+  .fcard .ft{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+  .fcard .fm{font-family:ui-monospace,"SF Mono",monospace;font-size:13px;color:#fff;margin-top:7px;line-height:1.5}
+  .fcard .fn{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.4}
+  .hl{color:#fff;font-weight:700}
+  footer{margin-top:24px;color:var(--muted);font-size:11.5px;text-align:center;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div>
+      <h1>전각도 낙하 시뮬레이션 · 전체 메커니즘</h1>
+      <p class="sub">제품을 모든 방향으로 떨어뜨려 가장 위험한 자세를 찾는다. 방향을 어떻게 고르고(샘플링), .k 모델을 어떻게 만들고(전처리), 결과를 어떻게 종합하는지(후처리) 한 장에 담았다.</p>
+    </div>
+    <div class="legend">
+      <span class="pill"><span class="dot" style="background:var(--c-sample)"></span>방향 샘플링</span>
+      <span class="pill"><span class="dot" style="background:var(--c-prep)"></span>전처리 MeshModifier</span>
+      <span class="pill"><span class="dot" style="background:var(--c-run)"></span>해석 LS-DYNA</span>
+      <span class="pill"><span class="dot" style="background:var(--c-post)"></span>후처리 리포트</span>
+      <span class="pill"><span class="dot" style="background:var(--c-adapt)"></span>적응 재배치</span>
+    </div>
+  </header>
+
+  <!-- ── MASTER PIPELINE ── -->
+  <section class="pipe">
+    <div class="stage" style="--ac:var(--c-sample)">
+      <span class="num">01</span><div class="k">설계</div>
+      <div class="t">prepare</div>
+      <div class="d">scenario.json → runner_config.json. 방향 격자(Fibonacci 등) 생성·전개.</div>
+      <div class="cli">KooChainRun prepare scenario.json</div>
+      <div class="arrow">▶</div>
+    </div>
+    <div class="stage" style="--ac:var(--c-sample)">
+      <span class="num">02</span><div class="k">제출</div>
+      <div class="t">submit</div>
+      <div class="d">모든 방향(DOE)을 Slurm 잡으로 일괄 제출. jobs.json·simulation_index.json 생성.</div>
+      <div class="cli">KooChainRun submit … --sequential</div>
+      <div class="arrow">▶</div>
+    </div>
+    <div class="stage" style="--ac:var(--c-run)">
+      <span class="num">03</span><div class="k">실행 (DOE마다)</div>
+      <div class="t">run</div>
+      <div class="d">MeshModifier로 .k 생성 → LS-DYNA 해석 → dynain 추출. checkpoint로 resume.</div>
+      <div class="cli">KooChainRun run … --doe=N</div>
+      <div class="arrow">▶</div>
+    </div>
+    <div class="stage" style="--ac:var(--c-post)">
+      <span class="num">04</span><div class="k">개별 후처리</div>
+      <div class="t">deep report</div>
+      <div class="d">잡 완료 즉시 d3plot 해석 → result.json. 성공 시 d3plot 삭제(방법1).</div>
+      <div class="cli">deep_report.sh (자동)</div>
+      <div class="arrow">▶</div>
+    </div>
+    <div class="stage" style="--ac:var(--c-post)">
+      <span class="num">05</span><div class="k">종합 후처리</div>
+      <div class="t">sphere / impact</div>
+      <div class="d">전 방향(또는 전 위치) result.json 종합 → 구면/면 히트맵. 최악 방향 식별.</div>
+      <div class="cli">sphere_report.sh · impact_report.sh</div>
+      <div class="arrow">▶</div>
+    </div>
+    <div class="stage" style="--ac:var(--c-adapt)">
+      <span class="num">06</span><div class="k">적응 (선택)</div>
+      <div class="t">reprioritize</div>
+      <div class="d">완료 결과의 위험영역 근처 <em>대기 잡</em>을 먼저 돌도록 scontrol top/hold 재배치.</div>
+      <div class="cli">KooChainRun reprioritize . --apply</div>
+    </div>
+  </section>
+
+  <!-- ── 3 COLUMNS ── -->
+  <div class="grid3">
+
+    <!-- COL 1 : SAMPLING -->
+    <div class="col">
+      <div class="card">
+        <h2><span class="ic" style="background:rgba(167,139,250,.18);color:#c9b8ff">◎</span>① 방향을 어떻게 고르나</h2>
+        <p class="cap">구(球) 위에 낙하 방향을 점으로 뿌린다. 각 점 = 하나의 (roll, pitch, yaw) 자세 = 하나의 DOE.</p>
+
+        <div class="sphere-row">
+          <div class="svgcard">
+            <svg viewBox="0 0 150 150" width="100%" height="118">
+              <defs><radialGradient id="g1" cx="38%" cy="32%" r="75%">
+                <stop offset="0%" stop-color="#2a3566"/><stop offset="100%" stop-color="#121833"/></radialGradient></defs>
+              <circle cx="75" cy="75" r="60" fill="url(#g1)" stroke="rgba(255,255,255,.14)"/>
+              <ellipse cx="75" cy="75" rx="60" ry="20" fill="none" stroke="rgba(255,255,255,.10)"/>
+              <ellipse cx="75" cy="75" rx="22" ry="60" fill="none" stroke="rgba(255,255,255,.08)"/>
+              <g fill="#a78bfa">
+                <!-- golden spiral-ish scatter -->
+                <circle cx="75" cy="20" r="2.4"/><circle cx="103" cy="33" r="2.4"/><circle cx="55" cy="40" r="2.4"/>
+                <circle cx="112" cy="62" r="2.4"/><circle cx="40" cy="66" r="2.4"/><circle cx="92" cy="55" r="2.4"/>
+                <circle cx="66" cy="72" r="2.4"/><circle cx="118" cy="88" r="2.4"/><circle cx="48" cy="95" r="2.4"/>
+                <circle cx="98" cy="98" r="2.4"/><circle cx="73" cy="108" r="2.4"/><circle cx="86" cy="128" r="2.4"/>
+                <circle cx="58" cy="120" r="2.4"/><circle cx="34" cy="86" r="2.4"/><circle cx="124" cy="70" r="2.4"/>
+                <circle cx="83" cy="38" r="2.4"/><circle cx="62" cy="55" r="2.4"/><circle cx="105" cy="113" r="2.4"/>
+              </g>
+            </svg>
+            <div class="lab">Fibonacci 격자 — 구면 균등</div>
+          </div>
+          <div class="svgcard">
+            <svg viewBox="0 0 150 150" width="100%" height="118">
+              <circle cx="75" cy="75" r="60" fill="url(#g1)" stroke="rgba(255,255,255,.14)"/>
+              <g font-family="monospace" font-size="9" fill="#fff" text-anchor="middle">
+                <circle cx="75" cy="35" r="9" fill="#fb7185"/><text x="75" y="38">1</text>
+                <circle cx="48" cy="105" r="9" fill="#f59e0b"/><text x="48" y="108">2</text>
+                <circle cx="110" cy="98" r="9" fill="#fbbf24"/><text x="110" y="101">3</text>
+                <circle cx="100" cy="50" r="8" fill="#34d399"/><text x="100" y="53">4</text>
+                <circle cx="40" cy="58" r="8" fill="#22d3ee"/><text x="40" y="61">5</text>
+                <circle cx="75" cy="75" r="7" fill="#38bdf8"/><text x="75" y="78">6</text>
+              </g>
+            </svg>
+            <div class="lab">Progressive 순서 — 듬성→촘촘</div>
+          </div>
+        </div>
+
+        <div class="vs">
+          <div class="opt legacy">
+            <h3>🌐 전수 1천 각도</h3>
+            <ul>
+              <li>Fibonacci 격자 <b>num_points≈1000</b>을 전부 해석.</li>
+              <li>완전한 커버리지, 그러나 비용·시간 최대.</li>
+              <li>중간에 멈추면 한쪽만 돌아 편향.</li>
+            </ul>
+          </div>
+          <div class="opt smart">
+            <h3>🎯 적응 샘플링</h3>
+            <ul>
+              <li><b>같은 1천 점</b>을 progressive 순서로 정렬.</li>
+              <li>앞부분만 돌려도 전구면 균등(의미있는 조기 결론).</li>
+              <li>위험영역 발견 시 그 근처를 우선 촘촘히.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="border-color:rgba(251,113,133,.28)">
+        <h2><span class="ic" style="background:rgba(251,113,133,.18);color:#ffb3bf">↻</span>적응 재배치 루프 <span class="badge" style="background:rgba(251,113,133,.18);color:#ffb3bf">모델 C · 고정 격자</span></h2>
+        <p class="cap">새 점을 만들지 않는다. 이미 던져진 잡 중 <b>대기 중인 것</b>의 실행 순서만 위험도로 바꾼다.</p>
+        <div class="loop">
+          <div class="loopstep"><span class="ph">P1</span><div class="x"><b>Harvest + 리스크</b><p>완료 result.json 수집 → 파트별 z-score(상대) + yield 절대비. 평균보다 유의미하게 높으면 <b>핫</b>.</p></div></div>
+          <div class="loopstep"><span class="ph">P2</span><div class="x"><b>미실행 점 우선순위</b><p>대기 방향마다 priority = Σ 핫(risk)×커널(각거리). 핫 근처일수록 높음. 탐색 30% 혼합.</p></div></div>
+          <div class="loopstep"><span class="ph">P3</span><div class="x"><b>scontrol 재배치</b><p>top(핫 근처 우선) / hold(원거리 후순위). simulation_index로 run↔DOE↔job 매핑.</p></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COL 2 : PREPROCESS -->
+    <div class="col">
+      <div class="card" style="border-color:rgba(56,189,248,.25)">
+        <h2><span class="ic" style="background:rgba(56,189,248,.18);color:#bfe9ff">⚙</span>② 전처리 · KooMeshModifier</h2>
+        <p class="cap">방향 1개당 해석용 .k 1개를 만든다. DropAttitude 모드가 모델을 회전시키고 바닥·접촉·조건을 붙인다.</p>
+        <ol class="steps">
+          <li><b>모델 중심 정규화</b><span class="why">바운딩박스 중심을 원점으로. 회전 기준점 확보.</span></li>
+          <li><b>오일러 회전 (roll·pitch·yaw)</b><span class="why">RotMat = Rz·Ry·Rx 로 제품을 목표 자세로. 바닥은 수평 유지.</span>
+            <div class="tags"><span class="tag">euler_to_vec</span><span class="tag">ZYX</span></div></li>
+          <li><b>낙하 면 생성</b><span class="why">Plane · PlaneGraded(중심 미세+외곽 거침) · Roughness · RigidWall 택1.</span>
+            <div class="tags"><span class="tag">PlaneGraded</span><span class="tag">RigidWall</span></div></li>
+          <li><b>접촉 생성</b><span class="why">SINGLE_SURFACE(SOFT=2). robust_contact는 Tied 면 제외 segment로 교체, DEPTH=3.</span>
+            <div class="tags"><span class="tag">SS · SOFT=2</span><span class="tag">robust_contact</span></div></li>
+          <li><b>CONTROL 카드</b><span class="why">TIMESTEP TSSFAC=0.7 · HOURGLASS IHQ=5/QH=0.1 · DAMPING coef≥0.01 · TERMINATION.</span>
+            <div class="tags"><span class="tag">TSSFAC</span><span class="tag">IHQ=5</span></div></li>
+          <li><b>초기 속도</b><span class="why">사용자 속도 + 낙하높이 v=√(2gh). RotMat로 자세에 맞게 회전.</span></li>
+          <li><b>경계 조건</b><span class="why">전체 SPC 고정 또는 BOUNDARY_NON_REFLECTING(응력파 흡수)+꼭짓점 3점 최소 SPC.</span>
+            <div class="tags"><span class="tag">NON_REFLECTING</span></div></li>
+          <li><b>출력 요청</b><span class="why">D3PLOT·NODOUT·ELOUT + NCFORC·INTFOR(접촉력/penalty 분석).</span></li>
+        </ol>
+        <p class="cap" style="margin:11px 0 0">부가 모드 · <span class="chip">RIGIDIFY_SMALL_DT</span> 최소 dt 요소 강체화 &nbsp; <span class="chip">FastDOE</span> 다각도 캐싱 가속 &nbsp; <span class="chip">PART_VALIDATION_SPLIT</span> 파트 독립 검증</p>
+      </div>
+    </div>
+
+    <!-- COL 3 : POSTPROCESS -->
+    <div class="col">
+      <div class="card" style="border-color:rgba(52,211,153,.25)">
+        <h2><span class="ic" style="background:rgba(52,211,153,.18);color:#b7f5da">▦</span>③ 후처리 · 3종 리포트</h2>
+        <p class="cap">핵심 직관 · <b>deep=개별 1건</b>, <b>sphere=각도 종합</b>, <b>impact=위치 종합</b>.</p>
+
+        <div class="rep" style="border-color:rgba(56,189,248,.35)">
+          <div class="top"><div class="name">🔬 deep report</div><span class="scope" style="background:#38bdf8">개별 · per-job</span></div>
+          <div class="io"><span class="flowio">입력 <code>d3plot</code>+<code>glstat</code></span><span class="ar">→</span><span class="flowio">출력 <code>result.json</code>+html</span></div>
+          <div class="body">파트별 <b>von Mises 최대응력</b>·발생시각·변형률·변위·가속도. MAT 카드의 <span class="chip">stress_limit</span>로 <b>안전계수</b>·warn/crit 판정. 성공 후 <b>d3plot 삭제(방법1)</b> → 디스크 절약.</div>
+        </div>
+
+        <div class="rep" style="border-color:rgba(167,139,250,.4)">
+          <div class="top"><div class="name">🌐 sphere report</div><span class="scope" style="background:#a78bfa">각도 종합 · DROP</span></div>
+          <div class="io"><span class="flowio">입력 각 방향 <code>result.json</code></span><span class="ar">→</span><span class="flowio">출력 구면 히트맵</span></div>
+          <div class="body">전 방향 deep 결과를 <b>구면(낙하 각도)에 매핑</b>(Mollweide). 파트별 최대응력을 색으로 → <b>최악 낙하 방향·핫스팟</b> 한눈에. d3plot 아닌 <b>JSON만</b> 읽어 방법1과 호환. 정상종료 잡만 집계.</div>
+        </div>
+
+        <div class="rep" style="border-color:rgba(245,158,11,.4)">
+          <div class="top"><div class="name">🎯 impact report</div><span class="scope" style="background:#f59e0b">위치 종합 · IMPACT</span></div>
+          <div class="io"><span class="flowio">입력 각 위치 <code>result.json</code></span><span class="ar">→</span><span class="flowio">출력 면 위 히트맵</span></div>
+          <div class="body">충격자(구/원기둥)가 <b>면의 여러 위치</b>를 때린 결과를 <b>(면,위치,파트) 격자</b>로 종합. 면 위에 위치별 응력·G·변형률 분포 → <b>최악 충격 위치</b>. sphere는 <b>방향</b>, impact는 <b>위치</b> 분포라는 점이 차이.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="ic" style="background:rgba(245,158,11,.18);color:#ffd9a3">⚡</span>왜 적응 샘플링인가</h2>
+        <p class="cap" style="margin-bottom:9px">1천 잡을 전부 끝까지 기다리지 않아도, 위험한 방향을 <b>먼저·촘촘히</b> 찾아낸다.</p>
+        <div class="vs" style="grid-template-columns:1fr">
+          <div class="opt smart" style="border-color:rgba(52,211,153,.35)">
+            <ul>
+              <li>① 전체를 듬성듬성(progressive) 돌려 전구면 1차 스캔.</li>
+              <li>② deep 결과에서 파트별 응력이 <b>평균 대비 유의미하게 높은</b> 핫 방향 식별.</li>
+              <li>③ 그 <b>근처 대기 잡</b>을 우선 실행하도록 큐 재배치 → 위험영역 고해상.</li>
+              <li>④ 예산이 끊겨도 가장 중요한 방향은 이미 확보.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FORMULA STRIP ── -->
+  <section class="formbar">
+    <div class="fcard"><div class="ft">Fibonacci 황금각</div>
+      <div class="fm">φ = π(3−√5) ≈ 137.508°</div>
+      <div class="fn">yᵢ=1−2i/(N−1), θᵢ=φ·i → 구면 균등 분포.</div></div>
+    <div class="fcard"><div class="ft">오일러 ↔ 벡터</div>
+      <div class="fm">roll=asin(y)−90°<br>pitch=−atan2(z,x)</div>
+      <div class="fn">방향벡터와 (roll,pitch,yaw) 자세를 가역 변환.</div></div>
+    <div class="fcard"><div class="ft">리스크 (핫 판정)</div>
+      <div class="fm">risk=maxₚ[ max(0,z) + max(0,a−1) ]</div>
+      <div class="fn"><span class="hl">z</span>=상대(평균대비), <span class="hl">a</span>=σ/yield 절대비. 둘 다 본다.</div></div>
+    <div class="fcard"><div class="ft">우선순위 (재배치)</div>
+      <div class="fm">priority(u)=Σₕ risk(h)·e^−(d/r)²</div>
+      <div class="fn">대기 방향 u가 핫 h에 가까울수록(각거리 d↓) 우선.</div></div>
+  </section>
+
+  <footer>
+    KooChainRun · KooMeshModifier · KooD3plotReader  ·  scenario.json → prepare → submit → run → deep → sphere/impact → reprioritize<br>
+    전체 1천각 전수해석과 적응 샘플링은 <b>동일한 고정 격자</b>를 공유한다 — 다른 것은 <b>실행 순서</b>뿐이다.
+  </footer>
+
+</div>
+</body>
+</html>
