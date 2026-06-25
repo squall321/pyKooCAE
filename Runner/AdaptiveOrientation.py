@@ -177,6 +177,94 @@ def hotspots(samples: List[dict]) -> List[dict]:
     return sorted([s for s in samples if s.get("is_hot")], key=lambda s: -s.get("risk", 0.0))
 
 
+# ── Phase 2 — 고정 격자의 미실행 점을 핫 방향 근접 기반으로 우선순위화 ──
+
+def lattice_vectors(lattice: List[tuple]) -> List[dict]:
+    """lattice [(name,roll,pitch,yaw),...] → [{idx,name,roll,pitch,yaw,vec}]."""
+    out = []
+    for i, item in enumerate(lattice):
+        name, roll, pitch, yaw = item
+        out.append({"idx": i, "name": name, "roll": roll, "pitch": pitch, "yaw": yaw,
+                    "vec": euler_to_vec(roll, pitch, yaw)})
+    return out
+
+
+def _kernel(d_rad: float, radius_rad: float, kind: str) -> float:
+    if radius_rad <= 0:
+        return 0.0
+    if kind == "cap":
+        return 1.0 if d_rad <= radius_rad else 0.0
+    return math.exp(-(d_rad / radius_rad) ** 2)  # gaussian
+
+
+def prioritize_unrun(samples: List[dict], lattice: List[tuple],
+                     radius_deg: float = 25.0, kernel: str = "gaussian",
+                     eps_deg: float = 2.0) -> List[dict]:
+    """고정 격자 L 의 "미실행" 점에 대한 실행 우선순위(핫 방향 근접 기반).
+
+    priority(u) = Σ_{h∈hot} risk(h) · K(angdist(vec_u, vec_h))
+    samples 는 harvest()+compute_risk() 거친 실행 점들(vec 필요, is_hot/risk 사용).
+    반환: 미실행 항목 [{idx,name,roll,pitch,yaw,vec,priority,near_hot}] priority 내림차순.
+    """
+    lv = lattice_vectors(lattice)
+    eps = math.radians(eps_deg)
+    radius = math.radians(radius_deg)
+    run_vecs = [s["vec"] for s in samples if s.get("vec")]
+    run_idx = set()
+    for e in lv:
+        for rv in run_vecs:
+            if angular_distance(e["vec"], rv) <= eps:
+                run_idx.add(e["idx"])
+                break
+    hot = [(s["vec"], s.get("risk", 0.0)) for s in samples if s.get("is_hot") and s.get("vec")]
+    out = []
+    for e in lv:
+        if e["idx"] in run_idx:
+            continue
+        pri = 0.0
+        near = 0
+        for hv, hr in hot:
+            k = _kernel(angular_distance(e["vec"], hv), radius, kernel)
+            if k > 0:
+                pri += hr * k
+                if k > 0.5:
+                    near += 1
+        out.append({**e, "priority": round(pri, 4), "near_hot": near})
+    out.sort(key=lambda x: (-x["priority"], x["idx"]))
+    return out
+
+
+def build_next_batch(samples: List[dict], lattice: List[tuple], batch: int,
+                     explore_ratio: float = 0.3, radius_deg: float = 25.0,
+                     kernel: str = "gaussian", eps_deg: float = 2.0) -> List[dict]:
+    """다음 사이클 배치 = 활용(핫 근접 priority>0 상위) + 탐색(progressive 다음 미실행).
+
+    반환: 격자 항목 최대 batch개 [{..., source: 'exploit'|'explore'|'fill'}].
+    """
+    ranked = prioritize_unrun(samples, lattice, radius_deg, kernel, eps_deg)
+    if not ranked:
+        return []
+    n_explore = int(round(batch * explore_ratio))
+    n_exploit = batch - n_explore
+    exploit = [r for r in ranked if r["priority"] > 0][:n_exploit]
+    chosen = {r["idx"] for r in exploit}
+    explore = sorted([r for r in ranked if r["idx"] not in chosen], key=lambda x: x["idx"])[:n_explore]
+    for r in exploit:
+        r["source"] = "exploit"
+    for r in explore:
+        r["source"] = "explore"
+    batch_list = exploit + explore
+    if len(batch_list) < batch:  # 모자라면 progressive 순으로 채움
+        chosen2 = {r["idx"] for r in batch_list}
+        for r in sorted(ranked, key=lambda x: x["idx"]):
+            if r["idx"] not in chosen2:
+                r["source"] = "fill"
+                batch_list.append(r)
+                if len(batch_list) >= batch:
+                    break
+    return batch_list[:batch]
+
+
 def _main():
     import argparse
     ap = argparse.ArgumentParser(description="적응 샘플링 Phase1 — 결과 harvest + 리스크 판정")
