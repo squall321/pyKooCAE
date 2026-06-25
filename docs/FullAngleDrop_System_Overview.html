@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<!-- 전각도 낙하 시뮬레이션 핵심 흐름을 낮은 정보밀도로 보여주는 개요 프레젠테이션 -->
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>전각도 낙하 시뮬레이션 · 한눈 개요</title>
+<style>
+  :root{
+    --bg0:#0b1020; --bg1:#121a3c; --ink:#eef2ff; --muted:#9fabd8;
+    --line:rgba(255,255,255,.10); --card:rgba(255,255,255,.05);
+    --c-sample:#a78bfa; --c-prep:#38bdf8; --c-run:#f59e0b; --c-post:#34d399; --c-adapt:#fb7185;
+    --r:20px; --shadow:0 14px 50px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 720px at 82% -12%, rgba(167,139,250,.20), transparent 60%),
+      radial-gradient(1000px 620px at -8% 18%, rgba(56,189,248,.16), transparent 55%),
+      linear-gradient(160deg,var(--bg0),var(--bg1) 62%,#0a0f24);
+    color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased; letter-spacing:-.01em;
+    padding:46px clamp(20px,4vw,64px) 64px;
+  }
+  .wrap{max-width:1480px;margin:0 auto}
+
+  header{margin-bottom:34px}
+  h1{font-size:clamp(30px,3.6vw,50px);line-height:1.05;margin:0;font-weight:800;
+    background:linear-gradient(90deg,#fff,#cdd7ff 42%,#a78bfa);-webkit-background-clip:text;background-clip:text;color:transparent}
+  header p{color:var(--muted);font-size:18px;margin:14px 0 0;max-width:880px;line-height:1.55}
+
+  /* pipeline */
+  .pipe{display:flex;gap:0;align-items:stretch;margin-bottom:40px;flex-wrap:wrap}
+  .stage{flex:1 1 0;min-width:150px;padding:20px 22px;position:relative}
+  .stage:not(:last-child){border-right:1px solid var(--line)}
+  .stage .k{font-size:12px;font-weight:700;letter-spacing:.14em;color:var(--ac);text-transform:uppercase}
+  .stage .t{font-size:21px;font-weight:800;margin:7px 0 6px}
+  .stage .d{font-size:14px;color:var(--muted);line-height:1.5}
+  .pipe-wrap{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+
+  /* body grid */
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+  @media(max-width:1150px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:26px 26px 24px;box-shadow:var(--shadow)}
+  .card h2{margin:0 0 6px;font-size:23px;font-weight:800;display:flex;align-items:center;gap:12px}
+  .ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:21px;flex:none}
+  .card .lead{color:var(--muted);font-size:15px;line-height:1.55;margin:0 0 20px}
+  .card .lead b{color:var(--ink)}
+
+  /* simple step list */
+  .list{list-style:none;margin:0;padding:0}
+  .list li{display:flex;gap:13px;align-items:baseline;padding:11px 0;border-top:1px solid var(--line);font-size:15.5px;line-height:1.5}
+  .list li:first-child{border-top:0;padding-top:2px}
+  .list li .n{flex:none;width:25px;height:25px;border-radius:8px;background:rgba(56,189,248,.16);
+    border:1px solid rgba(56,189,248,.35);color:#cdeeff;font-size:13px;font-weight:800;display:grid;place-items:center;transform:translateY(2px)}
+  .list li small{color:var(--muted);font-weight:400}
+
+  /* sampling compare */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+  .opt{border-radius:14px;border:1px solid var(--line);padding:15px 16px}
+  .opt .h{font-size:15px;font-weight:800;margin-bottom:6px;display:flex;gap:8px;align-items:center}
+  .opt p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.5}
+  .opt.smart{border-color:rgba(251,113,133,.45);background:linear-gradient(180deg,rgba(251,113,133,.08),transparent)}
+
+  .sphere{display:flex;justify-content:center;margin:2px 0 18px}
+
+  /* adaptive 3-step */
+  .loop{display:flex;gap:10px}
+  .loop .s{flex:1;background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.28);border-radius:13px;padding:13px 12px;text-align:center}
+  .loop .s .lab{font-size:12px;font-weight:800;color:#ffb3bf;letter-spacing:.05em}
+  .loop .s .tx{font-size:13px;margin-top:6px;line-height:1.4}
+  .loop .s small{color:var(--muted)}
+
+  /* reports */
+  .rep{display:flex;gap:14px;align-items:flex-start;padding:16px 0;border-top:1px solid var(--line)}
+  .rep:first-of-type{border-top:0}
+  .rep .tag{flex:none;width:90px;text-align:center;font-size:12px;font-weight:800;color:#0a0f24;border-radius:9px;padding:7px 4px}
+  .rep .body b{font-size:16px}
+  .rep .body p{margin:4px 0 0;color:var(--muted);font-size:14px;line-height:1.5}
+  .scope{display:block;font-size:10.5px;font-weight:700;opacity:.8;margin-top:2px}
+
+  footer{margin-top:34px;text-align:center;color:var(--muted);font-size:14px;line-height:1.6}
+  footer b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>전각도 낙하 시뮬레이션 · 한눈 개요</h1>
+    <p>제품을 모든 방향으로 떨어뜨려 가장 위험한 자세를 찾는다. <b>방향을 고르고 → 모델을 만들고 → 결과를 종합</b>하는 세 단계가 전부다.</p>
+  </header>
+
+  <!-- PIPELINE -->
+  <div class="pipe-wrap">
+    <div class="pipe">
+      <div class="stage" style="--ac:var(--c-sample)"><div class="k">설계·제출</div><div class="t">prepare · submit</div><div class="d">방향 격자를 만들어 모든 방향을 Slurm 잡으로 던진다.</div></div>
+      <div class="stage" style="--ac:var(--c-run)"><div class="k">방향마다</div><div class="t">run</div><div class="d">MeshModifier로 .k 생성 → LS-DYNA 해석.</div></div>
+      <div class="stage" style="--ac:var(--c-post)"><div class="k">개별 → 종합</div><div class="t">deep → sphere/impact</div><div class="d">잡마다 해석하고, 전 방향을 모아 최악 방향을 찾는다.</div></div>
+      <div class="stage" style="--ac:var(--c-adapt)"><div class="k">선택</div><div class="t">reprioritize</div><div class="d">위험영역 근처 대기 잡을 먼저 돌게 재배치한다.</div></div>
+    </div>
+  </div>
+
+  <!-- 3 COLUMNS -->
+  <div class="grid">
+
+    <!-- SAMPLING -->
+    <div class="card">
+      <h2><span class="ic" style="background:rgba(167,139,250,.18);color:#c9b8ff">◎</span>① 방향 고르기</h2>
+      <p class="lead">구 위에 낙하 방향을 점으로 뿌린다. <b>점 하나 = 자세 하나 = 해석 하나.</b></p>
+
+      <div class="sphere">
+        <svg viewBox="0 0 160 150" width="190" height="150">
+          <defs><radialGradient id="g" cx="38%" cy="32%" r="75%">
+            <stop offset="0%" stop-color="#2b366a"/><stop offset="100%" stop-color="#121833"/></radialGradient></defs>
+          <circle cx="80" cy="75" r="62" fill="url(#g)" stroke="rgba(255,255,255,.14)"/>
+          <ellipse cx="80" cy="75" rx="62" ry="21" fill="none" stroke="rgba(255,255,255,.10)"/>
+          <ellipse cx="80" cy="75" rx="22" ry="62" fill="none" stroke="rgba(255,255,255,.08)"/>
+          <g fill="#a78bfa">
+            <circle cx="80" cy="20" r="2.6"/><circle cx="108" cy="34" r="2.6"/><circle cx="58" cy="40" r="2.6"/>
+            <circle cx="118" cy="63" r="2.6"/><circle cx="44" cy="66" r="2.6"/><circle cx="96" cy="55" r="2.6"/>
+            <circle cx="70" cy="73" r="2.6"/><circle cx="122" cy="90" r="2.6"/><circle cx="52" cy="96" r="2.6"/>
+            <circle cx="102" cy="99" r="2.6"/><circle cx="78" cy="110" r="2.6"/><circle cx="90" cy="128" r="2.6"/>
+            <circle cx="62" cy="121" r="2.6"/><circle cx="38" cy="87" r="2.6"/><circle cx="128" cy="71" r="2.6"/>
+          </g>
+        </svg>
+      </div>
+
+      <div class="two">
+        <div class="opt">
+          <div class="h">🌐 전수 1천각</div>
+          <p>1000개 방향을 전부 해석. 완전하지만 시간·비용이 최대다.</p>
+        </div>
+        <div class="opt smart">
+          <div class="h">🎯 적응 샘플링</div>
+          <p>같은 점을 <b>듬성→촘촘</b> 순서로. 앞부분만 돌려도 전구면이 고르게 보인다.</p>
+        </div>
+      </div>
+
+      <div class="loop">
+        <div class="s"><div class="lab">① 스캔</div><div class="tx">듬성하게<br><small>전구면 1차</small></div></div>
+        <div class="s"><div class="lab">② 위험 발견</div><div class="tx">평균 위 응력<br><small>핫 방향 식별</small></div></div>
+        <div class="s"><div class="lab">③ 집중</div><div class="tx">근처 우선<br><small>고해상</small></div></div>
+      </div>
+    </div>
+
+    <!-- PREPROCESS -->
+    <div class="card">
+      <h2><span class="ic" style="background:rgba(56,189,248,.18);color:#bfe9ff">⚙</span>② 모델 만들기</h2>
+      <p class="lead"><b>KooMeshModifier</b>가 방향 하나당 해석용 .k 하나를 만든다. 모델을 돌리고 바닥과 조건을 붙인다.</p>
+      <ul class="list">
+        <li><span class="n">1</span><div>제품을 목표 자세로 <b>회전</b> <small>— roll·pitch·yaw</small></div></li>
+        <li><span class="n">2</span><div><b>낙하 바닥면</b> 생성 <small>— 평면 / 등급메시 / 강체벽</small></div></li>
+        <li><span class="n">3</span><div><b>접촉</b> 정의 <small>— 자기접촉(SINGLE_SURFACE), 접착면 제외</small></div></li>
+        <li><span class="n">4</span><div><b>해석 제어·초기속도</b> <small>— 타임스텝 안정화, 낙하높이 v=√(2gh)</small></div></li>
+        <li><span class="n">5</span><div><b>경계·출력</b> 설정 <small>— 바닥 고정/응력파 흡수, d3plot·접촉력</small></div></li>
+      </ul>
+    </div>
+
+    <!-- POSTPROCESS -->
+    <div class="card">
+      <h2><span class="ic" style="background:rgba(52,211,153,.18);color:#b7f5da">▦</span>③ 결과 종합하기</h2>
+      <p class="lead">핵심은 단 하나 — <b>deep는 1건</b>, <b>sphere는 방향 종합</b>, <b>impact는 위치 종합</b>.</p>
+
+      <div class="rep">
+        <div class="tag" style="background:#38bdf8">deep<span class="scope">개별</span></div>
+        <div class="body"><b>해석 1건을 읽는다</b><p>d3plot에서 파트별 최대응력·변형·안전계수를 뽑아 result.json으로. 끝나면 d3plot은 지운다.</p></div>
+      </div>
+      <div class="rep">
+        <div class="tag" style="background:#a78bfa">sphere<span class="scope">방향</span></div>
+        <div class="body"><b>전 방향을 구에 칠한다</b><p>모든 낙하 방향의 deep 결과를 구면 히트맵으로 → 어느 방향이 가장 위험한지 한눈에.</p></div>
+      </div>
+      <div class="rep">
+        <div class="tag" style="background:#f59e0b">impact<span class="scope">위치</span></div>
+        <div class="body"><b>전 위치를 면에 칠한다</b><p>충격자가 때린 면 위 여러 위치의 결과를 분포로 → 어느 위치가 가장 위험한지.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    같은 <b>고정 격자</b>를 두고, 전수해석과 적응 샘플링은 <b>실행 순서</b>만 다르다 — 위험한 방향을 먼저 찾을 뿐이다.
+  </footer>
+
+</div>
+</body>
+</html>
