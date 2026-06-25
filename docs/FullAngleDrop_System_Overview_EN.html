@@ -31,14 +31,21 @@
     background:linear-gradient(90deg,#fff,#cdd7ff 42%,#a78bfa);-webkit-background-clip:text;background-clip:text;color:transparent}
   header p{color:var(--muted);font-size:18px;margin:14px 0 0;max-width:900px;line-height:1.55}
 
-  /* pipeline */
-  .pipe{display:flex;gap:0;align-items:stretch;margin-bottom:40px;flex-wrap:wrap}
-  .stage{flex:1 1 0;min-width:160px;padding:20px 22px;position:relative}
-  .stage:not(:last-child){border-right:1px solid var(--line)}
-  .stage .k{font-size:12px;font-weight:700;letter-spacing:.14em;color:var(--ac);text-transform:uppercase}
-  .stage .t{font-size:21px;font-weight:800;margin:7px 0 6px}
-  .stage .d{font-size:14px;color:var(--muted);line-height:1.5}
-  .pipe-wrap{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+  /* ── flowchart (procedure) ── */
+  .flowtitle{font-size:13px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);text-align:center;margin:2px 0 26px}
+  .flowbox{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:30px 18px 26px;margin-bottom:42px}
+  .flow{position:relative;display:flex;align-items:flex-start;overflow-x:auto;padding:4px 2px}
+  .flow::before{content:"";position:absolute;top:38px;left:7%;right:7%;height:6px;border-radius:6px;z-index:0;
+    background:linear-gradient(90deg,var(--c-sample),var(--c-prep) 22%,var(--c-run) 46%,var(--c-post) 68%,#22d3ee 84%,var(--c-adapt));opacity:.55}
+  .fstep{position:relative;flex:1 1 0;min-width:138px;display:flex;flex-direction:column;align-items:center;text-align:center;padding:0 6px}
+  .fstep .badge{width:78px;height:78px;border-radius:50%;display:grid;place-items:center;font-size:32px;font-weight:800;color:#fff;
+    background:var(--ac);position:relative;z-index:2;border:3px solid rgba(255,255,255,.24);
+    box-shadow:0 14px 34px rgba(0,0,0,.55),0 0 0 8px rgba(255,255,255,.045)}
+  .fstep .k{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ac);margin-top:16px}
+  .fstep .ttl{font-size:18.5px;font-weight:800;margin-top:3px}
+  .fstep .ds{font-size:13px;color:var(--muted);line-height:1.45;margin-top:9px;max-width:195px}
+  .fstep:not(:last-child)::after{content:"›";position:absolute;top:8px;right:-11px;z-index:3;font-size:48px;line-height:1;color:#b7c2f0;font-weight:700}
+  @media(max-width:1150px){.flow{flex-wrap:wrap;gap:22px}.flow::before{display:none}.fstep:not(:last-child)::after{display:none}.fstep{flex:1 1 40%}}
 
   /* body grid */
   .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
@@ -93,13 +100,16 @@
     <p>Drop the product in every direction to find its most dangerous orientation. The whole thing is three moves — <b>choose directions → build the model → aggregate results.</b></p>
   </header>
 
-  <!-- PIPELINE -->
-  <div class="pipe-wrap">
-    <div class="pipe">
-      <div class="stage" style="--ac:var(--c-sample)"><div class="k">design · submit</div><div class="t">prepare · submit</div><div class="d">Build a direction lattice and submit every orientation as Slurm jobs.</div></div>
-      <div class="stage" style="--ac:var(--c-run)"><div class="k">per direction</div><div class="t">run</div><div class="d">MeshModifier builds the .k, then LS-DYNA solves it.</div></div>
-      <div class="stage" style="--ac:var(--c-post)"><div class="k">single → aggregate</div><div class="t">deep → sphere/impact</div><div class="d">Solve each job, then merge all directions to find the worst.</div></div>
-      <div class="stage" style="--ac:var(--c-adapt)"><div class="k">optional</div><div class="t">reprioritize</div><div class="d">Bump pending jobs near risky regions to run first.</div></div>
+  <!-- FLOWCHART -->
+  <div class="flowbox">
+    <div class="flowtitle">▼ Procedure · 6 Steps ▼</div>
+    <div class="flow">
+      <div class="fstep" style="--ac:var(--c-sample)"><div class="badge">1</div><div class="k">design</div><div class="ttl">prepare</div><div class="ds">Build the direction lattice<br>scenario → runner_config</div></div>
+      <div class="fstep" style="--ac:var(--c-prep)"><div class="badge">2</div><div class="k">submit</div><div class="ttl">submit</div><div class="ds">Submit every direction as Slurm jobs</div></div>
+      <div class="fstep" style="--ac:var(--c-run)"><div class="badge">3</div><div class="k">per direction</div><div class="ttl">run</div><div class="ds">MeshModifier → LS-DYNA → dynain</div></div>
+      <div class="fstep" style="--ac:var(--c-post)"><div class="badge">4</div><div class="k">single</div><div class="ttl">deep</div><div class="ds">Stress analysis per job → result.json</div></div>
+      <div class="fstep" style="--ac:#22d3ee"><div class="badge">5</div><div class="k">aggregate</div><div class="ttl">sphere / impact</div><div class="ds">Merge all directions → worst orientation</div></div>
+      <div class="fstep" style="--ac:var(--c-adapt)"><div class="badge">6</div><div class="k">optional</div><div class="ttl">reprioritize</div><div class="ds">Bump pending jobs near risk first</div></div>
     </div>
   </div>
 
