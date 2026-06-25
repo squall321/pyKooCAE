@@ -26,36 +26,8 @@ from typing import Dict, List, Optional
 
 from Runner.AdaptiveOrientation import (
     harvest, compute_risk, euler_to_vec, prioritize_unrun,
+    doe_angle_map, run_folder_to_doe,
 )
-
-
-def _doe_orientations(runner_config: dict) -> Dict[int, tuple]:
-    """runner_config → {doe(1-based): (roll,pitch,yaw)} = 고정 격자.
-
-    권위 소스는 scenario.doe_angles = {doe(1-based str): {step: {roll,pitch,yaw}}}.
-    DROP 단일 스텝이면 step 1 의 각도. 없으면 scenarios(plural) doe_index(0-based)+1 폴백.
-    """
-    out = {}
-    sc = runner_config.get("scenario") or {}
-    for doe_str, steps in (sc.get("doe_angles") or {}).items():
-        if not isinstance(steps, dict) or not steps:
-            continue
-        first = steps[sorted(steps, key=lambda x: int(x))[0]]
-        roll, pitch, yaw = first.get("roll"), first.get("pitch"), first.get("yaw", 0.0)
-        if roll is not None and pitch is not None:
-            out[int(doe_str)] = (float(roll), float(pitch), float(yaw or 0.0))
-    if out:
-        return out
-    for s in runner_config.get("scenarios", []):  # 폴백: doe_index 0-based → +1
-        for st in s.get("steps", []):
-            ang = st.get("angle") or {}
-            roll = ang.get("roll", ang.get("angle_roll"))
-            pitch = ang.get("pitch", ang.get("angle_pitch"))
-            yaw = ang.get("yaw", ang.get("angle_yaw", 0.0))
-            di = st.get("doe_index")
-            if roll is not None and pitch is not None and di is not None:
-                out[int(di) + 1] = (float(roll), float(pitch), float(yaw or 0.0))
-    return out
 
 
 def _doe_jobs(jobs_json: dict) -> Dict[int, dict]:
@@ -70,45 +42,16 @@ def _doe_jobs(jobs_json: dict) -> Dict[int, dict]:
     return out
 
 
-def _run_doe_index(output_dir: str):
-    """simulation_index.json → ({folder(=harvest run_id): doe(1-based)}, 완료 doe set).
-
-    Run 디렉토리는 Run_<타임스탬프>_<해시> 라 경로에서 doe 를 못 뽑는다. simulation_index
-    의 alias('..._DOE001_...')→folder('Run_<ts>') 매핑으로 run↔doe 를 잇는다.
-    """
-    folder2doe: Dict[str, int] = {}
-    completed = set()
-    p = os.path.join(output_dir, "simulation_index.json")
-    if not os.path.exists(p):
-        return folder2doe, completed
-    try:
-        d = json.load(open(p, encoding="utf-8"))
-    except Exception:
-        return folder2doe, completed
-    for sc in d.get("scenarios", []):
-        for alias, info in (sc.get("runs") or {}).items():
-            m = re.search(r"DOE0*(\d+)", alias)
-            if not m:
-                continue
-            doe = int(m.group(1))
-            folder = info.get("folder") or (f"Run_{info['run_id']}" if info.get("run_id") else None)
-            if folder:
-                folder2doe[folder] = doe
-            if info.get("status") == "completed":
-                completed.add(doe)
-    return folder2doe, completed
-
-
 def plan(test_dir: str, runner_config: dict, jobs_json: dict,
          radius_deg: float = 25.0, kernel: str = "gaussian",
          z_thr: float = 1.5, yield_factor: float = 1.0,
          top_n: Optional[int] = None, hold_far: bool = True) -> dict:
     """대기 잡 재배치 계획. 반환: {top:[{doe,job_id,priority}], hold:[{doe,job_id}], 통계}."""
-    orient = _doe_orientations(runner_config)
+    orient = doe_angle_map(runner_config)
     doe_jobs = _doe_jobs(jobs_json)
     output_dir = (runner_config.get("project", {}) or {}).get("output_dir") \
         or os.path.join(test_dir, "output")
-    folder2doe, completed = _run_doe_index(output_dir)
+    folder2doe, completed = run_folder_to_doe(output_dir)
 
     # 완료 결과 → 실행 DOE + 리스크 (run_id=folder 로 doe 매핑)
     run_samples = []

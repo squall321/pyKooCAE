@@ -17,6 +17,7 @@ Phase 1 범위 (신규 시뮬 없음, 이미 완료된 결과만 읽음):
 계획: docs/PLAN_AdaptiveOrientationSampling.md
 """
 import os
+import re
 import json
 import glob
 import math
@@ -95,30 +96,85 @@ def harvest(test_dir: str, runner_config: Optional[dict] = None) -> List[dict]:
             "vec": None,
         })
     if runner_config:
-        _attach_orientation(samples, runner_config)
+        _attach_orientation(samples, runner_config, test_dir)
     return samples
 
 
-def _attach_orientation(samples: List[dict], runner_config: dict) -> None:
-    """runner_config 의 step angle 을 run_id(Run_<doe>) 기준으로 best-effort 매핑."""
-    by_doe = {}
-    for sc in runner_config.get("scenarios", []):
-        for st in sc.get("steps", []):
+def doe_angle_map(runner_config: dict) -> Dict[int, Tuple[float, float, float]]:
+    """runner_config → {doe(1-based): (roll,pitch,yaw)}.
+
+    권위 소스는 scenario.doe_angles = {doe(1-based str): {step: {roll,pitch,yaw}}}.
+    없으면 scenarios(plural) doe_index(0-based)+1 폴백.
+    """
+    out: Dict[int, Tuple[float, float, float]] = {}
+    sc = runner_config.get("scenario") or {}
+    for doe_str, steps in (sc.get("doe_angles") or {}).items():
+        if not isinstance(steps, dict) or not steps:
+            continue
+        first = steps[sorted(steps, key=lambda x: int(x))[0]]
+        roll, pitch, yaw = first.get("roll"), first.get("pitch"), first.get("yaw", 0.0)
+        if roll is not None and pitch is not None:
+            out[int(doe_str)] = (float(roll), float(pitch), float(yaw or 0.0))
+    if out:
+        return out
+    for s in runner_config.get("scenarios", []):  # 폴백: doe_index 0-based → +1
+        for st in s.get("steps", []):
             ang = st.get("angle") or {}
-            roll = ang.get("angle_roll", ang.get("roll"))
-            pitch = ang.get("angle_pitch", ang.get("pitch"))
-            yaw = ang.get("angle_yaw", ang.get("yaw", 0.0))
-            if roll is None or pitch is None:
+            roll = ang.get("roll", ang.get("angle_roll"))
+            pitch = ang.get("pitch", ang.get("angle_pitch"))
+            yaw = ang.get("yaw", ang.get("angle_yaw", 0.0))
+            di = st.get("doe_index")
+            if roll is not None and pitch is not None and di is not None:
+                out[int(di) + 1] = (float(roll), float(pitch), float(yaw or 0.0))
+    return out
+
+
+def run_folder_to_doe(output_dir: str):
+    """simulation_index.json → ({folder(=harvest run_id): doe(1-based)}, 완료 doe set).
+
+    Run 디렉토리는 Run_<타임스탬프>_<해시> 라 경로에서 doe 를 못 뽑는다. simulation_index
+    의 alias('..._DOE001_...')→folder('Run_<ts>') 로 run↔doe 를 잇는다.
+    """
+    f2d: Dict[str, int] = {}
+    completed = set()
+    p = os.path.join(output_dir, "simulation_index.json")
+    if not os.path.exists(p):
+        return f2d, completed
+    try:
+        d = json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return f2d, completed
+    for sc in d.get("scenarios", []):
+        for alias, info in (sc.get("runs") or {}).items():
+            m = re.search(r"DOE0*(\d+)", alias)
+            if not m:
                 continue
-            by_doe[int(st.get("doe_index", -1))] = (float(roll), float(pitch), float(yaw))
+            doe = int(m.group(1))
+            folder = info.get("folder") or (f"Run_{info['run_id']}" if info.get("run_id") else None)
+            if folder:
+                f2d[folder] = doe
+            if info.get("status") == "completed":
+                completed.add(doe)
+    return f2d, completed
+
+
+def _attach_orientation(samples: List[dict], runner_config: dict, output_dir: Optional[str] = None) -> None:
+    """run 에 방향(roll/pitch/yaw)+벡터 부착.
+
+    매핑: simulation_index(folder→doe) → doe_angle_map(doe→angle). 타임스탬프 run 도 정확.
+    simulation_index 가 없으면 run_id 가 Run_<doe>(숫자)인 경우만 폴백.
+    """
+    amap = doe_angle_map(runner_config)
+    f2d, _ = run_folder_to_doe(output_dir) if output_dir else ({}, set())
     for s in samples:
         rid = s["run_id"]
-        doe = None
-        tail = rid.split("Run_")[-1]
-        if tail.isdigit():
-            doe = int(tail)
-        if doe is not None and doe in by_doe:
-            o = by_doe[doe]
+        doe = f2d.get(rid)
+        if doe is None:  # 폴백: Run_<doe> 숫자형
+            tail = rid.split("Run_")[-1]
+            if tail.isdigit():
+                doe = int(tail)
+        if doe is not None and doe in amap:
+            o = amap[doe]
             s["orientation"] = o
             s["vec"] = euler_to_vec(*o)
 
