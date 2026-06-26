@@ -883,8 +883,95 @@ class KooControlContact:
         stream.write(format(self.IGACTC, ">10"))
         stream.write("\n")
         
+class KooControlSolution:
+    """*CONTROL_SOLUTION — SOLN: 0=구조 / 1=열(2-pass thermal) / 2=연성."""
+    def __init__(self, SOLN=0, NLQ=0, ISNAN=0, LCINT=100):
+        self.SOLN = SOLN
+        self.NLQ = NLQ
+        self.ISNAN = ISNAN
+        self.LCINT = LCINT
+
+    def GenerateDynaKeyword(self):
+        keyword = "*CONTROL_SOLUTION\n"
+        keyword += "$$    SOLN       NLQ     ISNAN     LCINT\n"
+        keyword += format(self.SOLN, ">10")
+        keyword += format(self.NLQ, ">10")
+        keyword += format(self.ISNAN, ">10")
+        keyword += format(self.LCINT, ">10")
+        keyword += "\n"
+        return keyword
+
+    def WriteStreamDynaKeyword(self, stream):
+        stream.write(self.GenerateDynaKeyword())
+
+
+class KooControlThermalSolver:
+    """*CONTROL_THERMAL_SOLVER Card1 — ATYPE 0=정상/1=과도, SOLVER 11=직접/12=대각CG.
+
+    주의: 31-40(blank) 컬럼을 빈 10칸으로 유지해야 GPT가 41-50에 정확히 떨어진다.
+    """
+    def __init__(self, ATYPE=0, PTYPE=2, SOLVER=11, GPT=8, EQHEAT=1.0, FWORK=1.0, SBC=0.0):
+        self.ATYPE = ATYPE
+        self.PTYPE = PTYPE
+        self.SOLVER = SOLVER
+        self.GPT = GPT
+        self.EQHEAT = EQHEAT
+        self.FWORK = FWORK
+        self.SBC = SBC
+
+    def GenerateDynaKeyword(self):
+        keyword = "*CONTROL_THERMAL_SOLVER\n"
+        keyword += "$$   ATYPE     PTYPE    SOLVER                 GPT    EQHEAT     FWORK       SBC\n"
+        keyword += format(self.ATYPE, ">10")
+        keyword += format(self.PTYPE, ">10")
+        keyword += format(self.SOLVER, ">10")
+        keyword += " " * 10  # 31-40 blank (컬럼 정렬 함정)
+        keyword += format(self.GPT, ">10")
+        keyword += format(self.EQHEAT, ">10.3f")
+        keyword += format(self.FWORK, ">10.3f")
+        keyword += format(self.SBC, ">10.3f")
+        keyword += "\n"
+        return keyword
+
+    def WriteStreamDynaKeyword(self, stream):
+        stream.write(self.GenerateDynaKeyword())
+
+
+class KooControlThermalTimestep:
+    """*CONTROL_THERMAL_TIMESTEP — TS 0=고정/1=가변, TIP 1.0=완전음해 (T3 과도)."""
+    def __init__(self, TS=1, TIP=1.0, ITS=1.0, TMIN=0.01, TMAX=20.0, DTEMP=5.0, TSCP=0.5, LCTS=0):
+        self.TS = TS
+        self.TIP = TIP
+        self.ITS = ITS
+        self.TMIN = TMIN
+        self.TMAX = TMAX
+        self.DTEMP = DTEMP
+        self.TSCP = TSCP
+        self.LCTS = LCTS
+
+    def GenerateDynaKeyword(self):
+        keyword = "*CONTROL_THERMAL_TIMESTEP\n"
+        keyword += "$$      TS       TIP       ITS      TMIN      TMAX     DTEMP      TSCP      LCTS\n"
+        keyword += format(self.TS, ">10")
+        keyword += format(self.TIP, ">10.3f")
+        keyword += format(self.ITS, ">10.3f")
+        keyword += format(self.TMIN, ">10.3f")
+        keyword += format(self.TMAX, ">10.3f")
+        keyword += format(self.DTEMP, ">10.3f")
+        keyword += format(self.TSCP, ">10.3f")
+        keyword += format(self.LCTS, ">10")
+        keyword += "\n"
+        return keyword
+
+    def WriteStreamDynaKeyword(self, stream):
+        stream.write(self.GenerateDynaKeyword())
+
+
 class KooControlManager:
     def __init__(self):
+        self.controlSolution = None
+        self.controlThermalSolver = None
+        self.controlThermalTimestep = None
         self.controlOutput = None
         self.controlShell = None
         self.controlSolid = None
@@ -899,6 +986,9 @@ class KooControlManager:
         self.controlAccuracy = None
 
     def clear(self):
+        self.controlSolution = None
+        self.controlThermalSolver = None
+        self.controlThermalTimestep = None
         self.controlOutput = None
         self.controlShell = None
         self.controlSolid = None
@@ -937,6 +1027,15 @@ class KooControlManager:
             self.controlDynamicRelaxation = controlManager.controlDynamicRelaxation
         if controlManager.controlAccuracy is not None:
             self.controlAccuracy = controlManager.controlAccuracy
+
+    def SetControlSolution(self, SOLN=0, NLQ=0, ISNAN=0, LCINT=100):
+        self.controlSolution = KooControlSolution(SOLN, NLQ, ISNAN, LCINT)
+
+    def SetControlThermalSolver(self, ATYPE=0, PTYPE=2, SOLVER=11, GPT=8, EQHEAT=1.0, FWORK=1.0, SBC=0.0):
+        self.controlThermalSolver = KooControlThermalSolver(ATYPE, PTYPE, SOLVER, GPT, EQHEAT, FWORK, SBC)
+
+    def SetControlThermalTimestep(self, TS=1, TIP=1.0, ITS=1.0, TMIN=0.01, TMAX=20.0, DTEMP=5.0, TSCP=0.5, LCTS=0):
+        self.controlThermalTimestep = KooControlThermalTimestep(TS, TIP, ITS, TMIN, TMAX, DTEMP, TSCP, LCTS)
 
     def SetControlBulkViscosity(self,Q1=1.5, Q2=0.06, TYPE=1, BTYPE=0, TSTYPE=0):
         self.controlBulkViscosity : KooControlBulkViscosity = KooControlBulkViscosity()
@@ -1308,6 +1407,12 @@ class KooControlManager:
             
     
     def WriteStreamDynaKeyword(self, stream):
+        if self.controlSolution != None:
+            self.controlSolution.WriteStreamDynaKeyword(stream)
+        if self.controlThermalSolver != None:
+            self.controlThermalSolver.WriteStreamDynaKeyword(stream)
+        if self.controlThermalTimestep != None:
+            self.controlThermalTimestep.WriteStreamDynaKeyword(stream)
         if self.controlOutput != None:
             self.controlOutput.WriteStreamDynaKeyword(stream)
         if self.controlBulkViscosity != None:
