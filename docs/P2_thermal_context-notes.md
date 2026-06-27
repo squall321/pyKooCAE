@@ -12,9 +12,22 @@
 - **pass1/pass2 d3plot rootname 충돌 금지** → 실행라인 `jobid=` 분리, pass2 는 `T=../thermal/d3plot`.
 - **단위 환산은 resolver 한 곳에서만** (zero-hardcode). SI→ton-mm-s.
 
-## 리스크 (게이트)
-- **[미확인] SIF thermal solver 지원.** SOLN=1+SOLVER=11 이 실제 도는지 최소 deck smoke 선검증 필요(클러스터/사용자). 안 되면 P2 전체 무의미 → 이게 1순위 게이트.
-- e2e(T2 steady)는 `/data/koopark/Test_*` NFS 에서만 (compute node 가시성). `/tmp` 금지.
+## 게이트 — ✅ 해소됨 (계획 §0, 2026-06-14 smoke)
+- **SIF thermal solver 확정**: `/data/koopark/Test_ThermalSmoke/thermal_smoke.k` (단일 hex) 가 compute 노드에서
+  CONTROL_THERMAL_SOLVER/TIMESTEP + MAT_THERMAL_ISOTROPIC + INITIAL_TEMPERATURE_SET(NSID=0) +
+  LOAD_HEAT_GENERATION_SET_SOLID 전부 인식 + normal termination + 온도 d3plot. (내가 §0 안 읽고 리스크로 오판했음.)
+- 🔴 **배정밀 SIF 필수**: thermal 은 `LSDynaBasic_aocc420_ompi4.0.5_mpp_d.sif`. 단정밀(_s.sif)은
+  `Error 40343` 로 thermal 거부. → thermal scenario `environment.lsdyna_apptainer_sif` = `_mpp_d.sif`. (Unit E 에서 반영)
+- **검증 deck = transient(ATYPE=1), heat sink 없음**. 단일 hex 가 시간따라 가열될 뿐 → convection/고정온도 불필요.
+  → **Unit C(convection) 보류**. T2/T3 첫 cut 은 transient 가열로 가면 A·B + 기존 빌딩블록으로 충분.
+- thermal_smoke.k 카드순: CONTROL_SOLUTION(1) → THERMAL_SOLVER(atype=1,gpt8) → THERMAL_TIMESTEP →
+  TERMINATION → PART → SECTION_SOLID → MAT_ELASTIC(MID) → MAT_THERMAL_ISOTROPIC(TMID) →
+  INITIAL_TEMPERATURE_SET(0,25) → SET_SOLID(100) → LOAD_HEAT_GENERATION_SET_SOLID(sid100,mult30) → D3PLOT.
+  내 A 카드 emit 이 smoke 와 컬럼 일치 확인됨.
+- e2e 는 `/data/koopark/Test_*` NFS 에서만(compute node 가시성). `/tmp` 금지.
+
+## 미해결 (D 착수 전 1개)
+- `*SET_SOLID` emit 경로: SolidSet(KooElement) vs SolidElementSet(KooElementSet) 두 클래스 — 어느 게 emit/write 되는지 확인 필요.
 
 ## 빌드
 - 카드/리졸버는 KooMeshModifier 컴파일 필요. Runner 변경은 KooChainRun 컴파일. → `build_without_automatedmodeller.sh`. 래핑은 serviceApptainers. [[build_flow]]
