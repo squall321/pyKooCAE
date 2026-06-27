@@ -31,7 +31,11 @@ def apply_thermal_load(dynaImporter, option):
     """
     thermal_type = option.get("ThermalType", "UniformChamber")
     if thermal_type == "ICPower":
-        _apply_ic_power(dynaImporter, option)
+        # 2-pass: Phase=thermal(pass1, 온도 solve) / structural(pass2, 열응력)
+        if str(option.get("Phase", "thermal")).lower() == "structural":
+            _apply_ic_structural(dynaImporter, option)
+        else:
+            _apply_ic_power(dynaImporter, option)
         return
     if thermal_type != "UniformChamber":
         raise NotImplementedError(
@@ -168,6 +172,38 @@ def _apply_ic_power(dynaImporter, option):
         loadMan.CreateLoadHeatGenerationSetSolid(sid=sset.sid, lcid=0, mult=q)
         print(f"  → *SET_SOLID(sid={sset.sid}, {len(eids)} elems) + "
               f"*LOAD_HEAT_GENERATION q'''={q:.3e} mW/mm³ (PID={pid}, {power_W}W/{vol}mm³)")
+
+
+def _apply_ic_structural(dynaImporter, option):
+    """T2/T3 pass2 — 구조 해석(SOLN=0 explicit): 선행 thermal d3plot 온도 + CTE → 열응력.
+
+    온도장은 *LOAD_THERMAL_D3PLOT 로 읽는다(파일 경로는 LS-DYNA 실행라인 T= 로 지정 — F2).
+    CTE 는 materials[pid].cte 우선, 없으면 PartCTE/DefaultCTE (T1 결).
+    SOLN/termination/database/구조 MAT 은 T1 과 동일하게 상위 deck 조립이 담당.
+    """
+    SI = str(option.get("unit_system", "SI")).upper() == "SI"  # CTE 는 ×1 (SI=tonmm 동일)
+    mats = option.get("materials", {}) or {}
+    part_cte = option.get("PartCTE", {}) or {}
+    default_cte = float(option.get("DefaultCTE", 1.7e-5))
+
+    partMan = dynaImporter.partManager
+    matMan = dynaImporter.matManager
+    loadMan = dynaImporter.loadManager
+    parts = getattr(partMan, "parts", {})
+    if not parts:
+        raise ValueError("[THERMAL_LOAD] 파트가 없음 — 모델 로드 확인")
+
+    # 1. *MAT_ADD_THERMAL_EXPANSION (파트별 CTE) — 열응력의 근원
+    for pid in list(parts.keys()):
+        m = mats.get(pid, mats.get(str(pid), {})) or {}
+        cte = m.get("cte", part_cte.get(pid, part_cte.get(str(pid), default_cte)))
+        cte = float(cte)
+        matMan.CreateAddThermalExpansionMaterial(pid=pid, lcid=0, mult=cte)
+        print(f"  → *MAT_ADD_THERMAL_EXPANSION PID={pid}, CTE={cte:.3e}")
+
+    # 2. *LOAD_THERMAL_D3PLOT (선행 thermal d3plot 온도 로드; 파일은 실행라인 T= 로 지정)
+    loadMan.CreateLoadThermalD3plot()
+    print("[THERMAL_LOAD] ICPower pass2 (structural): CTE + LOAD_THERMAL_D3PLOT (온도←pass1 d3plot)")
 
 
 # ============================================================================
