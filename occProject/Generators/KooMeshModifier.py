@@ -2355,9 +2355,18 @@ class KooMeshModifier(KooSimulationGenerator):
                         "TempCurve": [],
                         "PartCTE": {},
                         "DefaultCTE": 1.7e-5,
+                        # ICPower (T2/T3) — apply_thermal_load._apply_ic_power 키와 일치
+                        "analysis_type": "transient",
+                        "unit_system": "SI",
+                        "initial_temperature_C": 25.0,
+                        "materials": {},      # {pid: {rho,hc,tc,(cte)}}
+                        "heat_sources": [],   # [{part,power_W,volume_mm3}]
+                        "timestep": {},       # {its,tmax,dtemp}
                     }
                     in_curve = False
                     in_cte = False
+                    in_mat = False
+                    in_heat = False
                     while True:
                         line = f.readline()
                         if not line:
@@ -2372,10 +2381,18 @@ class KooMeshModifier(KooSimulationGenerator):
                             in_curve = False; continue
                         if low.startswith("endpartcte"):
                             in_cte = False; continue
+                        if low.startswith("endmaterials"):
+                            in_mat = False; continue
+                        if low.startswith("endheatsources"):
+                            in_heat = False; continue
                         if low == "tempcurve":
                             in_curve = True; continue
                         if low == "partcte":
                             in_cte = True; continue
+                        if low == "materials":
+                            in_mat = True; continue
+                        if low == "heatsources":
+                            in_heat = True; continue
                         if in_curve:
                             parts = [p.strip() for p in line.split(",")]
                             if len(parts) >= 2:
@@ -2392,6 +2409,28 @@ class KooMeshModifier(KooSimulationGenerator):
                                 except ValueError:
                                     pass
                             continue
+                        if in_mat:
+                            parts = [p.strip() for p in line.split(",")]
+                            if len(parts) >= 4:
+                                try:
+                                    mat = {"rho": float(parts[1]), "hc": float(parts[2]), "tc": float(parts[3])}
+                                    if len(parts) >= 5 and parts[4] != "":
+                                        mat["cte"] = float(parts[4])
+                                    curOptions["materials"][int(parts[0])] = mat
+                                except ValueError:
+                                    pass
+                            continue
+                        if in_heat:
+                            parts = [p.strip() for p in line.split(",")]
+                            if len(parts) >= 3:
+                                try:
+                                    curOptions["heat_sources"].append({
+                                        "part": int(parts[0]),
+                                        "power_W": float(parts[1]),
+                                        "volume_mm3": float(parts[2])})
+                                except ValueError:
+                                    pass
+                            continue
                         if low.startswith("thermaltype,"):
                             curOptions["ThermalType"] = line.split(",", 1)[1].strip()
                         elif low.startswith("basetempc,"):
@@ -2404,6 +2443,18 @@ class KooMeshModifier(KooSimulationGenerator):
                             curOptions["DT"] = float(line.split(",", 1)[1].strip())
                         elif low.startswith("defaultcte,"):
                             curOptions["DefaultCTE"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("analysistype,"):
+                            curOptions["analysis_type"] = line.split(",", 1)[1].strip()
+                        elif low.startswith("unitsystem,"):
+                            curOptions["unit_system"] = line.split(",", 1)[1].strip()
+                        elif low.startswith("initialtemperaturec,"):
+                            curOptions["initial_temperature_C"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("timestepits,"):
+                            curOptions["timestep"]["its"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("timesteptmax,"):
+                            curOptions["timestep"]["tmax"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("timestepdtemp,"):
+                            curOptions["timestep"]["dtemp"] = float(line.split(",", 1)[1].strip())
                         else:
                             print(f"  Warning: unknown ThermalLoad option line: {line}")
                     self.modeIDOption[curModeID] = curOptions

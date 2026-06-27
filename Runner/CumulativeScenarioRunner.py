@@ -1315,6 +1315,40 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
                 cte_lines = "\n".join(f"{pid},{cte}" for pid, cte in part_cte.items())
                 cte_block = f"PartCTE\n{cte_lines}\nEndPartCTE\n"
 
+            # ICPower (T2/T3) 직렬화 — KooMeshModifier ThermalLoad 파서가 소비
+            icpower_block = ""
+            if str(thermal_type) == "ICPower":
+                analysis_type = _therm_get("analysis_type", "transient")
+                unit_system = _therm_get("unit_system", "SI")
+                init_temp = _therm_get("initial_temperature_C", _therm_get("initial_temp_C", 25))
+                materials = _therm_get("materials", {})
+                heat_sources = _therm_get("heat_sources", [])
+                timestep = _therm_get("timestep", {})
+                _l = [f"AnalysisType,{analysis_type}",
+                      f"UnitSystem,{unit_system}",
+                      f"InitialTemperatureC,{init_temp}"]
+                if "its" in timestep:
+                    _l.append(f"TimestepITS,{timestep['its']}")
+                if "tmax" in timestep:
+                    _l.append(f"TimestepTMAX,{timestep['tmax']}")
+                if "dtemp" in timestep:
+                    _l.append(f"TimestepDTEMP,{timestep['dtemp']}")
+                if materials:
+                    _l.append("Materials")
+                    for pid, m in materials.items():
+                        _l.append(f"{pid},{m.get('rho', 0)},{m.get('hc', 0)},{m.get('tc', 0)},{m.get('cte', '')}")
+                    _l.append("EndMaterials")
+                if heat_sources:
+                    _l.append("HeatSources")
+                    for hs in heat_sources:
+                        _l.append(f"{hs.get('part')},{hs.get('power_W', 0)},{hs.get('volume_mm3', 0)}")
+                    _l.append("EndHeatSources")
+                icpower_block = "\n".join(_l) + "\n"
+                # 배정밀 SIF 경고 (단정밀은 thermal solver 거부 — Error 40343)
+                _sif = self.lsdyna_apptainer_sif or self.apptainer_sif or ""
+                if "mpp_d" not in _sif and "_d.sif" not in _sif:
+                    print(f"⚠ [THERM] thermal solver 는 배정밀 SIF(_mpp_d.sif) 필수 — 현재: {_sif or '(미설정)'}")
+
             config_content = f"""*Inputfile
 {model_file}
 *RunDirectoryMode,True,{self.output_dir}
@@ -1330,7 +1364,7 @@ TargetTempC,{target_temp}
 RampTimeS,{ramp_time}
 DT,{dt}
 DefaultCTE,{default_cte}
-{cte_block}**EndThermalLoad
+{cte_block}{icpower_block}**EndThermalLoad
 *End
 """
 
