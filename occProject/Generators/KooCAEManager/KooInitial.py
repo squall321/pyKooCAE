@@ -448,6 +448,30 @@ class KooInitialVelocityGeneration:
         stream.write(format(self.IRIGID, '>10'))
         stream.write("\n")
     
+class KooInitialTemperatureSet:
+    """*INITIAL_TEMPERATURE_SET — 노드셋 초기온도 (T2/T3 열해석 초기조건). NSID=0 → 전 노드."""
+    def __init__(self, nsid=0, temp=0.0, loc=0):
+        self.id = 0
+        self.nsid = nsid    # 노드셋 ID (0 = 전 노드)
+        self.temp = temp    # 초기 온도 [°C]
+        self.loc = loc      # 0 = both surfaces (shell), solid 무관
+
+    def SetID(self, id):
+        self.id = id
+
+    def GenerateDynaKeyword(self):
+        keyword = "*INITIAL_TEMPERATURE_SET\n"
+        keyword += "$$    NSID      TEMP       LOC\n"
+        keyword += format(self.nsid, ">10")
+        keyword += format(self.temp, ">10.3f")
+        keyword += format(self.loc, ">10")
+        keyword += "\n"
+        return keyword
+
+    def WriteStreamDynaKeyword(self, stream, startnid=0):
+        stream.write(self.GenerateDynaKeyword())
+
+
 class KooInitialManager:
     def __init__(self):
         self.maxid = 0
@@ -488,6 +512,12 @@ class KooInitialManager:
         self.inits[self.maxid].SetID(self.maxid)
         return self.inits[self.maxid]
     
+    def CreateInitialTemperatureSet(self, nsid=0, temp=0.0, loc=0):
+        self.maxid += 1
+        self.inits[self.maxid] = KooInitialTemperatureSet(nsid, temp, loc)
+        self.inits[self.maxid].SetID(self.maxid)
+        return self.inits[self.maxid]
+
     def ClearInitial(self):
         self.inits.clear()
 
