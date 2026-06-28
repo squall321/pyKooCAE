@@ -231,8 +231,11 @@ class LSDynaSolverRunner:
         self.mpi_launcher = env.get("mpi_launcher", "mpirun")  # "mpirun" or "srun"
         self.apptainer = ApptainerWrapper(config)
 
-    def run(self, input_file: str, working_dir: str, timeout: int = 7200) -> bool:
+    def run(self, input_file: str, working_dir: str, timeout: int = 7200, extra_args: List[str] = None) -> bool:
         """LS-DYNA 실행 및 완료 대기
+
+        extra_args: LS-DYNA 실행라인에 덧붙일 인자(예: pass2 의 T=<pass1 d3plot>). 기본 None
+        → 기존 모든 호출은 인자 미전달이라 동작 불변.
 
         멀티노드 + srun (nodes_per_job >= 2, mpi_launcher == "srun"):
             srun --mpi=pmi2 apptainer exec ... lsdyna i=... memory=...
@@ -247,6 +250,7 @@ class LSDynaSolverRunner:
             → 기존 방식: apptainer 안에서 mpirun + lsdyna 실행
         """
         nodes_per_job = self.apptainer.nodes_per_job
+        ea = extra_args or []
 
         if nodes_per_job >= 2 and self.mpi_enabled:
             appt_args = self.apptainer.build_apptainer_exec_args(use_lsdyna=True)
@@ -260,7 +264,8 @@ class LSDynaSolverRunner:
                 cmd.extend([
                     self.solver_path,
                     f"i={input_file}",
-                    f"memory={self.memory}"
+                    f"memory={self.memory}",
+                    *ea
                 ])
             else:
                 # mpirun 방식: 호스트 MPI가 프로세스 spawn
@@ -274,14 +279,16 @@ class LSDynaSolverRunner:
                 cmd.extend([
                     self.solver_path,
                     f"i={input_file}",
-                    f"memory={self.memory}"
+                    f"memory={self.memory}",
+                    *ea
                 ])
         elif self.mpi_enabled:
             cmd = [
                 self.mpi_path, "-np", str(self.ncpu),
                 self.solver_path,
                 f"i={input_file}",
-                f"memory={self.memory}"
+                f"memory={self.memory}",
+                *ea
             ]
             # 단일노드: 기존 방식 (apptainer 안에서 mpirun)
             cmd = self.apptainer.wrap_command(cmd, use_lsdyna=True, pwd=working_dir)
@@ -290,7 +297,8 @@ class LSDynaSolverRunner:
                 self.solver_path,
                 f"i={input_file}",
                 f"ncpu={self.ncpu}",
-                f"memory={self.memory}"
+                f"memory={self.memory}",
+                *ea
             ]
             # Apptainer 래핑 (설정 시)
             cmd = self.apptainer.wrap_command(cmd, use_lsdyna=True, pwd=working_dir)
@@ -915,6 +923,13 @@ class CumulativeScenarioRunner:
         alias = self._generate_alias(doe_index, step_num, mode, condition)
         logging.info(f"\n--- Running: {alias} ---")
 
+        # THERM + ICPower → 격리된 2-pass 경로(thermal solve → 열응력). 다른 모드/T1 은 미해당.
+        if mode == "THERM":
+            _tp = self.config.get("simulation_params", {}).get("thermal", {})
+            _ttype = params.get("thermal_type", _tp.get("thermal_type", "UniformChamber"))
+            if str(_ttype) == "ICPower":
+                return self._run_thermal_2pass(doe_index, step_config, alias, condition, step_num)
+
         # 0. 이미 완료된 step 스킵 (rerun 시 효율화)
         scenario_runs = self.index["scenarios"][0]["runs"]
         if alias in scenario_runs:
@@ -1139,6 +1154,78 @@ class CumulativeScenarioRunner:
         logging.info(f"Completed: {alias}")
         return True
 
+    def _run_thermal_2pass(self, doe_index: int, step_config: Dict[str, Any],
+                           alias: str, condition: str, step_num: int) -> bool:
+        """ICPower 2-pass 격리 실행: pass1(thermal solve)→온도 d3plot→pass2(structural +
+        LOAD_THERMAL_D3PLOT, 실행라인 T=<pass1 d3plot>). 기존 단일-pass 흐름·타 모드 불간섭.
+        기존 헬퍼(_create_step_config/_run_koomeshmodifier/_find_input_file/solver.run) 재사용.
+        d3plot 핸드오프 최종검증은 클러스터 e2e(_mpp_d.sif) 필요.
+        """
+        import copy
+        import shutil
+        timeout = self.config["execution"].get("timeout_per_step_seconds", 604800)
+
+        def _fail(msg, rid=""):
+            logging.error(f"[THERM 2-pass] {msg}")
+            self._update_index(alias, {"run_id": rid, "status": "failed", "folder": f"Run_{rid}" if rid else "",
+                                       "mode": "THERM", "condition": condition, "error": msg})
+            return False
+
+        def _gen(phase):
+            sc = copy.deepcopy(step_config)
+            sc.setdefault("params", {})["phase"] = phase
+            cfg = self._create_step_config(doe_index, sc)
+            if cfg is None:
+                return None, None
+            rid = self._run_koomeshmodifier(cfg, self.output_dir)
+            if rid is None:
+                return None, None
+            rd = os.path.join(self.output_dir, f"Run_{rid}")
+            if not os.path.isdir(rd):
+                return None, None
+            dst = os.path.join(rd, "step_config.txt")
+            if os.path.exists(cfg) and not os.path.exists(dst):
+                shutil.move(cfg, dst)
+            return rid, rd
+
+        # ── pass1: thermal solve (SOLN=1) → 온도 d3plot ──
+        logging.info(f"[THERM 2-pass] pass1 (thermal): {alias}")
+        self._update_index(alias, {"run_id": "", "status": "running", "folder": "", "mode": "THERM",
+                                   "condition": condition, "started_at": datetime.now().isoformat(),
+                                   "prev": self._get_prev_alias(doe_index, step_num)})
+        rid1, rd1 = _gen("thermal")
+        if rd1 is None:
+            return _fail("pass1 KooMeshModifier 실패")
+        out1 = os.path.join(rd1, "Output")
+        os.makedirs(out1, exist_ok=True)
+        in1 = self._find_input_file(rd1, "THERM")
+        if not self.solver.run(in1, out1, timeout):
+            return _fail("pass1 LS-DYNA(thermal) 실패", rid1)
+        d3plot1 = os.path.join(out1, "d3plot")
+        if not os.path.exists(d3plot1):
+            return _fail(f"pass1 온도 d3plot 미생성: {d3plot1}", rid1)
+
+        # ── pass2: structural (SOLN=0) + LOAD_THERMAL_D3PLOT (T=pass1 d3plot) ──
+        logging.info(f"[THERM 2-pass] pass2 (structural), T={d3plot1}: {alias}")
+        rid2, rd2 = _gen("structural")
+        if rd2 is None:
+            return _fail("pass2 KooMeshModifier 실패", rid1)
+        out2 = os.path.join(rd2, "Output")
+        os.makedirs(out2, exist_ok=True)
+        in2 = self._find_input_file(rd2, "THERM")
+        if not self.solver.run(in2, out2, timeout, extra_args=[f"T={d3plot1}"]):
+            return _fail("pass2 LS-DYNA(structural) 실패", rid2)
+
+        # 완료 — pass2(열응력 결과)를 대표 run 으로 기록
+        self._update_index(alias, {"run_id": rid2, "status": "completed", "folder": f"Run_{rid2}",
+                                   "mode": "THERM", "condition": condition,
+                                   "thermal_pass1_folder": f"Run_{rid1}",
+                                   "completed_at": datetime.now().isoformat(),
+                                   "prev": self._get_prev_alias(doe_index, step_num)})
+        self.checkpoint["completed_runs"].append(alias)
+        logging.info(f"[THERM 2-pass] 완료: {alias} (pass1=Run_{rid1}, pass2=Run_{rid2})")
+        return True
+
     def _build_preserve_block(self) -> str:
         """scenario.json의 preserve_includes를 *PreserveIncludes 블록으로 변환.
 
@@ -1318,13 +1405,15 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
             # ICPower (T2/T3) 직렬화 — KooMeshModifier ThermalLoad 파서가 소비
             icpower_block = ""
             if str(thermal_type) == "ICPower":
+                phase = _therm_get("phase", "thermal")  # thermal(pass1) | structural(pass2)
                 analysis_type = _therm_get("analysis_type", "transient")
                 unit_system = _therm_get("unit_system", "SI")
                 init_temp = _therm_get("initial_temperature_C", _therm_get("initial_temp_C", 25))
                 materials = _therm_get("materials", {})
                 heat_sources = _therm_get("heat_sources", [])
                 timestep = _therm_get("timestep", {})
-                _l = [f"AnalysisType,{analysis_type}",
+                _l = [f"Phase,{phase}",
+                      f"AnalysisType,{analysis_type}",
                       f"UnitSystem,{unit_system}",
                       f"InitialTemperatureC,{init_temp}"]
                 if "its" in timestep:
