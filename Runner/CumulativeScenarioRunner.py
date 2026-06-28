@@ -1164,11 +1164,15 @@ class CumulativeScenarioRunner:
         import copy
         import shutil
         timeout = self.config["execution"].get("timeout_per_step_seconds", 604800)
+        total_steps = self.config["scenario"]["total_steps"]
 
-        def _fail(msg, rid=""):
+        def _fail(msg, rid="", pass1_folder=""):
             logging.error(f"[THERM 2-pass] {msg}")
-            self._update_index(alias, {"run_id": rid, "status": "failed", "folder": f"Run_{rid}" if rid else "",
-                                       "mode": "THERM", "condition": condition, "error": msg})
+            rec = {"run_id": rid, "status": "failed", "folder": f"Run_{rid}" if rid else "",
+                   "mode": "THERM", "condition": condition, "error": msg}
+            if pass1_folder:
+                rec["thermal_pass1_folder"] = pass1_folder  # resume 시 pass1 재사용용
+            self._update_index(alias, rec)
             return False
 
         def _gen(phase):
@@ -1188,35 +1192,60 @@ class CumulativeScenarioRunner:
                 shutil.move(cfg, dst)
             return rid, rd
 
-        # ── pass1: thermal solve (SOLN=1) → 온도 d3plot ──
-        logging.info(f"[THERM 2-pass] pass1 (thermal): {alias}")
-        self._update_index(alias, {"run_id": "", "status": "running", "folder": "", "mode": "THERM",
-                                   "condition": condition, "started_at": datetime.now().isoformat(),
-                                   "prev": self._get_prev_alias(doe_index, step_num)})
-        rid1, rd1 = _gen("thermal")
+        # ── pass1: thermal solve. resume 시 기존 pass1 온도 d3plot 있으면 재사용(재실행 낭비 방지) ──
+        rid1 = rd1 = d3plot1 = None
+        prev = self.index["scenarios"][0]["runs"].get(alias, {})
+        p1 = prev.get("thermal_pass1_folder")
+        if p1:
+            cand = os.path.join(self.output_dir, p1, "Output", "d3plot")
+            if os.path.exists(cand):
+                rid1 = p1.replace("Run_", "", 1)
+                rd1 = os.path.join(self.output_dir, p1)
+                d3plot1 = cand
+                logging.info(f"[THERM 2-pass] pass1 재사용(기존 온도 d3plot): {p1}")
         if rd1 is None:
-            return _fail("pass1 KooMeshModifier 실패")
-        out1 = os.path.join(rd1, "Output")
-        os.makedirs(out1, exist_ok=True)
-        in1 = self._find_input_file(rd1, "THERM")
-        if not self.solver.run(in1, out1, timeout):
-            return _fail("pass1 LS-DYNA(thermal) 실패", rid1)
-        d3plot1 = os.path.join(out1, "d3plot")
-        if not os.path.exists(d3plot1):
-            return _fail(f"pass1 온도 d3plot 미생성: {d3plot1}", rid1)
+            logging.info(f"[THERM 2-pass] pass1 (thermal): {alias}")
+            self._update_index(alias, {"run_id": "", "status": "running", "folder": "", "mode": "THERM",
+                                       "condition": condition, "started_at": datetime.now().isoformat(),
+                                       "prev": self._get_prev_alias(doe_index, step_num)})
+            rid1, rd1 = _gen("thermal")
+            if rd1 is None:
+                return _fail("pass1 KooMeshModifier 실패")
+            out1 = os.path.join(rd1, "Output")
+            os.makedirs(out1, exist_ok=True)
+            in1 = self._find_input_file(rd1, "THERM")
+            if not self.solver.run(in1, out1, timeout):
+                return _fail("pass1 LS-DYNA(thermal) 실패", rid1)
+            d3plot1 = os.path.join(out1, "d3plot")
+            if not os.path.exists(d3plot1):
+                return _fail(f"pass1 온도 d3plot 미생성: {d3plot1}", rid1)
+            # pass1 완료 기록 → 이후 pass2 실패해도 resume 시 pass1 재사용
+            self._update_index(alias, {"run_id": rid1, "status": "running", "folder": f"Run_{rid1}",
+                                       "mode": "THERM", "condition": condition,
+                                       "thermal_pass1_folder": f"Run_{rid1}"})
 
         # ── pass2: structural (SOLN=0) + LOAD_THERMAL_D3PLOT (T=pass1 d3plot) ──
         logging.info(f"[THERM 2-pass] pass2 (structural), T={d3plot1}: {alias}")
         rid2, rd2 = _gen("structural")
         if rd2 is None:
-            return _fail("pass2 KooMeshModifier 실패", rid1)
+            return _fail("pass2 KooMeshModifier 실패", rid1, f"Run_{rid1}")
         out2 = os.path.join(rd2, "Output")
         os.makedirs(out2, exist_ok=True)
         in2 = self._find_input_file(rd2, "THERM")
         if not self.solver.run(in2, out2, timeout, extra_args=[f"T={d3plot1}"]):
-            return _fail("pass2 LS-DYNA(structural) 실패", rid2)
+            return _fail("pass2 LS-DYNA(structural) 실패", rid2, f"Run_{rid1}")
 
-        # 완료 — pass2(열응력 결과)를 대표 run 으로 기록
+        # ── 누적: 비최종 step 이면 다음 step 입력 위해 DYNAIN_TO_INITIAL (pass2 상태 이월) ──
+        if step_num < total_steps:
+            dti = os.path.join(rd2, "DynamicRelaxation", "dynaintoinitial.txt")
+            if os.path.exists(dti):
+                if self._run_koomeshmodifier(dti, rd2) is None:
+                    logging.warning("[THERM 2-pass] DYNAIN_TO_INITIAL 실패 — 다음 step 상태이월 누락 가능")
+            else:
+                logging.warning("[THERM 2-pass] 비최종 THERM step 인데 dynaintoinitial.txt 없음 — "
+                                "누적 thermal→다음step 상태전달은 P3 미구현. 다음 step 은 원본 모델 사용.")
+
+        # ── 완료: pass2(열응력 결과)를 대표 run 으로 기록 ──
         self._update_index(alias, {"run_id": rid2, "status": "completed", "folder": f"Run_{rid2}",
                                    "mode": "THERM", "condition": condition,
                                    "thermal_pass1_folder": f"Run_{rid1}",
