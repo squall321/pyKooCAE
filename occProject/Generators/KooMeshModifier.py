@@ -2356,6 +2356,7 @@ class KooMeshModifier(KooSimulationGenerator):
                         "PartCTE": {},
                         "DefaultCTE": 1.7e-5,
                         # ICPower (T2/T3) — apply_thermal_load._apply_ic_power 키와 일치
+                        "Phase": "thermal",   # thermal(pass1) | structural(pass2)
                         "analysis_type": "transient",
                         "unit_system": "SI",
                         "initial_temperature_C": 25.0,
@@ -2443,6 +2444,8 @@ class KooMeshModifier(KooSimulationGenerator):
                             curOptions["DT"] = float(line.split(",", 1)[1].strip())
                         elif low.startswith("defaultcte,"):
                             curOptions["DefaultCTE"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("phase,"):
+                            curOptions["Phase"] = line.split(",", 1)[1].strip()
                         elif low.startswith("analysistype,"):
                             curOptions["analysis_type"] = line.split(",", 1)[1].strip()
                         elif low.startswith("unitsystem,"):

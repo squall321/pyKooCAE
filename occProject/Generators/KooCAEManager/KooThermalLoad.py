@@ -165,9 +165,15 @@ def _apply_ic_power(dynaImporter, option):
         if vol <= 0:
             raise ValueError(f"[THERMAL_LOAD] heat_source part={pid}: volume_mm3>0 필요")
         q = power_W * 1000.0 / vol   # mW/mm³
-        eids = [eid for eid, e in elemMan.elements.items() if getattr(e, "pid", None) == pid]
+        # 파트 요소는 파트별 elementManager 에 저장됨(import 가 element.pid 를 안 채움) —
+        # 기존 working 코드(KooDynaAdvancedModification 2822/4321) 와 동일하게 p.elementManager.elements 사용.
+        part_obj = parts.get(pid)
+        if part_obj is None:
+            raise ValueError(f"[THERMAL_LOAD] heat_source part={pid}: 파트 없음")
+        eids = list(getattr(part_obj.elementManager, "elements", {}).keys())
         if not eids:
             raise ValueError(f"[THERMAL_LOAD] heat_source part={pid}: solid 요소 없음")
+        # SET 은 export 가 쓰는 글로벌 partManager.elementManager 에 생성(KooMeshImporter:2087)
         sset = elemMan.CreateSolidSet(name=f"HeatGen_PID{pid}", solver="THERMAL", elemList=eids)
         loadMan.CreateLoadHeatGenerationSetSolid(sid=sset.sid, lcid=0, mult=q)
         print(f"  → *SET_SOLID(sid={sset.sid}, {len(eids)} elems) + "

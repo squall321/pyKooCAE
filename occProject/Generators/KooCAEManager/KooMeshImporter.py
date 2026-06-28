@@ -2083,7 +2083,7 @@ class KooDynaImporter():
         self.nodeManager.WriteStreamDynaKeyword(stream,0)
         #if len(self.partManager.nodeManager.nodes) > 0:
         #    self.partManager.nodeManager.WriteStreamDynaKeyword(stream,0)
-        if len(self.partManager.elementManager.elements) > 0:
+        if len(self.partManager.elementManager.elements) > 0 or len(self.partManager.elementManager.sets) > 0:
             self.partManager.elementManager.WriteStreamDynaKeyword(stream,0,0,0)
         self.nodeSetManager.WriteStreamDynaKeyword(stream,0)   
         self.segmentSetManager.WriteStreamDynaKeyword(stream,0)         
@@ -2121,7 +2121,7 @@ class KooDynaImporter():
         self.sectionManager.WriteStreamDynaKeyword(stream)
         self.partManager.WriteStreamDynaKeyword(stream, 0, 0, 0)
         self.nodeManager.WriteStreamDynaKeyword(stream, 0)
-        if len(self.partManager.elementManager.elements) > 0:
+        if len(self.partManager.elementManager.elements) > 0 or len(self.partManager.elementManager.sets) > 0:
             self.partManager.elementManager.WriteStreamDynaKeyword(stream, 0, 0, 0)
         # nodeSetManager — exclude specified SIDs
         if exclude_nodeset_sids:
@@ -2202,7 +2202,7 @@ class KooDynaImporter():
     def WriteStreamPostNodesKeyword(self):
         """노드 섹션 이후 직렬화 (섹션 9-17): elementManager~additional (Group C FastDOE용)"""
         stream = StringIO()
-        if len(self.partManager.elementManager.elements) > 0:
+        if len(self.partManager.elementManager.elements) > 0 or len(self.partManager.elementManager.sets) > 0:
             self.partManager.elementManager.WriteStreamDynaKeyword(stream, 0, 0, 0)
         self.nodeSetManager.WriteStreamDynaKeyword(stream, 0)
         self.segmentSetManager.WriteStreamDynaKeyword(stream, 0)
@@ -2235,7 +2235,7 @@ class KooDynaImporter():
         keyword += self.nodeManager.WritetoDynaKeyword(0)
         if len(self.partManager.nodeManager.nodes) > 0:
             keyword += self.partManager.nodeManager.WritetoDynaKeyword(0)
-        if len(self.partManager.elementManager.elements) > 0:
+        if len(self.partManager.elementManager.elements) > 0 or len(self.partManager.elementManager.sets) > 0:
             keyword += self.partManager.elementManager.WritetoDynaKeyword(0,0,0)
         
         keyword += self.nodeSetManager.WritetoDynaKeyword(0)
