@@ -44,6 +44,13 @@ class FibonacciLatticeConfig:
     angle_spacing: Optional[float] = None  # 각도 간격 (deg) - num_points 대신 사용 가능
     progressive: bool = False       # True면 점진적(farthest-point) 샘플링 순서로 재정렬
                                     # → prefix(앞 k개)가 항상 전구면 균일, 나머지가 빈틈을 채움
+    principal_directions: Optional[str] = None  # None | "faces"(6) | "faces_corners"(14) | "cuboid26"(26)
+                                    # 설정 시: 표준 낙하자세를 먼저 배치(시드) + 나머지를 그 사이
+                                    # 등간격(seeded farthest-point)으로 채움. (물리 frame 강제)
+    sampling_space: Optional[str] = None  # None/"latlon"=기존(lat/lon 파라미터 공간 균일, 호환)
+                                    # "physical"=실제 낙하방향(DropAttitude 회전) 공간에서 등간격.
+                                    # lat/lon 균일은 실제 충격방향 공간에선 한쪽 쏠림(비∞) → physical 권장.
+                                    # principal_directions 설정 시 자동으로 physical 적용.
 
 
 @dataclass
@@ -109,10 +116,10 @@ CUBOID_EDGES = {
     "E06_Front_Left":    (180.0,  -45.0, 0.0),
     "E07_Front_Top":     (135.0,   0.0,  0.0),
     "E08_Front_Bottom":  (-135.0,  0.0,  0.0),
-    "E09_Right_Top":     (90.0,   -45.0, 0.0),
-    "E10_Right_Bottom":  (-90.0,  -45.0, 0.0),
-    "E11_Left_Top":      (90.0,    45.0, 0.0),
-    "E12_Left_Bottom":   (-90.0,   45.0, 0.0),
+    "E09_Right_Top":     (45.0,   -90.0, 0.0),
+    "E10_Right_Bottom":  (-45.0,  -90.0, 0.0),
+    "E11_Left_Top":      (45.0,    90.0, 0.0),
+    "E12_Left_Bottom":   (-45.0,   90.0, 0.0),
 }
 
 CUBOID_CORNERS = {
@@ -181,7 +188,14 @@ def parse_fibonacci_lattice(config: FibonacciLatticeConfig) -> List[Tuple[str, f
     N = config.num_points
     golden_angle = math.pi * (3.0 - math.sqrt(5.0))  # ≈ 137.508°
 
-    # 1) 구면 균등 분포 점 + 오일러 각 생성 (스파이럴 순서)
+    # 0) physical 공간 생성: 실제 낙하방향(DropAttitude 회전) 공간에서 등간격.
+    #    principal_directions 가 설정되면(표준 자세 시드) 무조건 physical(그래야 면이 안 붕괴됨).
+    principal = getattr(config, "principal_directions", None)
+    space = getattr(config, "sampling_space", None)
+    if space == "physical" or principal:
+        return _physical_lattice(N, principal, bool(getattr(config, "progressive", False)), golden_angle)
+
+    # 1) 구면 균등 분포 점 + 오일러 각 생성 (스파이럴 순서) — 기존 lat/lon 경로 (호환)
     vecs = []      # 단위 벡터 (재정렬용)
     eulers = []    # (roll, pitch, yaw)
     for i in range(N):
@@ -249,6 +263,113 @@ def _farthest_point_order(vecs: List[Tuple[float, float, float]]) -> List[int]:
             if d > nearest_dot[i]:
                 nearest_dot[i] = d
     return selected
+
+
+def _euler_to_vec(roll: float, pitch: float, yaw: float = 0.0) -> Tuple[float, float, float]:
+    """(roll,pitch,yaw) → 단위벡터. parse_fibonacci_lattice 의 vector→euler 규약 역변환."""
+    lat = math.radians(roll + 90.0)
+    lon = math.radians(-pitch)
+    cl = math.cos(lat)
+    return (cl * math.cos(lon), math.sin(lat), cl * math.sin(lon))
+
+
+def _principal_seed(which: str) -> List[Tuple[str, float, float, float]]:
+    """표준 낙하자세 시드. faces(6) / faces_corners(14) / cuboid26(26)."""
+    items = list(CUBOID_FACES.items())
+    if which == "faces_corners":
+        items += list(CUBOID_CORNERS.items())
+    elif which == "cuboid26":
+        items += list(CUBOID_EDGES.items()) + list(CUBOID_CORNERS.items())
+    return [(name, r, p, y) for name, (r, p, y) in items]
+
+
+def _physical_drop_dir(roll: float, pitch: float) -> Tuple[float, float, float]:
+    """(roll,pitch,yaw=0) → 실제 낙하방향. DropAttitude 규약 RotMat·(0,0,-1).
+    유도: dx=sin(pitch)cos(roll), dy=-sin(roll), dz=-cos(pitch)cos(roll)."""
+    rr = math.radians(roll); pp = math.radians(pitch)
+    cr = math.cos(rr)
+    return (math.sin(pp) * cr, -math.sin(rr), -math.cos(pp) * cr)
+
+
+def _dir_to_euler(dx: float, dy: float, dz: float) -> Tuple[float, float, float]:
+    """낙하방향(dx,dy,dz) → (roll,pitch,yaw=0) 해석적 역산. _physical_drop_dir 의 역.
+    roll∈[-90,90] 정규형: roll=-asin(dy), pitch=atan2(dx,-dz). 극(cos roll≈0)이면 pitch=0."""
+    n = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
+    dx, dy, dz = dx / n, dy / n, dz / n
+    roll = -math.degrees(math.asin(max(-1.0, min(1.0, dy))))
+    cr = math.sqrt(max(0.0, 1.0 - dy * dy))
+    pitch = 0.0 if cr < 1e-9 else math.degrees(math.atan2(dx, -dz))
+    return (round(roll, 2), round(pitch, 2), 0.0)
+
+
+def _physical_lattice(N: int, principal: Optional[str], progressive: bool,
+                      golden_angle: float) -> List[Tuple[str, float, float, float]]:
+    """실제 낙하방향 공간에서 등간격 생성.
+
+    - principal 설정 시: 표준 자세(면/꼭짓점)를 먼저 시드(이름·euler 보존) + 나머지를
+      seeded farthest-point(max-min)로 채움. 표준의 물리방향 = _physical_drop_dir(euler).
+    - principal 없음 + progressive: 후보를 farthest-point 순서로 정렬.
+    - principal 없음 + non-progressive: 후보 스파이럴 순서 그대로.
+    채움/후보 방향은 모두 _dir_to_euler 로 정규형 euler 변환(P#### 이름).
+    """
+    def dot(a, b):
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+    # 표준 시드: 물리방향 기준 중복 제거(roll=±90 gimbal 로 면과 겹치는 에지 등 → 첫 이름 보존).
+    raw_seed = _principal_seed(principal) if principal else []
+    seed, seed_dirs = [], []
+    for name, r, p, yw in raw_seed:
+        if len(seed) >= N:
+            break
+        d = _physical_drop_dir(r, p)
+        if any(dot(d, sd) > 0.9998 for sd in seed_dirs):  # ~1° 이내면 중복
+            continue
+        seed.append((name, r, p, yw)); seed_dirs.append(d)
+    out = list(seed)
+    if len(out) >= N:
+        return out
+
+    def gen_cands(M):
+        cd = []
+        for i in range(M):
+            y = 1 - (2 * i + 1) / float(M)
+            radius = math.sqrt(max(0.0, 1 - y * y))
+            theta = golden_angle * i
+            cd.append((math.cos(theta) * radius, y, math.sin(theta) * radius))
+        return cd
+
+    if not seed and not progressive:
+        # 스파이럴 순서 그대로 (offset fibonacci N개 → 물리방향 → 정규 euler)
+        for i, d in enumerate(gen_cands(N)):
+            r, p, yw = _dir_to_euler(*d)
+            out.append((f"P{i + 1:04d}", r, p, yw))
+        return out
+
+    # 채움(farthest-point): 후보풀을 넉넉히(≥4N) 잡아 표준 근처/상호 중복 없이 균일 선택
+    cand_dirs = gen_cands(max(4 * N, 64))
+
+    # seeded farthest-point: seed(표준) 또는 후보0 으로 시작, 멀리 있는 점부터 채움
+    remaining = set(range(len(cand_dirs)))
+    if seed_dirs:
+        nearest = [max(dot(cand_dirs[i], sv) for sv in seed_dirs) for i in range(len(cand_dirs))]
+    else:
+        first = cand_dirs[0]
+        r, p, yw = _dir_to_euler(*first)
+        out.append((f"P{len(out) + 1:04d}", r, p, yw))
+        remaining.discard(0)
+        nearest = [dot(cand_dirs[i], first) for i in range(len(cand_dirs))]
+
+    while len(out) < N and remaining:
+        best = min(remaining, key=lambda i: nearest[i])
+        r, p, yw = _dir_to_euler(*cand_dirs[best])
+        out.append((f"P{len(out) + 1:04d}", r, p, yw))
+        remaining.discard(best)
+        vb = cand_dirs[best]
+        for i in remaining:
+            d = dot(cand_dirs[i], vb)
+            if d > nearest[i]:
+                nearest[i] = d
+    return out
 
 
 def parse_pitching_sweep(config: PitchingSweepConfig) -> List[Tuple[str, float, float, float]]:

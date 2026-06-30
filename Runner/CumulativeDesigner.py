@@ -524,7 +524,9 @@ class CumulativeDesigner:
                 source_type=source_type,
                 fibonacci_lattice=FibonacciLatticeConfig(
                     num_points=num_pts,
-                    progressive=bool(fib_cfg.get("progressive", False))
+                    progressive=bool(fib_cfg.get("progressive", False)),
+                    principal_directions=fib_cfg.get("principal_directions"),
+                    sampling_space=fib_cfg.get("sampling_space")
                 )
             )
 
