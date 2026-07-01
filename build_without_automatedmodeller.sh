@@ -1,9 +1,9 @@
 #!/bin/bash
-# pyKooCAE 빌드 스크립트 (KooAutomatedModeller 제외) - Python 3.12
-# KooMeshModifier + KooChainRun만 빌드
-# 사용법:
-#   ./build_without_automatedmodeller.sh           # incremental (캐시 보존, 빠름)
-#   ./build_without_automatedmodeller.sh --clean   # clean 빌드 (모든 캐시 삭제, 느리지만 안전)
+# pyKooCAE ë¹ë ì¤í¬ë¦½í¸ (KooAutomatedModeller ì ì¸) - Python 3.12
+# KooMeshModifier + KooChainRunë§ ë¹ë
+# ì¬ì©ë²:
+#   ./build_without_automatedmodeller.sh           # incremental (ìºì ë³´ì¡´, ë¹ ë¦)
+#   ./build_without_automatedmodeller.sh --clean   # clean ë¹ë (ëª¨ë  ìºì ì­ì , ëë¦¬ì§ë§ ìì )
 
 set -e
 
@@ -15,41 +15,46 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# ── glibc 2.35 ê°ì  ê°ë (ê³µíµ ì¤ëí«) ──
+GUARD_SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+GUARD_ARGS=("$@")
+source "$SCRIPT_DIR/build_glibc_guard.sh"
+
 BUILD_DIR="$SCRIPT_DIR/build_dist"
 BIN_DIR="$BUILD_DIR/bin"
 LIB_DIR="$BUILD_DIR/lib"
 
 echo "================================================================================"
-echo "pyKooCAE 빌드 (KooAutomatedModeller 제외, Python 3.12)"
+echo "pyKooCAE ë¹ë (KooAutomatedModeller ì ì¸, Python 3.12)"
 echo "================================================================================"
 echo "Python: $(./venv312/bin/python --version)"
-echo "출력 디렉토리: $BUILD_DIR"
+echo "ì¶ë ¥ ëë í ë¦¬: $BUILD_DIR"
 if [ "$CLEAN_BUILD" = true ]; then
-    echo "모드: CLEAN (캐시 모두 삭제)"
+    echo "ëª¨ë: CLEAN (ìºì ëª¨ë ì­ì )"
 else
-    echo "모드: INCREMENTAL (캐시 보존, 변경된 모듈만 재빌드)"
+    echo "ëª¨ë: INCREMENTAL (ìºì ë³´ì¡´, ë³ê²½ë ëª¨ëë§ ì¬ë¹ë)"
 fi
 echo ""
 
-# 기존 빌드 결과 제거 (Library, KooAutomatedModeller 보존)
+# ê¸°ì¡´ ë¹ë ê²°ê³¼ ì ê±° (Library, KooAutomatedModeller ë³´ì¡´)
 LIBRARY_BACKUP="/tmp/pyKooCAE_Library_backup_$$"
 AUTOMOD_BACKUP="/tmp/pyKooCAE_AutoMod_backup_$$"
 if [ -d "$BUILD_DIR/Library" ]; then
-    echo "  build_dist/Library 백업 중..."
+    echo "  build_dist/Library ë°±ì ì¤..."
     cp -r "$BUILD_DIR/Library" "$LIBRARY_BACKUP"
 fi
 if [ -d "$LIB_DIR/KooAutomatedModeller" ]; then
-    echo "  build_dist/lib/KooAutomatedModeller 백업 중..."
+    echo "  build_dist/lib/KooAutomatedModeller ë°±ì ì¤..."
     cp -r "$LIB_DIR/KooAutomatedModeller" "$AUTOMOD_BACKUP"
 fi
-# build_dist는 항상 정리 (재배치 필요), Nuitka cache는 옵션
+# build_distë í­ì ì ë¦¬ (ì¬ë°°ì¹ íì), Nuitka cacheë ìµì
 rm -rf "$BUILD_DIR"
 if [ "$CLEAN_BUILD" = true ]; then
-    echo "  Nuitka cache + build/dist 삭제 중 (clean 빌드)..."
+    echo "  Nuitka cache + build/dist ì­ì  ì¤ (clean ë¹ë)..."
     rm -rf KooChainRun.build KooChainRun.dist .nuitka
     rm -rf occProject/Generators/KooMeshModifier.build occProject/Generators/KooMeshModifier.dist occProject/Generators/.nuitka
 else
-    echo "  Nuitka cache + .build 폴더 보존 (incremental, 변경 모듈만 재빌드)"
+    echo "  Nuitka cache + .build í´ë ë³´ì¡´ (incremental, ë³ê²½ ëª¨ëë§ ì¬ë¹ë)"
 fi
 
 mkdir -p "$BIN_DIR"
@@ -57,7 +62,7 @@ mkdir -p "$LIB_DIR"
 
 echo ""
 echo "================================================================================"
-echo "1/3: KooMeshModifier 빌드"
+echo "1/3: KooMeshModifier ë¹ë"
 echo "================================================================================"
 echo ""
 
@@ -76,8 +81,8 @@ cd occProject/Generators
         --show-progress
 
 echo ""
-echo "✅ KooMeshModifier 빌드 완료"
-echo "   이동 중: KooMeshModifier.dist → $LIB_DIR/KooMeshModifier"
+echo "â KooMeshModifier ë¹ë ìë£"
+echo "   ì´ë ì¤: KooMeshModifier.dist â $LIB_DIR/KooMeshModifier"
 
 mv KooMeshModifier.dist "$LIB_DIR/KooMeshModifier"
 ln -sf "../lib/KooMeshModifier/KooMeshModifier.bin" "$BIN_DIR/KooMeshModifier"
@@ -86,7 +91,7 @@ cd "$SCRIPT_DIR"
 
 echo ""
 echo "================================================================================"
-echo "2/3: KooChainRun 빌드"
+echo "2/3: KooChainRun ë¹ë"
 echo "================================================================================"
 echo ""
 
@@ -116,16 +121,16 @@ echo ""
         --show-progress
 
 echo ""
-echo "✅ KooChainRun 빌드 완료"
-echo "   이동 중: KooChainRun.dist → $LIB_DIR/KooChainRun"
+echo "â KooChainRun ë¹ë ìë£"
+echo "   ì´ë ì¤: KooChainRun.dist â $LIB_DIR/KooChainRun"
 
 mv KooChainRun.dist "$LIB_DIR/KooChainRun"
 ln -sf "../lib/KooChainRun/KooChainRun.bin" "$BIN_DIR/KooChainRun"
 
-# KooAutomatedModeller 백업 복원
+# KooAutomatedModeller ë°±ì ë³µì
 if [ -d "$AUTOMOD_BACKUP" ]; then
     echo ""
-    echo "KooAutomatedModeller 이전 빌드 복원 중..."
+    echo "KooAutomatedModeller ì´ì  ë¹ë ë³µì ì¤..."
     cp -r "$AUTOMOD_BACKUP" "$LIB_DIR/KooAutomatedModeller"
     ln -sf "../lib/KooAutomatedModeller/KooAutomatedModeller.bin" "$BIN_DIR/KooAutomatedModeller"
     rm -rf "$AUTOMOD_BACKUP"
@@ -133,39 +138,39 @@ fi
 
 echo ""
 echo "================================================================================"
-echo "3/3: 외부 런타임 의존성 복사 (Library)"
+echo "3/3: ì¸ë¶ ë°íì ìì¡´ì± ë³µì¬ (Library)"
 echo "================================================================================"
 echo ""
 
 LIBRARY_SRC=""
 if [ -d "$SCRIPT_DIR/Library" ]; then
     LIBRARY_SRC="$SCRIPT_DIR/Library"
-    echo "Library 소스: 프로젝트 루트 ($LIBRARY_SRC)"
+    echo "Library ìì¤: íë¡ì í¸ ë£¨í¸ ($LIBRARY_SRC)"
 elif [ -d "$LIBRARY_BACKUP" ]; then
     LIBRARY_SRC="$LIBRARY_BACKUP"
-    echo "Library 소스: 이전 빌드 백업 ($LIBRARY_SRC)"
+    echo "Library ìì¤: ì´ì  ë¹ë ë°±ì ($LIBRARY_SRC)"
 else
-    echo "  ⚠️  Library 소스 없음 — 프로젝트 루트에 Library/ 폴더를 배치하세요"
+    echo "  â ï¸  Library ìì¤ ìì â íë¡ì í¸ ë£¨í¸ì Library/ í´ëë¥¼ ë°°ì¹íì¸ì"
 fi
 
 mkdir -p "$BUILD_DIR/Library"
 
 if [ -n "$LIBRARY_SRC" ] && [ -d "$LIBRARY_SRC/gmsh-4.14.1-Linux64" ]; then
-    echo "gmsh 복사 중..."
+    echo "gmsh ë³µì¬ ì¤..."
     cp -r "$LIBRARY_SRC/gmsh-4.14.1-Linux64" "$BUILD_DIR/Library/gmsh-4.14.1-Linux64"
-    echo "  ✅ Library/gmsh-4.14.1-Linux64/bin/gmsh"
+    echo "  â Library/gmsh-4.14.1-Linux64/bin/gmsh"
 fi
 
 if [ -n "$LIBRARY_SRC" ] && [ -d "$LIBRARY_SRC/Evolver" ]; then
-    echo "Evolver 복사 중..."
+    echo "Evolver ë³µì¬ ì¤..."
     cp -r "$LIBRARY_SRC/Evolver" "$BUILD_DIR/Library/Evolver"
-    echo "  ✅ Library/Evolver/ (바이너리 + 스크립트)"
+    echo "  â Library/Evolver/ (ë°ì´ëë¦¬ + ì¤í¬ë¦½í¸)"
 fi
 
 if [ -n "$LIBRARY_SRC" ] && [ -d "$LIBRARY_SRC/OCC" ]; then
-    echo "OCC 네이티브 라이브러리 복사 중..."
+    echo "OCC ë¤ì´í°ë¸ ë¼ì´ë¸ë¬ë¦¬ ë³µì¬ ì¤..."
     cp -r "$LIBRARY_SRC/OCC" "$BUILD_DIR/Library/OCC"
-    echo "  ✅ Library/OCC/ (.so 라이브러리)"
+    echo "  â Library/OCC/ (.so ë¼ì´ë¸ë¬ë¦¬)"
 fi
 
 if [ -d "$LIBRARY_BACKUP" ]; then
@@ -174,26 +179,26 @@ fi
 
 echo ""
 echo "================================================================================"
-echo "빌드 완료! (KooAutomatedModeller 제외)"
+echo "ë¹ë ìë£! (KooAutomatedModeller ì ì¸)"
 echo "================================================================================"
 echo ""
-echo "출력 디렉토리: $BUILD_DIR"
+echo "ì¶ë ¥ ëë í ë¦¬: $BUILD_DIR"
 echo ""
-echo "실행 파일:"
+echo "ì¤í íì¼:"
 ls -lh "$BIN_DIR/"
 echo ""
-echo "빌드 크기:"
+echo "ë¹ë í¬ê¸°:"
 du -sh "$BUILD_DIR"
 du -sh "$LIB_DIR/KooMeshModifier"
 du -sh "$LIB_DIR/KooChainRun"
 echo ""
 
-# SmartTwinPreprocessor 설치
+# SmartTwinPreprocessor ì¤ì¹
 STP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/SmartTwinPreprocessor"
 
 if [ -d "$STP_DIR" ]; then
     echo "================================================================================"
-    echo "SmartTwinPreprocessor에 설치"
+    echo "SmartTwinPreprocessorì ì¤ì¹"
     echo "================================================================================"
     echo ""
 
@@ -202,24 +207,24 @@ if [ -d "$STP_DIR" ]; then
         sudo rm -f "$STP_DIR/bin/koocr"
     fi
 
-    echo "KooChainRun 설치 중..."
+    echo "KooChainRun ì¤ì¹ ì¤..."
     sudo rm -rf "$STP_DIR/lib/KooChainRun"
     sudo cp -r "$LIB_DIR/KooChainRun" "$STP_DIR/lib/KooChainRun"
     sudo ln -sf "../lib/KooChainRun/KooChainRun.bin" "$STP_DIR/bin/KooChainRun"
 
-    echo "KooMeshModifier 설치 중..."
+    echo "KooMeshModifier ì¤ì¹ ì¤..."
     sudo rm -rf "$STP_DIR/lib/KooMeshModifier"
     sudo cp -r "$LIB_DIR/KooMeshModifier" "$STP_DIR/lib/KooMeshModifier"
     sudo ln -sf "../lib/KooMeshModifier/KooMeshModifier.bin" "$STP_DIR/bin/KooMeshModifier"
 
     if [ -d "$BUILD_DIR/Library" ]; then
-        echo "Library 설치 중..."
+        echo "Library ì¤ì¹ ì¤..."
         sudo mkdir -p "$STP_DIR/Library"
         sudo cp -r "$BUILD_DIR/Library/"* "$STP_DIR/Library/"
     fi
 
     echo ""
-    echo "✅ SmartTwinPreprocessor 설치 완료"
+    echo "â SmartTwinPreprocessor ì¤ì¹ ìë£"
     echo "   $STP_DIR/bin/KooChainRun --version:"
     "$STP_DIR/bin/KooChainRun" --version 2>&1 || true
 fi
@@ -228,27 +233,27 @@ DATA_STP_DIR="/data/SmartTwinPreprocessor"
 if [ -d "$DATA_STP_DIR" ]; then
     echo ""
     echo "================================================================================"
-    echo "/data/SmartTwinPreprocessor에 추가 배포"
+    echo "/data/SmartTwinPreprocessorì ì¶ê° ë°°í¬"
     echo "================================================================================"
     echo ""
 
-    echo "KooChainRun 배포 중..."
+    echo "KooChainRun ë°°í¬ ì¤..."
     sudo rm -rf "$DATA_STP_DIR/lib/KooChainRun"
     sudo cp -r "$LIB_DIR/KooChainRun" "$DATA_STP_DIR/lib/KooChainRun"
     sudo ln -sf "../lib/KooChainRun/KooChainRun.bin" "$DATA_STP_DIR/bin/KooChainRun"
 
-    echo "KooMeshModifier 배포 중..."
+    echo "KooMeshModifier ë°°í¬ ì¤..."
     sudo rm -rf "$DATA_STP_DIR/lib/KooMeshModifier"
     sudo cp -r "$LIB_DIR/KooMeshModifier" "$DATA_STP_DIR/lib/KooMeshModifier"
     sudo ln -sf "../lib/KooMeshModifier/KooMeshModifier.bin" "$DATA_STP_DIR/bin/KooMeshModifier"
 
     echo ""
-    echo "✅ /data/SmartTwinPreprocessor 배포 완료"
+    echo "â /data/SmartTwinPreprocessor ë°°í¬ ìë£"
     echo "   $DATA_STP_DIR/bin/KooChainRun --version:"
     "$DATA_STP_DIR/bin/KooChainRun" --version 2>&1 || true
 fi
 
 echo ""
 echo "================================================================================"
-echo "전체 완료! (KooAutomatedModeller 제외)"
+echo "ì ì²´ ìë£! (KooAutomatedModeller ì ì¸)"
 echo "================================================================================"

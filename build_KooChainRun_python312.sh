@@ -22,38 +22,10 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# ── glibc 2.35 강제 가드 ─────────────────────────────────────────────────────
-GLIBC_GUARD="${GLIBC_GUARD:-1}"
-GLIBC_MAX="2.35"   # 허용 최대 빌드 glibc (계산노드 baseline)
-# 2.35 빌드 샌드박스 (apptainer). 없으면 SIF 도 시도.
-BUILD_SANDBOX="/home/koopark/serviceApptainers/KooSimulationPython313"
-BUILD_SIF="/opt/apptainers/SmartTwinPreprocessor.sif"
-
-ver_le() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ]; }
-
-if [ "$GLIBC_GUARD" = "1" ] && [ -z "${KCR_IN_BUILD_SANDBOX:-}" ]; then
-    HOST_GLIBC="$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$')"
-    echo "빌드 환경 glibc: ${HOST_GLIBC} (허용 최대: ${GLIBC_MAX})"
-    if [ -n "$HOST_GLIBC" ] && ver_le "$HOST_GLIBC" "$GLIBC_MAX"; then
-        echo "✅ glibc ${HOST_GLIBC} <= ${GLIBC_MAX}: 이 환경에서 직접 빌드 진행."
-    else
-        echo "⚠️  glibc ${HOST_GLIBC} > ${GLIBC_MAX}: 이 환경에서 빌드하면 계산노드(2.35)에서 실행 불가."
-        CONTAINER=""
-        if command -v apptainer >/dev/null 2>&1 && [ -d "$BUILD_SANDBOX" ]; then
-            CONTAINER="$BUILD_SANDBOX"
-        elif command -v apptainer >/dev/null 2>&1 && [ -f "$BUILD_SIF" ]; then
-            CONTAINER="$BUILD_SIF"
-        fi
-        if [ -n "$CONTAINER" ]; then
-            echo "→ 2.35 컨테이너에서 재실행: $CONTAINER"
-            exec env KCR_IN_BUILD_SANDBOX=1 apptainer exec -B /home -B /data "$CONTAINER" \
-                bash "$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")" "$@"
-        fi
-        echo "❌ 2.35 빌드 컨테이너를 못 찾음($BUILD_SANDBOX / $BUILD_SIF)."
-        echo "   glibc<=2.35 환경에서 빌드하거나, GLIBC_GUARD=0 으로 강제 진행(계산노드 비호환 위험)."
-        exit 1
-    fi
-fi
+# ── glibc 2.35 강제 가드 (공통 스니펫) ───────────────────────────────────────
+GUARD_SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+GUARD_ARGS=("$@")
+source "$SCRIPT_DIR/build_glibc_guard.sh"
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo "================================================================================"
