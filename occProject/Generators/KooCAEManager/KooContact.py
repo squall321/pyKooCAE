@@ -804,7 +804,11 @@ class KooContactManager:
         return contact
     
     def RemoveContactbyID(self, cid):
-        del self.contacts[cid]
+        # 이미 없는 접촉(예: dynain 병합/재구성 후 사라진 바닥판 접촉) 삭제는 no-op
+        if cid in self.contacts:
+            del self.contacts[cid]
+        else:
+            print("Contact {0} not in list (already removed) — skip".format(cid))
         
     def RemoveContact(self, contact):
         del self.contacts[contact.cid]
