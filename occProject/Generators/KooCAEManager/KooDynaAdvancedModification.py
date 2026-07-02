@@ -3039,9 +3039,18 @@ class KooDynaAdvancedModification:
                             # _dti.k 에 *CONTROL_DYNAMIC_RELAXATION 주입 → 다음 낙하 deck 이
                             # 이월받아 본 해석 전 DR 안정화 phase 수행
                             f.write("*DynamicRelaxation,True\n")
-                            # bounded DR: 수렴 실패 시에도 tFinal pseudo-time 후 transient 진입
+                            drNrcyck = option.get("DynainDynamicRelaxationNrcyck", 0)
+                            if drNrcyck:
+                                f.write("*DynamicRelaxationNrcyck," + str(drNrcyck) + "\n")
+                            drTol = option.get("DynainDynamicRelaxationTol", 0.0)
+                            if drTol and drTol > 0.0:
+                                f.write("*DynamicRelaxationTol," + str(drTol) + "\n")
+                            drFctr = option.get("DynainDynamicRelaxationFctr", 0.0)
+                            if drFctr and drFctr > 0.0:
+                                f.write("*DynamicRelaxationFctr," + str(drFctr) + "\n")
+                            # bounded DR: 수렴 실패 시에도 예산 pseudo-time 후 transient 진입
                             # (잔류응력 릴리즈 진동은 수렴비를 못 낮춰 무한 DR 이 될 수 있음)
-                            drTerm = option.get("TFinal", 0.0)
+                            drTerm = option.get("DynainDynamicRelaxationTerm", 0.0) or option.get("TFinal", 0.0)
                             if drTerm and drTerm > 0.0:
                                 f.write("*DynamicRelaxationTerm,")
                                 f.write(str(drTerm))
@@ -6354,12 +6363,16 @@ class KooDynaAdvancedModification:
             self.dynaImporter.databaseManager.clear()
             # bounded DR: 잔류응력 릴리즈 진동은 수렴비(distortional KE ratio)를 못 낮춰
             # DR 이 무한히 돌 수 있음(실측: 735k cycle/56min 미수렴). DRTERM 으로 pseudo-time
-            # 예산을 걸어 미수렴이어도 transient 로 진입시킨다. 파라미터는 LS-DYNA 표준값
-            # (DRTOL=0.001, DRFCTR=0.995, TSSFDR=0=기본). IDRFLG=1(표준 DR, -1은 debug).
+            # 예산을 걸어 미수렴이어도 transient 로 진입시킨다. 파라미터는 config 로 조절
+            # (미설정 fallback: NRCYCK 250, DRTOL 0.001, DRFCTR 0.995, TSSFDR 0=기본).
+            # IDRFLG=1(표준 DR, -1은 debug).
+            drNrcyck = int(option.get("DynamicRelaxationNrcyck", 0) or 250)
+            drTol = option.get("DynamicRelaxationTol", 0.0) or 0.001
+            drFctr = option.get("DynamicRelaxationFctr", 0.0) or 0.995
             drTerm = option.get("DynamicRelaxationTerm", 0.0)
             if not drTerm or drTerm <= 0.0:
                 drTerm = 1.0e+99
-            self.dynaImporter.controlManager.SetControlDynamicRelaxation(250, 0.001, 0.995, drTerm, 0.0, 0, 0.0, 1)
+            self.dynaImporter.controlManager.SetControlDynamicRelaxation(drNrcyck, drTol, drFctr, drTerm, 0.0, 0, 0.0, 1)
 
         if len(removePartNameList) > 0:
             for name in removePartNameList:

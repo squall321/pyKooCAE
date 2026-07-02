@@ -456,6 +456,9 @@ class KooMeshModifier(KooSimulationGenerator):
                     curOptions["RemovePartNameList"] = []
                     curOptions["RemovePartIDList"] = []
                     curOptions["DynamicRelaxation"] = False
+                    curOptions["DynamicRelaxationNrcyck"] = 0
+                    curOptions["DynamicRelaxationTol"] = 0.0
+                    curOptions["DynamicRelaxationFctr"] = 0.0
                     curOptions["DynamicRelaxationTerm"] = 0.0
                     curOptions["RemoveContactIDList"] = []
 
@@ -485,8 +488,17 @@ class KooMeshModifier(KooSimulationGenerator):
                                 curOptions["RemoveDynamicRelaxation"] = True
                             else:
                                 curOptions["RemoveDynamicRelaxation"] = False
+                        elif "dynamicrelaxationnrcyck" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynamicRelaxationNrcyck"] = int(float(svector[1]))
+                        elif "dynamicrelaxationtol" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynamicRelaxationTol"] = KooDynaFloat(svector[1])
+                        elif "dynamicrelaxationfctr" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynamicRelaxationFctr"] = KooDynaFloat(svector[1])
                         elif "dynamicrelaxationterm" in line.lower():
-                            # 주의: "dynamicrelaxation" 브랜치보다 먼저 와야 함(substring 포함)
+                            # 주의: 세부키들은 "dynamicrelaxation" 브랜치보다 먼저 와야 함(substring 포함)
                             svector = line.split(",")
                             curOptions["DynamicRelaxationTerm"] = KooDynaFloat(svector[1])
                         elif "dynamicrelaxation" in line.lower():
@@ -1365,6 +1377,10 @@ class KooMeshModifier(KooSimulationGenerator):
                     curOptions["DropSurface"] = ["Plane", 0.0, 0.0, 0.0, 10, 10, 10]
                     curOptions["DeformableToRigid"] = False
                     curOptions["DynainDynamicRelaxation"] = False
+                    curOptions["DynainDynamicRelaxationNrcyck"] = 0
+                    curOptions["DynainDynamicRelaxationTol"] = 0.0
+                    curOptions["DynainDynamicRelaxationFctr"] = 0.0
+                    curOptions["DynainDynamicRelaxationTerm"] = 0.0
                     curOptions["runid"] = []
                     while True:
                         line = f.readline().strip()
@@ -1541,7 +1557,20 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "deformabletorigid" in line.lower():
                             svector = line.split(",")
                             curOptions["DeformableToRigid"] = svector[1].strip().lower() == "true"
+                        elif "dynaindynamicrelaxationnrcyck" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynainDynamicRelaxationNrcyck"] = int(float(svector[1]))
+                        elif "dynaindynamicrelaxationtol" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynainDynamicRelaxationTol"] = KooDynaFloat(svector[1])
+                        elif "dynaindynamicrelaxationfctr" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynainDynamicRelaxationFctr"] = KooDynaFloat(svector[1])
+                        elif "dynaindynamicrelaxationterm" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynainDynamicRelaxationTerm"] = KooDynaFloat(svector[1])
                         elif "dynaindynamicrelaxation" in line.lower():
+                            # 주의: 위 세부키들이 이 generic 브랜치보다 먼저 와야 함(substring)
                             svector = line.split(",")
                             curOptions["DynainDynamicRelaxation"] = svector[1].strip().lower() == "true"
                         elif "nonreflectingboundary" in line.lower():
