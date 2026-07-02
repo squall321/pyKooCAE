@@ -1283,12 +1283,18 @@ class CumulativeScenarioRunner:
         # 모델 파일 결정
         if prev_run_dir:
             # 이전 step의 dynain을 사용
-            prev_output = os.path.join(self.output_dir, prev_run_dir, "DynamicRelaxation")
-            model_file = os.path.join(prev_output, "DropSet_dti.k")
-            if not os.path.exists(model_file):
+            # KooMeshModifier(RunDirectoryMode)는 DropSet_dti.k 를 Output/ 에 쓴다.
+            # (DynamicRelaxation/ 은 구 경로 — 호환 위해 양쪽 다 탐색)
+            prev_run_path = os.path.join(self.output_dir, prev_run_dir)
+            dti_candidates = [
+                os.path.join(prev_run_path, "Output", "DropSet_dti.k"),
+                os.path.join(prev_run_path, "DynamicRelaxation", "DropSet_dti.k"),
+            ]
+            model_file = next((c for c in dti_candidates if os.path.exists(c)), None)
+            if model_file is None:
                 logging.warning(
                     f"DYNAIN_TO_INITIAL 결과 파일 없음 (DYNAIN_TO_INITIAL 실패 가능성): "
-                    f"{model_file} — 원본 모델 파일로 fallback (결과 부정확 가능)")
+                    f"{' | '.join(dti_candidates)} — 원본 모델 파일로 fallback (결과 부정확 가능)")
                 model_file = self.config["project"]["model_file"]
         else:
             model_file = self.config["project"]["model_file"]
