@@ -456,6 +456,7 @@ class KooMeshModifier(KooSimulationGenerator):
                     curOptions["RemovePartNameList"] = []
                     curOptions["RemovePartIDList"] = []
                     curOptions["DynamicRelaxation"] = False
+                    curOptions["DynamicRelaxationTerm"] = 0.0
                     curOptions["RemoveContactIDList"] = []
 
                     while True:
@@ -484,6 +485,10 @@ class KooMeshModifier(KooSimulationGenerator):
                                 curOptions["RemoveDynamicRelaxation"] = True
                             else:
                                 curOptions["RemoveDynamicRelaxation"] = False
+                        elif "dynamicrelaxationterm" in line.lower():
+                            # 주의: "dynamicrelaxation" 브랜치보다 먼저 와야 함(substring 포함)
+                            svector = line.split(",")
+                            curOptions["DynamicRelaxationTerm"] = KooDynaFloat(svector[1])
                         elif "dynamicrelaxation" in line.lower():
                             svector = line.split(",")
                             if svector[1].lower() == "true":
