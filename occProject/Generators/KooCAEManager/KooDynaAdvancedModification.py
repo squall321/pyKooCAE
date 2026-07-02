@@ -3035,6 +3035,10 @@ class KooDynaAdvancedModification:
                         f.write("\n")
                         f.write("*IncludeStress,True\n")
                         f.write("*RemoveDynamicRelaxation,True\n")
+                        if option.get("DynainDynamicRelaxation", False):
+                            # _dti.k 에 *CONTROL_DYNAMIC_RELAXATION 주입 → 다음 낙하 deck 이
+                            # 이월받아 본 해석 전 DR 안정화 phase 수행
+                            f.write("*DynamicRelaxation,True\n")
                         f.write("*MovetoOriginAutomatic,True\n")
                         if part is not None:
                             f.write("*RemovePartbyID,")

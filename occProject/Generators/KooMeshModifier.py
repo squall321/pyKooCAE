@@ -1359,6 +1359,7 @@ class KooMeshModifier(KooSimulationGenerator):
                     curOptions["DT"] = 0.0
                     curOptions["DropSurface"] = ["Plane", 0.0, 0.0, 0.0, 10, 10, 10]
                     curOptions["DeformableToRigid"] = False
+                    curOptions["DynainDynamicRelaxation"] = False
                     curOptions["runid"] = []
                     while True:
                         line = f.readline().strip()
@@ -1535,6 +1536,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "deformabletorigid" in line.lower():
                             svector = line.split(",")
                             curOptions["DeformableToRigid"] = svector[1].strip().lower() == "true"
+                        elif "dynaindynamicrelaxation" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynainDynamicRelaxation"] = svector[1].strip().lower() == "true"
                         elif "nonreflectingboundary" in line.lower():
                             svector = line.split(",")
                             curOptions["NonReflectingBoundary"] = svector[1].strip().lower() != "false"

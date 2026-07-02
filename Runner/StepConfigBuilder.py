@@ -73,6 +73,10 @@ def build_drop_attitude_config(
     d2r_enabled = drop_surface.get("deformable_to_rigid", False)
     d2r_line = "\nDeformableToRigid,True" if d2r_enabled else ""
 
+    # 누적 스텝 간 DR 안정화: dynaintoinitial.txt 에 DynamicRelaxation,True 를 쓰게 하여
+    # 다음 낙하 deck 에 *CONTROL_DYNAMIC_RELAXATION 이 실리도록 함 (기본 off = 기존 동작)
+    dr_line = "\nDynainDynamicRelaxation,True" if sim_params.get("dynamic_relaxation", False) else ""
+
     # Contact 처리 옵션
     convert_to_ss = sim_params.get("convert_general_to_single_surface", True)
     ensure_ss = sim_params.get("ensure_single_surface", False)
@@ -175,7 +179,7 @@ YoungsModulus,{youngs_modulus}
 PoissonRatio,{poisson_ratio}
 tFinal,{tFinal}
 dt,{dt}
-{drop_surface_line}{d2r_line}{contact_opt_line}{drop_contact_line}{tied_opt_line}{control_line}
+{drop_surface_line}{d2r_line}{dr_line}{contact_opt_line}{drop_contact_line}{tied_opt_line}{control_line}
 **EndDropAttitude
 *End
 """
