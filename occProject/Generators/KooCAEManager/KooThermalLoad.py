@@ -174,7 +174,9 @@ def _apply_ic_power(dynaImporter, option):
         if not eids:
             raise ValueError(f"[THERMAL_LOAD] heat_source part={pid}: solid 요소 없음")
         # SET 은 export 가 쓰는 글로벌 partManager.elementManager 에 생성(KooMeshImporter:2087)
-        sset = elemMan.CreateSolidSet(name=f"HeatGen_PID{pid}", solver="THERMAL", elemList=eids)
+        # solver="" → SolidSet 가 DA1 컬럼에 solver 를 쓰므로(클래스 한계), 빈 값으로 둬서
+        # DA1 오염 방지(MECH 기본). 검증 smoke 도 plain SET_SOLID(MECH)로 통과.
+        sset = elemMan.CreateSolidSet(name=f"HeatGen_PID{pid}", solver="", elemList=eids)
         loadMan.CreateLoadHeatGenerationSetSolid(sid=sset.sid, lcid=0, mult=q)
         print(f"  → *SET_SOLID(sid={sset.sid}, {len(eids)} elems) + "
               f"*LOAD_HEAT_GENERATION q'''={q:.3e} mW/mm³ (PID={pid}, {power_W}W/{vol}mm³)")

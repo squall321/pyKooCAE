@@ -1027,6 +1027,12 @@ class KooControlManager:
             self.controlDynamicRelaxation = controlManager.controlDynamicRelaxation
         if controlManager.controlAccuracy is not None:
             self.controlAccuracy = controlManager.controlAccuracy
+        if controlManager.controlSolution is not None:
+            self.controlSolution = controlManager.controlSolution
+        if controlManager.controlThermalSolver is not None:
+            self.controlThermalSolver = controlManager.controlThermalSolver
+        if controlManager.controlThermalTimestep is not None:
+            self.controlThermalTimestep = controlManager.controlThermalTimestep
 
     def SetControlSolution(self, SOLN=0, NLQ=0, ISNAN=0, LCINT=100):
         self.controlSolution = KooControlSolution(SOLN, NLQ, ISNAN, LCINT)
