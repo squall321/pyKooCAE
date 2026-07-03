@@ -6,6 +6,35 @@ cumulative와 large-scale 모드에서 동일한 옵션으로 step_config를 생
 """
 
 
+def build_dynamic_relaxation_lines(sim_params: dict, tFinal: float) -> str:
+    """누적 스텝 간 DR 안정화 config 라인 생성 (DROP/IMPACT 공용).
+
+    scenario `simulation_params.dynamic_relaxation` 이 true(간단형) 또는
+    {enabled, nrcyck, drtol, drfctr, drterm}(객체형)일 때 DynainDynamicRelaxation
+    라인들을 반환. off 면 "" (기존 동작 불변).
+    - 기본 drtol=0.01 — 잔류응력 릴리즈 진동은 LS-DYNA 기본(0.001)로는 수렴 불가라 완화.
+    - 기본 drterm=tFinal — 미수렴이어도 pseudo-time 예산 소진 후 transient 진입(bounded DR).
+    각 라인은 "\\n" 으로 시작해 기존 템플릿 삽입 지점에 그대로 이어붙일 수 있다.
+    """
+    dr_cfg = sim_params.get("dynamic_relaxation", False)
+    if isinstance(dr_cfg, dict):
+        dr_enabled = bool(dr_cfg.get("enabled", True))
+        dr_nrcyck = int(dr_cfg.get("nrcyck", 250))
+        dr_tol = float(dr_cfg.get("drtol", 0.01))
+        dr_fctr = float(dr_cfg.get("drfctr", 0.995))
+        dr_term = float(dr_cfg.get("drterm", 0.0)) or tFinal
+    else:
+        dr_enabled = bool(dr_cfg)
+        dr_nrcyck, dr_tol, dr_fctr, dr_term = 250, 0.01, 0.995, tFinal
+    if not dr_enabled:
+        return ""
+    return (f"\nDynainDynamicRelaxation,True"
+            f"\nDynainDynamicRelaxationNrcyck,{dr_nrcyck}"
+            f"\nDynainDynamicRelaxationTol,{dr_tol}"
+            f"\nDynainDynamicRelaxationFctr,{dr_fctr}"
+            f"\nDynainDynamicRelaxationTerm,{dr_term}")
+
+
 def build_drop_attitude_config(
     model_file: str,
     output_dir: str,
@@ -73,28 +102,8 @@ def build_drop_attitude_config(
     d2r_enabled = drop_surface.get("deformable_to_rigid", False)
     d2r_line = "\nDeformableToRigid,True" if d2r_enabled else ""
 
-    # 누적 스텝 간 DR 안정화: dynaintoinitial.txt 에 DynamicRelaxation 옵션을 쓰게 하여
-    # 다음 낙하 deck 에 *CONTROL_DYNAMIC_RELAXATION 이 실리도록 함 (기본 off = 기존 동작)
-    # 값: true(간단형) 또는 {enabled, nrcyck, drtol, drfctr, drterm} 객체형.
-    # 기본 drtol=0.01 — 잔류응력 릴리즈 진동은 LS-DYNA 기본(0.001)로는 수렴 불가라 완화.
-    # 기본 drterm=tFinal — 미수렴이어도 pseudo-time 예산 소진 후 transient 진입(bounded DR).
-    dr_cfg = sim_params.get("dynamic_relaxation", False)
-    if isinstance(dr_cfg, dict):
-        dr_enabled = bool(dr_cfg.get("enabled", True))
-        dr_nrcyck = int(dr_cfg.get("nrcyck", 250))
-        dr_tol = float(dr_cfg.get("drtol", 0.01))
-        dr_fctr = float(dr_cfg.get("drfctr", 0.995))
-        dr_term = float(dr_cfg.get("drterm", 0.0)) or tFinal
-    else:
-        dr_enabled = bool(dr_cfg)
-        dr_nrcyck, dr_tol, dr_fctr, dr_term = 250, 0.01, 0.995, tFinal
-    dr_line = ""
-    if dr_enabled:
-        dr_line = (f"\nDynainDynamicRelaxation,True"
-                   f"\nDynainDynamicRelaxationNrcyck,{dr_nrcyck}"
-                   f"\nDynainDynamicRelaxationTol,{dr_tol}"
-                   f"\nDynainDynamicRelaxationFctr,{dr_fctr}"
-                   f"\nDynainDynamicRelaxationTerm,{dr_term}")
+    # 누적 스텝 간 DR 안정화 라인 (기본 off = 기존 동작). DROP/IMPACT 공용 헬퍼 사용.
+    dr_line = build_dynamic_relaxation_lines(sim_params, tFinal)
 
     # Contact 처리 옵션
     convert_to_ss = sim_params.get("convert_general_to_single_surface", True)

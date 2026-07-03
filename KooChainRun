@@ -407,6 +407,30 @@ def cmd_reprioritize(args):
             print("  ", " ".join(c))
 
 
+def _hms_scale(tl_str: str, mult: int) -> str:
+    """HH:MM:SS time limit 문자열을 mult 배로 확장."""
+    parts = tl_str.split(":")
+    total = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+    total *= mult
+    return f"{int(total // 3600)}:{int((total % 3600) // 60):02d}:{int(total % 60):02d}"
+
+
+def _step_dr_time_factor(runner_config: dict) -> int:
+    """DOE 1개의 wall-clock 배율: step1=1x, step2+ 는 DR 켜지면 2x, 아니면 1x.
+
+    time_limit 은 'DOE 당' 예산인데 종전엔 num_steps/DR 을 반영하지 않아
+    다스텝(+DR) DOE 가 오버런(--requeue 재큐 낭비)될 수 있었다.
+    """
+    try:
+        total_steps = int(runner_config.get("scenario", {}).get("total_steps", 1))
+    except Exception:
+        total_steps = 1
+    dr_cfg = runner_config.get("simulation_params", {}).get("dynamic_relaxation", False)
+    dr_on = bool(dr_cfg.get("enabled", True)) if isinstance(dr_cfg, dict) else bool(dr_cfg)
+    per_later_step = 2 if dr_on else 1
+    return max(1, 1 + (total_steps - 1) * per_later_step)
+
+
 def cmd_prepare(args):
     """Execute prepare command"""
     import json
@@ -1314,6 +1338,13 @@ def _submit_cumulative(args, config_path):
     memory = args.memory or env.get("memory", "64G")
     partition = args.partition if args.partition is not None else env.get("partition", "normal")
     time_limit = args.time_limit if args.time_limit is not None else env.get("time_limit", "24:00:00")
+
+    # DOE 당 예산에 step 수·DR 배율 반영 (step1=1x, step2+ = DR시 2x) — 이후 파티션 cap 적용됨
+    _sdf = _step_dr_time_factor(runner_config)
+    if _sdf > 1:
+        _tl_base = time_limit
+        time_limit = _hms_scale(time_limit, _sdf)
+        print(f"  Time limit: {_tl_base} × step/DR factor {_sdf} = {time_limit} (per DOE)")
 
     # 파티션 최대 시간 확인 → time_limit 자동 cap
     try:
@@ -2253,6 +2284,10 @@ def _rerun_sequential(manager, target_does, exclude_list, args):
     ncpu = env.get("ncpu", 16)
     memory = env.get("memory", "64G")
     time_limit = env.get("time_limit", "24:00:00")
+    # rerun 도 submit 과 동일하게 step 수·DR 배율 반영
+    _sdf = _step_dr_time_factor(runner_config)
+    if _sdf > 1:
+        time_limit = _hms_scale(time_limit, _sdf)
     exclusive = env.get("exclusive", True)
 
     # 노드 수 결정

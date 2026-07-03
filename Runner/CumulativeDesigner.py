@@ -823,7 +823,10 @@ class CumulativeDesigner:
                 "timeout_koomeshmodifier_seconds": runner_config.environment.get("timeout_koomeshmodifier_seconds", 604800),
                 "timeout_dynain_seconds": runner_config.environment.get("timeout_dynain_seconds", 604800),
                 "retry_on_failure": True,
-                "max_retries": 2
+                "max_retries": 2,
+                # 누적 무결성: true 면 DYNAIN_TO_INITIAL 실패/_dti.k 부재를 step 실패로 승격
+                # (기본 false = 기존 동작: warning + degraded 태깅 후 원본 fallback)
+                "strict_accumulation": bool(runner_config.environment.get("strict_accumulation", False))
             },
             "environment": runner_config.environment,
             # simulation_params (있으면 추가)

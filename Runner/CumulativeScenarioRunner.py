@@ -23,6 +23,7 @@ import argparse
 import hashlib
 import uuid
 import fcntl
+import glob
 import shutil
 import tempfile
 from pathlib import Path
@@ -903,6 +904,15 @@ class CumulativeScenarioRunner:
         except TimeoutError:
             logging.warning("_update_scenario_status: flock timeout — status 업데이트 생략")
 
+    def _has_dti_output(self, run_path: str) -> bool:
+        """해당 Run 폴더에 DYNAIN_TO_INITIAL 산출물(*_dti.k)이 있는지.
+
+        출력 위치는 dynain 이 있는 폴더(=Output/), 이름은 입력 deck 기반이라
+        (DropSet_dti.k / DropWeightImpactTestSet_dti.k 등) glob 으로 확인.
+        구버전 호환으로 DynamicRelaxation/ 도 함께 본다."""
+        return bool(glob.glob(os.path.join(run_path, "Output", "*_dti.k")) or
+                    glob.glob(os.path.join(run_path, "DynamicRelaxation", "*_dti.k")))
+
     def run_single_step(self, doe_index: int, step_config: Dict[str, Any]) -> bool:
         """단일 Step 실행"""
         step_num = step_config["step"]
@@ -938,8 +948,14 @@ class CumulativeScenarioRunner:
                 prev_folder = prev_run.get("folder", "")
                 dynain_path = os.path.join(self.output_dir, prev_folder, "Output", "dynain")
                 if prev_folder and os.path.exists(dynain_path):
-                    logging.info(f"이미 완료된 step 스킵: {alias} (폴더: {prev_folder})")
-                    return True
+                    # 비최종 step 은 누적 산출물(_dti.k)까지 있어야 진짜 완료.
+                    # (DTI 실패로 degraded 된 completed 를 resume 이 그대로 스킵하는 결함 방지)
+                    if step_num < self.config["scenario"]["total_steps"] and \
+                            not self._has_dti_output(os.path.join(self.output_dir, prev_folder)):
+                        logging.warning(f"완료 표기지만 _dti.k 없음 → 재실행: {alias} (폴더: {prev_folder})")
+                    else:
+                        logging.info(f"이미 완료된 step 스킵: {alias} (폴더: {prev_folder})")
+                        return True
 
         # 1. Index 업데이트 (running 상태, run_dir은 KooMeshModifier 실행 후 결정)
         run_id = None
@@ -1130,15 +1146,34 @@ class CumulativeScenarioRunner:
         self._generate_and_maybe_run_deep_report(run_dir, output_run_dir)
 
         # 7. DYNAIN_TO_INITIAL 실행 (마지막 step 제외)
+        # 누적 무결성: 실패/산출물 부재 시 기본은 warning+degraded 태깅(기존 동작 유지),
+        # execution.strict_accumulation=true 면 step 실패로 승격(다음 step 원본 fallback 차단).
         total_steps = self.config["scenario"]["total_steps"]
+        dti_degraded = None  # 비최종 step 에서 이월 실패 시 사유 문자열
         if step_num < total_steps:
             dti_file = os.path.join(run_dir, "DynamicRelaxation", "dynaintoinitial.txt")
-            if os.path.exists(dti_file):
-                if self._run_koomeshmodifier(dti_file, run_dir) is None:
-                    logging.warning("DYNAIN_TO_INITIAL failed, but continuing...")
+            if not os.path.exists(dti_file):
+                dti_degraded = "dynaintoinitial.txt 없음"
+            elif self._run_koomeshmodifier(dti_file, run_dir) is None:
+                dti_degraded = "DYNAIN_TO_INITIAL(KooMeshModifier) 실패"
+            elif not self._has_dti_output(run_dir):
+                dti_degraded = "_dti.k 미생성"
+            if dti_degraded:
+                strict_acc = bool(self.config.get("execution", {}).get("strict_accumulation", False))
+                msg = (f"누적 이월 실패({dti_degraded}) — 다음 step 은 원본 모델 fallback "
+                       f"(누적 소실 위험): {alias}")
+                if strict_acc:
+                    logging.error(msg + " → strict_accumulation: step 실패 처리")
+                    self._update_index(alias, {
+                        "run_id": run_id, "status": "failed",
+                        "folder": f"Run_{run_id}", "mode": mode, "condition": condition,
+                        "error": f"strict_accumulation: {dti_degraded}"
+                    })
+                    return False
+                logging.warning(msg)
 
-        # 8. Index 업데이트 (completed)
-        self._update_index(alias, {
+        # 8. Index 업데이트 (completed) — 이월 실패 시 degraded 사유 태깅(사후 식별용)
+        _rec = {
             "run_id": run_id,
             "status": "completed",
             "folder": f"Run_{run_id}",
@@ -1146,7 +1181,13 @@ class CumulativeScenarioRunner:
             "condition": condition,
             "completed_at": datetime.now().isoformat(),
             "prev": self._get_prev_alias(doe_index, step_num)
-        })
+        }
+        if dti_degraded:
+            _rec["degraded"] = dti_degraded
+        if getattr(self, "_fallback_degraded", None):
+            _rec["degraded_input"] = self._fallback_degraded  # 이 step 입력이 원본 fallback 이었음
+            self._fallback_degraded = None
+        self._update_index(alias, _rec)
 
         # 9. 체크포인트에 완료 기록
         self.checkpoint["completed_runs"].append(alias)
@@ -1236,21 +1277,36 @@ class CumulativeScenarioRunner:
             return _fail("pass2 LS-DYNA(structural) 실패", rid2, f"Run_{rid1}")
 
         # ── 누적: 비최종 step 이면 다음 step 입력 위해 DYNAIN_TO_INITIAL (pass2 상태 이월) ──
+        therm_degraded = None
         if step_num < total_steps:
             dti = os.path.join(rd2, "DynamicRelaxation", "dynaintoinitial.txt")
-            if os.path.exists(dti):
-                if self._run_koomeshmodifier(dti, rd2) is None:
-                    logging.warning("[THERM 2-pass] DYNAIN_TO_INITIAL 실패 — 다음 step 상태이월 누락 가능")
-            else:
-                logging.warning("[THERM 2-pass] 비최종 THERM step 인데 dynaintoinitial.txt 없음 — "
-                                "누적 thermal→다음step 상태전달은 P3 미구현. 다음 step 은 원본 모델 사용.")
+            if not os.path.exists(dti):
+                therm_degraded = "dynaintoinitial.txt 없음 (누적 thermal→다음step 은 P3 미구현)"
+            elif self._run_koomeshmodifier(dti, rd2) is None:
+                therm_degraded = "DYNAIN_TO_INITIAL(KooMeshModifier) 실패"
+            elif not self._has_dti_output(rd2):
+                therm_degraded = "_dti.k 미생성"
+            if therm_degraded:
+                if bool(self.config.get("execution", {}).get("strict_accumulation", False)):
+                    logging.error(f"[THERM 2-pass] 누적 이월 실패({therm_degraded}) → "
+                                  f"strict_accumulation: step 실패 처리")
+                    self._update_index(alias, {"run_id": rid2, "status": "failed",
+                                               "folder": f"Run_{rid2}", "mode": "THERM",
+                                               "condition": condition,
+                                               "error": f"strict_accumulation: {therm_degraded}"})
+                    return False
+                logging.warning(f"[THERM 2-pass] 누적 이월 실패({therm_degraded}) — "
+                                f"다음 step 은 원본 모델 사용 (누적 소실 위험)")
 
         # ── 완료: pass2(열응력 결과)를 대표 run 으로 기록 ──
-        self._update_index(alias, {"run_id": rid2, "status": "completed", "folder": f"Run_{rid2}",
-                                   "mode": "THERM", "condition": condition,
-                                   "thermal_pass1_folder": f"Run_{rid1}",
-                                   "completed_at": datetime.now().isoformat(),
-                                   "prev": self._get_prev_alias(doe_index, step_num)})
+        _trec = {"run_id": rid2, "status": "completed", "folder": f"Run_{rid2}",
+                 "mode": "THERM", "condition": condition,
+                 "thermal_pass1_folder": f"Run_{rid1}",
+                 "completed_at": datetime.now().isoformat(),
+                 "prev": self._get_prev_alias(doe_index, step_num)}
+        if therm_degraded:
+            _trec["degraded"] = therm_degraded
+        self._update_index(alias, _trec)
         self.checkpoint["completed_runs"].append(alias)
         logging.info(f"[THERM 2-pass] 완료: {alias} (pass1=Run_{rid1}, pass2=Run_{rid2})")
         return True
@@ -1283,18 +1339,22 @@ class CumulativeScenarioRunner:
         # 모델 파일 결정
         if prev_run_dir:
             # 이전 step의 dynain을 사용
-            # KooMeshModifier(RunDirectoryMode)는 DropSet_dti.k 를 Output/ 에 쓴다.
-            # (DynamicRelaxation/ 은 구 경로 — 호환 위해 양쪽 다 탐색)
+            # KooMeshModifier(RunDirectoryMode)는 *_dti.k 를 Output/ 에 쓴다. 이름은 입력
+            # deck 기반(DropSet_dti.k / DropWeightImpactTestSet_dti.k 등) → glob 으로 탐색.
+            # (DynamicRelaxation/ 은 구 경로 — 호환 위해 양쪽 다)
             prev_run_path = os.path.join(self.output_dir, prev_run_dir)
-            dti_candidates = [
-                os.path.join(prev_run_path, "Output", "DropSet_dti.k"),
-                os.path.join(prev_run_path, "DynamicRelaxation", "DropSet_dti.k"),
-            ]
-            model_file = next((c for c in dti_candidates if os.path.exists(c)), None)
+            dti_hits = (sorted(glob.glob(os.path.join(prev_run_path, "Output", "*_dti.k"))) or
+                        sorted(glob.glob(os.path.join(prev_run_path, "DynamicRelaxation", "*_dti.k"))))
+            model_file = dti_hits[0] if dti_hits else None
             if model_file is None:
+                reason = f"이전 step({prev_run_dir}) 의 *_dti.k 없음"
+                if bool(self.config.get("execution", {}).get("strict_accumulation", False)):
+                    logging.error(f"{reason} → strict_accumulation: step 실패 처리 (원본 fallback 차단)")
+                    return None
                 logging.warning(
-                    f"DYNAIN_TO_INITIAL 결과 파일 없음 (DYNAIN_TO_INITIAL 실패 가능성): "
-                    f"{' | '.join(dti_candidates)} — 원본 모델 파일로 fallback (결과 부정확 가능)")
+                    f"DYNAIN_TO_INITIAL 결과 파일 없음 ({reason}) — "
+                    f"원본 모델 파일로 fallback (누적 소실, 결과 부정확 가능)")
+                self._fallback_degraded = reason
                 model_file = self.config["project"]["model_file"]
         else:
             model_file = self.config["project"]["model_file"]
@@ -1330,6 +1390,10 @@ class CumulativeScenarioRunner:
             sim_params = self.config.get("simulation_params", {})
             impact_params = sim_params.get("impact", {})
             wall_params = sim_params.get("wall", {})
+
+            # 누적 스텝 간 DR 안정화 (DROP 과 동일 배선 — 기본 off)
+            from Runner.StepConfigBuilder import build_dynamic_relaxation_lines
+            dr_block = build_dynamic_relaxation_lines(sim_params, impact_params.get('tFinal', 0.001))
 
             dim_damper = impact_params.get("dimension_damper", [0.001, 0.001, 0.001])
             dim_damper_str = ",".join(str(v) for v in dim_damper)
@@ -1404,7 +1468,7 @@ WallNumY,{wall_params.get('num_y', 10)}
 WallNumZ,{wall_params.get('num_z', 10)}
 tFinal,{impact_params.get('tFinal', 0.001)}
 dt,{impact_params.get('dt', 1e-6)}
-OffsetDistance,{impact_params.get('offset_distance', 0.00001)}
+OffsetDistance,{impact_params.get('offset_distance', 0.00001)}{dr_block}
 **EndDropWeightImpactTest
 *End
 """

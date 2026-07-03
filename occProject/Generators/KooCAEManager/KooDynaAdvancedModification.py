@@ -4406,6 +4406,22 @@ class KooDynaAdvancedModification:
                     f.write("\n")
                     f.write("*IncludeStress,True\n")
                     f.write("*RemoveDynamicRelaxation,True\n")
+                    if option.get("DynainDynamicRelaxation", False):
+                        # DROP 경로(DropAttitude)와 동일 — _dti.k 에 DR 카드 주입해
+                        # 다음 deck 이 본 해석 전 DR 안정화 phase 수행 (bounded DR)
+                        f.write("*DynamicRelaxation,True\n")
+                        drNrcyck = option.get("DynainDynamicRelaxationNrcyck", 0)
+                        if drNrcyck:
+                            f.write("*DynamicRelaxationNrcyck," + str(drNrcyck) + "\n")
+                        drTol = option.get("DynainDynamicRelaxationTol", 0.0)
+                        if drTol and drTol > 0.0:
+                            f.write("*DynamicRelaxationTol," + str(drTol) + "\n")
+                        drFctr = option.get("DynainDynamicRelaxationFctr", 0.0)
+                        if drFctr and drFctr > 0.0:
+                            f.write("*DynamicRelaxationFctr," + str(drFctr) + "\n")
+                        drTerm = option.get("DynainDynamicRelaxationTerm", 0.0) or option.get("TFinal", 0.0)
+                        if drTerm and drTerm > 0.0:
+                            f.write("*DynamicRelaxationTerm," + str(drTerm) + "\n")
                     f.write("*MovetoOriginAutomatic,True\n")
                     f.write("*RemovePartbyID,")
                     f.write(str(impactorPart.id))

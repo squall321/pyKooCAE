@@ -1067,6 +1067,11 @@ class KooMeshModifier(KooSimulationGenerator):
                     curOptions["DistanceMargin"] = 0.0
                     curOptions["DT"] = 1.0e-6
                     curOptions["TFinal"] = 0.0
+                    curOptions["DynainDynamicRelaxation"] = False
+                    curOptions["DynainDynamicRelaxationNrcyck"] = 0
+                    curOptions["DynainDynamicRelaxationTol"] = 0.0
+                    curOptions["DynainDynamicRelaxationFctr"] = 0.0
+                    curOptions["DynainDynamicRelaxationTerm"] = 0.0
                     # DampingSpring, OutsideRigidPart, OutsideRigidElement
                     curOptions["Mode"] = "DampingSpring"
                     curOptions["PartIDs"] = []
@@ -1228,6 +1233,22 @@ class KooMeshModifier(KooSimulationGenerator):
                             svector = line.split(",")
                             tFinal = KooDynaFloat(svector[1])
                             curOptions["TFinal"] = tFinal
+                        elif "dynaindynamicrelaxationnrcyck" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynainDynamicRelaxationNrcyck"] = int(float(svector[1]))
+                        elif "dynaindynamicrelaxationtol" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynainDynamicRelaxationTol"] = KooDynaFloat(svector[1])
+                        elif "dynaindynamicrelaxationfctr" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynainDynamicRelaxationFctr"] = KooDynaFloat(svector[1])
+                        elif "dynaindynamicrelaxationterm" in line.lower():
+                            svector = line.split(",")
+                            curOptions["DynainDynamicRelaxationTerm"] = KooDynaFloat(svector[1])
+                        elif "dynaindynamicrelaxation" in line.lower():
+                            # 주의: 위 세부키들이 이 generic 브랜치보다 먼저 와야 함(substring)
+                            svector = line.split(",")
+                            curOptions["DynainDynamicRelaxation"] = svector[1].strip().lower() == "true"
                         elif "dt" in line.lower():
                             svector = line.split(",")
                             dt = KooDynaFloat(svector[1])
