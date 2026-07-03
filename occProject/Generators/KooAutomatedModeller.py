@@ -189,6 +189,19 @@ def GeneratePackage(fileName,displayMode):
 
     pass
 
+def GenerateAirMesh(fileName):
+    # AIRMESH: STEP 솔리드의 bbox 공기영역을 경계추종 사면체로 채우고 STL 스킨 추출
+    print("Generate AIRMESH ...")
+    curPath = os.getcwd()
+    inputFilePath = os.path.join(curPath, fileName)
+    print("Current Path : {curPath}".format(curPath=inputFilePath))
+    if os.path.exists(inputFilePath) == False:
+        print("AIRMESH FAILED : config file not exist : " + inputFilePath)
+        return
+    from KooAirMesh.AirMeshGenerator import run_from_config
+    run_from_config(inputFilePath)
+
+
 def GenerateCapacitor(fileName):
     print("Generate Capacitor as Step File")
     curPath = os.getcwd()
@@ -796,6 +809,8 @@ COPYRIGHT NOTICE: Copyright © 2025 Koo. All rights reserved.
         GeneratePBA(fileName, displayMode)
     elif mode == "PKG":
         GeneratePackage(fileName, displayMode)
+    elif mode == "AIRMESH":
+        GenerateAirMesh(fileName)
     elif mode == "LSDYNADOE":
         pass
 

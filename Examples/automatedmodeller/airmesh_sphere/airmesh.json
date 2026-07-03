@@ -1,0 +1,7 @@
+{
+  "airmesh_version": 1,
+  "input_step": "sphere_cyl.stp",
+  "mesh_size": 4.0,
+  "units": "mm",
+  "padding": 15.0
+}
