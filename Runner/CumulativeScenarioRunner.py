@@ -1533,7 +1533,9 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}{dr_block}
                     _l.append("EndHeatSources")
                 icpower_block = "\n".join(_l) + "\n"
                 # 배정밀 SIF 경고 (단정밀은 thermal solver 거부 — Error 40343)
-                _sif = self.lsdyna_apptainer_sif or self.apptainer_sif or ""
+                # (lsdyna_apptainer_sif 는 ApptainerWrapper 소속 — 러너에선 env 에서 읽는다)
+                _env = self.config.get("environment", {})
+                _sif = _env.get("lsdyna_apptainer_sif") or _env.get("apptainer_sif") or ""
                 if "mpp_d" not in _sif and "_d.sif" not in _sif:
                     print(f"⚠ [THERM] thermal solver 는 배정밀 SIF(_mpp_d.sif) 필수 — 현재: {_sif or '(미설정)'}")
 
