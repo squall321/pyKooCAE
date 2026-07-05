@@ -6366,6 +6366,13 @@ class KooDynaAdvancedModification:
 
         self.dynaImporter.OverwritefromManager(dynainImporter)
 
+        # 방어적 재제거: dynain 이 CONTROL_DYNAMIC_RELAXATION 을 담고 있으면 위 병합이
+        # 앞선 제거(removeDynamicRelaxation)를 되살릴 수 있음(순서 의존성). 현재 LS-DYNA
+        # springback dynain 은 control 카드를 안 실어 미발동이지만, 방어적으로 재제거.
+        if removeDynamicRelaxation is True and dynamicRelaxation is not True and \
+                self.dynaImporter.controlManager.controlDynamicRelaxation is not None:
+            self.dynaImporter.controlManager.controlDynamicRelaxation = None
+
         if rotation == True:
             movedNode1 = self.dynaImporter.nodeManager.FindNodefromID(node1.id)
             movedNode2 = self.dynaImporter.nodeManager.FindNodefromID(node2.id)
