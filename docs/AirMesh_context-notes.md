@@ -53,3 +53,23 @@
 - 깨진 STEP(비봉합 셸) 고장 주입 테스트, pad=0 밀착면 테스트, 실제(비합성) STEP 실증, 프로토 검증의 단위 테스트화.
 - Phase 3: 빌드 스크립트 cp libgmsh.so.4.15 + dist 스모크 (Nuitka 빌드 시점에).
 - 멀티에이전트 적대적 리뷰는 세션 한도로 미실행(4 finder 전원 한도 초과) — 직접 정밀 리뷰+실증으로 대체했고, 한도 리셋 후 wf_89c3ffe4-4df resume으로 재실행 가능.
+
+## 2026-07-05 — 적대적 리뷰 완주(3차 시도) + 확정 결함 일괄 수정
+
+### 리뷰 결과
+에이전트 54개(4-렌즈 탐색 → 발견당 반박자 2명, 3.1M 토큰). 확정 21건(중복 포함, 실질 14건) / 반박 기각 4건. 상위 결함은 전부 **실행 재현 근거** 포함.
+
+### 수정한 확정 결함
+- 🔴 **eps-pad 재시도 오염(CRITICAL)**: 재시도로 박스가 커져도 분류·체적 검증이 원래 평면 기준 → outer 0면, 빈 물리그룹이 전체 요소를 STL로 유출, 실패한 cut의 잔류 박스가 함께 메시(tet 2배). 수정: 유효 bbox 전파 + 잔류 박스 방어 제거 + outer 0면이면 E_INTERNAL. 사다리 순서도 eps-pad(무손상) 우선, 힐링은 최후 수단으로 계획(O6) 보정.
+- 🔴 **orientation 홀짝 규칙(CRITICAL)**: 최대-대각=외곽 1개 가정이 밀폐 하우징 내부 보이드/분리 공기영역을 잘못 반전(보이드 1000이 −1000으로, 주류 입력에서 signed volume 조용히 오염). 수정: 중첩 깊이(다른 셸에 포함된 횟수) 홀수만 반전. 회귀 T2: 보이드 포함 signed=20000.0 정확.
+- **solid_selection(MAJOR)**: 미선택 솔리드가 모델에 남아 메시·품질 게이트·.msh 오염. 수정: occ.remove 후 진행. 회귀 T4.
+- **분류 톨러런스(MAJOR)**: OCC bbox가 절대 ~1e-7 부풀려 반환 → 미터 단위 소형 부품(diag<0.1)에서 전 면 오분류. 수정: eps=max(1e-6·diag, 1e-6). 회귀 T6.
+- **run.sh(MAJOR)**: cd 후 상대 $PY 해석 실패. 절대경로로 재작성. 회귀 T1.
+- MINOR 9건: 빈 그룹 STL 가드(E_INTERNAL), E_GMSH_INIT 도달성(libgmsh 부재는 CDLL(None) 성공 후 첫 호출 AttributeError — 전용 가드 추가), OSError 오분류 제거, gmsh.initialize(readConfigFiles=False)로 ~/.gmshrc 차단, stl_binary=false 존중(orientation 재작성 시), prefix/dir 타입 검증, minSICN 히스토그램(PLAN §11), E_TOO_LARGE에 size_guard 클램프 힌트, 실패 경로 경고 콘솔 출력, 리포트 기록 실패 시 FAILED 계약 라인.
+- 리팩토링 중 자체 버그 1건(반환 튜플 2→4 누락)을 T1이 즉시 검출 — 테스트 우선의 가치 실증.
+
+### 회귀 테스트 (tests/test_airmesh_regression.py, 24체크 전부 통과)
+T1 골든예제 run.sh e2e / T2 밀폐 보이드 orientation / T3 다중 솔리드 / T4 solid_selection / T5 불리언 실패 주입(eps-pad 경로) / T6 미터 스케일 / T7 실패 계약. venv312로 실행, ~1분.
+
+### 기각된 주장(수정 불필요 판정)
+잔류 박스 별개 변형 주장 1건(중복), solid_selection·heal 순서 주석, cavity STL 방향 정규화, libgmsh 빌드 미반영(Phase 3 계획대로 연기).

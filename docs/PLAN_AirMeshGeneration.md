@@ -147,7 +147,7 @@ S2 임포트  occ.importShapes → dim==3 필터, solid_selection 적용. 0개�
 S3 힐링    (조건부) occ.healShapes(tolerance, fixDegenerated/SmallEdges/SmallFaces/sewFaces/makeSolids)
 S4 bbox    솔리드별 getBoundingBox 합집합 + getMass(CAD체적). size_guard: h ≤ 0.25·최소솔리드대각 클램프+경고. 패딩 적용
 S5 불리언  addBox → occ.cut(box, solids). 검증 ΣgetMass(air) ≈ V_box−ΣV_solid (rel 1e-6)
-           실패 사다리: heal+재시도 → eps-pad(1e-3·diag) 재시도 → FAIL. 슬리버(<1e-9·V_box) 제거+기록
+           실패 사다리: eps-pad(1e-3·diag, 형상 무손상) 재시도 → 힐링 재시도(최후 수단) → FAIL. 슬리버(<1e-9·V_box) 제거+기록. 재시도 시 유효 bbox를 분류·리포트에 전파, 실패한 cut의 잔류 박스 제거
 S6 분류    getBoundary(combined=True)=air 스킨 / (False)=면별. 면 bbox가 6평면 위 → outer, else cavity (P5)
 S7 메시    MeshSizeMin=Max=h, MeshSizeFromCurvature=0, Algorithm3D=10(HXT)
            사전 가드: n_est≈8.49·V_air/h³ > max_estimated_elements → 실행 전 중단(권장 h 제시)
@@ -182,7 +182,7 @@ S10 검증   trimesh watertight/winding/signed volume(이산 기대값 대비, P
 | O3 | 솔리드가 bbox 면에 접촉(pad=0) | bbox 극값 일치(1e-6·diag) / cut 실패 | 공면 접촉은 자연 탈락(분류 정상). cut 실패 시 eps-pad 자동 재시도(기록). 문서로 padding≥mesh_size 권장 |
 | O4 | 얇은 공기 틈(<h) | air 볼륨 bbox 최소치수<h / 낮은 SICN | 비치명 — HXT가 국소 세분. "mesh_size를 틈/2 이하로" 경고 |
 | O5 | h ≫ 형상 크기 | size_guard / 체적 오차(실증 −25.7%, 크래시 없음) | 클램프+경고(에러 아님). faceting_error 상시 보고 |
-| O6 | 불리언 실패(OCC 예외) | Python API 예외 | heal→재시도, eps-pad→재시도, ToleranceBoolean 조정 → FAIL+OCC 메시지+brep 디버그 힌트 |
+| O6 | 불리언 실패(OCC 예외) | Python API 예외 | eps-pad→재시도(형상 무손상 우선), heal→재시도(깨끗한 형상 열화 위험이 실증되어 최후 수단) → FAIL+OCC 메시지 |
 | O7 | 슬리버 air 조각 | 볼륨별 getMass < 1e-9·V_box | occ.remove+경고+제거 체적 기록 |
 | O8 | 대형 모델 성능/메모리 | 사전 n_est 가드, >5M 삼각형 | generate 전 중단(권장 h 제시). Binary STL 필수. orientation 후처리는 >5M에서 자동 스킵+경고 |
 | O9 | STL 비수밀/비매니폴드 | trimesh 게이트 | 구조적 예방: combined=True 스킨+물리그룹 write. 실패 시 status=failed로 산출물 보존 |

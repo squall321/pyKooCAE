@@ -101,6 +101,14 @@ def _validate(cfg, config_path, errors):
 
     if cfg["heal"] not in ("auto", "always", "never"):
         errors.append('heal은 auto|always|never (현재: {v})'.format(v=cfg["heal"]))
+    if not (_num(cfg["heal_tolerance"]) and cfg["heal_tolerance"] > 0):
+        errors.append("heal_tolerance는 양수")
+    outp = cfg["outputs"]
+    if outp["prefix"] is not None and (
+            not isinstance(outp["prefix"], str) or not outp["prefix"]):
+        errors.append("outputs.prefix는 null 또는 비어있지 않은 문자열")
+    if outp["dir"] is not None and not isinstance(outp["dir"], str):
+        errors.append("outputs.dir는 null 또는 문자열")
     if cfg["mesh"]["mode"] != "tetra":
         errors.append('mesh.mode는 v1에서 "tetra"만 지원 (hex_core는 Phase 5 예정)')
     if cfg["mesh"]["algorithm3d"] not in ("hxt", "delaunay", "frontal"):
@@ -161,11 +169,21 @@ def run_from_config(config_path):
             h=cfg["mesh_size"], u=cfg["units"], pad=cfg["padding"],
             d=cfg["outputs"]["dir"]))
 
-        from KooAirMesh import AirMeshCore  # lazy: libgmsh 로드 지점
+        try:
+            from KooAirMesh import AirMeshCore  # lazy: libgmsh CDLL 로드 지점
+        except (ImportError, OSError) as e:
+            # 모듈 부재(ImportError) / .so 로드 실패(OSError). 심볼 지연 실패(O10)는
+            # run_pipeline 첫 호출에서 AirMeshError(E_GMSH_INIT)로 잡힌다.
+            report["error"] = {"code": "E_GMSH_INIT",
+                               "message": "gmsh/trimesh 로드 실패: {e}".format(e=e)}
+            print("AIRMESH FAILED : gmsh 라이브러리 로드 실패 — 배포본에 libgmsh.so 포함 여부 확인 : {e}".format(e=e))
+            return
         try:
             AirMeshCore.run_pipeline(cfg, report)
         except AirMeshCore.AirMeshError as e:
             report["error"] = {"code": e.code, "message": e.message}
+            for w in report["warnings"]:
+                print("[AIRMESH] 경고: {w}".format(w=w))
             print("AIRMESH FAILED : [{c}] {m}".format(c=e.code, m=e.message))
             return
 
@@ -176,14 +194,6 @@ def run_from_config(config_path):
             n=report["mesh"]["n_tets"],
             q=report["mesh"]["quality"]["minSICN"]["min"],
             t=report["timings_s"]["total"]))
-    except ImportError as e:
-        report["error"] = {"code": "E_GMSH_INIT",
-                           "message": "gmsh/trimesh 로드 실패: {e}".format(e=e)}
-        print("AIRMESH FAILED : gmsh 라이브러리 로드 실패 — 배포본에 libgmsh.so 포함 여부 확인 : {e}".format(e=e))
-    except OSError as e:
-        report["error"] = {"code": "E_GMSH_INIT",
-                           "message": "네이티브 라이브러리 로드 실패: {e}".format(e=e)}
-        print("AIRMESH FAILED : libgmsh 네이티브 로드 실패 (배포 문제) : {e}".format(e=e))
     except Exception as e:
         report["error"] = {"code": "E_UNEXPECTED", "message": repr(e)}
         print("AIRMESH FAILED : 예기치 못한 오류 : {e!r}".format(e=e))
@@ -198,4 +208,8 @@ def run_from_config(config_path):
                 else:
                     print("[AIRMESH] 실패 리포트 기록 : {p}".format(p=report_path))
             except Exception as e:
-                print("[AIRMESH] 리포트 기록 실패 : {e!r}".format(e=e))
+                # 기계 계약은 이진이어야 한다 — 성공했어도 리포트가 없으면 FAILED로 알림
+                if report["status"] == "ok":
+                    print("AIRMESH FAILED : 리포트 기록 실패 (메시/STL 산출물은 생성됨) : {e!r}".format(e=e))
+                else:
+                    print("[AIRMESH] 리포트 기록 실패 : {e!r}".format(e=e))

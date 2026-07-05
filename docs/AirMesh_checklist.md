@@ -32,9 +32,9 @@
 - [x] 다중 솔리드 + 슬리버 제거(1e-9·V_box) + eps-pad 재시도
 - [x] .vtk 출력 옵션, geometry_debug(brep)
 - [x] 검증 블록 전체(volume_error_warn/min_sicn_warn/fail_on_inverted)
-- [ ] 테스트: 2-솔리드 / 조대-h 경고 / 깨진 STEP(FAILED+exit0+부분 리포트) / pad=0 밀착면
+- [x] 테스트: 2-솔리드 / 조대-h 경고 / config·STEP 부재(FAILED+exit0+리포트) — 비봉합 셸·pad=0 밀착면은 잔여
 - [ ] 🔴 실제(비합성) STEP 파일 1개 이상으로 힐링 사다리 실증
-- [ ] 단위 테스트: 프로토 검증 항목의 재현 가능한 테스트화 (tests/)
+- [x] 단위 테스트: 회귀 스위트 tests/test_airmesh_regression.py (T1~T7, 리뷰 확정 결함 시나리오 포함)
 
 ## Phase 3 — Nuitka 빌드/배포
 - [ ] build_automatedmodeller_python312.sh에 `cp libgmsh.so.4.15` + dist 스모크 테스트 (가산만)
