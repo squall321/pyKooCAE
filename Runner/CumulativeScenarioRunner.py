@@ -397,6 +397,10 @@ class CumulativeScenarioRunner:
         self.solver = LSDynaSolverRunner(self.config)
         self.apptainer = ApptainerWrapper(self.config)
         self.koomesh_path = self.config["environment"]["koomeshmodifier_path"]
+        # KooRemapper(선택) — REMAP 스텝이 쓰는 네이티브 바이너리 경로.
+        # SmartTwinPreprocessor.sif 내부에 구워진 경로가 기본(KooMeshModifier 와 동일 방식).
+        self.kooremapper_path = self.config["environment"].get(
+            "kooremapper_path", "/opt/kooremapper/bin/KooRemapper")
         self.output_dir = self.config["project"]["output_dir"]
         self.index_file = self.config["project"]["index_file"]
         # --doe N 모드: DOE별 개별 checkpoint (동시 write 경합 방지)
@@ -913,6 +917,57 @@ class CumulativeScenarioRunner:
         return bool(glob.glob(os.path.join(run_path, "Output", "*_dti.k")) or
                     glob.glob(os.path.join(run_path, "DynamicRelaxation", "*_dti.k")))
 
+    @staticmethod
+    def _d3plot_geometry_bytes(root_path: str) -> int:
+        """배정밀 d3plot root 파일의 control+geometry 블록 바이트 크기.
+
+        LS-DYNA d3plot control block(64 words) 을 파싱해 geometry 크기를 정확히 계산.
+        node 좌표는 항상 3D(NUMNP*3, NDIM=4 rigid 특수케이스 포함), 요소 connectivity
+        (solid*9/beam*6/shell*5/tshell*9), NARBS 블록. 실측 검증(solid 모델)로 확인됨.
+        """
+        import struct
+        with open(root_path, "rb") as f:
+            raw = f.read(64 * 8)
+        def w(i):  # 0-indexed word (배정밀 8바이트 정수)
+            return struct.unpack("<q", raw[i * 8:(i + 1) * 8])[0]
+        NUMNP = w(16); NEL8 = w(23); NEL2 = w(28); NEL4 = w(31)
+        NARBS = w(39); NELT = w(40)
+        geom_words = 64 + NUMNP * 3 + NEL8 * 9 + NEL2 * 6 + NEL4 * 5 + NELT * 9 + NARBS
+        return geom_words * 8
+
+    def _merge_temperature_d3plot(self, root_d3plot: str) -> str:
+        """온도 d3plot 패밀리(root + d3plot01,02…)를 단일 파일로 병합해 경로 반환.
+
+        MPP 는 온도 d3plot 을 root(geometry, 상태0) + d3plotNN(상태) 으로 쓰는데 실행라인
+        T=root 리더가 패밀리를 못 이어읽는다(root 상태0 → t=0 오인 → Error term). root 의
+        geometry 블록(헤더 파싱) + 모든 상태 파일을 이어붙이면 단일 유효 d3plot 이 되어
+        정상 판독된다(실증). 패밀리가 없으면(단일 파일) root 를 그대로 반환.
+        """
+        members = sorted(glob.glob(root_d3plot + "[0-9]" * 2)) or \
+            sorted(glob.glob(root_d3plot + "[0-9]"))
+        if not members:
+            return root_d3plot  # 단일 파일 — 병합 불필요
+        try:
+            geom = self._d3plot_geometry_bytes(root_d3plot)
+            root_size = os.path.getsize(root_d3plot)
+            if geom <= 0 or geom > root_size:
+                logging.warning(f"[THERM 2-pass] d3plot geometry 크기 이상(geom={geom}, "
+                                f"root={root_size}) — 병합 생략, T=root 사용")
+                return root_d3plot
+            merged = root_d3plot + "_merged"
+            with open(merged, "wb") as out:
+                with open(root_d3plot, "rb") as f:
+                    out.write(f.read(geom))
+                for m in members:
+                    with open(m, "rb") as f:
+                        out.write(f.read())
+            logging.info(f"[THERM 2-pass] 온도 d3plot 패밀리 병합: root+{len(members)}개 상태파일 "
+                         f"→ {os.path.basename(merged)} (geometry {geom}B)")
+            return merged
+        except Exception as e:
+            logging.warning(f"[THERM 2-pass] d3plot 병합 실패({e}) — T=root 사용(패밀리 미추적 위험)")
+            return root_d3plot
+
     def run_single_step(self, doe_index: int, step_config: Dict[str, Any]) -> bool:
         """단일 Step 실행"""
         step_num = step_config["step"]
@@ -939,6 +994,11 @@ class CumulativeScenarioRunner:
             _ttype = params.get("thermal_type", _tp.get("thermal_type", "UniformChamber"))
             if str(_ttype) == "ICPower":
                 return self._run_thermal_2pass(doe_index, step_config, alias, condition, step_num)
+
+        # REMAP: KooRemapper 모델 변환 스텝 (LS-DYNA 솔브 없음).
+        # 결과를 Run_<id>/Output/Remap_dti.k 로 써서 다음 스텝의 *_dti.k glob 이 이어받는다.
+        if mode == "REMAP":
+            return self._run_kooremapper_step(doe_index, step_config, alias, condition, step_num)
 
         # 0. 이미 완료된 step 스킵 (rerun 시 효율화)
         scenario_runs = self.index["scenarios"][0]["runs"]
@@ -1266,14 +1326,18 @@ class CumulativeScenarioRunner:
                                        "thermal_pass1_folder": f"Run_{rid1}"})
 
         # ── pass2: structural (SOLN=0) + LOAD_THERMAL_D3PLOT (T=pass1 d3plot) ──
-        logging.info(f"[THERM 2-pass] pass2 (structural), T={d3plot1}: {alias}")
+        # MPP 는 온도 d3plot 을 패밀리(d3plot=geometry, d3plot01+=상태)로 쓰는데,
+        # 실행라인 T=root 리더가 패밀리를 이어읽지 못해 root(상태0)만 보고 t=0 인식 →
+        # Error termination. 패밀리를 단일 파일로 병합해 T= 로 넘긴다(단일은 정상 판독).
+        temp_d3plot = self._merge_temperature_d3plot(d3plot1)
+        logging.info(f"[THERM 2-pass] pass2 (structural), T={temp_d3plot}: {alias}")
         rid2, rd2 = _gen("structural")
         if rd2 is None:
             return _fail("pass2 KooMeshModifier 실패", rid1, f"Run_{rid1}")
         out2 = os.path.join(rd2, "Output")
         os.makedirs(out2, exist_ok=True)
         in2 = self._find_input_file(rd2, "THERM")
-        if not self.solver.run(in2, out2, timeout, extra_args=[f"T={d3plot1}"]):
+        if not self.solver.run(in2, out2, timeout, extra_args=[f"T={temp_d3plot}"]):
             return _fail("pass2 LS-DYNA(structural) 실패", rid2, f"Run_{rid1}")
 
         # ── 누적: 비최종 step 이면 다음 step 입력 위해 DYNAIN_TO_INITIAL (pass2 상태 이월) ──
@@ -1823,6 +1887,178 @@ DefaultCTE,{default_cte}
         except Exception as e:
             logging.error(f"KooMeshModifier execution error: {e}")
             return None
+
+    def _dump_kooremapper_config(self, cfg: Dict[str, Any], path: str):
+        """KooRemapper config.yaml 작성.
+
+        matdb 의 최소 YAML 파서는 리스트 항목이 상위 키보다 더 들여쓰여야 규칙을
+        인식한다(같은 열이면 무시 → 전부 '*' 로 떨어짐). PyYAML 이 있으면 그 규칙을
+        강제하는 Dumper 로 쓰고, 프리즈 런타임에 yaml 이 없을 수 있으므로 없으면
+        직접 작성한다(스칼라 + '키 아래 딕트 리스트' 지원 — matdb/assemble 등 커버)."""
+        try:
+            import yaml
+
+            class _KRIndentDumper(yaml.SafeDumper):
+                def increase_indent(self, flow=False, indentless=False):
+                    return super().increase_indent(flow, False)
+
+            with open(path, "w", encoding="utf-8") as f:
+                yaml.dump(cfg, f, Dumper=_KRIndentDumper, sort_keys=False,
+                          default_flow_style=False, allow_unicode=True)
+            return
+        except Exception:
+            pass
+
+        def _fmt(v):
+            if isinstance(v, bool):
+                return "true" if v else "false"
+            if v is None:
+                return "null"
+            s = str(v)
+            return '"*"' if s == "*" else s
+
+        lines = []
+        for k, v in cfg.items():
+            if isinstance(v, list):
+                lines.append(f"{k}:")
+                for item in v:
+                    if isinstance(item, dict):
+                        it = list(item.items())
+                        lines.append(f"  - {it[0][0]}: {_fmt(it[0][1])}")
+                        for kk, vv in it[1:]:
+                            lines.append(f"    {kk}: {_fmt(vv)}")
+                    else:
+                        lines.append(f"  - {_fmt(item)}")
+            else:
+                lines.append(f"{k}: {_fmt(v)}")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+    def _run_kooremapper_step(self, doe_index: int, step_config: Dict[str, Any],
+                              alias: str, condition: str, step_num: int) -> bool:
+        """KooRemapper 변환 스텝 실행 (mode == 'REMAP').
+
+        KooMeshModifier 스텝처럼 Run_<id>/ 폴더를 만들되 LS-DYNA 솔브는 없다.
+        입력 모델(이전 스텝의 *_dti.k, 없으면 project.model_file)에 op(matdb 등)를
+        적용해 Run_<id>/Output/Remap_dti.k 로 결과를 써서, 다음 스텝의
+        _create_step_config 가 기존 *_dti.k glob 으로 이어받게 한다.
+
+        params 스키마:
+          {"op": "matdb",
+           "config": {...}}          # yaml ops: model/output 은 자동 주입
+          또는 {"op": "map", "argv": ["a.k", "b.k", "out.k"]}   # positional ops
+        """
+        params = step_config.get("params", {})
+        op = params.get("op")
+        if not op:
+            logging.error(f"REMAP 스텝에 params.op 없음: {alias}")
+            self._update_index(alias, {"run_id": "", "status": "failed", "folder": "",
+                                       "mode": "REMAP", "condition": condition,
+                                       "error": "params.op missing"})
+            return False
+
+        # 입력 모델: 이전 스텝의 *_dti.k → 없으면 원본 model_file
+        prev_run_dir = self._get_prev_run_dir(doe_index, step_num)
+        input_model = self.config["project"]["model_file"]
+        if prev_run_dir:
+            prev_path = os.path.join(self.output_dir, prev_run_dir)
+            dti_hits = (sorted(glob.glob(os.path.join(prev_path, "Output", "*_dti.k"))) or
+                        sorted(glob.glob(os.path.join(prev_path, "DynamicRelaxation", "*_dti.k"))))
+            if dti_hits:
+                input_model = dti_hits[0]
+        if not os.path.isfile(input_model):
+            logging.error(f"REMAP 입력 모델 없음: {input_model}")
+            self._update_index(alias, {"run_id": "", "status": "failed", "folder": "",
+                                       "mode": "REMAP", "condition": condition,
+                                       "error": f"input model not found: {input_model}"})
+            return False
+
+        # Run 폴더 준비 (KooMeshModifier 스텝과 동일 레이아웃)
+        run_id = self._generate_run_id()
+        run_dir = os.path.join(self.output_dir, f"Run_{run_id}")
+        out_dir = os.path.join(run_dir, "Output")
+        os.makedirs(out_dir, exist_ok=True)
+        self._update_index(alias, {
+            "run_id": run_id, "status": "running", "folder": f"Run_{run_id}",
+            "mode": "REMAP", "condition": condition,
+            "started_at": datetime.now().isoformat(),
+            "prev": self._get_prev_alias(doe_index, step_num),
+        })
+
+        # 입력 모델을 Output/ 로 복사(KooRemapper 를 cwd=Output 에서 상대경로로 실행)
+        in_name = "input.k"
+        out_name = "Remap_dti.k"   # *_dti.k 로 끝내 다음 스텝 glob 이 이어받음
+        shutil.copy2(input_model, os.path.join(out_dir, in_name))
+
+        # 호출 인자 구성
+        config_dict = params.get("config")
+        argv = params.get("argv")
+        if config_dict is not None:
+            cfg = dict(config_dict)
+            cfg["model"] = in_name
+            cfg["output"] = out_name
+            if op == "matdb":
+                cfg.setdefault("database", "/opt/kooremapper/materials/material_db.json")
+            self._dump_kooremapper_config(cfg, os.path.join(out_dir, "kooremapper_config.yaml"))
+            call_argv = [op, "kooremapper_config.yaml"]
+        elif argv is not None:
+            call_argv = [op, *argv]
+        else:
+            call_argv = [op]
+
+        cmd = [self.kooremapper_path, *call_argv]
+        cmd = self.apptainer.wrap_command(cmd, use_lsdyna=False)
+        logging.info(f"Running KooRemapper: {' '.join(cmd)}")
+        logging.info(f"  working_dir: {out_dir}")
+
+        try:
+            timeout = self.config["execution"].get("timeout_koomeshmodifier_seconds", 604800)
+            result = subprocess.run(cmd, cwd=out_dir, capture_output=True, text=True, timeout=timeout)
+            time.sleep(1)
+            self.apptainer.cleanup_after_exec()
+            if result.stdout:
+                logging.info(f"KooRemapper stdout:\n{result.stdout}")
+            if result.stderr:
+                _lines = [l for l in result.stderr.strip().splitlines()
+                          if not any(k in l for k in ('squashfuse', 'cleanup error', 'fuse: reading device'))]
+                if _lines:
+                    logging.warning("KooRemapper stderr:\n" + "\n".join(_lines))
+            if result.returncode != 0:
+                logging.error(f"KooRemapper failed (returncode={result.returncode})")
+                self._update_index(alias, {
+                    "run_id": run_id, "status": "failed", "folder": f"Run_{run_id}",
+                    "mode": "REMAP", "condition": condition,
+                    "error": f"KooRemapper returncode={result.returncode}"})
+                return False
+        except subprocess.TimeoutExpired:
+            logging.error("KooRemapper timed out")
+            self._update_index(alias, {
+                "run_id": run_id, "status": "failed", "folder": f"Run_{run_id}",
+                "mode": "REMAP", "condition": condition, "error": "timeout"})
+            return False
+        except Exception as e:
+            logging.error(f"KooRemapper execution error: {e}")
+            self._update_index(alias, {
+                "run_id": run_id, "status": "failed", "folder": f"Run_{run_id}",
+                "mode": "REMAP", "condition": condition, "error": str(e)})
+            return False
+
+        out_path = os.path.join(out_dir, out_name)
+        if not os.path.isfile(out_path):
+            logging.error(f"KooRemapper 완료했으나 출력 없음: {out_path}")
+            self._update_index(alias, {
+                "run_id": run_id, "status": "failed", "folder": f"Run_{run_id}",
+                "mode": "REMAP", "condition": condition, "error": "output not produced"})
+            return False
+
+        self._update_index(alias, {
+            "run_id": run_id, "status": "completed", "folder": f"Run_{run_id}",
+            "mode": "REMAP", "condition": condition,
+            "completed_at": datetime.now().isoformat(),
+            "prev": self._get_prev_alias(doe_index, step_num),
+        })
+        logging.info(f"REMAP 스텝 완료: {alias} (op={op}) → Output/{out_name}")
+        return True
 
     def _copy_pregenerated(self, doe_index: int, run_dir: str, mode: str) -> bool:
         """사전 생성된 DropSet.k를 pregenerated 디렉토리에서 run_dir로 복사
