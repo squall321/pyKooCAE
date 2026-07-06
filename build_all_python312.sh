@@ -103,6 +103,9 @@ echo ""
 echo "â KooAutomatedModeller ë¹ë ìë£"
 echo "   ì´ë ì¤: KooAutomatedModeller.dist â $LIB_DIR/KooAutomatedModeller"
 
+# AIRMESH: gmsh Python API의 libgmsh는 ctypes 로드라 Nuitka가 번들하지 않음 - dist 루트에 복사 필수
+cp ../../venv312/lib/libgmsh.so.4.15 KooAutomatedModeller.dist/
+
 mv KooAutomatedModeller.dist "$LIB_DIR/KooAutomatedModeller"
 ln -sf "../lib/KooAutomatedModeller/KooAutomatedModeller.bin" "$BIN_DIR/KooAutomatedModeller"
 

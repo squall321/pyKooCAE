@@ -19,6 +19,7 @@
 | `ArrayPCB` | `GenerateArrayPCB` (`:793-794`, 정의 265-275) | 패널(Array) PCB 정의 `.txt` | [generators/ArrayPCB.md](generators/ArrayPCB.md) |
 | `CAPACITOR` / `CAP` | `GenerateCapacitor` (`:789-790`, 정의 192-213) | 커패시터 정의 `.txt` | [generators/Capacitor.md](generators/Capacitor.md) |
 | `LSDYNADOE` | (분기만 존재, `pass`) — `GenerateDOEforLSDYNA`는 스텁 | DOE 정의 `.txt` | [generators/LSDynaDOE.md](generators/LSDynaDOE.md) |
+| `AIRMESH` | `GenerateAirMesh` → `KooAirMesh` 패키지 (2026-07 신규) | 문제정의 `.json` + STEP | [generators/airmesh.md](generators/airmesh.md) |
 
 보조 진입점 `ImportCADManager(path, pkgFileName, compFileNameList)`는 CLI 분기가 아니라 패키지 1개 + 컴포넌트 N개를 `ODBCADManager`로 로드하는 라이브러리 함수다 (근거: `KooAutomatedModeller.py:110-115`).
 

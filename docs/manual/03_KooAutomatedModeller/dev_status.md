@@ -22,6 +22,7 @@ KooAutomatedModeller(KAM)는 전자 패키지·PCB·PBA·커패시터의 CAD 형
 | `PBA` | `GeneratePBA` | `:229-252` | `ODBCADManager.ImportPBA()` + STEP export |
 | `PKG` | `GeneratePackage` | `:118-190` | `PackageUserdefined` (적층 정의) — 메쉬/STEP export |
 | `LSDYNADOE` | (분기만 `pass`) | `:799-800` | 미구현 스텁 (`GenerateDOEforLSDYNA`는 `:107-108`에서 print만) |
+| `AIRMESH` | `GenerateAirMesh` | `KooAirMesh/` 패키지 위임 | 구현 완료(2026-07, 커밋 8d4a5a4·02bb694) — STEP 공기영역 tet 메시+STL, 회귀 29체크, [generators/airmesh.md](generators/airmesh.md) |
 
 KAM 자체는 얇은 디스패처이며, 실제 형상·메쉬 생성 로직은 모두 `KooODBCADManager` 모듈에 위임된다.
 

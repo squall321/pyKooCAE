@@ -73,3 +73,14 @@ T1 골든예제 run.sh e2e / T2 밀폐 보이드 orientation / T3 다중 솔리�
 
 ### 기각된 주장(수정 불필요 판정)
 잔류 박스 별개 변형 주장 1건(중복), solid_selection·heal 순서 주석, cavity STL 방향 정규화, libgmsh 빌드 미반영(Phase 3 계획대로 연기).
+
+## 2026-07-06 — Phase 3 빌드 통합 + re-exec 배포 버그 발견
+
+### libgmsh 번들 (계획대로)
+두 빌드 스크립트(build_automatedmodeller_python312.sh, build_all_python312.sh)에 `cp venv312/lib/libgmsh.so.4.15 dist/` 가산 + dist 스모크(골든 예제 → grep "Complete AIRMESH"). 실증: dist에서 AIRMESH가 사면체 10737개 정상 생성 → gmsh Python API + libgmsh 번들 정상.
+
+### 🔴 발견: 컴파일 바이너리 re-exec 크래시 (기존 전 모드 영향, AIRMESH가 표면화)
+- KooAutomatedModeller.py:46 `os.execv(sys.executable, ...)` 가 Nuitka 컴파일 바이너리에서 FileNotFoundError로 즉사. `sys.executable`이 유효 파이썬 경로가 아님. **배포된 프로덕션 바이너리 `/data/SmartTwinPreprocessor/bin/KooAutomatedModeller --help`도 동일 크래시** — 즉 배포본은 직접 호출로 어떤 모드도 기동 불가였던 잠재 버그.
+- 수정: `if "__compiled__" not in globals(): os.execv(...)`. 센티넬 검증(별도 Nuitka onefile 실증): 소스=False(re-exec 실행), 컴파일=True(skip). Nuitka는 Qt/OCC를 RPATH로 번들하므로 컴파일 바이너리엔 LD_LIBRARY_PATH re-exec가 불필요.
+- 안전성 증명: (a) 소스 모드 AIRMESH 정상(가드 no-op), (b) 기존 dist PKG를 re-exec 우회로 실행 → .k 정상 생성(472B, 바이트동일 기준과 일치) = Qt/OCC 로딩 무영향. **이 변경은 원래 "2-hunk만" 범위를 넘어선 공유 시작코드 수정이나, 기존 배포를 깨는 게 아니라 이미 깨져있던 것을 고침.**
+- 회귀 스위트 T8/T9 추가(비봉합 셸 E_STEP_NO_SOLID / pad=0 밀착면 완주·전면밀착 E_BOOLEAN) → 29체크. E_STEP_NO_SOLID 메시지가 힐링 후 빈 dims 대신 원본 임포트 요약을 표시하도록 수정.

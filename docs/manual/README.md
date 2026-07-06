@@ -102,6 +102,7 @@ KooAutomatedModeller        KooMeshModifier            KooChainRun
 | [PBA 생성](03_KooAutomatedModeller/generators/pba.md) | PBA(부품 실장 보드) 생성 |
 | [커패시터 생성](03_KooAutomatedModeller/generators/capacitor.md) | 커패시터 형상 생성 |
 | [Array PCB 생성](03_KooAutomatedModeller/generators/array_pcb.md) | 어레이 PCB 생성 |
+| [AIRMESH 공기영역 메시](03_KooAutomatedModeller/generators/airmesh.md) | STEP 공기영역(bbox−솔리드) 사면체 메시 + STL 추출 |
 
 **예제**
 

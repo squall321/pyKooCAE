@@ -37,10 +37,10 @@
 - [x] 단위 테스트: 회귀 스위트 tests/test_airmesh_regression.py (T1~T7, 리뷰 확정 결함 시나리오 포함)
 
 ## Phase 3 — Nuitka 빌드/배포
-- [ ] build_automatedmodeller_python312.sh에 `cp libgmsh.so.4.15` + dist 스모크 테스트 (가산만)
-- [ ] build_all_python312.sh 동일 반영
-- [ ] initialize() try/except → E_GMSH_INIT 명확 메시지
-- [ ] dist 바이너리 스모크 통과 (grep "Complete AIRMESH")
+- [x] build_automatedmodeller_python312.sh에 `cp libgmsh.so.4.15` + dist 스모크 테스트 (가산만)
+- [x] build_all_python312.sh 동일 반영
+- [x] initialize() try/except → E_GMSH_INIT 명확 메시지
+- [x] dist 바이너리 스모크 통과 (grep "Complete AIRMESH")
 - [ ] `/data/SmartTwinPreprocessor` 배포본 스모크 통과
 - [ ] 커밋+푸시 (기존 관례: tar까지 세트면 sudo 필요)
 

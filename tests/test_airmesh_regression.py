@@ -184,6 +184,42 @@ def t6_meter_scale():
     check("T6 vs_expected", abs(rep["volumes"]["air_discrete_vs_expected_pct"]) < 0.5)
 
 
+# ---- T8: 비봉합 셸/서피스 모델 — 우아한 실패 (E_STEP_NO_SOLID) ----------------
+def t8_open_shell():
+    step = os.path.join(WD, "open_face.step")
+
+    def b():
+        gmsh.model.occ.addRectangle(0, 0, 0, 10, 10)
+    make_step(step, b)
+    rep = run_cfg("openface", {"airmesh_version": 1, "input_step": step,
+                               "mesh_size": 2.0, "padding": 5.0})
+    check("T8 서피스 모델 우아한 실패", rep["status"] == "failed"
+          and rep["error"]["code"] == "E_STEP_NO_SOLID")
+    check("T8 엔티티 요약 보존", "2: 1" in rep["error"]["message"]
+          or "{2: 1}" in rep["error"]["message"], rep["error"]["message"])
+
+
+# ---- T9: pad=0 밀착면 ---------------------------------------------------------
+def t9_flush_faces():
+    step = os.path.join(WD, "solid_box.step")
+
+    def b():
+        gmsh.model.occ.addBox(0, 0, 0, 10, 10, 10)
+    make_step(step, b)
+    # 한 면 밀착: 정상 완주 + 체적 정확 (도메인 15x20x20 − 솔리드 1000 = 5000)
+    rep = run_cfg("flush1", {"airmesh_version": 1, "input_step": step,
+                             "mesh_size": 2.0, "padding": [0, 5, 5, 5, 5, 5]})
+    check("T9 한 면 밀착 완주", rep["status"] == "ok")
+    m = trimesh.load(os.path.join(WD, "flush1_air.stl"))
+    check("T9 밀착 체적", m.is_watertight and abs(m.volume - 5000.0) / 5000.0 < 0.01,
+          "signed={v:.1f}".format(v=m.volume))
+    # 전면 밀착(공기 0): 명확한 E_BOOLEAN 실패
+    rep = run_cfg("allflush", {"airmesh_version": 1, "input_step": step,
+                               "mesh_size": 2.0, "padding": 0.0})
+    check("T9 공기 0 우아한 실패", rep["status"] == "failed"
+          and rep["error"]["code"] == "E_BOOLEAN")
+
+
 # ---- T7: 실패 경로 계약 -------------------------------------------------------
 def t7_failure_contract():
     rep = run_cfg("bad", {"airmesh_version": 1, "typo": 1})
@@ -197,7 +233,8 @@ def t7_failure_contract():
 if __name__ == "__main__":
     try:
         for t in (t1_golden_runsh, t2_hollow_void, t3_multi, t4_selection,
-                  t5_epspad_injection, t6_meter_scale, t7_failure_contract):
+                  t5_epspad_injection, t6_meter_scale, t7_failure_contract,
+                  t8_open_shell, t9_flush_faces):
             print("[{n}]".format(n=t.__name__))
             t()
         print("\nALL {n} CHECKS PASS".format(n=len(PASS)))

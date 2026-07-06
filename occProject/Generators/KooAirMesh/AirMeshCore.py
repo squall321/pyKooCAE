@@ -174,6 +174,9 @@ def _import_solids(cfg, warnings):
     except Exception as e:
         raise AirMeshError("E_STEP_IMPORT", "STEP 임포트 실패: {e}".format(e=e))
     gmsh.model.occ.synchronize()
+    orig_dims = {}
+    for d, _ in imported:
+        orig_dims[d] = orig_dims.get(d, 0) + 1
 
     healed = False
     if cfg["heal"] == "always":
@@ -187,12 +190,10 @@ def _import_solids(cfg, warnings):
         healed = True
         solids = [dt for dt in imported if dt[0] == 3]
     if not solids:
-        dims = {}
-        for d, _ in imported:
-            dims[d] = dims.get(d, 0) + 1
         raise AirMeshError(
             "E_STEP_NO_SOLID",
-            "STEP에 닫힌 솔리드가 없음 (발견된 엔티티 dim:개수 = {dims}) — 서피스 모델 여부 확인".format(dims=dims))
+            "STEP에 닫힌 솔리드가 없음 (임포트 엔티티 dim:개수 = {dims}) — 서피스 모델 여부 확인".format(
+                dims=orig_dims))
 
     picked = _select_solids(cfg, solids)
     unselected = [dt for dt in solids if dt not in picked]
