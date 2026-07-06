@@ -1871,18 +1871,25 @@ class KooDynaAdvancedModification:
         
         return part
     
-    def SetControlandDatabaseExplicit(self, tFinal, dt, control_timestep=None, control_hourglass=None):
+    def SetControlandDatabaseExplicit(self, tFinal, dt, control_timestep=None, control_hourglass=None,
+                                      dtmin=None):
         cm = self.dynaImporter.controlManager
         # 시나리오에서 넘어온 CONTROL 카드 override (없으면 기존 기본값 유지)
         ct = control_timestep or {}
         ch = control_hourglass or {}
 
-        # CONTROL_TERMINATION: 기존 값 보존, tFinal만 업데이트. 없으면 새로 생성
+        # CONTROL_TERMINATION: 기존 값 보존, tFinal만 업데이트. 없으면 새로 생성.
+        # dtmin: dt 붕괴(발산) 시 자동 종료용. LS-DYNA DTMIN 은 '초기 dt 의 DTMIN 배로
+        # 떨어지면 종료' → 기본 1e-10 은 사실상 무한(발산 hang). 시나리오에서 0.001 등으로
+        # 올리면 발산 케이스를 자동 절단. 미지정 시 기존값 유지(회귀 0).
         if cm.controlTermination is not None:
             cm.controlTermination.ENDTIM = tFinal
+            if dtmin is not None:
+                cm.controlTermination.DTMIN = dtmin
         else:
             cm.SetControlTermination(
-                ENDTIM=tFinal, ENDCYC=0, DTMIN=1.0E-10,
+                ENDTIM=tFinal, ENDCYC=0,
+                DTMIN=(dtmin if dtmin is not None else 1.0E-10),
                 ENDENG=0.0, ENDMAS=10000000.0, NOSOL=0)
 
         # CONTROL_TIMESTEP: 기존 값 보존. 없으면 새로 생성 (override 가능)
@@ -2065,7 +2072,8 @@ class KooDynaAdvancedModification:
             self.SetControlandDatabaseExplicit(
                 tFinal, dt,
                 control_timestep=option.get("ControlTimestep"),
-                control_hourglass=option.get("ControlHourglass"))
+                control_hourglass=option.get("ControlHourglass"),
+                dtmin=option.get("DTMIN"))
 
 
         # Select All Nodes as node set

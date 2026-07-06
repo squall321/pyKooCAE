@@ -150,6 +150,7 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 | `non_reflecting_boundary` | false | 바닥판 비반사 경계 (StepConfigBuilder.py:108) |
 | `rigidify_small_dt_threshold` | 0.0 | 작은 dt 요소 강체화 (StepConfigBuilder.py:111) |
 | `dynamic_relaxation` | false | 누적(num_steps≥2) 스텝 간 DR 안정화. `true`(간단형) 또는 `{enabled, nrcyck, drtol, drfctr, drterm}` 객체형. `_dti.k` 에 `*CONTROL_DYNAMIC_RELAXATION`(IDRFLG=1) 주입 → 다음 낙하 deck 이 이월받아 본 해석 전 DR phase 수행. 기본 `drtol=0.01`(잔류응력 릴리즈용 완화), `drterm=tFinal`(bounded DR — 미수렴이어도 예산 소진 후 transient 진입). 주의: drtol<0.0005 는 카드 고정폭(10.3f)에 잘림 (StepConfigBuilder.py:78-100) |
+| `dtmin` | 1e-10 | `*CONTROL_TERMINATION` DTMIN. LS-DYNA 는 '초기 dt 의 **DTMIN 배**로 떨어지면 종료' → 기본 1e-10 은 사실상 무한(발산 시 dt 붕괴해도 안 죽어 잡이 hang). 발산 케이스 자동 절단하려면 `0.001`(초기 dt 의 0.1%) 등으로 상향. 미지정 시 기존 1e-10 유지(회귀 0) |
 
 `drop_surface.type` 값별 추가 필드 (StepConfigBuilder.py:51-73): `RigidWall` / `Plane`(`size`,`mesh`) / `PlaneGraded`(`size`,`mesh`,`num_outer_layers`,`ratio`) / 거칠기 옵션(`roughness_mode`,`r_max`,`shape_factor`,`shape_factor2`) / `deformable_to_rigid`(false).
 

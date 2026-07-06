@@ -168,6 +168,10 @@ def build_drop_attitude_config(
         control_line += f"\nControlTimestep.{key},{val}"
     for key, val in sim_params.get("control_hourglass", {}).items():
         control_line += f"\nControlHourglass.{key},{val}"
+    # DTMIN (CONTROL_TERMINATION): dt 붕괴(발산) 시 자동 종료. 미지정 시 기존 1e-10 유지.
+    _dtmin = sim_params.get("dtmin")
+    if _dtmin is not None:
+        control_line += f"\nDTMIN,{_dtmin}"
 
     # RunDirectoryMode
     if run_directory_mode:

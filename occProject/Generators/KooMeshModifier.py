@@ -1507,6 +1507,11 @@ class KooMeshModifier(KooSimulationGenerator):
                             svector = line.split(",")
                             tFinal = KooDynaFloat(svector[1])
                             curOptions["TFinal"] = tFinal
+                        elif "dtmin" in line.lower():
+                            # CONTROL_TERMINATION DTMIN (발산 dt붕괴 시 자동종료).
+                            # "dt" 검사보다 먼저 와야 dtmin 이 dt 로 오인되지 않음.
+                            svector = line.split(",")
+                            curOptions["DTMIN"] = KooDynaFloat(svector[1])
                         elif "controltimestep." in line.lower():
                             # *CONTROL_TIMESTEP override (TSSFAC/DT2MS/ERODE 등).
                             # "dt" 검사보다 먼저 와야 DT2MS 등이 dt로 오인되지 않음.
