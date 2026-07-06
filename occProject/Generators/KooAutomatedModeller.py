@@ -42,8 +42,12 @@ if sys.platform.startswith("linux"):
                 os.environ["LD_LIBRARY_PATH"] = occ_path + ":" + ld_path
 
         # 재실행 마커 설정 후 re-exec
+        # Nuitka 컴파일 바이너리는 Qt/OCC 라이브러리가 dist에 함께 번들되어 re-exec가
+        # 불필요하고, sys.executable이 실존 파이썬이 아니라 execv가 FileNotFoundError로
+        # 즉사한다(배포본 전 모드 기동 불가 버그) — 컴파일 시 건너뜀
         os.environ[_reexec_marker] = "1"
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        if "__compiled__" not in globals():
+            os.execv(sys.executable, [sys.executable] + sys.argv)
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
