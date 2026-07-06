@@ -84,3 +84,26 @@ T1 골든예제 run.sh e2e / T2 밀폐 보이드 orientation / T3 다중 솔리�
 - 수정: `if "__compiled__" not in globals(): os.execv(...)`. 센티넬 검증(별도 Nuitka onefile 실증): 소스=False(re-exec 실행), 컴파일=True(skip). Nuitka는 Qt/OCC를 RPATH로 번들하므로 컴파일 바이너리엔 LD_LIBRARY_PATH re-exec가 불필요.
 - 안전성 증명: (a) 소스 모드 AIRMESH 정상(가드 no-op), (b) 기존 dist PKG를 re-exec 우회로 실행 → .k 정상 생성(472B, 바이트동일 기준과 일치) = Qt/OCC 로딩 무영향. **이 변경은 원래 "2-hunk만" 범위를 넘어선 공유 시작코드 수정이나, 기존 배포를 깨는 게 아니라 이미 깨져있던 것을 고침.**
 - 회귀 스위트 T8/T9 추가(비봉합 셸 E_STEP_NO_SOLID / pad=0 밀착면 완주·전면밀착 E_BOOLEAN) → 29체크. E_STEP_NO_SOLID 메시지가 힐링 후 빈 dims 대신 원본 임포트 요약을 표시하도록 수정.
+
+## 2026-07-06 — 실제 ECAD STEP 실증 (멀티스케일 Cu/PPG 회로)
+
+`Examples/ODB/ECADfilesforPBA_P3_Export_detail_pcb_multiscale_*` (mm 단위, 5×5mm 보드, 층두께 15~25µm — 종횡비 ~300:1).
+
+| 케이스 | 솔리드 | 사면체 | 시간 | watertight | faceting vs CAD | 비고 |
+|---|---|---|---|---|---|---|
+| CU_14 | 1 | 6,180 | 0.16s | ✓ | -0.000% | 단일 실제 트레이스층, 역요소 0 |
+| CU_2 | 3 | 12.7M | 50s | ✓ | -0.00% | size_guard가 h 0.3→0.022 클램프(미세솔리드 diag 0.089) |
+| Cu+PPG(CU_2+PPG_2) | 5 | 12.7M | 46s | ✓ | -0.00% | 같은 z층, 겹침 → vs_expected 11.6% 경고(정상: 겹침 감지) |
+| Cu+PPG (size_guard=false, h=0.15) | 5 | 48k | 0.8s | ✓ | -0.000% | 사용자 h 존중 escape hatch |
+| 풀 구리층 CU.stp | 273 | — | — | (중단) | — | E_TOO_LARGE 정확 중단(145M 추정>한도, 실행 전) |
+| 풀 구리층 (size_guard=false, h=0.15) | 273 | 153k | 40s | ✓ | 0.370% | 역요소 0, 저품질 슬리버 404개(트레이스 가장자리) |
+
+### 확인된 것
+- 실제 ECAD STEP(수백 개 얇은 구리 트레이스)에서 watertight 공기 STL 생성, CAD 공기체적과 ~0% 일치.
+- 극薄 층(15µm) 처리: 저품질 슬리버 경고, 역요소 0, 크래시 없음. fail_on_inverted 게이트 정합(minSICN min>0, n_inverted=0 확인).
+- 겹치는 Cu/PPG 솔리드: air.stl은 union 절단으로 정확(faceting 0%), 부차 지표(vs_expected_discrete)가 겹침을 11.6%로 경고 = 올바른 입력 이상 감지.
+- 273솔리드: E_TOO_LARGE 가드가 실행 전 정확 중단 + 실행가능 조언. size_guard=false로 완주.
+
+### 실전 UX 발견 (코드버그 아님, 문서화 대상)
+- **size_guard 클램프가 미세 솔리드에 매우 공격적**: 트레이스 파편 diag 0.089mm → h를 0.022로 클램프 → 사용자 h=0.3 무시하고 12.7M 요소. 명확히 경고하고 escape hatch(size_guard=false) 작동. 방어적 기본값으로 정당하나, 미세 via/스텁이 많은 ECAD엔 size_guard=false + 명시적 mesh_size 권장.
+- 힐링 사다리는 이 ECAD export가 깨끗해 미발동 — 진짜 지저분한 STEP 실증은 여전히 미완(별도 케이스 필요 시).

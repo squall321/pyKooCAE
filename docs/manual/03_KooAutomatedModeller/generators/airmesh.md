@@ -66,4 +66,5 @@ KooAutomatedModeller AIRMESH airmesh.json [workdir|none] [displayMode]
 - **불리언 재시도 사다리**: eps-pad(1e-3·diag, 형상 무손상) → 힐링(최후 수단). 재시도 시 유효 bbox가 분류·리포트에 반영된다.
 - **체적 검증**: 이산 기대값(box−이산 cavity) 대비로 판정하고 CAD 차이는 faceting 오차로 별도 보고 — 조대 메시는 에러가 아니라 경고+클램프.
 - **배포(Nuitka)**: gmsh Python API의 libgmsh는 ctypes 로드라 Nuitka가 번들하지 않는다. 빌드 스크립트가 `libgmsh.so.4.15`를 dist 루트에 복사하고 AIRMESH 스모크 테스트로 검증한다(`build_automatedmodeller_python312.sh`). 누락 시 배포 머신에서 첫 호출에 크래시.
+- **실제 ECAD/PCB (실증됨)**: 멀티스케일 Cu/PPG 회로(273 트레이스, 15µm 층)까지 watertight 공기 STL 생성 확인. 단 미세 트레이스가 있으면 `size_guard`(기본 on)가 h를 극단적으로 클램프해 요소가 폭발할 수 있음 — 이 경우 `mesh.size_guard:false` + 명시적 `mesh_size`로 의도한 해상도를 강제하고, 겹치는 Cu/PPG 솔리드는 air.stl은 정확(union 절단)하나 체적 교차검증이 겹침을 경고한다.
 - **미구현(v1 범위 외)**: `mesh.mode:"hex_core"`(헥사 그리드+오면체 피라미드 전이)는 Phase 5 계약으로 예약 — `docs/PLAN_AirMeshGeneration.md` §8.

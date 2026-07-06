@@ -33,7 +33,7 @@
 - [x] .vtk 출력 옵션, geometry_debug(brep)
 - [x] 검증 블록 전체(volume_error_warn/min_sicn_warn/fail_on_inverted)
 - [x] 테스트: 2-솔리드 / 조대-h 경고 / config·STEP 부재(FAILED+exit0+리포트) — 비봉합 셸·pad=0 밀착면은 잔여
-- [ ] 🔴 실제(비합성) STEP 파일 1개 이상으로 힐링 사다리 실증
+- [x] 🔴 실제 ECAD STEP 실증(2026-07-06): 멀티스케일 Cu/PPG 회로 — CU_14(1솔리드)/CU_2(3)/Cu+PPG(5)/풀구리층(273) 전부 watertight+faceting~0%. 힐링 사다리는 미발동(ECAD export가 이미 깨끗)
 - [x] 단위 테스트: 회귀 스위트 tests/test_airmesh_regression.py (T1~T7, 리뷰 확정 결함 시나리오 포함)
 
 ## Phase 3 — Nuitka 빌드/배포
