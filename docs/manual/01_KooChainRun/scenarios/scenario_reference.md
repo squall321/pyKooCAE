@@ -89,9 +89,10 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 | 필드 | 형식 | 기본값 | 설명 | 코드 근거 |
 |---|---|---|---|---|
 | `num_steps` | int | 1 | 누적 step 수 | CumulativeDesigner.py:181 |
-| `mode_sequence` | array of string | `["DROP"] * num_steps` | step별 모드. `DROP`/`IMPACT`/`VIB`/`VIBRATION`/`THERM`. 부족하면 마지막 모드로 채움 | CumulativeDesigner.py:610-625 |
+| `mode_sequence` | array of string | `["DROP"] * num_steps` | step별 모드. `DROP`/`IMPACT`/`VIB`/`VIBRATION`/`THERM`/`REMAP`. 부족하면 마지막 모드로 채움 | CumulativeDesigner.py:610-625 |
 | `base_angle_index` | int | 0 | (DROP) 믹싱 기준 각도 인덱스 | CumulativeDesigner.py:280 |
 | `angle_mixing` | object | `{}` | (DROP) 누적 step 간 각도 조합 전략 | CumulativeDesigner.py:279, 627-642 |
+| `step_params` | object | `{}` | (REMAP 등 러너 전용 스텝) step 번호(문자열 키)→params. 예 `{"2": {"op":"matdb","config":{...}}}`. 미지정 스텝은 `{}` | CumulativeDesigner.py:697-709 |
 
 `mode_sequence` 값 → 처리 분기 (CumulativeDesigner.py:185-211):
 
@@ -100,7 +101,15 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 - `IMPACT` 포함 → `_process_impact_scenario`
 - 그 외 → `_process_drop_scenario` (DROP)
 
-`SimulationMode` enum 정의: `DROP`, `IMPACT`, `THERM`, `VIB`, `VIBRATION` (TemplateManager.py:30-35). `VIBRATION` 은 long alias 로 `VIB` 와 별개 멤버이며 둘 다 진동 분기로 처리된다 (CumulativeDesigner.py:192-194).
+`SimulationMode` enum 정의: `DROP`, `IMPACT`, `THERM`, `VIB`, `VIBRATION`, `REMAP` (TemplateManager.py:30-37). `VIBRATION` 은 long alias 로 `VIB` 와 별개 멤버이며 둘 다 진동 분기로 처리된다 (CumulativeDesigner.py:192-194).
+
+**REMAP (KooRemapper 변환 스텝)**: LS-DYNA 를 실행하지 않는 러너 전용 스텝. 전용 `_process` 분기가 없고, 함께 쓰인 모드(보통 DROP)의 프로세서를 그대로 타고 지나간다(각도·템플릿은 러너가 REMAP 에서 무시). 실행 파라미터는 `cumulative.step_params["<step번호>"]` 로 전달한다.
+
+- `op` (필수): KooRemapper 서브커맨드(예 `matdb`, `map`). 누락 시 러너가 `params.op missing` 으로 graceful failed.
+- `config` (선택): YAML ops 설정 객체. 러너가 `model`/`output`(=`Remap_dti.k`) 을 자동 주입하므로 사용자는 넣지 않는다. `matdb` 는 `database` 미지정 시 기본 DB 사용.
+- `argv` (선택, `config` 없을 때만): positional 인자. 입력=`input.k`, 출력은 반드시 `*_dti.k` 로 직접 명시해야 다음 스텝이 이어받는다.
+- 예: `["DROP","REMAP","DROP"]` → step1 낙하 → step2 REMAP(dti 재작성) → step3 누적낙하. 입력/출력 dti 핸드오프는 러너의 `*_dti.k` glob 이 담당한다.
+- ⚠️ REMAP-only 시퀀스(예 `["REMAP"]`)는 DROP 프로세서를 경유해 `angle_source` 기본값(cuboid 26방향)만큼 DOE 가 생성된다. 단일 변환만 원하면 DROP 과 혼합하거나 `angle_source` 를 단일 방향으로 지정한다.
 
 ### 2-4. DROP 모드 필드
 

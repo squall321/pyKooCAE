@@ -693,6 +693,13 @@ class CumulativeDesigner:
                 doe_indices.add(step.doe_index)
         doe_count = len(doe_indices) if doe_indices else 1
 
+        # 러너 전용 스텝(REMAP 등) 파라미터: scenarios[0].cumulative.step_params
+        #   {"<step_num>": {"op":"matdb","config":{...}}} 또는 {"op":"map","argv":[...]}
+        # 미지정 시 {} → 기존 DROP/IMPACT/THERM/VIB 출력과 바이트 동일.
+        _scens = self.user_config.get("scenarios", [])
+        _scen0 = _scens[0] if _scens else {}
+        step_params_map = _scen0.get("cumulative", {}).get("step_params", {})
+
         # CumulativeScenarioRunner 호환 steps 변환
         # step_number별로 모드 정보 추출 (step 구조는 DOE 공통)
         runner_steps = []
@@ -705,7 +712,7 @@ class CumulativeDesigner:
                         "step": step.step_number,
                         "mode": step.mode,
                         "condition": step.angle_name,
-                        "params": {}
+                        "params": step_params_map.get(str(step.step_number), {})
                     })
 
         # DOE별 각도 매핑 테이블 생성

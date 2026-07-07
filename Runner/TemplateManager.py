@@ -35,6 +35,7 @@ class SimulationMode(Enum):
     VIBRATION = "VIBRATION"    # 진동 (long alias, DESIGN.md 채택안 C — scenario에서 "VIBRATION" 사용)
     DWI = "DWI"                # 수침
     COMB = "COMB"              # 조합
+    REMAP = "REMAP"            # KooRemapper 러너 전용 변환 스텝 (LS-DYNA 미실행, 솔버 스킵)
 
 
 class TemplateType(Enum):
@@ -51,6 +52,8 @@ class TemplateType(Enum):
     VIBRATION_FIRST = "VIBRATION_FIRST"            # 첫 번째 진동 (explicit_factors)
     VIBRATION_CUMULATIVE = "VIBRATION_CUMULATIVE"  # 누적 진동 (DYNAIN_TO_INITIAL → VIBRATION)
     # TODO(P2): VIBRATION_PER_CAP / VIBRATION_CIRCUIT_GROUP 추가 예정
+    # ── REMAP (KooRemapper 러너 전용, LS-DYNA 템플릿 없음 — 솔버 스킵) ──
+    REMAP = "REMAP"                                # KooRemapper 변환 (스텝 위치 무관 sentinel)
 
 
 @dataclass
@@ -118,6 +121,12 @@ TEMPLATE_DEFINITIONS = {
         requires_dynain=True
     ),
     # TODO(P2): VIBRATION_PER_CAP / VIBRATION_CIRCUIT_GROUP 등록 예정
+    # ── REMAP 템플릿 (KooRemapper 러너 전용, 솔버 스킵) ──
+    TemplateType.REMAP: TemplateInfo(
+        template_type=TemplateType.REMAP,
+        description="KooRemapper 변환 (LS-DYNA 미실행, Remap_dti.k 생성)",
+        requires_dynain=False
+    ),
 }
 
 
@@ -160,6 +169,11 @@ def select_template_for_step(
         >>> select_template_for_step(3, SimulationMode.DROP, SimulationMode.THERM)
         <TemplateType.THERMAL_TO_DROP: 'THERMAL_TO_DROP'>
     """
+    # REMAP: KooRemapper 러너 전용 스텝 — LS-DYNA 템플릿 없음(솔버 스킵).
+    # step 위치·prev_mode 무관하게 sentinel 반환. 기존 모드 분기(아래)는 손대지 않음.
+    if mode == SimulationMode.REMAP:
+        return TemplateType.REMAP
+
     # Step 1: 첫 번째 Step
     if step == 1:
         if mode == SimulationMode.DROP:
