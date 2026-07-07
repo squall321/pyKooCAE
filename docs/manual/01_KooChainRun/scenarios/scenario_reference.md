@@ -52,7 +52,7 @@ cumulative 포맷의 최상위 키:
 | `lsdyna_apptainer_env` | object | `{}` | LS-DYNA SIF 컨테이너 내부 env (라이선스 등) | CumulativeScenarioRunner.py:119, 133 |
 | `apptainer_tmpdir` | string | `/opt/tmp` | APPTAINER_TMPDIR 기준 경로. 잡별 `apptainer_job_<id>` 하위 생성 | CumulativeScenarioRunner.py:124-126, 145 |
 | `nodes_per_job` | int | 1 | 잡당 노드 수 | CumulativeScenarioRunner.py:121 |
-| `timeout_per_step_seconds` | int | 604800 | step 타임아웃 | CumulativeDesigner.py:819 |
+| `timeout_per_step_seconds` | int | 604800 | step wall-clock 타임아웃(초). **발산(NaN·dt붕괴) 케이스의 최종 안전망** — 기본 7일은 사실상 무한이라 발산 시나리오는 반드시 짧게(예 낙하 1스텝 실 walltime의 2~3배) 설정 권장. 초과 시 kill+failed 후 러너가 다음 스텝 진행 | CumulativeDesigner.py:819 |
 | `timeout_koomeshmodifier_seconds` | int | 604800 | KooMeshModifier 타임아웃 | CumulativeDesigner.py:820 |
 | `timeout_dynain_seconds` | int | 604800 | dynain 생성 타임아웃 | CumulativeDesigner.py:821 |
 
@@ -159,7 +159,7 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 | `non_reflecting_boundary` | false | 바닥판 비반사 경계 (StepConfigBuilder.py:108) |
 | `rigidify_small_dt_threshold` | 0.0 | 작은 dt 요소 강체화 (StepConfigBuilder.py:111) |
 | `dynamic_relaxation` | false | 누적(num_steps≥2) 스텝 간 DR 안정화. `true`(간단형) 또는 `{enabled, nrcyck, drtol, drfctr, drterm}` 객체형. `_dti.k` 에 `*CONTROL_DYNAMIC_RELAXATION`(IDRFLG=1) 주입 → 다음 낙하 deck 이 이월받아 본 해석 전 DR phase 수행. 기본 `drtol=0.01`(잔류응력 릴리즈용 완화), `drterm=tFinal`(bounded DR — 미수렴이어도 예산 소진 후 transient 진입). 주의: drtol<0.0005 는 카드 고정폭(10.3f)에 잘림 (StepConfigBuilder.py:78-100) |
-| `dtmin` | 1e-10 | `*CONTROL_TERMINATION` DTMIN. LS-DYNA 는 '초기 dt 의 **DTMIN 배**로 떨어지면 종료' → 기본 1e-10 은 사실상 무한(발산 시 dt 붕괴해도 안 죽어 잡이 hang). 발산 케이스 자동 절단하려면 `0.001`(초기 dt 의 0.1%) 등으로 상향. 미지정 시 기존 1e-10 유지(회귀 0) |
+| `dtmin` | 1e-10 (비-DR) / 0.01 (DR 자동) | `*CONTROL_TERMINATION` DTMIN. LS-DYNA 는 '초기 dt 의 **DTMIN 배**로 떨어지면 종료'. 미지정 시: **`dynamic_relaxation` 켜진 DR/누적 체인은 0.01 자동주입**(발산-취약, StepConfigBuilder.py:171-181), 비-DR 은 기존 1e-10 유지(회귀 0). 명시값은 항상 우선. ⚠️ **주의**: erosion(ERODE=1) 발산은 요소 삭제로 dt 가 임계 바로 위에서 맴돌아 DTMIN 이 안 걸릴 수 있음(실측: 0.001·0.01 모두 자동종료 실패, wall-clock 이 잡음) → DTMIN 은 보조수단, **`timeout_per_step_seconds` 가 발산 최종 안전망**. IMPACT 는 dtmin 미배선(항상 1e-10) |
 
 `drop_surface.type` 값별 추가 필드 (StepConfigBuilder.py:51-73): `RigidWall` / `Plane`(`size`,`mesh`) / `PlaneGraded`(`size`,`mesh`,`num_outer_layers`,`ratio`) / 거칠기 옵션(`roughness_mode`,`r_max`,`shape_factor`,`shape_factor2`) / `deformable_to_rigid`(false).
 

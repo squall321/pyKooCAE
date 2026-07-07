@@ -169,7 +169,13 @@ def build_drop_attitude_config(
     for key, val in sim_params.get("control_hourglass", {}).items():
         control_line += f"\nControlHourglass.{key},{val}"
     # DTMIN (CONTROL_TERMINATION): dt 붕괴(발산) 시 자동 종료. 미지정 시 기존 1e-10 유지.
+    # DR 게이팅: dynamic_relaxation 켜진 누적/DR 체인은 발산-취약 → dtmin 미지정 시 0.01
+    # 자동주입(진짜 dt붕괴 절단용). erosion 발산은 임계 위에서 맴돌 수 있어 wall-clock
+    # timeout(execution.timeout_per_step_seconds)이 최종 안전망. 비-DR 은 불변(회귀 0),
+    # 명시된 dtmin 은 항상 우선.
     _dtmin = sim_params.get("dtmin")
+    if _dtmin is None and sim_params.get("dynamic_relaxation"):
+        _dtmin = 0.01
     if _dtmin is not None:
         control_line += f"\nDTMIN,{_dtmin}"
 
