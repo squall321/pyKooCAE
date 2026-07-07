@@ -84,6 +84,50 @@ def find_koomeshmodifier(config_path: Optional[str] = None) -> str:
     return "/opt/KooMeshModifier/run.sh"
 
 
+def find_kooremapper(config_path: Optional[str] = None) -> str:
+    """KooRemapper 네이티브 바이너리 경로 탐색 (find_koomeshmodifier 와 동일 우선순위).
+
+    REMAP 스텝은 KooMeshModifier 와 똑같이 apptainer exec <sif> <바이너리> 로 호출되므로,
+    SmartTwinPreprocessor.sif 내부에 구워진 /opt/kooremapper/bin/KooRemapper 가 기본값.
+
+    우선순위:
+        1. 상대 경로: 실행 파일과 같은 bin 디렉토리
+        2. 환경 변수: $KOO_PATH/bin/KooRemapper
+        3. 설정 파일: config_path
+        4. 기본값: /opt/kooremapper/bin/KooRemapper
+    """
+    try:
+        if getattr(sys, 'frozen', False):
+            exe_dir = Path(sys.executable).parent.resolve()
+        else:
+            exe_dir = Path(__file__).parent.parent.resolve()
+
+        relative_path = exe_dir / "bin" / "KooRemapper"
+        if relative_path.exists():
+            return str(relative_path)
+    except Exception:
+        pass
+
+    koo_path = os.environ.get("KOO_PATH")
+    if koo_path:
+        env_path = Path(koo_path) / "bin" / "KooRemapper"
+        if env_path.exists():
+            return str(env_path)
+
+    if config_path and Path(config_path).exists():
+        return config_path
+
+    default_paths = [
+        "/opt/kooremapper/bin/KooRemapper",
+        "/opt/pyKooCAE/bin/KooRemapper",
+    ]
+    for default_path in default_paths:
+        if Path(default_path).exists():
+            return default_path
+
+    return "/opt/kooremapper/bin/KooRemapper"
+
+
 def get_koo_root() -> Optional[Path]:
     """
     pyKooCAE 루트 디렉토리 반환

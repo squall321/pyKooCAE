@@ -26,7 +26,7 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 
 # Runner 모듈 임포트
-from Runner.PathResolver import find_koomeshmodifier
+from Runner.PathResolver import find_koomeshmodifier, find_kooremapper
 from Runner.CaseTxtParser import DropAngle
 from Runner.AngleSourceParser import (
     AngleSourceConfig, AngleSourceType,
@@ -131,6 +131,9 @@ class CumulativeDesigner:
             environment["koomeshmodifier_path"] = find_koomeshmodifier()
         if "lsdyna_path" not in environment:
             environment["lsdyna_path"] = "/opt/lsdyna/bin/ls-dyna"
+        # KooRemapper(REMAP 스텝)용 네이티브 바이너리 경로 (sif 내부 기본값, 자동 탐색)
+        if "kooremapper_path" not in environment:
+            environment["kooremapper_path"] = find_kooremapper()
 
         # 시나리오 설정
         scenarios_config = self.user_config.get("scenarios", [])
