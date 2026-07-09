@@ -48,6 +48,21 @@ echo 주의: 빌드에 20-40분 소요될 수 있습니다.
     --assume-yes-for-downloads
 
 echo.
+REM AIRMESH: gmsh Python API는 ctypes(WinDLL)로 gmsh-4.15.dll을 로드하므로 Nuitka가
+REM 번들하지 않음 - dist 루트에 수동 복사 필수 (리눅스 libgmsh.so.4.15 복사와 대칭).
+REM 누락 시 AIRMESH 모드가 첫 gmsh 호출에서 DLL-not-found로 실패 (다른 5개 모드는 무관).
+echo AIRMESH: gmsh-4.15.dll 복사 중...
+set GMSHDLL=
+if exist ..\..\venv312\Lib\site-packages\gmsh-4.15.dll set GMSHDLL=..\..\venv312\Lib\site-packages\gmsh-4.15.dll
+if exist ..\..\venv312\Lib\gmsh-4.15.dll set GMSHDLL=..\..\venv312\Lib\gmsh-4.15.dll
+if not "!GMSHDLL!"=="" (
+    copy /y "!GMSHDLL!" KooAutomatedModeller.dist\ >nul
+    echo   복사됨: !GMSHDLL!
+) else (
+    echo   경고: gmsh-4.15.dll을 찾지 못함 - AIRMESH 모드가 동작하지 않습니다.
+    echo   venv에서 위치 확인 후 KooAutomatedModeller.dist\ 로 수동 복사하세요.
+)
+
 echo ================================================================================
 echo 빌드 완료!
 echo ================================================================================
