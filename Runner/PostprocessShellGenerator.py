@@ -312,6 +312,11 @@ def report_mode_from_runner_config(runner_config):
     (CumulativeDesigner 가 cumulative step 당 1개씩 직렬화).
     """
     rc = runner_config or {}
+    # DWI(drop_weight_impact) runner_config 는 chain 스키마(scenario.steps /
+    # doe_positions)가 없어 기본값 DROP 으로 떨어져 sphere 로 오라우팅됐음
+    # (2026-07-10 job 806 실측) — 최상위 mode 디스패치 키를 최우선 판정.
+    if str(rc.get("mode", "")).lower() == "drop_weight_impact":
+        return "IMPACT"
     sc = rc.get("scenario") or {}
     steps = sc.get("steps") or []
     modes = [str(s.get("mode", "")).upper() for s in steps if s.get("mode")]

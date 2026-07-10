@@ -10,6 +10,7 @@ KooChainRun prepare/submit에서 drop_weight_impact 모드일 때 호출.
 """
 
 import os
+import re
 import sys
 import json
 import math
@@ -105,7 +106,8 @@ def prepare_drop_weight_impact(user_config, scenario_path, output_path):
 
     # 5. run.sh 생성
     run_sh_path = os.path.join(output_dir, "run.sh")
-    _generate_dwi_run_sh(run_sh_path, output_dir, config_dir, total_cases, environment)
+    _generate_dwi_run_sh(run_sh_path, output_dir, config_dir, total_cases, environment,
+                         project_name=user_config.get("project_name", "DWI"))
 
     # 6. runner_config.json
     runner_config = {
@@ -116,6 +118,9 @@ def prepare_drop_weight_impact(user_config, scenario_path, output_path):
         "manifest": manifest_path,
         "total_cases": total_cases,
         "environment": environment,
+        # 후처리(sphere/impact report) 설정 전달 — chain 모드(CumulativeDesigner)와 동일 계약.
+        # 없으면 None → _maybe_submit_sphere_after 가 조용히 skip.
+        "postprocess": user_config.get("postprocess"),
     }
     with open(str(output_path), 'w', encoding='utf-8') as f:
         json.dump(runner_config, f, indent=2, ensure_ascii=False)
@@ -141,6 +146,18 @@ def submit_drop_weight_impact(runner_config_path, args):
     result = subprocess.run(["sbatch", run_sh], capture_output=True, text=True)
     if result.returncode == 0:
         print(f"✅ {result.stdout.strip()}")
+        # jobs.json 기록 — 부모 드라이버의 잡ID 폴링과 리포트 dependent 제출(jobs.json 기반)이
+        # 읽는 파일. chain 모드는 써 주는데 DWI 만 없어서 폴링/의존성이 깨졌던 결함 보완.
+        m = re.search(r"Submitted batch job (\d+)", result.stdout)
+        if m:
+            jobs_file = Path(runner_config_path).resolve().parent / "jobs.json"
+            try:
+                with open(jobs_file, 'w', encoding='utf-8') as jf:
+                    json.dump({"project_name": rc.get("project_name", "DWI"),
+                               "jobs": {"dwi_array": {"job_id": m.group(1)}}},
+                              jf, indent=2, ensure_ascii=False)
+            except OSError as e:
+                print(f"⚠️ jobs.json 기록 실패: {e}")
     else:
         print(f"❌ sbatch 실패: {result.stderr}")
 
@@ -563,18 +580,26 @@ def _write_dwi_step_config(config_path, model_file, output_dir,
         f.write("\n".join(lines) + "\n")
 
 
-def _generate_dwi_run_sh(run_sh_path, output_dir, config_dir, total_cases, environment):
+def _generate_dwi_run_sh(run_sh_path, output_dir, config_dir, total_cases, environment,
+                         project_name="DWI"):
     """Slurm array job용 run.sh."""
     env = environment
     ncpu = env.get("ncpu", 4)
     memory = env.get("memory", "4G")
+    # LS-DYNA memory= 는 워드 수(예: 2000m)라 Slurm --mem(RAM 바이트)과 단위가 다르다.
+    # lsdyna_memory 가 있으면 솔버 라인에 우선 적용 — memory 재사용 시 단정밀도 기준
+    # 워드수*4B 가 cgroup 한도를 넘겨 OOM 될 수 있음(예: 2G 워드 ≈ 8GB RAM vs --mem=2G).
+    lsdyna_memory = env.get("lsdyna_memory") or memory
     partition = env.get("partition", "normal")
     sif_path = env.get("sif_path", "")
     koomeshmodifier = env.get("koomeshmodifier_path", "/data/SmartTwinPreprocessor/bin/KooMeshModifier")
     solver_cmd = env.get("solver_command", "ls-dyna")
+    # 자식 잡 이름 = 프로젝트명 기반 — 'DWI' 하드코딩은 부모 폴링 불일치·동시 캠페인
+    # 구분 불가의 원인이었음. Slurm 잡이름에 안전한 문자만 허용.
+    job_name = re.sub(r"[^\w.\-]", "_", str(project_name or "DWI"))[:64] or "DWI"
 
     script = f"""#!/bin/bash
-#SBATCH --job-name=DWI
+#SBATCH --job-name={job_name}
 #SBATCH --array=1-{total_cases}
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task={ncpu}
@@ -606,20 +631,36 @@ if [ $? -ne 0 ]; then
 fi
 
 # 2. 생성된 .k 파일 찾기 + LS-DYNA 실행
-KFILE=$(ls $WORKDIR/*.k 2>/dev/null | head -1)
+# RunDirectoryMode 의 KooMeshModifier 는 WORKDIR 직하가 아니라 Run_<ts>_<id>/ 아래에
+# 덱(DropWeightImpactTestSet.k)을 생성한다 — 최신 Run_* 의 Output/ 이 실제 실행 위치
+# (deep_report/dynain 후속 계약도 Run_*/Output/ 기준). 구 글롭은 폴백으로만 유지.
+RUNDIR=$(ls -td $WORKDIR/Run_*/ 2>/dev/null | head -1)
+KFILE=""
+if [ -n "$RUNDIR" ]; then
+    for cand in "${{RUNDIR}}Output/DropWeightImpactTestSet.k" "${{RUNDIR}}DropWeightImpactTestSet.k"; do
+        if [ -f "$cand" ]; then KFILE="$cand"; break; fi
+    done
+    if [ -z "$KFILE" ]; then
+        KFILE=$(ls ${{RUNDIR}}Output/*.k ${{RUNDIR}}*.k 2>/dev/null | head -1)
+    fi
+fi
+if [ -z "$KFILE" ]; then
+    KFILE=$(ls $WORKDIR/*.k 2>/dev/null | head -1)
+fi
 if [ -z "$KFILE" ]; then
     echo "FAIL (no .k file)" > $WORKDIR/status.txt
     exit 1
 fi
+echo "  Deck: $KFILE"
 
-cd $WORKDIR
+cd "$(dirname "$KFILE")"
 """
 
     if sif_path:
-        script += f"""apptainer exec {sif_path} {solver_cmd} i=$(basename $KFILE) ncpu={ncpu} memory={memory}
+        script += f"""apptainer exec {sif_path} {solver_cmd} i=$(basename "$KFILE") ncpu={ncpu} memory={lsdyna_memory}
 """
     else:
-        script += f"""{solver_cmd} i=$(basename $KFILE) ncpu={ncpu} memory={memory}
+        script += f"""{solver_cmd} i=$(basename "$KFILE") ncpu={ncpu} memory={lsdyna_memory}
 """
 
     script += f"""
