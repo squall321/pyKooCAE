@@ -1456,8 +1456,10 @@ class CumulativeScenarioRunner:
             wall_params = sim_params.get("wall", {})
 
             # 누적 스텝 간 DR 안정화 (DROP 과 동일 배선 — 기본 off)
-            from Runner.StepConfigBuilder import build_dynamic_relaxation_lines
+            from Runner.StepConfigBuilder import build_dynamic_relaxation_lines, build_dtmin_line
             dr_block = build_dynamic_relaxation_lines(sim_params, impact_params.get('tFinal', 0.001))
+            # DTMIN 발산 자동종료 (DROP 과 동일 — impact_params.dtmin > sim_params.dtmin, DR 게이팅)
+            dtmin_block = build_dtmin_line(impact_params.get("dtmin", sim_params.get("dtmin")), sim_params)
 
             dim_damper = impact_params.get("dimension_damper", [0.001, 0.001, 0.001])
             dim_damper_str = ",".join(str(v) for v in dim_damper)
@@ -1532,7 +1534,7 @@ WallNumY,{wall_params.get('num_y', 10)}
 WallNumZ,{wall_params.get('num_z', 10)}
 tFinal,{impact_params.get('tFinal', 0.001)}
 dt,{impact_params.get('dt', 1e-6)}
-OffsetDistance,{impact_params.get('offset_distance', 0.00001)}{dr_block}
+OffsetDistance,{impact_params.get('offset_distance', 0.00001)}{dr_block}{dtmin_block}
 **EndDropWeightImpactTest
 *End
 """
@@ -1603,6 +1605,14 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}{dr_block}
                 if "mpp_d" not in _sif and "_d.sif" not in _sif:
                     print(f"⚠ [THERM] thermal solver 는 배정밀 SIF(_mpp_d.sif) 필수 — 현재: {_sif or '(미설정)'}")
 
+            # DTMIN 발산 자동종료 — 구조 pass·비-ICPower만. ICPower 열해석 pass1(SOLN=1)은
+            # explicit dt 붕괴 개념이 없어 제외(안정화된 thermal 2-pass 보호). 미지정 시 "" (회귀 0)
+            from Runner.StepConfigBuilder import build_dtmin_line
+            _is_thermal_solve = (str(thermal_type) == "ICPower"
+                                 and str(_therm_get("phase", "thermal")) == "thermal")
+            dtmin_block = "" if _is_thermal_solve else build_dtmin_line(
+                _therm_get("dtmin", sim_params.get("dtmin")), sim_params)
+
             config_content = f"""*Inputfile
 {model_file}
 *RunDirectoryMode,True,{self.output_dir}
@@ -1617,7 +1627,7 @@ BaseTempC,{base_temp}
 TargetTempC,{target_temp}
 RampTimeS,{ramp_time}
 DT,{dt}
-DefaultCTE,{default_cte}
+DefaultCTE,{default_cte}{dtmin_block}
 {cte_block}{icpower_block}**EndThermalLoad
 *End
 """

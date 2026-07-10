@@ -3395,7 +3395,7 @@ class KooDynaAdvancedModification:
             
         nodeMan = self.dynaImporter.nodeManager
         nodeSetMan = self.dynaImporter.nodeSetManager              
-        self.SetControlandDatabaseExplicit(tfinal, dt)         
+        self.SetControlandDatabaseExplicit(tfinal, dt, dtmin=option.get("DTMIN"))         
         matMan = self.dynaImporter.matManager
         secMan = self.dynaImporter.sectionManager
         
@@ -3855,7 +3855,7 @@ class KooDynaAdvancedModification:
             
         nodeMan = self.dynaImporter.nodeManager
         nodeSetMan = self.dynaImporter.nodeSetManager              
-        self.SetControlandDatabaseExplicit(tfinal, dt)         
+        self.SetControlandDatabaseExplicit(tfinal, dt, dtmin=option.get("DTMIN"))         
         matMan = self.dynaImporter.matManager
         secMan = self.dynaImporter.sectionManager
         
@@ -4592,7 +4592,7 @@ class KooDynaAdvancedModification:
         FSF = ""
         VSF = ""
        
-        self.SetControlandDatabaseExplicit(tfinal, dt)
+        self.SetControlandDatabaseExplicit(tfinal, dt, dtmin=option.get("DTMIN"))
         
         nodeMan = self.dynaImporter.nodeManager
         nodeSetMan = self.dynaImporter.nodeSetManager
@@ -5191,7 +5191,7 @@ class KooDynaAdvancedModification:
         tFinal = float(option.get("RampTimeS", 1.0e-3))
         dt = float(option.get("DT", 1.0e-6))
         if dt != 0.0 and tFinal != 0.0:
-            self.SetControlandDatabaseExplicit(tFinal, dt)
+            self.SetControlandDatabaseExplicit(tFinal, dt, dtmin=option.get("DTMIN"))
 
         # ③ RunDirectoryMode 처리 (VibrationLoad 결 그대로)
         fileName = os.path.basename(filePath)

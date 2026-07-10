@@ -35,6 +35,20 @@ def build_dynamic_relaxation_lines(sim_params: dict, tFinal: float) -> str:
             f"\nDynainDynamicRelaxationTerm,{dr_term}")
 
 
+def build_dtmin_line(dtmin, sim_params: dict) -> str:
+    """DTMIN(*CONTROL_TERMINATION) config 라인 생성 — DROP/IMPACT/THERM 공용.
+
+    dt 붕괴(발산) 시 자동 종료 팩터. DR 게이팅: `dynamic_relaxation` 켜진 발산-취약
+    체인은 dtmin 미지정 시 0.01 자동주입(보조수단; erosion 발산은 임계 위에서 맴돌 수
+    있어 wall-clock timeout 이 최종 안전망). 미지정+비-DR → "" (기존 1e-10 유지, 회귀 0).
+    명시된 dtmin(호출부에서 이미 해석된 값)은 항상 우선.
+    반환 라인은 "\\n" 으로 시작해 기존 config 삽입 지점에 그대로 이어붙일 수 있다.
+    """
+    if dtmin is None and sim_params.get("dynamic_relaxation"):
+        dtmin = 0.01
+    return f"\nDTMIN,{dtmin}" if dtmin is not None else ""
+
+
 def build_drop_attitude_config(
     model_file: str,
     output_dir: str,
@@ -168,16 +182,8 @@ def build_drop_attitude_config(
         control_line += f"\nControlTimestep.{key},{val}"
     for key, val in sim_params.get("control_hourglass", {}).items():
         control_line += f"\nControlHourglass.{key},{val}"
-    # DTMIN (CONTROL_TERMINATION): dt 붕괴(발산) 시 자동 종료. 미지정 시 기존 1e-10 유지.
-    # DR 게이팅: dynamic_relaxation 켜진 누적/DR 체인은 발산-취약 → dtmin 미지정 시 0.01
-    # 자동주입(진짜 dt붕괴 절단용). erosion 발산은 임계 위에서 맴돌 수 있어 wall-clock
-    # timeout(execution.timeout_per_step_seconds)이 최종 안전망. 비-DR 은 불변(회귀 0),
-    # 명시된 dtmin 은 항상 우선.
-    _dtmin = sim_params.get("dtmin")
-    if _dtmin is None and sim_params.get("dynamic_relaxation"):
-        _dtmin = 0.01
-    if _dtmin is not None:
-        control_line += f"\nDTMIN,{_dtmin}"
+    # DTMIN (CONTROL_TERMINATION): dt 붕괴(발산) 자동 종료 + DR 게이팅 (공용 헬퍼)
+    control_line += build_dtmin_line(sim_params.get("dtmin"), sim_params)
 
     # RunDirectoryMode
     if run_directory_mode:

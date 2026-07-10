@@ -1249,6 +1249,11 @@ class KooMeshModifier(KooSimulationGenerator):
                             # 주의: 위 세부키들이 이 generic 브랜치보다 먼저 와야 함(substring)
                             svector = line.split(",")
                             curOptions["DynainDynamicRelaxation"] = svector[1].strip().lower() == "true"
+                        elif "dtmin" in line.lower():
+                            # CONTROL_TERMINATION DTMIN (발산 dt붕괴 자동종료).
+                            # "dt" 검사보다 먼저 와야 dtmin 이 dt 로 오인되지 않음.
+                            svector = line.split(",")
+                            curOptions["DTMIN"] = KooDynaFloat(svector[1])
                         elif "dt" in line.lower():
                             svector = line.split(",")
                             dt = KooDynaFloat(svector[1])
@@ -2506,6 +2511,9 @@ class KooMeshModifier(KooSimulationGenerator):
                             curOptions["RampTimeS"] = float(line.split(",", 1)[1].strip())
                         elif low.startswith("dt,"):
                             curOptions["DT"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("dtmin,"):
+                            # CONTROL_TERMINATION DTMIN (발산 dt붕괴 자동종료)
+                            curOptions["DTMIN"] = float(line.split(",", 1)[1].strip())
                         elif low.startswith("defaultcte,"):
                             curOptions["DefaultCTE"] = float(line.split(",", 1)[1].strip())
                         elif low.startswith("phase,"):
