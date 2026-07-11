@@ -2756,7 +2756,15 @@ def cmd_postprocess(args):
     deep_failed = 0
     deep_done = 0
     if do_deep:
-        run_dirs = sorted([d for d in Path(output_dir).glob("Run_*") if d.is_dir()])
+        # DROP(chain/large_scale)는 output/Run_*, DWI(drop_weight_impact)는 케이스 격리 탓에
+        # output/results/dwi_*/Run_* 로 한 단계 더 깊다. 둘 다 스캔(비재귀 glob 은 DWI 를 놓쳐
+        # deep 가 영영 0개였음). deep 산출물은 build_deep_report_sh 가 <Run_*>/Output/report/
+        # 로 남기므로(run_dir=<Run_*>/Output), impact 로더의 _find_deep_output_dir 이 재사용.
+        run_dirs = sorted(
+            {d for d in (list(Path(output_dir).glob("Run_*"))
+                         + list(Path(output_dir).glob("results/*/Run_*")))
+             if d.is_dir()}
+        )
         print(f"\n[Deep] {len(run_dirs)} Run_* 폴더 발견")
         for rd in run_dirs:
             sh = rd / "deep_report.sh"
@@ -2780,7 +2788,9 @@ def cmd_postprocess(args):
                 except Exception as e:
                     print(f"  skip {rd.name}: deep_report.sh fallback 생성 실패 ({e})")
                     continue
-                continue
+                # 방금 만든 .sh 를 이번 패스에서 바로 실행 — 과거엔 여기서 continue 라
+                # 2회차 postprocess 전엔 deep 가 안 돌았음. DWI 는 .sh 선생성 경로가 없어
+                # report/analysis_result 가 영영 안 생겼다(impact 로더 성능경로 전제).
             print(f"  running deep: {rd.name}")
             log_path = rd / "deep_report.log"
             with open(log_path, 'w') as logf:
