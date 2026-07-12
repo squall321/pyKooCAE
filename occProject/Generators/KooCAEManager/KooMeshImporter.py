@@ -903,7 +903,13 @@ class KooDynaImporter():
             curPart : KooPart = self.partManager.parts[part]
             if curPart.secid > 0:
                 curSection = self.sectionManager.FindSectionfromID(curPart.secid)
-                curPart.SetSection(curSection)                
+                if curSection is not None:
+                    curPart.SetSection(curSection)
+                else:
+                    # PART가 참조하는 SECID가 로드된 섹션에 없음(미지원 SECTION 변형·미해결 참조 등).
+                    # 크래시 대신 스킵 — 섹션 카드는 _write_uninterpreted_raw_blocks로 출력에 보존됨.
+                    print(f"  Warning: Part {getattr(curPart, 'id', part)} references SECID "
+                          f"{curPart.secid} with no loaded section — SetSection skipped")
         return self.sectionManager.maxid
     
     def importMaterial(self):
@@ -1145,7 +1151,13 @@ class KooDynaImporter():
             if curPart.mid > 0:
                 curMaterial = self.matManager.FindMaterialfromID(curPart.mid)
                 #print(curMaterial)
-                curPart.SetMaterial(curMaterial)
+                if curMaterial is not None:
+                    curPart.SetMaterial(curMaterial)
+                else:
+                    # PART가 참조하는 MID가 로드된 재료에 없음(MAT_GENERAL_VISCOELASTIC 등 미지원 재료).
+                    # 크래시 대신 스킵 — 재료 카드는 _write_uninterpreted_raw_blocks로 출력에 보존됨.
+                    print(f"  Warning: Part {getattr(curPart, 'id', part)} references MID "
+                          f"{curPart.mid} with no loaded material — SetMaterial skipped")
         return self.matManager.maxid
 
     def importDefine(self):
@@ -2103,6 +2115,29 @@ class KooDynaImporter():
                     stream.write("*INCLUDE\n")
                     stream.write(f" {os.path.basename(inc_file)}\n")
             # IGA passthrough는 WriteModifiedFile에서 처리 → 여기서 인라인하지 않음
+
+        # 미인터프리트 키워드 raw 보존 — 매니저에 없는 키워드(SET_BEAM,
+        # MAT_GENERAL_VISCOELASTIC 등)가 DropSet.k/ThermalSet.k 출력에서 유실되는 것 방지.
+        # (WriteModifiedFile._write_uninterpreted_raw_blocks 와 동일 규약을 공유 writer 에도 적용)
+        # 원본 슬라이스 그대로 출력 → byte-exact. 인터프리트된 키워드는 매니저가 이미 출력하므로 스킵.
+        try:
+            raw_dict = getattr(self.dynaManager, '_raw_keyword_dict', None)
+            if raw_dict:
+                interpreted = getattr(self, 'keywordInterpreted', {}) or {}
+                SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END", "TITLE"}
+                wrote_header = False
+                for kw_name, blocks in raw_dict.items():
+                    if kw_name in SKIP or interpreted.get(kw_name, False):
+                        continue
+                    if not wrote_header:
+                        stream.write("$\n$--- Uninterpreted keywords (raw, preserved) ---\n$\n")
+                        wrote_header = True
+                    for block in blocks:
+                        stream.write(f"*{kw_name}\n")
+                        for line in block:
+                            stream.write(line if line.endswith('\n') else line + '\n')
+        except Exception as e:
+            print(f"  Warning: uninterpreted raw 보존 실패 (skip): {e}")
 
         return stream.getvalue()
 
