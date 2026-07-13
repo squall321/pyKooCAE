@@ -1905,7 +1905,68 @@ class SolidSet:
                 j = 0
         if j != 0:
             stream.write("\n")
-            
+
+class BeamSet:
+    # SET_BEAM 요소 셋 — SID/DA/SOLVER 및 빔 요소 리스트 보존
+    def __init__(self, sid, name = "", elemList = [], da1 = "", da2 = "", da3 = "", da4 = "", solver = ""):
+        self.sid = sid
+        if name == "":
+            self.name = "BeamSet{sid}".format(sid=sid)
+        else:
+            self.name = name
+        self.da1 = da1
+        self.da2 = da2
+        self.da3 = da3
+        self.da4 = da4
+        self.solver = solver
+        self.elemList = elemList
+
+    def AddElement(self,element):
+        self.elemList.append(element)
+
+    def RemoveElements(self):
+        self.elemList = []
+
+    def WritetoDynaKeyword(self, startEID):
+        keywordString = ""
+        keywordString += "*SET_BEAM\n"
+        keywordString += format(self.sid,  '>10')
+        keywordString += format(self.da1,  '>10')
+        keywordString += format(self.da2,  '>10')
+        keywordString += format(self.da3,  '>10')
+        keywordString += format(self.da4,  '>10')
+        keywordString += format(self.solver, '>10')
+        keywordString += "\n"
+        j = 0
+        for i in range(0,len(self.elemList)):
+            j = j + 1
+            keywordString += format(self.elemList[i] + startEID,  '>10')
+            if j == 8:
+                keywordString += "\n"
+                j = 0
+        if j != 0:
+            keywordString += "\n"
+        return keywordString
+
+    def WriteStreamDynaKeyword(self, stream, startEID):
+        stream.write("*SET_BEAM\n")
+        stream.write(format(self.sid,  '>10'))
+        stream.write(format(self.da1,  '>10'))
+        stream.write(format(self.da2,  '>10'))
+        stream.write(format(self.da3,  '>10'))
+        stream.write(format(self.da4,  '>10'))
+        stream.write(format(self.solver, '>10'))
+        stream.write("\n")
+        j = 0
+        for i in range(0,len(self.elemList)):
+            j = j + 1
+            stream.write(format(self.elemList[i] + startEID,  '>10'))
+            if j == 8:
+                stream.write("\n")
+                j = 0
+        if j != 0:
+            stream.write("\n")
+
 class ElementManager:
         
     def __init__(self,nodeManager = None, id=0):
@@ -2068,6 +2129,12 @@ class ElementManager:
         solidSet = SolidSet(id,name,solver,elemList)
         self.sets[id] = solidSet
         return solidSet
+
+    def CreateBeamSetwithID(self, id, name = "", elemList=[]):
+        self.maxSID = max(self.maxSID,id)
+        beamSet = BeamSet(id,name,elemList)
+        self.sets[id] = beamSet
+        return beamSet
     
     def GetNumIntegrationPoints(self):
         firstElement = self.elements[list(self.elements.keys())[0]]
@@ -3936,9 +4003,20 @@ class ElementManager:
                     elemList.append(eid)
             aSet = self.CreateSolidSetwithID(sid, name, solver, elemList)
             print("Solid Set Created")
-            
-            
-        
+        if dynaSets[0] == "*SET_BEAM":
+            firstLine = dynaSets[1]
+            sid = KooDynaInt(firstLine[0])
+            elemList = []
+            for i in range(2, len(dynaSets)):
+                for j in range(0, len(dynaSets[i])):
+                    if str(dynaSets[i][j]).strip() != "":
+                        eid = KooDynaInt(dynaSets[i][j])
+                        elemList.append(eid)
+            name = "SET_BEAM_" + str(sid)
+            aSet = self.CreateBeamSetwithID(sid, name, elemList)
+
+
+
     def WritetoDynaKeyword(self, pid, startNID,startEID):
         dynaString = ""
         dynaString += self.WritetoDynaKeywordSolid(pid,startNID,startEID)

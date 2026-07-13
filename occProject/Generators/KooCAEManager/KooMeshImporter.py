@@ -606,9 +606,11 @@ class KooDynaImporter():
         if "SET_SHELL_TITLE" in dynaKeywords:
             self.keywordInterpreted["SET_SHELL_TITLE"] = True
         if "SET_SOLID" in dynaKeywords:
-            self.keywordInterpreted["SET_SOLID"] = True        
+            self.keywordInterpreted["SET_SOLID"] = True
         if "SET_SOLID_TITLE" in dynaKeywords:
             self.keywordInterpreted["SET_SOLID_TITLE"] = True
+        if "SET_BEAM" in dynaKeywords:
+            self.keywordInterpreted["SET_BEAM"] = True
                                   
         if "SET_SHELL" in dynaKeywords:
             setShellKeyword : SetShell = dynaKeywords["SET_SHELL"]
@@ -630,6 +632,11 @@ class KooDynaImporter():
             setsolids = setSolidKeyword.getSolidList()
             for setsolid in setsolids:
                 self.partManager.elementManager.AddSetsfromDyna(setsolid)
+        if "SET_BEAM" in dynaKeywords:
+            setBeamKeyword : SetBeam = dynaKeywords["SET_BEAM"]
+            setbeams = setBeamKeyword.getBeamList()
+            for setbeam in setbeams:
+                self.partManager.elementManager.AddSetsfromDyna(setbeam)
         if "SET_SOLID_TITLE" in dynaKeywords:
             setSolidTitleKeyword : SetSolidTitle = dynaKeywords["SET_SOLID_TITLE"]
             setsolids = setSolidTitleKeyword.getSolidTitleList()
@@ -978,6 +985,8 @@ class KooDynaImporter():
             self.keywordInterpreted["MAT_VISCOELASTIC"] = True
         if "MAT_VISCOELASTIC_TITLE" in dynaKeyword:
             self.keywordInterpreted["MAT_VISCOELASTIC_TITLE"] = True
+        if "MAT_GENERAL_VISCOELASTIC" in dynaKeyword:
+            self.keywordInterpreted["MAT_GENERAL_VISCOELASTIC"] = True
         
         if "EOS_TABULATED" in dynaKeyword:
             eosTabulatedKeyword : EOSTabulated = dynaKeyword["EOS_TABULATED"]
@@ -1132,9 +1141,14 @@ class KooDynaImporter():
             materials = matElasticPeriTitleKeyword.getMatList()
             for material in materials:
                 self.matManager.AddMaterialfromDyna(material)
-        if "MAT_VISCOELASTIC" in dynaKeyword:                
+        if "MAT_VISCOELASTIC" in dynaKeyword:
             matViscoelasticKeyword : MatViscoelastic = dynaKeyword["MAT_VISCOELASTIC"]
             materials = matViscoelasticKeyword.getMatList()
+            for material in materials:
+                self.matManager.AddMaterialfromDyna(material)
+        if "MAT_GENERAL_VISCOELASTIC" in dynaKeyword:
+            matGeneralViscoelasticKeyword : MatGeneralViscoelastic = dynaKeyword["MAT_GENERAL_VISCOELASTIC"]
+            materials = matGeneralViscoelasticKeyword.getMatList()
             for material in materials:
                 self.matManager.AddMaterialfromDyna(material)
         if "MAT_VISCOELASTIC_TITLE" in dynaKeyword:

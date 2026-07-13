@@ -648,8 +648,24 @@ class KooMaterialViscoelastic(KooMaterial):
         keywordString += "\n"
         self.SetNastranKeyword(keywordString)
         return keywordString
-            
-        
+
+
+class KooMaterialGeneralViscoelastic(KooMaterial):
+    # MAT_GENERAL_VISCOELASTIC 재료 — 첫카드(MID/RO/BULK)+상수줄 원본 슬라이스 byte-exact 보존
+    def __init__(self, id = 0, name = "", firstcard_slices = None, const_rows = None):
+        super().__init__(id, name)
+        self.firstcard_slices = firstcard_slices if firstcard_slices is not None else []
+        self.const_rows = const_rows if const_rows is not None else []
+
+    def GenerateDynaKeyword(self):
+        keywordString = "*MAT_GENERAL_VISCOELASTIC\n"
+        keywordString += "".join(f"{str(s):>10}" for s in self.firstcard_slices) + "\n"
+        for row in self.const_rows:
+            keywordString += "".join(f"{str(s):>10}" for s in row) + "\n"
+        self.SetDynaKeyword(keywordString)
+        return keywordString
+
+
 class KooMaterialOrientedCrack(KooMaterial):
     def __init__(self, id = 0, RO = 0.0, E = 0.0, PR = 0.0, SIGY = 0.0, ETAN = 0.0, FS = 0.0, PRF = 0.0, SOFT = 0.0, CVELO = 0.0):
         super().__init__(id, "Mat{0}".format(id))        
@@ -1503,7 +1519,20 @@ class KooMaterialManager():
             if forcedid != 0:
                 id = forcedid
             mat = KooMaterialViscoelastic(id, name, rho, K, G0, GI, BETA)
-            self.AddMaterial(mat)           
+            self.AddMaterial(mat)
+        elif dynaMaterial[0] == "*MAT_GENERAL_VISCOELASTIC":
+            firstLine = dynaMaterial[1]
+            if type(firstLine) == list:
+                pass
+            else:
+                firstLine = self.parse_whole(firstLine, [10,10,10])
+            id = KooDynaInt(firstLine[0])
+            name = "GeneralViscoelastic{0}".format(id)
+            const_rows = dynaMaterial[2:]
+            if forcedid != 0:
+                id = forcedid
+            mat = KooMaterialGeneralViscoelastic(id, name, firstLine, const_rows)
+            self.AddMaterial(mat)
         elif dynaMaterial[0] == "*MAT_ORIENTED_CRACK":
             firstLine = dynaMaterial[1]
             if type(firstLine) == list:

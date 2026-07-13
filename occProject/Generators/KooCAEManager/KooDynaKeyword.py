@@ -7739,10 +7739,46 @@ class MatViscoelastic(DynaKeyword):
             stream.write("$$     MID        RO         K        G0        GI      BETA\n")
             formatted_elements = f"{str(parameter[0]):>10}{str(parameter[1]):>10}{str(parameter[2]):>10}{str(parameter[3]):>10}{str(parameter[4]):>10}{str(parameter[5]):>10}\n" 
             stream.write(formatted_elements) 
+class MatGeneralViscoelastic(DynaKeyword):
+    # MAT_GENERAL_VISCOELASTIC 리더 — 첫카드(MID/RO/BULK) + N개 점탄성상수줄, 원본 슬라이스 byte-exact 보존
+    def __init__(self):
+        super(MatGeneralViscoelastic,self).__init__("MAT_GENERAL_VISCOELASTIC")
+
+    def parse(self, mat_keywords):
+        for i in range(len(mat_keywords)):
+            parameterList = []
+            parameters = self.parse_whole(mat_keywords[i][0], [10, 10, 10])
+            parameterList.append(parameters)
+            for j in range(1,len(mat_keywords[i])):
+                parameters = self.parse_whole(mat_keywords[i][j], [10, 10, 10, 10])
+                parameterList.append(parameters)
+            self.parameters.append(parameterList)
+
+    def getMatList(self):
+        matList = []
+        for i in range(len(self.parameters)):
+            parameter = self.parameters[i]
+            curMat = []
+            curMat.append("*MAT_GENERAL_VISCOELASTIC")
+            for j in range(len(parameter)):
+                curMat.append(parameter[j])
+            matList.append(curMat)
+        return matList
+
+    def write(self, stream):
+        for i in range(len(self.parameters)):
+            stream.write("*MAT_GENERAL_VISCOELASTIC\n")
+            parameter = self.parameters[i]
+            for j in range(len(parameter)):
+                for k in range(0,len(parameter[j])):
+                    formatted_elements = f"{str(parameter[j][k]):>10}"
+                    stream.write(formatted_elements)
+                stream.write("\n")
+
 #Mat 6
 class MatViscoelasticTitle(DynaKeyword):
     def __init__(self):
-        super(MatViscoelasticTitle,self).__init__("MAT_VISCOELASTIC_TITLE") 
+        super(MatViscoelasticTitle,self).__init__("MAT_VISCOELASTIC_TITLE")
     
     def parse(self, mat_keywords):
         for i in range(len(mat_keywords)):
@@ -11300,6 +11336,50 @@ class SetSolid(DynaKeyword):
                         stream.write(formatted_elements)
                     stream.write("\n")
                     
+class SetBeam(DynaKeyword):
+    # SET_BEAM 리더 — SID카드(SID/DA1-4/SOLVER) + 빔ID 가변줄, 원본 슬라이스 byte-exact 보존
+    def __init__(self):
+        super(SetBeam,self).__init__("SET_BEAM")
+
+    def parse(self, set_beam_keywords):
+        for i in range(len(set_beam_keywords)):
+            parameterList = []
+            parameters = self.parse_whole(set_beam_keywords[i][0], [10, 10, 10, 10, 10, 10])
+            parameterList.append(parameters)
+            for j in range(1,len(set_beam_keywords[i])):
+                parameters = self.parse_whole(set_beam_keywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
+                parameterList.append(parameters)
+            self.parameters.append(parameterList)
+
+    def getBeamList(self):
+        beamList = []
+        for i in range(len(self.parameters)):
+            parameter = self.parameters[i]
+            curBeam = []
+            curBeam.append("*SET_BEAM")
+            for j in range(len(parameter)):
+                curBeam.append(parameter[j])
+            beamList.append(curBeam)
+        return beamList
+
+    def write(self, stream):
+        for i in range(len(self.parameters)):
+            stream.write("*SET_BEAM\n")
+            parameter = self.parameters[i]
+            for j in range(len(self.parameters[i])):
+                if j == 0:
+                    stream.write("$$     SID       DA1       DA2       DA3       DA4    SOLVER\n")
+                    for k in range(0,len(parameter[j])):
+                        formatted_elements = f"{str(parameter[j][k]):>10}"
+                        stream.write(formatted_elements)
+                    stream.write("\n")
+                else:
+                    stream.write("$$    EIDi    EIDi+1    EIDi+2    EIDi+3    EIDi+4    EIDi+5    EIDi+6    EIDi+7\n")
+                    for k in range(0,len(parameter[j])):
+                        formatted_elements = f"{str(parameter[j][k]):>10}"
+                        stream.write(formatted_elements)
+                    stream.write("\n")
+
 class SetSolidTitle(DynaKeyword):
     def __init__(self):
         super(SetSolidTitle,self).__init__("SET_SOLID_TITLE")
@@ -14215,6 +14295,14 @@ class DynaManager():
                 dynaKeywordMan.addKeyword(viscoelastic)
                 while "MAT_VISCOELASTIC" in lines_with_asterisk:
                     lines_with_asterisk.remove("MAT_VISCOELASTIC")
+            if "MAT_GENERAL_VISCOELASTIC" in lines_with_asterisk:
+                mat_general_viscoelastic = keyword_dict["MAT_GENERAL_VISCOELASTIC"]
+                general_viscoelastic = MatGeneralViscoelastic()
+                general_viscoelastic.parse(mat_general_viscoelastic)
+                general_viscoelastic.write(file)
+                dynaKeywordMan.addKeyword(general_viscoelastic)
+                while "MAT_GENERAL_VISCOELASTIC" in lines_with_asterisk:
+                    lines_with_asterisk.remove("MAT_GENERAL_VISCOELASTIC")
             if "MAT_VISCOELASTIC_TITLE" in lines_with_asterisk:
                 mat_viscoelastic_title = keyword_dict["MAT_VISCOELASTIC_TITLE"]
                 viscoelastic_title = MatViscoelasticTitle()
@@ -14716,6 +14804,14 @@ class DynaManager():
                 dynaKeywordMan.addKeyword(ssl)
                 while "SET_SOLID" in lines_with_asterisk:
                     lines_with_asterisk.remove("SET_SOLID")
+            if "SET_BEAM" in lines_with_asterisk:
+                set_beam = keyword_dict["SET_BEAM"]
+                sb = SetBeam()
+                sb.parse(set_beam)
+                sb.write(file)
+                dynaKeywordMan.addKeyword(sb)
+                while "SET_BEAM" in lines_with_asterisk:
+                    lines_with_asterisk.remove("SET_BEAM")
             if "SET_SOLID_TITLE" in lines_with_asterisk:
                 set_solid_title = keyword_dict["SET_SOLID_TITLE"]
                 ssl_title = SetSolidTitle()
