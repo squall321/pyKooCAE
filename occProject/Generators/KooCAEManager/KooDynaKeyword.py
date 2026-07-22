@@ -9962,13 +9962,16 @@ class SectionBeam(DynaKeyword):
 
     def parse(self, section_beam_keywords):
         for i in range(len(section_beam_keywords)):
-            parameterList = []  
+            parameterList = []
             parameters = self.parse_whole(section_beam_keywords[i][0], [10, 10, 10, 10, 10, 10, 10, 10])
             parameterList.append(parameters)
-            parameters = self.parse_whole(section_beam_keywords[i][1], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
+            # card2 이후 전 라인 보존 — 표준단면(CST≠0, SECTION_NN 라벨)·연속 카드 포함.
+            # (기존: 고정 2줄 가정 → 1줄 블록 IndexError, 3줄+ 블록 뒷라인 소실)
+            for j in range(1, len(section_beam_keywords[i])):
+                parameters = self.parse_whole(section_beam_keywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
+                parameterList.append(parameters)
             self.parameters.append(parameterList)
-            
+
     def AddSectionBeam(self, secid, elform, shrf, qririd, cst, scoor, nsm, naupd, options):
         parameterList = []
         parameters = [secid, elform, shrf, qririd, cst, scoor, nsm, naupd]
@@ -9980,26 +9983,27 @@ class SectionBeam(DynaKeyword):
         self.parameters.append(parameterList)        
         
     def getSectionBeams(self):
-        sectionList = [] 
+        sectionList = []
         for i in range(len(self.parameters)):
             parameter = self.parameters[i]
             curSectionList = []
             curSectionList.append("*SECTION_BEAM")
-            curSectionList.append(parameter[0])
-            curSectionList.append(parameter[1])
+            for j in range(len(parameter)):
+                curSectionList.append(parameter[j])
             sectionList.append(curSectionList)
-        return sectionList            
-    
+        return sectionList
+
     def write(self, stream):
         for i in range(len(self.parameters)):
             parameter = self.parameters[i]
             stream.write("*SECTION_BEAM\n")
-            stream.write("$$   SECID    ELFORM      SHRF   QR/IRID       CST     SCOOR       NSM     NAUPD\n")                
+            stream.write("$$   SECID    ELFORM      SHRF   QR/IRID       CST     SCOOR       NSM     NAUPD\n")
             formatted_elements = f"{str(parameter[0][0]):>10}{str(parameter[0][1]):>10}{str(parameter[0][2]):>10}{str(parameter[0][3]):>10}{str(parameter[0][4]):>10}{str(parameter[0][5]):>10}{str(parameter[0][6]):>10}{str(parameter[0][7]):>10}\n"
             stream.write(formatted_elements)
-            stream.write("$$     TS1       TS2       TT1       TT2     NSLOC     NTLOC\n")
-            formatted_elements = f"{str(parameter[1][0]):>10}{str(parameter[1][1]):>10}{str(parameter[1][2]):>10}{str(parameter[1][3]):>10}{str(parameter[1][4]):>10}{str(parameter[1][5]):>10}{str(parameter[1][6]):>10}{str(parameter[1][7]):>10}\n"
-            stream.write(formatted_elements)
+            # card2 이후: 원본 슬라이스 그대로 재출력 (표준단면 라벨 등 byte 보존)
+            for j in range(1, len(parameter)):
+                stream.write("".join(str(v) for v in parameter[j]).rstrip("\n"))
+                stream.write("\n")
 
 class SectionBeamTitle(DynaKeyword):
     def __init__(self):
@@ -10012,10 +10016,13 @@ class SectionBeamTitle(DynaKeyword):
             parameterList.append(parameters)
             parameters = self.parse_whole(section_beam_keywords[i][1], [10, 10, 10, 10, 10, 10, 10, 10])
             parameterList.append(parameters)
-            parameters = self.parse_whole(section_beam_keywords[i][2], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
+            # card2 이후 전 라인 보존 — 표준단면·연속 카드 포함.
+            # (기존: 고정 3줄 가정 → 2줄 블록(title+card1) IndexError, 4줄+ 뒷라인 소실)
+            for j in range(2, len(section_beam_keywords[i])):
+                parameters = self.parse_whole(section_beam_keywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
+                parameterList.append(parameters)
             self.parameters.append(parameterList)
-    
+
     def AddSectionBeamTitle(self, name, secid, elform, shrf, qririd, cst, scoor, nsm, naupd, options):
         parameterList = []
         parameters = [name]
@@ -10029,27 +10036,29 @@ class SectionBeamTitle(DynaKeyword):
         self.parameters.append(parameterList)
     
     def getSectionBeams(self):
-        sectionList = [] 
+        sectionList = []
         for i in range(len(self.parameters)):
             parameter = self.parameters[i]
             curSectionList = []
             curSectionList.append("*SECTION_BEAM_TITLE")
-            curSectionList.append(parameter[0])
-            curSectionList.append(parameter[1])
+            # 기존엔 title+card1만 전달돼 card2 가 매니저에 아예 못 갔음(항상 유실) → 전체 전달
+            for j in range(len(parameter)):
+                curSectionList.append(parameter[j])
             sectionList.append(curSectionList)
         return sectionList
-                
+
     def write(self, stream):
         for i in range(len(self.parameters)):
             parameter = self.parameters[i]
             stream.write("*SECTION_BEAM_TITLE\n")
             stream.write("{name}\n".format(name=parameter[0][0]))
-            stream.write("$$   SECID    ELFORM      SHRF   QR/IRID       CST     SCOOR       NSM     NAUPD\n")                
+            stream.write("$$   SECID    ELFORM      SHRF   QR/IRID       CST     SCOOR       NSM     NAUPD\n")
             formatted_elements = f"{str(parameter[1][0]):>10}{str(parameter[1][1]):>10}{str(parameter[1][2]):>10}{str(parameter[1][3]):>10}{str(parameter[1][4]):>10}{str(parameter[1][5]):>10}{str(parameter[1][6]):>10}{str(parameter[1][7]):>10}\n"
             stream.write(formatted_elements)
-            stream.write("$$     TS1       TS2       TT1       TT2     NSLOC     NTLOC\n")
-            formatted_elements = f"{str(parameter[2][0]):>10}{str(parameter[2][1]):>10}{str(parameter[2][2]):>10}{str(parameter[2][3]):>10}{str(parameter[2][4]):>10}{str(parameter[2][5]):>10}{str(parameter[2][6]):>10}{str(parameter[2][7]):>10}\n"
-            stream.write(formatted_elements)
+            # card2 이후: 원본 슬라이스 그대로 재출력 (표준단면 라벨 등 byte 보존)
+            for j in range(2, len(parameter)):
+                stream.write("".join(str(v) for v in parameter[j]).rstrip("\n"))
+                stream.write("\n")
 
 class SectionShell(DynaKeyword):
     def __init__(self):

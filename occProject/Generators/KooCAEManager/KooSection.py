@@ -36,8 +36,13 @@ class KooSectionBeam(KooSection):
         self.scoor = 0.0
         self.nsm = 0.0
         self.naupd = 0
-                        
+
         self.options = [0.001,0.001,0.001,0.001,0.0,0.0]
+        # 표준단면(CST≠0, card2=SECTION_NN 라벨) 등 수치 모델로 못 담는 카드의
+        # 원문 보존(verbatim round-trip). raw_cards 가 있으면 GenerateDynaKeyword 가
+        # 재구성 대신 원문 그대로 출력한다. (임무는 낙하각 재배치이지 단면 재정의가 아님)
+        self.raw_cards = None      # [card1 원문, card2 원문, ...] (제목줄 제외)
+        self.raw_keyword = None    # "*SECTION_BEAM" | "*SECTION_BEAM_TITLE"
         
     def SetWidth(self, width):
         self.options[0] = width
@@ -51,6 +56,22 @@ class KooSectionBeam(KooSection):
         keyword.AddSectionBeamTitle(self.id, self.name, self.elform, self.shrf, self.qririd, self.cst, self.scoor, self.nsm, self.naupd, self.options)
     
     def GenerateDynaKeyword(self):
+        if getattr(self, 'raw_cards', None):
+            # 표준단면(CST≠0, SECTION_NN 라벨) 등 — 원문 그대로 왕복(verbatim).
+            # CST {:10d} 강제·card2 재구성 금지 (기존: CST 0 + card2 소실 → Error 10246).
+            kw = self.raw_keyword if self.raw_keyword else "*SECTION_BEAM"
+            keywordString = kw + "\n"
+            if kw == "*SECTION_BEAM_TITLE":
+                keywordString += "{0}\n".format(self.name)
+            for idx, line in enumerate(self.raw_cards):
+                if idx == 0:
+                    # card1 SECID(첫 10칸)만 현재 id 로 재기입 — MERGE_K 등
+                    # OffsetID 경로와의 정합 보장. id 미변경 시 원문과 바이트 동일.
+                    keywordString += "{:>10d}".format(self.id) + line[10:] + "\n"
+                else:
+                    keywordString += line + "\n"
+            self.SetDynaKeyword(keywordString)
+            return keywordString
         keywordString = "*SECTION_BEAM_TITLE\n"
         keywordString += "{0}\n".format(self.name)
         # 10 digit for each float
@@ -404,6 +425,18 @@ class KooSectionManager():
         self.AddSection(sec)
         return sec
     
+    @staticmethod
+    def _beam_card2_is_label(card_slices):
+        """card2 첫 필드가 수치가 아니면(표준단면 SECTION_NN 라벨 등) True."""
+        first = str(card_slices[0]).strip() if len(card_slices) > 0 else ""
+        if first == "":
+            return False
+        try:
+            float(first)
+            return False
+        except ValueError:
+            return True
+
     def AddSectionfromDyna(self, dynaSection):
         if dynaSection[0] == "*SECTION_BEAM":
             firstLine = dynaSection[1]
@@ -415,7 +448,7 @@ class KooSectionManager():
             else:
                 curname = "NewSection"
                 sec = self.CreateBeamSection(curname, 1)
-            
+
             sec.elform = KooDynaInt(firstLine[1],1)
             sec.shrf = KooDynaFloat(firstLine[2],1.0)
             sec.qririd = KooDynaFloat(firstLine[3],2.0)
@@ -423,9 +456,16 @@ class KooSectionManager():
             sec.scoor = KooDynaFloat(firstLine[5],0.0)
             sec.nsm = KooDynaFloat(firstLine[6],0.0)
             sec.naupd = KooDynaInt(firstLine[7],0)
-            
-            options = [] 
-            if sec.elform == 1 or sec.elform == 11:
+
+            options = []
+            _cards = dynaSection[2:]
+            if _cards and (self._beam_card2_is_label(_cards[0]) or sec.elform not in (1, 11)):
+                # 표준단면(CST≠0, card2=SECTION_NN 라벨) 또는 수치 모델 범위(1/11: TS치수)
+                # 밖의 elform — 재구성 불가 → card1 포함 원문 그대로 보존(verbatim round-trip).
+                # (기존: card2 소실 + CST '1.0'→0 재작성 → LS-DYNA Error 10246)
+                sec.raw_keyword = "*SECTION_BEAM"
+                sec.raw_cards = ["".join(str(v) for v in line).rstrip("\n") for line in dynaSection[1:]]
+            elif sec.elform == 1 or sec.elform == 11:
                 secondLine = dynaSection[2]
                 for opt in secondLine:
                     options.append(KooDynaFloat(opt,0.0))
@@ -441,7 +481,7 @@ class KooSectionManager():
             else:
                 curname = "NewSection"
                 sec = self.CreateBeamSection(curname, 1)
-            
+
             sec.elform = KooDynaInt(firstLine[1],1)
             sec.shrf = KooDynaFloat(firstLine[2],1.0)
             sec.qririd = KooDynaFloat(firstLine[3],2.0)
@@ -449,13 +489,18 @@ class KooSectionManager():
             sec.scoor = KooDynaFloat(firstLine[5],0.0)
             sec.nsm = KooDynaFloat(firstLine[6],0.0)
             sec.naupd = KooDynaInt(firstLine[7],0)
-            
-            options = [] 
-            if sec.elform == 1 or sec.elform == 11:
+
+            options = []
+            _cards = dynaSection[3:]
+            if _cards and (self._beam_card2_is_label(_cards[0]) or sec.elform not in (1, 11)):
+                # 표준단면 등 — 제목줄 제외 card1 부터 원문 보존(verbatim round-trip)
+                sec.raw_keyword = "*SECTION_BEAM_TITLE"
+                sec.raw_cards = ["".join(str(v) for v in line).rstrip("\n") for line in dynaSection[2:]]
+            elif sec.elform == 1 or sec.elform == 11:
                 secondLine = dynaSection[3]
                 for opt in secondLine:
                     options.append(KooDynaFloat(opt,0.0))
-            sec.options = options   
+            sec.options = options
            
         if dynaSection[0] == "*SECTION_SHELL":
             firstLine = dynaSection[1]
