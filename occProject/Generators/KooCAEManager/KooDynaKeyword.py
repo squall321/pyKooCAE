@@ -11593,32 +11593,26 @@ class DynaManager():
             self._include_sources = {}
             self._include_files = []
             self._main_file = path
+            self._param_resolver = None  # *PARAMETER 계열 테이블 (메인+include 공유)
 
-        # 파일 읽기 (PARAMETER_LOCAL이 있으면 &변수 치환)
+        # 파일 읽기
         with open(path, 'r', errors='replace') as f:
             raw_lines = f.readlines()
 
-        # *PARAMETER_LOCAL 해석 + &변수 치환
+        # *PARAMETER / *PARAMETER_EXPRESSION / *PARAMETER_LOCAL 해석 + &변수 치환.
+        # resolver 를 self 에 공유해 메인 파일 파라미터가 include 라인(재귀 호출)에도 적용.
+        # 파라미터 블록이 전혀 없으면 HasParams()=False → 라인 불변(기존 모델 무영향).
+        # 치환된 리터럴이 모든 리더/매니저로 흐르고, *PARAMETER 카드 자체는
+        # 미인터프리트 raw 보존으로 출력 덱에 원문 유지된다(의미 보존 round-trip).
         try:
             from KooCAEManager.KooParameterResolver import ParameterResolver
-            resolver = ParameterResolver()
-            in_param = False
-            param_lines = []
-            for line in raw_lines:
-                if line.strip().upper().startswith('*PARAMETER_LOCAL'):
-                    in_param = True
-                    continue
-                if in_param:
-                    if line.startswith('*'):
-                        in_param = False
-                    elif not line.startswith('$'):
-                        param_lines.append(line)
-            if param_lines:
-                resolver.ParseParameterLocal(param_lines)
-                if resolver.HasParams():
-                    raw_lines = [resolver.ResolveAll(line) for line in raw_lines]
-        except Exception:
-            pass  # 파라미터 해석 실패 시 원본 유지
+            if getattr(self, '_param_resolver', None) is None:
+                self._param_resolver = ParameterResolver()
+            self._param_resolver.ParseFromRawLines(raw_lines)
+            if self._param_resolver.HasParams():
+                raw_lines = [self._param_resolver.SubstituteLine(line) for line in raw_lines]
+        except Exception as e:
+            print(f"  Warning: PARAMETER 해석 실패 (원본 유지): {e}")
 
         for line in raw_lines:
                 # Check if the line starts with an asterisk
