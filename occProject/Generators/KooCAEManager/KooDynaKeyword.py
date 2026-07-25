@@ -5921,10 +5921,17 @@ class ElementSolid(DynaKeyword):
     
     def parse(self, elementSolidKeywords):
         for i in range(len(elementSolidKeywords)):
+            block = elementSolidKeywords[i]
+            # *ELEMENT_SOLID (ten nodes format): 첫 줄이 EID/PID 2필드뿐인 2줄 포맷.
+            # 필드 폭이 8칸이 아닐 수 있어(예: I10) 공백 토큰화로 폭-무관 파싱.
+            # 표준 1줄 솔리드는 첫 줄에 최소 6토큰(EID PID + 노드≥4)이라 절대 걸리지 않음 → 기존 경로 불변.
+            if len(block) > 0 and len(str(block[0]).split()) == 2:
+                self.parameters.append([str(line).split() for line in block])
+                continue
             spaceVector = []
-            parameterList = [] 
+            parameterList = []
             mode = 1
-            for j in range(len(elementSolidKeywords[i])):
+            for j in range(len(block)):
                 if j == 0:
                     curStrVector = str(elementSolidKeywords[i][j])
                     length = int(len(curStrVector)/8)

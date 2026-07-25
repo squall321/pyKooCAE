@@ -2446,7 +2446,11 @@ class KooPartManager():
         for i in range(len(parametersSolid)):
                 parameters = parametersSolid[i]
                 mode = 1
-                if len(parameters) > 2:
+                # ten-nodes(2줄) 포맷: 첫 줄이 EID/PID 2필드뿐 → EID/PID + 노드 쌍(mode 2).
+                # 표준 1줄 솔리드는 첫 줄이 최소 6필드라 안 걸림 → 기존 판별 불변.
+                if len(parameters) > 0 and len(parameters[0]) == 2:
+                    mode = 2
+                elif len(parameters) > 2:
                     length1 = len(parameters[0])
                     length2 = len(parameters[1])
                     if length1 == length2:
