@@ -5800,10 +5800,56 @@ class ElementShell(DynaKeyword):
     def __init__(self):
         super(ElementShell,self).__init__("ELEMENT_SHELL")
 
+    @staticmethod
+    def _is_int_field(f):
+        f = f.strip()
+        return (not f) or f.lstrip('+-').isdigit()
+
+    @classmethod
+    def _detect_field_width(cls, block):
+        # 셸 카드 필드 폭 감지: 기본 8(기존 경로 그대로 = 회귀 0 구조 보장).
+        # 10을 선택하는 유일한 증거 = "8칸으로는 깨지는데(오늘도 크래시) 10칸으로는 전부 정수"인 라인.
+        # 오늘 정상 임포트되는 8칸 덱은 eight_fails 가 절대 참이 안 되므로 오분류 불가능.
+        for line in block[:50]:
+            s = str(line).rstrip('\r\n').rstrip()
+            L = len(s)
+            if L == 0 or s.lstrip().startswith('$'):
+                continue
+            eight_fails = (L % 8 != 0) or any(
+                not cls._is_int_field(s[k:k + 8]) for k in range(0, L - L % 8, 8))
+            if not eight_fails:
+                continue
+            ten_ok = (L % 10 == 0) and L >= 50 and all(
+                cls._is_int_field(s[k:k + 10]) for k in range(0, L, 10))
+            if ten_ok:
+                return 10
+        return 8
+
     def parse(self, elementShellKeywords):
         for i in range(len(elementShellKeywords)):
+            width = self._detect_field_width(elementShellKeywords[i])
+            if width == 10:
+                # I10 폭 셸 카드: 줄별 고정폭 10 슬라이스(빈 줄·주석 스킵), 필드는 strip 저장.
+                # tri(5필드)/quad(6필드) 혼재 대비 균일 길이 '0' 패딩(N4=0 = 삼각형 관례).
+                parameterList = []
+                for j in range(len(elementShellKeywords[i])):
+                    s = str(elementShellKeywords[i][j]).rstrip('\r\n').rstrip()
+                    if not s.strip() or s.lstrip().startswith('$'):
+                        continue
+                    n = len(s) // 10
+                    row = [s[k * 10:(k + 1) * 10].strip() for k in range(n)]
+                    if len(row) >= 4:
+                        parameterList.append(row)
+                    else:
+                        print("  Warning: ELEMENT_SHELL I10 라인 필드 부족 — 무시:", s[:40])
+                if parameterList:
+                    rowmax = max(len(r) for r in parameterList)
+                    for r in parameterList:
+                        r.extend(['0'] * (rowmax - len(r)))
+                self.parameters.append(parameterList)
+                continue
             spaceVector = []
-            parameterList = [] 
+            parameterList = []
             for j in range(len(elementShellKeywords[i])):
                 if j == 0:
                     curStrVector = str(elementShellKeywords[i][j])
@@ -5919,14 +5965,96 @@ class ElementSolid(DynaKeyword):
         super(ElementSolid,self).__init__("ELEMENT_SOLID")
     
     
+    @staticmethod
+    def _parse_ten_nodes_block(block):
+        # *ELEMENT_SOLID (ten nodes format) 블록 → [헤더(EID,PID), 노드10필드] 쌍 리스트.
+        # 실전 레이아웃 변형(노드줄 분할 8+2/4+4+2/1개씩, 빈 줄, 앞공백 주석, 후행 blank 필드) 전부 수용.
+        # 첫 헤더 줄(원문) 길이로 필드 폭(I8=16→8, I10=20→10) 감지, 노드줄은 고정폭 슬라이스(blank 필드='0' 보존).
+        width = None
+        parameterList = []
+        header = None
+        nodes = []
+        warn_cnt = 0
+
+        def finalize(pad=True):
+            nonlocal header, nodes
+            if header is None:
+                return
+            if pad and len(nodes) < 10:
+                nodes.extend(['0'] * (10 - len(nodes)))
+            parameterList.append(header)
+            parameterList.append(nodes[:10])
+            header = None
+            nodes = []
+
+        for line in block:
+            s = str(line).rstrip('\r\n').rstrip()
+            stripped = s.strip()
+            if not stripped or stripped.startswith('$'):
+                continue
+            if header is None:
+                toks = stripped.split()
+                if len(toks) != 2:
+                    if warn_cnt < 5:
+                        print("  Warning: ELEMENT_SOLID ten-nodes 헤더 형식 이상 — 라인 무시:", s[:40])
+                    warn_cnt += 1
+                    continue
+                if width is None:
+                    L = len(s)
+                    if L % 10 == 0 and L % 8 != 0:
+                        width = 10
+                    elif L % 8 == 0 and L % 10 != 0:
+                        width = 8
+                    else:
+                        width = 0  # 폭 특정 불가 → 공백 토큰화
+                header = toks
+                nodes = []
+                continue
+            # 노드 수집: 고정폭 슬라이스(빈 필드 → '0'), 폭 미상이면 공백 토큰화
+            if width:
+                n = max(1, -(-len(s) // width))  # ceil: 비배수 길이 끝자락 필드 보존
+                fields = []
+                for k in range(n):
+                    f = s[k * width:(k + 1) * width].strip()
+                    fields.append(f if f else '0')
+            else:
+                fields = stripped.split()
+            if len(nodes) + len(fields) == 10:
+                nodes.extend(fields)
+                finalize(pad=False)
+            elif len(fields) == 2 and len(nodes) >= 4:
+                # 완성(10) 못 채우는 2필드 줄 = 새 헤더(후행 blank 절삭 덱) — 현재 요소 마감
+                finalize()
+                header = list(fields)
+                nodes = []
+            elif len(nodes) + len(fields) > 10:
+                if warn_cnt < 5:
+                    print(f"  Warning: ELEMENT_SOLID ten-nodes EID {header[0]} 노드 {len(nodes) + len(fields)}개(>10) — 앞 10개 사용")
+                warn_cnt += 1
+                nodes.extend(fields)
+                finalize(pad=False)
+            else:
+                nodes.extend(fields)
+        finalize()
+        if warn_cnt > 5:
+            print(f"  Warning: ELEMENT_SOLID ten-nodes 형식 경고 총 {warn_cnt}건")
+        return parameterList
+
     def parse(self, elementSolidKeywords):
         for i in range(len(elementSolidKeywords)):
             block = elementSolidKeywords[i]
-            # *ELEMENT_SOLID (ten nodes format): 첫 줄이 EID/PID 2필드뿐인 2줄 포맷.
-            # 필드 폭이 8칸이 아닐 수 있어(예: I10) 공백 토큰화로 폭-무관 파싱.
+            # *ELEMENT_SOLID (ten nodes format): 첫 데이터 줄이 EID/PID 2필드뿐인 2줄(+분할) 포맷.
+            # 필드 폭이 8칸이 아닐 수 있어(예: I10) 폭 감지 + 상태머신 그룹핑으로 파싱.
             # 표준 1줄 솔리드는 첫 줄에 최소 6토큰(EID PID + 노드≥4)이라 절대 걸리지 않음 → 기존 경로 불변.
-            if len(block) > 0 and len(str(block[0]).split()) == 2:
-                self.parameters.append([str(line).split() for line in block])
+            probe = None
+            for line in block:
+                s = str(line).strip()
+                if not s or s.startswith('$'):
+                    continue
+                probe = s
+                break
+            if probe is not None and len(probe.split()) == 2:
+                self.parameters.append(self._parse_ten_nodes_block(block))
                 continue
             spaceVector = []
             parameterList = []

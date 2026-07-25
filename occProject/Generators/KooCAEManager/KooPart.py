@@ -2488,10 +2488,23 @@ class KooPartManager():
                 elif mode == 2:
                     for i in range(0, len(parameters), 2):
                         parameter1 = parameters[i]
+                        if i + 1 >= len(parameters):
+                            print("  Warning: ELEMENT_SOLID 2줄 포맷 홀수 라인 — 마지막 라인 무시 (EID/PID줄:", str(parameter1)[:40], ")")
+                            break
                         parameter2 = parameters[i + 1]
+                        if len(parameter1) < 2:
+                            print("  Warning: ELEMENT_SOLID 2줄 포맷 헤더 이상 — 쌍 무시:", str(parameter1)[:40])
+                            continue
                         eid = int(parameter1[0])
                         pid = int(parameter1[1])
                         nids = [KooDynaInt(i, 0) for i in parameter2]
+                        if len(nids) < 10:
+                            # LS-DYNA 미사용 슬롯=0 관례로 패딩 (분기 판정 IndexError 방지, len 4/6/8/10 결과 불변)
+                            nids = nids + [0] * (10 - len(nids))
+                        if 0 in nids[:4]:
+                            # 코너 4노드 미달 = 유효 솔리드 불가 — None 노드 요소가 조용히 생기는 것 방지
+                            print(f"  Warning: ELEMENT_SOLID EID {eid} 코너노드 부족(nids[:4]={nids[:4]}) — 요소 스킵")
+                            continue
 
                         if pid in self.parts:
                             part = self.parts[pid]

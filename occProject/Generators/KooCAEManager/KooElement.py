@@ -4079,9 +4079,10 @@ class ElementManager:
                 stream.write("*ELEMENT_TSHELL\n")
             else:
                 stream.write("*ELEMENT_SOLID\n")
-            try:
-                for key in self.elements:
-                    element : SolidElement = self.elements[key]
+            _skip_cnt = 0
+            for key in self.elements:
+                element : SolidElement = self.elements[key]
+                try:
                     if element.type == "TETRA4":
                         formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id+startNID):>8}{str(element.nodes[1].id+startNID):>8}{str(element.nodes[2].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}\n"
                         stream.write(formatString)
@@ -4091,8 +4092,13 @@ class ElementManager:
                     elif element.type == "HEXA8":
                         formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}\n"
                         stream.write(formatString)
-            except:
-                pass
+                except Exception:
+                    # 기존 except:pass 는 예외 1건에 나머지 요소 전부 무언 소실 — 해당 요소만 스킵으로 축소
+                    _skip_cnt += 1
+                    if _skip_cnt <= 5:
+                        print(f"  Warning: 솔리드 요소 출력 실패(EID {getattr(element,'id','?')}) — 스킵")
+            if _skip_cnt:
+                print(f"  Warning: 솔리드 요소 출력 스킵 총 {_skip_cnt}개")
         if self.GetNumberofQuadraticSolidElements() > 0:
             stream.write("*ELEMENT_SOLID\n")       
             for key in self.elements:
