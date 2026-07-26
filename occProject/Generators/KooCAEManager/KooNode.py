@@ -1720,7 +1720,11 @@ class NodeManager:
         return keywords
     
     def WritetoDynaKeyword(self, startID):
-        keywords = "*NODE\n"
+        # 입력이 I10(*NODE %)였으면 스타일 보존해 I10 로 방출 (기본 8칸 = 기존 바이트 동일)
+        w = 10 if getattr(self, 'output_i10', False) else 8
+        if w == 8 and getattr(self, 'maxID', 0) + startID > 99999999:
+            w = 10  # 1억(9자리)+ NID 자동 승격
+        keywords = "*NODE %\n" if w == 10 else "*NODE\n"
         keywords += "$$   NID               X               Y               Z      TC      RC\n"
         numNodes = len(self.nodes)
         i = 0 
@@ -1730,18 +1734,21 @@ class NodeManager:
             x = format(node.x, ">16.8e")
             y = format(node.y, ">16.8e")
             z = format(node.z, ">16.8e")
-            tc = format(node.tc, ">8")
-            rc = format(node.rc, ">8")
-            formatStr = f"{str(id_fixed):>8}{x}{y}{z}{tc}{rc}\n"
+            tc = format(node.tc, f">{w}")
+            rc = format(node.rc, f">{w}")
+            formatStr = f"{str(id_fixed):>{w}}{x}{y}{z}{tc}{rc}\n"
             keywords += formatStr
             i = i + 1
         return keywords
     
     def WriteStreamDynaKeyword(self, stream, startID):
-        stream.write("*NODE\n$$   NID               X               Y               Z      TC      RC\n")
-        
-        lines = [f"{node.id + startID:>8}{node.x:>16.8e}{node.y:>16.8e}"
-                f"{node.z:>16.8e}{node.tc:>8}{node.rc:>8}\n" 
+        w = 10 if getattr(self, 'output_i10', False) else 8
+        if w == 8 and getattr(self, 'maxID', 0) + startID > 99999999:
+            w = 10  # 1억(9자리)+ NID 자동 승격
+        stream.write(("*NODE %\n" if w == 10 else "*NODE\n") + "$$   NID               X               Y               Z      TC      RC\n")
+
+        lines = [f"{node.id + startID:>{w}}{node.x:>16.8e}{node.y:>16.8e}"
+                f"{node.z:>16.8e}{node.tc:>{w}}{node.rc:>{w}}\n"
                 for node in self.nodes.values()]
         
         stream.write(''.join(lines))
@@ -1751,9 +1758,12 @@ class NodeManager:
         delta_nodes = [n for n in self.nodes.values() if n.id > min_id]
         if not delta_nodes:
             return
-        stream.write("*NODE\n$$   NID               X               Y               Z      TC      RC\n")
-        lines = [f"{n.id+startID:>8}{n.x:>16.8e}{n.y:>16.8e}"
-                f"{n.z:>16.8e}{n.tc:>8}{n.rc:>8}\n"
+        w = 10 if getattr(self, 'output_i10', False) else 8
+        if w == 8 and getattr(self, 'maxID', 0) + startID > 99999999:
+            w = 10  # 1억(9자리)+ NID 자동 승격
+        stream.write(("*NODE %\n" if w == 10 else "*NODE\n") + "$$   NID               X               Y               Z      TC      RC\n")
+        lines = [f"{n.id+startID:>{w}}{n.x:>16.8e}{n.y:>16.8e}"
+                f"{n.z:>16.8e}{n.tc:>{w}}{n.rc:>{w}}\n"
                 for n in delta_nodes]
         stream.write(''.join(lines))
 

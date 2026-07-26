@@ -4041,56 +4041,72 @@ class ElementManager:
 
 
     def WritetoDynaKeywordSolid(self, pid, startNID, startEID):
+        w = 10 if getattr(self, 'output_i10', False) else 8  # I10 스타일 보존 (기본 8 = 기존 바이트 동일)
+        if w == 8 and self.elements:
+            try:
+                # 1억(9자리)+ ID 자동 승격: 8칸에 안 들어가면 I10(%) 으로 방출 (무언 컬럼밀림 방지)
+                if pid > 99999999 or max(self.elements.keys()) + startEID > 99999999:
+                    w = 10
+            except (TypeError, ValueError):
+                pass
         dynaString = ""
         if self.GetNumberofLinearSolidElements() > 0:
             if self.TShellMode == True:
-                dynaString += "*ELEMENT_TSHELL\n"
+                dynaString += ("*ELEMENT_TSHELL %\n" if w == 10 else "*ELEMENT_TSHELL\n")
             else:
-                dynaString += "*ELEMENT_SOLID\n"
+                dynaString += ("*ELEMENT_SOLID %\n" if w == 10 else "*ELEMENT_SOLID\n")
             for key in self.elements:
                 element : SolidElement = self.elements[key]
                 if element.type == "TETRA4":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id+startNID):>8}{str(element.nodes[1].id+startNID):>8}{str(element.nodes[2].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id+startNID):>{w}}{str(element.nodes[1].id+startNID):>{w}}{str(element.nodes[2].id+startNID):>{w}}{str(element.nodes[3].id+startNID):>{w}}{str(element.nodes[3].id+startNID):>{w}}{str(element.nodes[3].id+startNID):>{w}}{str(element.nodes[3].id+startNID):>{w}}{str(element.nodes[3].id+startNID):>{w}}\n"
                     dynaString += formatString
                 elif element.type == "PENTA6":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}\n"
                     dynaString += formatString
                 elif element.type == "HEXA8":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}\n"
                     dynaString += formatString
         if self.GetNumberofQuadraticSolidElements() > 0:
-            dynaString += "*ELEMENT_SOLID\n"       
+            dynaString += ("*ELEMENT_SOLID %\n" if w == 10 else "*ELEMENT_SOLID\n")       
             for key in self.elements:
                 element : SolidElement = self.elements[key]
                 if element.type == "TETRA10":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}\n"
-                    formatString += f"{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}{str(element.nodes[8].id + startNID):>8}{str(element.nodes[9].id + startNID):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}\n"
+                    formatString += f"{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}{str(element.nodes[8].id + startNID):>{w}}{str(element.nodes[9].id + startNID):>{w}}\n"
                     dynaString += formatString
                 elif element.type == "HEXA20":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}\n"
-                    formatString += f"{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}{str(element.nodes[8].id + startNID):>8}{str(element.nodes[9].id + startNID):>8}\n"
-                    formatString += f"{str(element.nodes[10].id + startNID):>8}{str(element.nodes[11].id + startNID):>8}{str(element.nodes[12].id + startNID):>8}{str(element.nodes[13].id + startNID):>8}{str(element.nodes[14].id + startNID):>8}{str(element.nodes[15].id + startNID):>8}{str(element.nodes[16].id + startNID):>8}{str(element.nodes[17].id + startNID):>8}{str(element.nodes[18].id + startNID):>8}{str(element.nodes[19].id + startNID):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}\n"
+                    formatString += f"{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}{str(element.nodes[8].id + startNID):>{w}}{str(element.nodes[9].id + startNID):>{w}}\n"
+                    formatString += f"{str(element.nodes[10].id + startNID):>{w}}{str(element.nodes[11].id + startNID):>{w}}{str(element.nodes[12].id + startNID):>{w}}{str(element.nodes[13].id + startNID):>{w}}{str(element.nodes[14].id + startNID):>{w}}{str(element.nodes[15].id + startNID):>{w}}{str(element.nodes[16].id + startNID):>{w}}{str(element.nodes[17].id + startNID):>{w}}{str(element.nodes[18].id + startNID):>{w}}{str(element.nodes[19].id + startNID):>{w}}\n"
                     dynaString += formatString
         return dynaString
     
     def WriteStreamDynaKeywordSolid(self, stream, pid, startNID, startEID):
+        w = 10 if getattr(self, 'output_i10', False) else 8  # I10 스타일 보존 (기본 8 = 기존 바이트 동일)
+        if w == 8 and self.elements:
+            try:
+                # 1억(9자리)+ ID 자동 승격: 8칸에 안 들어가면 I10(%) 으로 방출 (무언 컬럼밀림 방지)
+                if pid > 99999999 or max(self.elements.keys()) + startEID > 99999999:
+                    w = 10
+            except (TypeError, ValueError):
+                pass
         if self.GetNumberofLinearSolidElements() > 0:
             if self.TShellMode == True:
-                stream.write("*ELEMENT_TSHELL\n")
+                stream.write(("*ELEMENT_TSHELL %\n" if w == 10 else "*ELEMENT_TSHELL\n"))
             else:
-                stream.write("*ELEMENT_SOLID\n")
+                stream.write(("*ELEMENT_SOLID %\n" if w == 10 else "*ELEMENT_SOLID\n"))
             _skip_cnt = 0
             for key in self.elements:
                 element : SolidElement = self.elements[key]
                 try:
                     if element.type == "TETRA4":
-                        formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id+startNID):>8}{str(element.nodes[1].id+startNID):>8}{str(element.nodes[2].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}{str(element.nodes[3].id+startNID):>8}\n"
+                        formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id+startNID):>{w}}{str(element.nodes[1].id+startNID):>{w}}{str(element.nodes[2].id+startNID):>{w}}{str(element.nodes[3].id+startNID):>{w}}{str(element.nodes[3].id+startNID):>{w}}{str(element.nodes[3].id+startNID):>{w}}{str(element.nodes[3].id+startNID):>{w}}{str(element.nodes[3].id+startNID):>{w}}\n"
                         stream.write(formatString)
                     elif element.type == "PENTA6":
-                        formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}\n"
+                        formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}\n"
                         stream.write(formatString)
                     elif element.type == "HEXA8":
-                        formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}\n"
+                        formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}\n"
                         stream.write(formatString)
                 except Exception:
                     # 기존 except:pass 는 예외 1건에 나머지 요소 전부 무언 소실 — 해당 요소만 스킵으로 축소
@@ -4100,20 +4116,20 @@ class ElementManager:
             if _skip_cnt:
                 print(f"  Warning: 솔리드 요소 출력 스킵 총 {_skip_cnt}개")
         if self.GetNumberofQuadraticSolidElements() > 0:
-            stream.write("*ELEMENT_SOLID\n")
+            stream.write(("*ELEMENT_SOLID %\n" if w == 10 else "*ELEMENT_SOLID\n"))
             _skip_q = 0
             for key in self.elements:
                 element : SolidElement = self.elements[key]
                 try:
                     # 카드 전체(헤더+노드줄)를 조립 후 한 번에 기록 — 예외 시 찢어진 카드 방지
                     if element.type == "TETRA10":
-                        card = f"{str(element.id + startEID):>8}{str(pid):>8}\n"
-                        card += f"{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}{str(element.nodes[8].id + startNID):>8}{str(element.nodes[9].id + startNID):>8}\n"
+                        card = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}\n"
+                        card += f"{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}{str(element.nodes[8].id + startNID):>{w}}{str(element.nodes[9].id + startNID):>{w}}\n"
                         stream.write(card)
                     elif element.type == "HEXA20":
-                        card = f"{str(element.id + startEID):>8}{str(pid):>8}\n"
-                        card += f"{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}{str(element.nodes[8].id + startNID):>8}{str(element.nodes[9].id + startNID):>8}\n"
-                        card += f"{str(element.nodes[10].id + startNID):>8}{str(element.nodes[11].id + startNID):>8}{str(element.nodes[12].id + startNID):>8}{str(element.nodes[13].id + startNID):>8}{str(element.nodes[14].id + startNID):>8}{str(element.nodes[15].id + startNID):>8}{str(element.nodes[16].id + startNID):>8}{str(element.nodes[17].id + startNID):>8}{str(element.nodes[18].id + startNID):>8}{str(element.nodes[19].id + startNID):>8}\n"
+                        card = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}\n"
+                        card += f"{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}{str(element.nodes[8].id + startNID):>{w}}{str(element.nodes[9].id + startNID):>{w}}\n"
+                        card += f"{str(element.nodes[10].id + startNID):>{w}}{str(element.nodes[11].id + startNID):>{w}}{str(element.nodes[12].id + startNID):>{w}}{str(element.nodes[13].id + startNID):>{w}}{str(element.nodes[14].id + startNID):>{w}}{str(element.nodes[15].id + startNID):>{w}}{str(element.nodes[16].id + startNID):>{w}}{str(element.nodes[17].id + startNID):>{w}}{str(element.nodes[18].id + startNID):>{w}}{str(element.nodes[19].id + startNID):>{w}}\n"
                         stream.write(card)
                 except Exception:
                     _skip_q += 1
@@ -4123,51 +4139,67 @@ class ElementManager:
                 print(f"  Warning: 2차 솔리드 요소 출력 스킵 총 {_skip_q}개")
                     
     def WritetoDynaKeywordFace(self, pid, startNID, startEID):
+        w = 10 if getattr(self, 'output_i10', False) else 8  # I10 스타일 보존 (기본 8 = 기존 바이트 동일)
+        if w == 8 and self.elements:
+            try:
+                # 1억(9자리)+ ID 자동 승격: 8칸에 안 들어가면 I10(%) 으로 방출 (무언 컬럼밀림 방지)
+                if pid > 99999999 or max(self.elements.keys()) + startEID > 99999999:
+                    w = 10
+            except (TypeError, ValueError):
+                pass
         dynaString = ""         
         if self.GetNumberofLinearFaceElements() > 0:
-            dynaString += "*ELEMENT_SHELL\n"
+            dynaString += ("*ELEMENT_SHELL %\n" if w == 10 else "*ELEMENT_SHELL\n")
             for key in self.elements:
                 element : FaceElement = self.elements[key]
                 if element.type == "TRI3":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[2].id+startNID):>8}{str(0):>8}{str(0):>8}{str(0):>8}{str(0):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[2].id+startNID):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
                     dynaString += formatString
                 elif element.type == "QUAD4":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(0):>8}{str(0):>8}{str(0):>8}{str(0):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
                     dynaString += formatString
         
         if self.GetNumberofQuadraticFaceElements() > 0:
-            dynaString += "*ELEMENT_SHELL\n"
+            dynaString += ("*ELEMENT_SHELL %\n" if w == 10 else "*ELEMENT_SHELL\n")
             for key in self.elements:
                 element : FaceElement = self.elements[key]
                 if element.type == "TRI6":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(0):>8}{str(0):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
                     dynaString += formatString
                 elif element.type == "QUAD8":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}\n"
                     dynaString += formatString
         return dynaString
     
     def WriteStreamDynaKeywordFace(self, stream, pid, startNID, startEID):
+        w = 10 if getattr(self, 'output_i10', False) else 8  # I10 스타일 보존 (기본 8 = 기존 바이트 동일)
+        if w == 8 and self.elements:
+            try:
+                # 1억(9자리)+ ID 자동 승격: 8칸에 안 들어가면 I10(%) 으로 방출 (무언 컬럼밀림 방지)
+                if pid > 99999999 or max(self.elements.keys()) + startEID > 99999999:
+                    w = 10
+            except (TypeError, ValueError):
+                pass
         if self.GetNumberofLinearFaceElements() > 0:
-            stream.write("*ELEMENT_SHELL\n")
+            stream.write(("*ELEMENT_SHELL %\n" if w == 10 else "*ELEMENT_SHELL\n"))
             for key in self.elements:
                 element : FaceElement = self.elements[key]
                 if element.type == "TRI3":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[2].id+startNID):>8}{str(0):>8}{str(0):>8}{str(0):>8}{str(0):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[2].id+startNID):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
                     stream.write(formatString)
                 elif element.type == "QUAD4":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(0):>8}{str(0):>8}{str(0):>8}{str(0):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
                     stream.write(formatString)
         
         if self.GetNumberofQuadraticFaceElements() > 0:
-            stream.write("*ELEMENT_SHELL\n")
+            stream.write(("*ELEMENT_SHELL %\n" if w == 10 else "*ELEMENT_SHELL\n"))
             for key in self.elements:
                 element : FaceElement = self.elements[key]
                 if element.type == "TRI6":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(0):>8}{str(0):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
                     stream.write(formatString)
                 elif element.type == "QUAD8":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}\n"
                     stream.write(formatString)
 
     def WritetoDynaKeywordLine(self, pid, startNID, startEID):

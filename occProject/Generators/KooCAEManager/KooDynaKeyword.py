@@ -5725,12 +5725,46 @@ class DefineCurveTitle(DynaKeyword):
 class ElementMass(DynaKeyword):
     def __init__(self):
         super(ElementMass,self).__init__("ELEMENT_MASS")
-    
+        self.has_i10 = False
+
+    @staticmethod
+    def _mass_slice_ok(s, widths):
+        pos = 0
+        vals = []
+        for w in widths:
+            vals.append(s[pos:pos + w].strip())
+            pos += w
+        try:
+            int(vals[0]); int(vals[1])
+            if vals[2]:
+                float(vals[2])
+            if len(vals) > 3 and vals[3]:
+                int(vals[3])
+            return True
+        except (TypeError, ValueError):
+            return False
+
     def parse(self, elementMassKeywords):
+        fmts = getattr(self, 'block_formats', [])
         for i in range(len(elementMassKeywords)):
-            parameterList = [] 
-            for j in range(len(elementMassKeywords[i])):                                
-                parameters = self.parse_whole(elementMassKeywords[i][j], [8,8,16,8])
+            fmt = fmts[i] if i < len(fmts) else None
+            i10 = (fmt == 'i10')
+            if not i10:
+                # 제로회귀 게이트: 레거시 [8,8,16,8] 변환 실패 + I10 [10,10,16,10] 전부 통과일 때만
+                for line in elementMassKeywords[i][:20]:
+                    s = str(line).rstrip('\r\n')
+                    if not s.strip() or s.lstrip().startswith('$'):
+                        continue
+                    if self._mass_slice_ok(s, [8, 8, 16, 8]):
+                        continue
+                    i10 = self._mass_slice_ok(s, [10, 10, 16, 10])
+                    break
+            if i10:
+                self.has_i10 = True
+            widths = [10, 10, 16, 10] if i10 else [8, 8, 16, 8]
+            parameterList = []
+            for j in range(len(elementMassKeywords[i])):
+                parameters = self.parse_whole(elementMassKeywords[i][j], widths)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
     
@@ -5771,11 +5805,31 @@ class ElementMassNodeSet(DynaKeyword):
 class ElementBeam(DynaKeyword):
     def __init__(self):
         super(ElementBeam,self).__init__("ELEMENT_BEAM")
-    
+        self.has_i10 = False
+
     def parse(self, elementBeamKeywords):
+        fmts = getattr(self, 'block_formats', [])
         for i in range(len(elementBeamKeywords)):
+            fmt = fmts[i] if i < len(fmts) else None
+            # I10 빔 카드: 마커(%) 또는 셸과 동일 제로회귀 게이트로 감지 → 10칸 슬라이스
+            if fmt == 'i10' or ElementShell._detect_field_width(elementBeamKeywords[i]) == 10:
+                self.has_i10 = True
+                parameterList = []
+                for j in range(len(elementBeamKeywords[i])):
+                    s = str(elementBeamKeywords[i][j]).rstrip('\r\n').rstrip()
+                    if not s.strip() or s.lstrip().startswith('$'):
+                        continue
+                    nf = max(1, len(s) // 10)
+                    parameterList.append([s[k * 10:(k + 1) * 10].strip() for k in range(nf)])
+                if parameterList:
+                    # 레거시(parse_whole)는 첫 줄 청크수로 전 행을 '' 패딩 — 동일 의미 재현 (래그드 행 방지)
+                    rowmax = max(len(r) for r in parameterList)
+                    for r in parameterList:
+                        r.extend([''] * (rowmax - len(r)))
+                self.parameters.append(parameterList)
+                continue
             spaceVector = []
-            parameterList = [] 
+            parameterList = []
             for j in range(len(elementBeamKeywords[i])):
                 if j == 0:
                     curStrVector = str(elementBeamKeywords[i][j])
@@ -5799,6 +5853,7 @@ class ElementBeam(DynaKeyword):
 class ElementShell(DynaKeyword):
     def __init__(self):
         super(ElementShell,self).__init__("ELEMENT_SHELL")
+        self.has_i10 = False
 
     @staticmethod
     def _is_int_field(f):
@@ -5848,9 +5903,13 @@ class ElementShell(DynaKeyword):
         return 8
 
     def parse(self, elementShellKeywords):
+        fmts = getattr(self, 'block_formats', [])
         for i in range(len(elementShellKeywords)):
             width = self._detect_field_width(elementShellKeywords[i])
+            if i < len(fmts) and fmts[i] == 'i10':
+                width = 10  # % 마커는 폭도 강제 (내용 게이트가 중의적이어도 신뢰)
             if width == 10:
+                self.has_i10 = True
                 # I10 폭 셸 카드: 줄별 고정폭 10 슬라이스(빈 줄·주석 스킵), 필드는 strip 저장.
                 # tri(5필드)/quad(6필드) 혼재 대비 균일 길이 '0' 패딩(N4=0 = 삼각형 관례).
                 parameterList = []
@@ -5861,12 +5920,7 @@ class ElementShell(DynaKeyword):
                     n = len(s) // 10
                     row = [s[k * 10:(k + 1) * 10].strip() for k in range(n)]
                     if len(row) >= 4:
-                        for f in row:
-                            # 8자리 초과 ID는 :>8 재출력 시 덱이 무언 손상 → 명시적 에러로 차단
-                            if f and self._int_ok(f) and abs(int(f)) > 99999999:
-                                raise ValueError(
-                                    f"ELEMENT_SHELL I10 카드의 ID {f} 가 8자리를 초과합니다 — "
-                                    f"8칸 재출력 시 덱이 손상되므로 지원 불가 (ID 리넘버 필요)")
+                        # 8자리 초과 ID 허용 — 출력 writer 가 I10 으로 자동 승격 (dump 는 진단용 예외)
                         parameterList.append(row)
                     else:
                         print("  Warning: ELEMENT_SHELL I10 라인 필드 부족 — 무시:", s[:40])
@@ -5911,8 +5965,54 @@ class ElementShell(DynaKeyword):
 class ElementShellThickness(DynaKeyword):
     def __init__(self):
         super(ElementShellThickness,self).__init__("ELEMENT_SHELL_THICKNESS")
-    
+        self.has_i10 = False
+
+    def _parse_i10_block(self, block):
+        # I10 THICKNESS: 정수줄 10칸 슬라이스, 두께(실수)줄 16칸 유지. 8노드(N5 존재) → 두께줄 2장(3줄 주기)
+        lines = []
+        for line in block:
+            s = str(line).rstrip('\r\n').rstrip()
+            if s.strip() and not s.lstrip().startswith('$'):
+                lines.append(s)
+        parameterList = []
+        if not lines:
+            return parameterList
+
+        def slice_w(s, w):
+            nf = max(1, len(s) // w)
+            return [s[k * w:(k + 1) * w].strip() for k in range(nf)]
+
+        f1 = slice_w(lines[0], 10)
+        try:
+            three = len(f1) > 7 and int(f1[6] or 0) > 0
+        except (TypeError, ValueError):
+            three = False
+        step = 3 if three else 2
+        int_cols = len(f1)
+        for j in range(0, len(lines), step):
+            row = slice_w(lines[j], 10)
+            row.extend([''] * (int_cols - len(row)))  # 레거시 '' 패딩 의미 재현
+            parameterList.append(row)
+            for t in range(1, step):
+                if j + t < len(lines):
+                    frow = slice_w(lines[j + t], 16)
+                    frow.extend([''] * (5 - len(frow)))  # BETA blank 절삭 대응(KooPart parameter2[4])
+                    parameterList.append(frow)
+        return parameterList
+
     def parse(self, elementShellThickKeywords):
+        fmts = getattr(self, 'block_formats', [])
+        for _bi in range(len(elementShellThickKeywords)):
+            fmt = fmts[_bi] if _bi < len(fmts) else None
+            if fmt == 'i10' or ElementShell._detect_field_width(elementShellThickKeywords[_bi]) == 10:
+                self.has_i10 = True
+                self.parameters.append(self._parse_i10_block(elementShellThickKeywords[_bi]))
+            else:
+                # 레거시 본문(하단)을 1블록 리스트로 호출 — 기존 동작 그대로
+                self._parse_legacy_blocks([elementShellThickKeywords[_bi]])
+        return
+
+    def _parse_legacy_blocks(self, elementShellThickKeywords):
         for i in range(len(elementShellThickKeywords)):
             spaceVector1 = []
             spaceVector2 = []
@@ -5991,6 +6091,7 @@ class ElementShellThickness(DynaKeyword):
 class ElementSolid(DynaKeyword):
     def __init__(self):
         super(ElementSolid,self).__init__("ELEMENT_SOLID")
+        self.has_i10 = False
     
     
     @staticmethod
@@ -6014,26 +6115,18 @@ class ElementSolid(DynaKeyword):
             except (TypeError, ValueError):
                 return False
 
-        def _check_digits(vals):
-            for f in vals:
-                if f and _int_ok(f) and abs(int(f)) > 99999999:
-                    raise ValueError(
-                        f"ELEMENT_SOLID ten-nodes 카드의 ID {f} 가 8자리를 초과합니다 — "
-                        f"8칸 재출력 시 덱이 손상되므로 지원 불가 (ID 리넘버 필요)")
-
         def finalize():
             nonlocal header, nodes
             if header is None:
                 return
             if len(nodes) < 10:
                 nodes.extend(['0'] * (10 - len(nodes)))
-            _check_digits(header)
-            _check_digits(nodes[:10])
             parameterList.append(header)
             parameterList.append(nodes[:10])
             header = None
             nodes = []
 
+        saw_i10 = False
         for line in block:
             s = str(line).rstrip('\r\n').rstrip()
             stripped = s.strip()
@@ -6048,6 +6141,8 @@ class ElementSolid(DynaKeyword):
                     continue
                 # 헤더마다 폭 재감지: 정확한 2필드 고정폭 길이(16/20)일 때만, 아니면 토큰 모드
                 width = 10 if len(s) == 20 else (8 if len(s) == 16 else 0)
+                if width == 10:
+                    saw_i10 = True
                 header = toks
                 nodes = []
                 continue
@@ -6075,7 +6170,7 @@ class ElementSolid(DynaKeyword):
         finalize()
         if warn_cnt > 5:
             print(f"  Warning: ELEMENT_SOLID ten-nodes 형식 경고 총 {warn_cnt}건")
-        return parameterList
+        return parameterList, saw_i10
 
     def parse(self, elementSolidKeywords):
         for i in range(len(elementSolidKeywords)):
@@ -6090,12 +6185,20 @@ class ElementSolid(DynaKeyword):
                     continue
                 probe = s
                 break
+            fmts = getattr(self, 'block_formats', [])
+            fmt_i10 = (i < len(fmts) and fmts[i] == 'i10')
+            if fmt_i10:
+                self.has_i10 = True
             if probe is not None and len(probe.split()) == 2:
-                self.parameters.append(self._parse_ten_nodes_block(block))
+                params_tn, saw_i10 = self._parse_ten_nodes_block(block)
+                if saw_i10:
+                    self.has_i10 = True
+                self.parameters.append(params_tn)
                 continue
             # 표준 1줄 솔리드의 I10 폭 변형: 셸과 동일한 제로회귀 게이트로 감지
             # (레거시 8칸 슬라이스가 실제로 깨뜨리는 라인 + 10칸으론 전부 정수일 때만).
-            if ElementShell._detect_field_width(block) == 10:
+            if fmt_i10 or ElementShell._detect_field_width(block) == 10:
+                self.has_i10 = True
                 parameterList = []
                 for line in block:
                     s = str(line).rstrip('\r\n').rstrip()
@@ -6106,11 +6209,6 @@ class ElementSolid(DynaKeyword):
                     if len(row) < 6:
                         print("  Warning: ELEMENT_SOLID I10 라인 필드 부족 — 무시:", s[:40])
                         continue
-                    for f in row:
-                        if f and ElementShell._int_ok(f) and abs(int(f)) > 99999999:
-                            raise ValueError(
-                                f"ELEMENT_SOLID I10 카드의 ID {f} 가 8자리를 초과합니다 — "
-                                f"8칸 재출력 시 덱이 손상되므로 지원 불가 (ID 리넘버 필요)")
                     parameterList.append(row)
                 if parameterList:
                     rowmax = max(len(r) for r in parameterList)
@@ -9466,10 +9564,72 @@ class MatElasticPeriTitle(DynaKeyword):
 class DynaNode(DynaKeyword):
     def __init__(self):
         super(DynaNode,self).__init__("NODE")
-      
+        self.has_i10 = False
+
+    @staticmethod
+    def _conv_ok(f, conv, blank_ok):
+        s = f.strip()
+        if not s:
+            return blank_ok
+        try:
+            conv(s)
+            return True
+        except (TypeError, ValueError):
+            return False
+
+    @classmethod
+    def _slice_parses(cls, s, widths):
+        # NID=int 필수, X/Y/Z=float 필수(빈칸 불가), TC/RC=수치 또는 빈칸
+        pos = 0
+        vals = []
+        for w in widths:
+            vals.append(s[pos:pos + w])
+            pos += w
+        if not cls._conv_ok(vals[0], int, blank_ok=False):
+            return False
+        for f in vals[1:4]:
+            if not cls._conv_ok(f, float, blank_ok=False):
+                return False
+        for f in vals[4:6]:
+            if not cls._conv_ok(f, float, blank_ok=True):
+                return False
+        return True
+
+    @classmethod
+    def _detect_node_i10(cls, block):
+        # 제로회귀 게이트: 레거시 [8,16,16,16,8,8] 변환이 실제 실패하는 라인이 있고
+        # 그 라인이 I10 [10,16,16,16,10,10] 으로는 전부 변환될 때만 True.
+        # 오늘 정상 임포트되는 I8 노드 덱은 legacy 가 전부 통과하므로 절대 오분류 불가.
+        for line in block[:200]:
+            s = str(line).rstrip('\r\n')
+            if not s.strip() or s.lstrip().startswith('$'):
+                continue
+            if cls._slice_parses(s, [8, 16, 16, 16, 8, 8]):
+                # 레거시도 통과하는 라인 — 단 I8 *NODE 데이터는 72칸을 넘을 수 없으므로
+                # 72칸 초과 + I10 정합이면 I10 확정 (정수좌표 덱 위음성 방지)
+                if len(s.rstrip()) > 72 and cls._slice_parses(s, [10, 16, 16, 16, 10, 10]):
+                    return True
+                continue
+            return cls._slice_parses(s, [10, 16, 16, 16, 10, 10])
+        return False
+
     def parse(self, node_keywords):
+        fmts = getattr(self, 'block_formats', [])
         for i in range(len(node_keywords)):
-            parameterList = [] 
+            fmt = fmts[i] if i < len(fmts) else None
+            i10 = (fmt == 'i10') or self._detect_node_i10(node_keywords[i])
+            if i10:
+                self.has_i10 = True
+                widths = [10, 16, 16, 16, 10, 10]
+                parameterList = []
+                for j in range(len(node_keywords[i])):
+                    s = str(node_keywords[i][j])
+                    if not s.strip() or s.lstrip().startswith('$'):
+                        continue
+                    parameterList.append(self.parse_whole(s, widths))
+                self.parameters.append(parameterList)
+                continue
+            parameterList = []
             for j in range(len(node_keywords[i])):
                 #parameters = node_keywords[i][j].parse_whole([8, 16, 16, 16, 8, 8])
                 parameters = self.parse_whole(node_keywords[i][j], [8, 16, 16, 16, 8, 8])
@@ -9504,13 +9664,14 @@ class DynaNode(DynaKeyword):
                 stream.write("$$ {i}rd Node List\n".format(i=i+1))
             else:
                 stream.write("$$ {i}th Node List\n".format(i=i+1))
-            stream.write("*NODE\n")
+            w = 10 if self.has_i10 else 8
+            stream.write("*NODE %\n" if w == 10 else "*NODE\n")
             stream.write("$$   NID               X               Y               Z      TC      RC\n")
             for parameter in self.parameters[i]:
-                formatted_elements = f"{str(parameter[0]):>8}{str(parameter[1]):>16}{str(parameter[2]):>16}{str(parameter[3]):>16}{str(parameter[4]):>8}{str(parameter[5]):>8}"
+                formatted_elements = f"{str(parameter[0]):>{w}}{str(parameter[1]):>16}{str(parameter[2]):>16}{str(parameter[3]):>16}{str(parameter[4]):>{w}}{str(parameter[5]):>{w}}"
                 result = formatted_elements
                 stream.write(result)
-                stream.write("\n")      
+                stream.write("\n")
     def getNodeListAdvanced(self):
         # Flatten parameters to a list of entries
         all_entries = [entry for param in self.parameters for entry in param]
@@ -11791,6 +11952,10 @@ class DynaManager():
             self._include_files = []
             self._main_file = path
             self._param_resolver = None  # *PARAMETER 계열 테이블 (메인+include 공유)
+        if not hasattr(self, '_block_formats'):
+            # 독립 게이트: 같은 인스턴스가 이전 파일을 읽어 _include_sources 가 이미 있어도 초기화되도록
+            self._block_formats = {}     # 키워드별 블록 포맷('i10'/'long'/None) — keyword_dict 와 정렬
+            self._global_i10 = False     # *KEYWORD I10=Y
 
         # 파일 읽기
         with open(path, 'r', errors='replace') as f:
@@ -11811,17 +11976,21 @@ class DynaManager():
         except Exception as e:
             print(f"  Warning: PARAMETER 해석 실패 (원본 유지): {e}")
 
+        latest_fmt = 'i10' if getattr(self, '_global_i10', False) else None
         for line in raw_lines:
                 # Check if the line starts with an asterisk
                 if line.startswith('*'):
                     if latest_keyword == 'INCLUDE':
                         includedList.extend(curLines)  # 덮어쓰기가 아닌 추가
-                    line = line.split(' ')[0]
-                    lines_with_asterisk.append(line[1:].strip())
+                    raw_kwline = line.rstrip()  # 포맷 마커(' %'=I10, '+'=long) 캡처용 원문
+                    line = line.split(' ')[0].strip().rstrip('%+-')  # 무공백 마커(*NODE% 등) 키 오염 방지
+                    lines_with_asterisk.append(line[1:])
                     if len(curLines) > 0:
                         if latest_keyword not in keyword_dict:
                             keyword_dict[latest_keyword] = []
                         keyword_dict[latest_keyword].append(curLines)
+                        # 블록별 포맷 태깅 (keyword_dict 블록과 1:1 정렬)
+                        self._block_formats.setdefault(latest_keyword, []).append(latest_fmt)
                         # source_file 태깅
                         if latest_keyword not in self._include_sources:
                             self._include_sources[latest_keyword] = []
@@ -11840,6 +12009,17 @@ class DynaManager():
                     curLines = []
 
                     latest_keyword = line[1:].strip()
+                    # LS-DYNA 포맷 마커: 키워드 끝 '%'=I10, '+'=long, '-'=표준 강제, *KEYWORD I10=Y=전역
+                    if latest_keyword == 'KEYWORD' and 'I10=Y' in raw_kwline.upper().replace(' ', ''):
+                        self._global_i10 = True
+                    if raw_kwline.endswith('%'):
+                        latest_fmt = 'i10'
+                    elif raw_kwline.endswith('+'):
+                        latest_fmt = 'long'
+                    elif raw_kwline.endswith('-'):
+                        latest_fmt = None
+                    else:
+                        latest_fmt = 'i10' if getattr(self, '_global_i10', False) else None
                 elif line.startswith('$'):
                     continue
                 else:
@@ -12999,6 +13179,9 @@ class DynaManager():
 
 
 
+        # 모델 파일 단위 포맷 테이블 리셋 — 같은 매니저 재사용(IMPORT_MERGE 등) 시 stale 오염 방지
+        self._block_formats = {}
+        self._global_i10 = False
         lines_with_asterisk, keyword_dict = self.ReadKeywordsfromFile(path,lines_with_asterisk, keyword_dict)
         # 다운스트림 (DECOMPOSE_K, MERGE_K, fallback writer 등)에서 raw 키워드 데이터 접근용
         self._raw_keyword_dict = keyword_dict
@@ -14158,6 +14341,7 @@ class DynaManager():
             if "ELEMENT_MASS" in lines_with_asterisk:
                 element_mass = keyword_dict["ELEMENT_MASS"]
                 emass = ElementMass()
+                emass.block_formats = getattr(self, "_block_formats", {}).get("ELEMENT_MASS", [])
                 emass.parse(element_mass)
                 emass.write(file)
                 dynaKeywordMan.addKeyword(emass)
@@ -14174,6 +14358,7 @@ class DynaManager():
             if "ELEMENT_BEAM" in lines_with_asterisk:
                 element_beam = keyword_dict["ELEMENT_BEAM"]
                 ebeam = ElementBeam()
+                ebeam.block_formats = getattr(self, "_block_formats", {}).get("ELEMENT_BEAM", [])
                 ebeam.parse(element_beam)
                 ebeam.write(file)
                 dynaKeywordMan.addKeyword(ebeam)
@@ -14182,6 +14367,7 @@ class DynaManager():
             if "ELEMENT_SHELL" in lines_with_asterisk:
                 element_shell = keyword_dict["ELEMENT_SHELL"]
                 eshell = ElementShell()
+                eshell.block_formats = getattr(self, "_block_formats", {}).get("ELEMENT_SHELL", [])
                 eshell.parse(element_shell)
                 eshell.write(file)
                 dynaKeywordMan.addKeyword(eshell)
@@ -14190,6 +14376,7 @@ class DynaManager():
             if "ELEMENT_SHELL_THICKNESS" in lines_with_asterisk:
                 element_shell_thick = keyword_dict["ELEMENT_SHELL_THICKNESS"]
                 eshell_thick = ElementShellThickness()
+                eshell_thick.block_formats = getattr(self, "_block_formats", {}).get("ELEMENT_SHELL_THICKNESS", [])
                 eshell_thick.parse(element_shell_thick)
                 eshell_thick.write(file)
                 dynaKeywordMan.addKeyword(eshell_thick)
@@ -14198,6 +14385,7 @@ class DynaManager():
             if "ELEMENT_SOLID" in lines_with_asterisk:
                 element_solid = keyword_dict["ELEMENT_SOLID"]
                 esolid = ElementSolid()
+                esolid.block_formats = getattr(self, "_block_formats", {}).get("ELEMENT_SOLID", [])
                 esolid.parse(element_solid)
                 esolid.write(file)
                 dynaKeywordMan.addKeyword(esolid)
@@ -14707,6 +14895,7 @@ class DynaManager():
             if "NODE" in lines_with_asterisk:
                 node = keyword_dict["NODE"]
                 n = DynaNode()
+                n.block_formats = getattr(self, "_block_formats", {}).get("NODE", [])
                 n.parse(node)
                 n.write(file)
                 dynaKeywordMan.addKeyword(n)

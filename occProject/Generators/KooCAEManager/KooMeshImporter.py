@@ -534,8 +534,11 @@ class KooDynaImporter():
         #self.nodeManager.nodes = {i: None for i in range(1, len(nodes)+1)}
         
         
+        # 입력 *NODE 가 I10 였으면 출력도 I10 스타일 보존
+        if getattr(nodeKeyword, 'has_i10', False):
+            self.nodeManager.output_i10 = True
         value = self.nodeManager.AddNodesfromDynaAdvanced(nodes)
-        return value        
+        return value
         #return self.nodeManager.AddNodesfromDyna(nodes)
         
 
@@ -810,9 +813,15 @@ class KooDynaImporter():
                         
         if elementSolidKeyword is not None:
             parametersSolid = elementSolidKeyword.parameters
-            #import time 
+            #import time
             #start = time.time()
             self.partManager.AddSolidElementsfromDynaAdvanced(parametersSolid)
+        # 입력 요소 카드가 I10(*ELEMENT_… %)였으면 출력도 I10 스타일 보존
+        if any(getattr(k, 'has_i10', False) for k in
+               (elementShellKeyword, elementShellThickKeyword, elementBeamKeyword, elementSolidKeyword)
+               if k is not None):
+            for _part in self.partManager.parts.values():
+                _part.elementManager.output_i10 = True
             #self.partManager.AddSolidElementsfromDyna(parametersSolid)
             #end = time.time()
             #print("Solid Element Time: ", end - start)
