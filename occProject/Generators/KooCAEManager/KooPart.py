@@ -2486,6 +2486,8 @@ class KooPartManager():
                                 part.AddHexahedronLinearElement(eid, *nodes)
 
                 elif mode == 2:
+                    _warn_hdr = 0
+                    _warn_corner = 0
                     for i in range(0, len(parameters), 2):
                         parameter1 = parameters[i]
                         if i + 1 >= len(parameters):
@@ -2493,7 +2495,9 @@ class KooPartManager():
                             break
                         parameter2 = parameters[i + 1]
                         if len(parameter1) < 2:
-                            print("  Warning: ELEMENT_SOLID 2줄 포맷 헤더 이상 — 쌍 무시:", str(parameter1)[:40])
+                            _warn_hdr += 1
+                            if _warn_hdr <= 5:
+                                print("  Warning: ELEMENT_SOLID 2줄 포맷 헤더 이상 — 쌍 무시:", str(parameter1)[:40])
                             continue
                         eid = int(parameter1[0])
                         pid = int(parameter1[1])
@@ -2503,7 +2507,9 @@ class KooPartManager():
                             nids = nids + [0] * (10 - len(nids))
                         if 0 in nids[:4]:
                             # 코너 4노드 미달 = 유효 솔리드 불가 — None 노드 요소가 조용히 생기는 것 방지
-                            print(f"  Warning: ELEMENT_SOLID EID {eid} 코너노드 부족(nids[:4]={nids[:4]}) — 요소 스킵")
+                            _warn_corner += 1
+                            if _warn_corner <= 5:
+                                print(f"  Warning: ELEMENT_SOLID EID {eid} 코너노드 부족(nids[:4]={nids[:4]}) — 요소 스킵")
                             continue
 
                         if pid in self.parts:
@@ -2520,6 +2526,10 @@ class KooPartManager():
                             elif len(nids) == 10:
                                 nodes = get_nodes(part.nodeManager, nids[:10])
                                 part.AddTetrahedronQuadraticElement(eid, *nodes)
+                    if _warn_hdr > 5:
+                        print(f"  Warning: ELEMENT_SOLID 2줄 포맷 헤더 이상 총 {_warn_hdr}건")
+                    if _warn_corner > 5:
+                        print(f"  Warning: ELEMENT_SOLID 코너노드 부족 스킵 총 {_warn_corner}개")
 
                 elif mode == 3:
                     for i in range(0, len(parameters), 3):

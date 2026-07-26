@@ -4100,21 +4100,27 @@ class ElementManager:
             if _skip_cnt:
                 print(f"  Warning: 솔리드 요소 출력 스킵 총 {_skip_cnt}개")
         if self.GetNumberofQuadraticSolidElements() > 0:
-            stream.write("*ELEMENT_SOLID\n")       
+            stream.write("*ELEMENT_SOLID\n")
+            _skip_q = 0
             for key in self.elements:
                 element : SolidElement = self.elements[key]
-                if element.type == "TETRA10":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}\n"
-                    stream.write(formatString)
-                    formatString = f"{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}{str(element.nodes[8].id + startNID):>8}{str(element.nodes[9].id + startNID):>8}\n"
-                    stream.write(formatString)
-                elif element.type == "HEXA20":
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}\n"
-                    stream.write(formatString)
-                    formatString = f"{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}{str(element.nodes[8].id + startNID):>8}{str(element.nodes[9].id + startNID):>8}\n"
-                    stream.write(formatString)
-                    formatString = f"{str(element.nodes[10].id + startNID):>8}{str(element.nodes[11].id + startNID):>8}{str(element.nodes[12].id + startNID):>8}{str(element.nodes[13].id + startNID):>8}{str(element.nodes[14].id + startNID):>8}{str(element.nodes[15].id + startNID):>8}{str(element.nodes[16].id + startNID):>8}{str(element.nodes[17].id + startNID):>8}{str(element.nodes[18].id + startNID):>8}{str(element.nodes[19].id + startNID):>8}\n"
-                    stream.write(formatString)
+                try:
+                    # 카드 전체(헤더+노드줄)를 조립 후 한 번에 기록 — 예외 시 찢어진 카드 방지
+                    if element.type == "TETRA10":
+                        card = f"{str(element.id + startEID):>8}{str(pid):>8}\n"
+                        card += f"{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}{str(element.nodes[8].id + startNID):>8}{str(element.nodes[9].id + startNID):>8}\n"
+                        stream.write(card)
+                    elif element.type == "HEXA20":
+                        card = f"{str(element.id + startEID):>8}{str(pid):>8}\n"
+                        card += f"{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.nodes[3].id + startNID):>8}{str(element.nodes[4].id + startNID):>8}{str(element.nodes[5].id + startNID):>8}{str(element.nodes[6].id + startNID):>8}{str(element.nodes[7].id + startNID):>8}{str(element.nodes[8].id + startNID):>8}{str(element.nodes[9].id + startNID):>8}\n"
+                        card += f"{str(element.nodes[10].id + startNID):>8}{str(element.nodes[11].id + startNID):>8}{str(element.nodes[12].id + startNID):>8}{str(element.nodes[13].id + startNID):>8}{str(element.nodes[14].id + startNID):>8}{str(element.nodes[15].id + startNID):>8}{str(element.nodes[16].id + startNID):>8}{str(element.nodes[17].id + startNID):>8}{str(element.nodes[18].id + startNID):>8}{str(element.nodes[19].id + startNID):>8}\n"
+                        stream.write(card)
+                except Exception:
+                    _skip_q += 1
+                    if _skip_q <= 5:
+                        print(f"  Warning: 2차 솔리드 요소 출력 실패(EID {getattr(element,'id','?')}) — 스킵")
+            if _skip_q:
+                print(f"  Warning: 2차 솔리드 요소 출력 스킵 총 {_skip_q}개")
                     
     def WritetoDynaKeywordFace(self, pid, startNID, startEID):
         dynaString = ""         

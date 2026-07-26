@@ -5805,24 +5805,46 @@ class ElementShell(DynaKeyword):
         f = f.strip()
         return (not f) or f.lstrip('+-').isdigit()
 
+    @staticmethod
+    def _int_ok(f):
+        try:
+            int(f)
+            return True
+        except (TypeError, ValueError):
+            return False
+
     @classmethod
     def _detect_field_width(cls, block):
         # 셸 카드 필드 폭 감지: 기본 8(기존 경로 그대로 = 회귀 0 구조 보장).
-        # 10을 선택하는 유일한 증거 = "8칸으로는 깨지는데(오늘도 크래시) 10칸으로는 전부 정수"인 라인.
-        # 오늘 정상 임포트되는 8칸 덱은 eight_fails 가 절대 참이 안 되므로 오분류 불가능.
+        # 게이트 = "레거시 8칸 파싱을 정확 복제했을 때 실제로 int() 실패하는(=오늘 크래시하는) 라인"이
+        # 존재하고 그 라인이 10칸으로는 전부 정수일 때만 10. 레거시는 첫 줄 len(개행 포함)//8 개의
+        # 8칸 청크를 전 줄에 재사용하고 꼬리를 무시하므로 그대로 복제(L%8 조건 금지 — 꼬리 무시 덱 오분류 방지).
+        first = None
+        for line in block:
+            s0 = str(line)
+            if not s0.strip() or s0.lstrip().startswith('$'):
+                continue
+            first = s0
+            break
+        if first is None:
+            return 8
+        nchunk = int(len(first) / 8)  # 레거시와 동일(개행 포함 길이)
+        if nchunk <= 0:
+            return 8
         for line in block[:50]:
-            s = str(line).rstrip('\r\n').rstrip()
-            L = len(s)
-            if L == 0 or s.lstrip().startswith('$'):
+            s = str(line)
+            if not s.strip() or s.lstrip().startswith('$'):
                 continue
-            eight_fails = (L % 8 != 0) or any(
-                not cls._is_int_field(s[k:k + 8]) for k in range(0, L - L % 8, 8))
-            if not eight_fails:
+            body = s.replace('\n', '')
+            legacy_fail = any(not cls._int_ok(body[k * 8:(k + 1) * 8]) for k in range(nchunk))
+            if not legacy_fail:
                 continue
-            ten_ok = (L % 10 == 0) and L >= 50 and all(
-                cls._is_int_field(s[k:k + 10]) for k in range(0, L, 10))
-            if ten_ok:
+            r = s.rstrip('\r\n').rstrip()
+            L = len(r)
+            if L % 10 == 0 and L >= 50 and all(
+                    cls._is_int_field(r[k:k + 10]) for k in range(0, L, 10)):
                 return 10
+            return 8  # 오늘도 깨지는데 10칸 증거도 없음 → 레거시 유지(기존과 동일 크래시)
         return 8
 
     def parse(self, elementShellKeywords):
@@ -5839,6 +5861,12 @@ class ElementShell(DynaKeyword):
                     n = len(s) // 10
                     row = [s[k * 10:(k + 1) * 10].strip() for k in range(n)]
                     if len(row) >= 4:
+                        for f in row:
+                            # 8자리 초과 ID는 :>8 재출력 시 덱이 무언 손상 → 명시적 에러로 차단
+                            if f and self._int_ok(f) and abs(int(f)) > 99999999:
+                                raise ValueError(
+                                    f"ELEMENT_SHELL I10 카드의 ID {f} 가 8자리를 초과합니다 — "
+                                    f"8칸 재출력 시 덱이 손상되므로 지원 불가 (ID 리넘버 필요)")
                         parameterList.append(row)
                     else:
                         print("  Warning: ELEMENT_SHELL I10 라인 필드 부족 — 무시:", s[:40])
@@ -5968,20 +5996,39 @@ class ElementSolid(DynaKeyword):
     @staticmethod
     def _parse_ten_nodes_block(block):
         # *ELEMENT_SOLID (ten nodes format) 블록 → [헤더(EID,PID), 노드10필드] 쌍 리스트.
-        # 실전 레이아웃 변형(노드줄 분할 8+2/4+4+2/1개씩, 빈 줄, 앞공백 주석, 후행 blank 필드) 전부 수용.
-        # 첫 헤더 줄(원문) 길이로 필드 폭(I8=16→8, I10=20→10) 감지, 노드줄은 고정폭 슬라이스(blank 필드='0' 보존).
-        width = None
+        # 랩 우선 상태머신: 헤더(2토큰) 후 노드 필드를 10개 채울 때까지 전부 노드로 소비
+        # (1줄/8+2/4+4+2/2개씩/1개씩 랩·빈 줄·앞공백 주석·후행 blank 필드·CRLF 전부 수용).
+        # 폭은 헤더마다 재감지(원문 길이 16=I8, 20=I10, 그 외=토큰 모드 — I8/I10 혼합 블록 대응).
+        # 노드줄 고정폭 슬라이스는 "전 필드가 정수 또는 빈칸"일 때만 채택, 아니면 공백 토큰화
+        # (자유간격 덱은 부모 커밋과 동일하게 폭-무관 처리 = 회귀 방지).
         parameterList = []
         header = None
         nodes = []
+        width = 0
         warn_cnt = 0
 
-        def finalize(pad=True):
+        def _int_ok(f):
+            try:
+                int(f)
+                return True
+            except (TypeError, ValueError):
+                return False
+
+        def _check_digits(vals):
+            for f in vals:
+                if f and _int_ok(f) and abs(int(f)) > 99999999:
+                    raise ValueError(
+                        f"ELEMENT_SOLID ten-nodes 카드의 ID {f} 가 8자리를 초과합니다 — "
+                        f"8칸 재출력 시 덱이 손상되므로 지원 불가 (ID 리넘버 필요)")
+
+        def finalize():
             nonlocal header, nodes
             if header is None:
                 return
-            if pad and len(nodes) < 10:
+            if len(nodes) < 10:
                 nodes.extend(['0'] * (10 - len(nodes)))
+            _check_digits(header)
+            _check_digits(nodes[:10])
             parameterList.append(header)
             parameterList.append(nodes[:10])
             header = None
@@ -5994,47 +6041,37 @@ class ElementSolid(DynaKeyword):
                 continue
             if header is None:
                 toks = stripped.split()
-                if len(toks) != 2:
+                if len(toks) != 2 or not (_int_ok(toks[0]) and _int_ok(toks[1])):
                     if warn_cnt < 5:
                         print("  Warning: ELEMENT_SOLID ten-nodes 헤더 형식 이상 — 라인 무시:", s[:40])
                     warn_cnt += 1
                     continue
-                if width is None:
-                    L = len(s)
-                    if L % 10 == 0 and L % 8 != 0:
-                        width = 10
-                    elif L % 8 == 0 and L % 10 != 0:
-                        width = 8
-                    else:
-                        width = 0  # 폭 특정 불가 → 공백 토큰화
+                # 헤더마다 폭 재감지: 정확한 2필드 고정폭 길이(16/20)일 때만, 아니면 토큰 모드
+                width = 10 if len(s) == 20 else (8 if len(s) == 16 else 0)
                 header = toks
                 nodes = []
                 continue
-            # 노드 수집: 고정폭 슬라이스(빈 필드 → '0'), 폭 미상이면 공백 토큰화
+            # 노드 수집
+            fields = None
             if width:
                 n = max(1, -(-len(s) // width))  # ceil: 비배수 길이 끝자락 필드 보존
-                fields = []
-                for k in range(n):
-                    f = s[k * width:(k + 1) * width].strip()
-                    fields.append(f if f else '0')
-            else:
-                fields = stripped.split()
-            if len(nodes) + len(fields) == 10:
-                nodes.extend(fields)
-                finalize(pad=False)
-            elif len(fields) == 2 and len(nodes) >= 4:
-                # 완성(10) 못 채우는 2필드 줄 = 새 헤더(후행 blank 절삭 덱) — 현재 요소 마감
+                cand = [s[k * width:(k + 1) * width].strip() for k in range(n)]
+                if all((not f) or _int_ok(f) for f in cand):
+                    fields = [f if f else '0' for f in cand]
+            toks = stripped.split()
+            if fields is None:
+                fields = toks
+            elif len(nodes) + len(fields) > 10 and len(nodes) + len(toks) <= 10:
+                # 고정폭 슬라이스는 10을 초과하는데 토큰화는 맞아떨어짐 = 폭 오판 신호 → 토큰 채택
+                fields = toks
+            # 랩 우선: 2필드 연속줄(n9 n10 / 0 0)도 노드 — 10개 찰 때까지 전부 소비
+            nodes.extend(fields)
+            if len(nodes) >= 10:
+                if len(nodes) > 10:
+                    if warn_cnt < 5:
+                        print(f"  Warning: ELEMENT_SOLID ten-nodes EID {header[0]} 노드 {len(nodes)}개(>10) — 앞 10개 사용")
+                    warn_cnt += 1
                 finalize()
-                header = list(fields)
-                nodes = []
-            elif len(nodes) + len(fields) > 10:
-                if warn_cnt < 5:
-                    print(f"  Warning: ELEMENT_SOLID ten-nodes EID {header[0]} 노드 {len(nodes) + len(fields)}개(>10) — 앞 10개 사용")
-                warn_cnt += 1
-                nodes.extend(fields)
-                finalize(pad=False)
-            else:
-                nodes.extend(fields)
         finalize()
         if warn_cnt > 5:
             print(f"  Warning: ELEMENT_SOLID ten-nodes 형식 경고 총 {warn_cnt}건")
