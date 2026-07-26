@@ -6093,6 +6093,31 @@ class ElementSolid(DynaKeyword):
             if probe is not None and len(probe.split()) == 2:
                 self.parameters.append(self._parse_ten_nodes_block(block))
                 continue
+            # 표준 1줄 솔리드의 I10 폭 변형: 셸과 동일한 제로회귀 게이트로 감지
+            # (레거시 8칸 슬라이스가 실제로 깨뜨리는 라인 + 10칸으론 전부 정수일 때만).
+            if ElementShell._detect_field_width(block) == 10:
+                parameterList = []
+                for line in block:
+                    s = str(line).rstrip('\r\n').rstrip()
+                    if not s.strip() or s.lstrip().startswith('$'):
+                        continue
+                    n = len(s) // 10
+                    row = [s[k * 10:(k + 1) * 10].strip() for k in range(n)]
+                    if len(row) < 6:
+                        print("  Warning: ELEMENT_SOLID I10 라인 필드 부족 — 무시:", s[:40])
+                        continue
+                    for f in row:
+                        if f and ElementShell._int_ok(f) and abs(int(f)) > 99999999:
+                            raise ValueError(
+                                f"ELEMENT_SOLID I10 카드의 ID {f} 가 8자리를 초과합니다 — "
+                                f"8칸 재출력 시 덱이 손상되므로 지원 불가 (ID 리넘버 필요)")
+                    parameterList.append(row)
+                if parameterList:
+                    rowmax = max(len(r) for r in parameterList)
+                    for r in parameterList:
+                        r.extend(['0'] * (rowmax - len(r)))
+                self.parameters.append(parameterList)
+                continue
             spaceVector = []
             parameterList = []
             mode = 1
