@@ -315,7 +315,10 @@ class LSDynaSolverRunner:
                     cmd,
                     cwd=working_dir,
                     stdout=flog,
-                    stderr=subprocess.PIPE
+                    stderr=subprocess.PIPE,
+                    # 독립 세션으로 띄워야 타임아웃 시 mpirun 이 spawn 한 orted 까지
+                    # 프로세스 그룹 단위로 정리된다(직접 자식만 kill 하면 고아로 잔존).
+                    start_new_session=True
                 )
 
                 _, stderr = process.communicate(timeout=timeout)
@@ -339,7 +342,7 @@ class LSDynaSolverRunner:
             return True
 
         except subprocess.TimeoutExpired:
-            process.kill()
+            self._kill_process_group(process)
             logging.error(f"LS-DYNA timed out after {timeout} seconds")
             return False
         except FileNotFoundError:
@@ -348,6 +351,27 @@ class LSDynaSolverRunner:
         except Exception as e:
             logging.error(f"LS-DYNA execution error: {e}")
             return False
+
+    @staticmethod
+    def _kill_process_group(process):
+        """LS-DYNA 프로세스 그룹 전체 종료 (mpirun 이 spawn 한 orted 고아 방지)."""
+        import os as _os
+        import signal as _sig
+        try:
+            pgid = _os.getpgid(process.pid)
+            _os.killpg(pgid, _sig.SIGTERM)
+            try:
+                process.wait(timeout=15)
+                return
+            except Exception:
+                pass
+            _os.killpg(pgid, _sig.SIGKILL)
+        except Exception as e:
+            logging.warning(f"프로세스 그룹 정리 실패({e}) — 단일 프로세스만 종료")
+            try:
+                process.kill()
+            except Exception:
+                pass
 
     def wait_for_dynain(self, output_dir: str, timeout: int = 7200, interval: int = 10) -> bool:
         """dynain 파일 생성 대기"""

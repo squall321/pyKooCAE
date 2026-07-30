@@ -786,10 +786,42 @@ class LargeScaleDOEManager:
                     f'{self.mpi_path} -np {self.ncpu} {self.lsdyna_path} i="$OUTPUT_K" memory={self.lsdyna_memory} ncpu={self.ncpu}',
                     use_lsdyna=True
                 )
-            f.write(f"{lsdyna_cmd}\n")
-            f.write("\n")
-
+            # LS-DYNA 실행 + 종료감지 워치독.
+            # LS-DYNA 가 Normal/Error termination 을 찍어도 랭크 하나가 배리어에 걸리면
+            # mpirun 이 반환하지 않아 Slurm 잡이 R 로 무한 잔존한다(실사고: 313잡이 노드·
+            # LSTC 라이선스를 3일 점유, 대기 2340). d3hsp 의 종료 문구를 감지해 mpirun
+            # 프로세스 그룹을 정리한다. set -m 은 백그라운드 잡을 독립 프로세스 그룹으로
+            # 만들어 kill -PGID 가 orted 자식까지 잡게 한다.
+            f.write("set -m\n")
+            f.write("rm -f .koo_lsdyna_normal\n")
+            f.write(f"{lsdyna_cmd} &\n")
+            f.write("LSDYNA_PID=$!\n")
+            f.write("(\n")
+            f.write("  while kill -0 $LSDYNA_PID 2>/dev/null; do\n")
+            f.write("    if grep -qE 'N o r m a l   t e r m i n a t i o n|E r r o r   t e r m i n a t i o n' d3hsp 2>/dev/null; then\n")
+            f.write("      grep -q 'N o r m a l   t e r m i n a t i o n' d3hsp 2>/dev/null && touch .koo_lsdyna_normal\n")
+            f.write("      sleep 30\n")
+            f.write("      if kill -0 $LSDYNA_PID 2>/dev/null; then\n")
+            f.write("        echo \"WARN: LS-DYNA 종료 문구 감지 후에도 mpirun 잔존 - 프로세스 그룹 정리\"\n")
+            f.write("        kill -TERM -$LSDYNA_PID 2>/dev/null\n")
+            f.write("        sleep 10\n")
+            f.write("        kill -KILL -$LSDYNA_PID 2>/dev/null\n")
+            f.write("      fi\n")
+            f.write("      break\n")
+            f.write("    fi\n")
+            f.write("    sleep 30\n")
+            f.write("  done\n")
+            f.write(") &\n")
+            f.write("LSDYNA_WATCHDOG=$!\n")
+            f.write("wait $LSDYNA_PID\n")
             f.write("LSDYNA_EXIT=$?\n")
+            # 워치독도 그룹 단위로 정리 (내부 sleep 자식이 최대 30초 잔존하지 않도록)
+            f.write("kill -TERM -$LSDYNA_WATCHDOG 2>/dev/null || kill $LSDYNA_WATCHDOG 2>/dev/null\n")
+            f.write("wait $LSDYNA_WATCHDOG 2>/dev/null\n")
+            f.write("set +m\n")
+            # Normal termination 후 mpirun 잔존으로 강제 종료한 경우는 성공으로 처리
+            f.write("if [ -f .koo_lsdyna_normal ]; then LSDYNA_EXIT=0; rm -f .koo_lsdyna_normal; fi\n")
+            f.write("\n")
             f.write('if [ $LSDYNA_EXIT -ne 0 ]; then\n')
             f.write('    echo "❌ LS-DYNA 실패"\n')
             f.write('    exit $LSDYNA_EXIT\n')
