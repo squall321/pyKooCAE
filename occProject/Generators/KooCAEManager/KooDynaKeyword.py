@@ -1,4 +1,5 @@
 import os
+import re
 import numpy as np 
 #from dynareadout import key_file_parse
 
@@ -11956,6 +11957,7 @@ class DynaManager():
             # 독립 게이트: 같은 인스턴스가 이전 파일을 읽어 _include_sources 가 이미 있어도 초기화되도록
             self._block_formats = {}     # 키워드별 블록 포맷('i10'/'long'/None) — keyword_dict 와 정렬
             self._global_i10 = False     # *KEYWORD I10=Y
+            self._keyword_line = ''      # *KEYWORD 원문(옵션 포함)
 
         # 파일 읽기
         with open(path, 'r', errors='replace') as f:
@@ -11983,7 +11985,15 @@ class DynaManager():
                     if latest_keyword == 'INCLUDE':
                         includedList.extend(curLines)  # 덮어쓰기가 아닌 추가
                     raw_kwline = line.rstrip()  # 포맷 마커(' %'=I10, '+'=long) 캡처용 원문
-                    line = line.split(' ')[0].strip().rstrip('%+-')  # 무공백 마커(*NODE% 등) 키 오염 방지
+                    # 키워드명 = '*' + [A-Za-z0-9_] 최장 프리픽스. 뒤에 붙는 설명/마커/주석
+                    # ('(ten nodes format)', '%', '#', 탭, '$주석') 은 전부 무시 — 접미어 때문에
+                    # 블록이 통째로 미해석(무언 손실)되던 문제 방지. LS-DYNA 는 대소문자 무관.
+                    # 콤마형(*NODE, NSET= 등 비-LS-DYNA 표기) 은 기존 동작 보존.
+                    _kwm = re.match(r'\*([A-Za-z0-9_]+)', raw_kwline)
+                    if _kwm is not None and not raw_kwline[_kwm.end():].lstrip().startswith(','):
+                        line = '*' + _kwm.group(1).upper()
+                    else:
+                        line = line.split(' ')[0].strip().rstrip('%+-')
                     lines_with_asterisk.append(line[1:])
                     if len(curLines) > 0:
                         if latest_keyword not in keyword_dict:
@@ -12010,13 +12020,19 @@ class DynaManager():
 
                     latest_keyword = line[1:].strip()
                     # LS-DYNA 포맷 마커: 키워드 끝 '%'=I10, '+'=long, '-'=표준 강제, *KEYWORD I10=Y=전역
-                    if latest_keyword == 'KEYWORD' and 'I10=Y' in raw_kwline.upper().replace(' ', ''):
-                        self._global_i10 = True
-                    if raw_kwline.endswith('%'):
+                    _kwtail = raw_kwline.split('$')[0].split('#')[0].rstrip()  # 후행 주석 제거
+                    if latest_keyword == 'KEYWORD':
+                        # *KEYWORD 옵션(I10=Y / LONG=S 등) 원문 보존 — 버리면 요소·절점 필드 폭
+                        # 선언이 사라져 LS-DYNA 가 8칸으로 오독한다(Error 10267/10183).
+                        if not getattr(self, '_keyword_line', ''):
+                            self._keyword_line = _kwtail
+                        if 'I10=Y' in _kwtail.upper().replace(' ', ''):
+                            self._global_i10 = True
+                    if _kwtail.endswith('%'):
                         latest_fmt = 'i10'
-                    elif raw_kwline.endswith('+'):
+                    elif _kwtail.endswith('+'):
                         latest_fmt = 'long'
-                    elif raw_kwline.endswith('-'):
+                    elif _kwtail.endswith('-'):
                         latest_fmt = None
                     else:
                         latest_fmt = 'i10' if getattr(self, '_global_i10', False) else None
@@ -13182,6 +13198,7 @@ class DynaManager():
         # 모델 파일 단위 포맷 테이블 리셋 — 같은 매니저 재사용(IMPORT_MERGE 등) 시 stale 오염 방지
         self._block_formats = {}
         self._global_i10 = False
+        self._keyword_line = ''
         lines_with_asterisk, keyword_dict = self.ReadKeywordsfromFile(path,lines_with_asterisk, keyword_dict)
         # 다운스트림 (DECOMPOSE_K, MERGE_K, fallback writer 등)에서 raw 키워드 데이터 접근용
         self._raw_keyword_dict = keyword_dict

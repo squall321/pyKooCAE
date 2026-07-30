@@ -85,7 +85,7 @@ class KooDynaAdvancedModification:
 
 
         with open(curPath, "w") as f:
-            f.write("*KEYWORD\n")
+            f.write(self.dynaImporter.GetKeywordLine())   # 원본 옵션(I10=Y 등) 보존
             f.write(self.dynaImporter.WriteStreamDynaKeyword())
             f.write("*END\n")
 
@@ -2007,7 +2007,7 @@ class KooDynaAdvancedModification:
             jsonPath = filePath + modifiedKeyword + ".json"
         delta = self.dynaImporter.WriteStreamDeltaKeyword(base_state)
         with open(curPath, "w") as f:
-            f.write("*KEYWORD\n")
+            f.write(self.dynaImporter.GetKeywordLine())   # 원본 옵션(I10=Y 등) 보존
             f.write(cached_base)
             f.write(delta)
             f.write("*END\n")

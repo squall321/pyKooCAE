@@ -537,6 +537,15 @@ class KooDynaImporter():
         # 입력 *NODE 가 I10 였으면 출력도 I10 스타일 보존
         if getattr(nodeKeyword, 'has_i10', False):
             self.nodeManager.output_i10 = True
+        # *KEYWORD I10=Y 전역 선언이면 KMM 이 새로 만드는 파트(바닥판 등)까지 전부 10칸이어야
+        # 한다 — 선언은 보존되는데 일부 카드만 8칸이면 그 카드들이 오독된다.
+        if getattr(self.dynaManager, '_global_i10', False):
+            NodeManager.output_i10 = True
+            ElementManager.output_i10 = True
+        else:
+            # 클래스 기본값 리셋 — 한 프로세스가 여러 모델을 처리할 때 I10 설정이 새지 않도록
+            NodeManager.output_i10 = False
+            ElementManager.output_i10 = False
         value = self.nodeManager.AddNodesfromDynaAdvanced(nodes)
         return value
         #return self.nodeManager.AddNodesfromDyna(nodes)
@@ -2100,6 +2109,11 @@ class KooDynaImporter():
         
         return stream.getvalue()
     
+    def GetKeywordLine(self):
+        """원본 *KEYWORD 줄(옵션 포함). 없으면 기본형."""
+        line = getattr(self.dynaManager, '_keyword_line', '') or '*KEYWORD'
+        return line.rstrip() + "\n"
+
     def WriteStreamDynaKeyword(self):
         stream = StringIO()
         if len(self.title) > 0:
