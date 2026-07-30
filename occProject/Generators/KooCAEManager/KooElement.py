@@ -4067,7 +4067,15 @@ class ElementManager:
                     formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}\n"
                     dynaString += formatString
         if self.GetNumberofQuadraticSolidElements() > 0:
-            dynaString += ("*ELEMENT_SOLID %\n" if w == 10 else "*ELEMENT_SOLID\n")       
+            # 2줄 카드(TETRA10)는 "(ten nodes format)" 헤더 필수. 표준 1줄 헤더 아래 두면
+            # LS-DYNA 가 EID/PID 줄을 노드없는 요소로, 노드줄을 별개 요소로 읽어
+            # 그 블록 이후 전체가 밀리고 존재하지 않는 노드를 참조한다.
+            _n_tet10 = sum(1 for _k in self.elements if self.elements[_k].type == "TETRA10")
+            _n_hex20 = sum(1 for _k in self.elements if self.elements[_k].type == "HEXA20")
+            if _n_hex20:
+                print("  Warning: HEXA20 {n}개 — 3줄 카드 LS-DYNA 표기 미검증(오독 가능)".format(n=_n_hex20))
+            _qhdr = "*ELEMENT_SOLID (ten nodes format)" if _n_tet10 else "*ELEMENT_SOLID"
+            dynaString += _qhdr + (" %\n" if w == 10 else "\n")
             for key in self.elements:
                 element : SolidElement = self.elements[key]
                 if element.type == "TETRA10":
@@ -4116,7 +4124,15 @@ class ElementManager:
             if _skip_cnt:
                 print(f"  Warning: 솔리드 요소 출력 스킵 총 {_skip_cnt}개")
         if self.GetNumberofQuadraticSolidElements() > 0:
-            stream.write(("*ELEMENT_SOLID %\n" if w == 10 else "*ELEMENT_SOLID\n"))
+            # 2줄 카드(TETRA10)는 "(ten nodes format)" 헤더 필수. 표준 1줄 헤더 아래 두면
+            # LS-DYNA 가 EID/PID 줄을 노드없는 요소로, 노드줄을 별개 요소로 읽어
+            # 그 블록 이후 전체가 밀리고 존재하지 않는 노드를 참조한다.
+            _n_tet10 = sum(1 for _k in self.elements if self.elements[_k].type == "TETRA10")
+            _n_hex20 = sum(1 for _k in self.elements if self.elements[_k].type == "HEXA20")
+            if _n_hex20:
+                print("  Warning: HEXA20 {n}개 — 3줄 카드 LS-DYNA 표기 미검증(오독 가능)".format(n=_n_hex20))
+            _qhdr = "*ELEMENT_SOLID (ten nodes format)" if _n_tet10 else "*ELEMENT_SOLID"
+            stream.write(_qhdr + (" %\n" if w == 10 else "\n"))
             _skip_q = 0
             for key in self.elements:
                 element : SolidElement = self.elements[key]
