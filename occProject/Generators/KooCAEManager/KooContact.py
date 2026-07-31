@@ -1,6 +1,50 @@
 from __future__ import annotations
 from KooCAEManager.KooOperator import *
 
+def _OptNum(value, default=0):
+    """접촉 옵션카드 실수 필드 변환. LS-DYNA 규격상 SBOPT 는 F 타입이라
+    Altair 등이 '2.0' 으로 적는 것이 정상이다. 정수 표기는 정수로, 실수 표기는
+    실수로 유지해 원본 표기를 그대로 되돌려 쓴다."""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return value
+    s = str(value).strip()
+    if not s:
+        return default
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        print("  Warning: 접촉 옵션카드 수치필드 '{v}' 해석 불가 - {d} 사용".format(v=s, d=default))
+        return default
+
+
+def _OptInt(value, default=0):
+    """접촉 옵션카드 정수 필드 변환. 실수 표기('2.0')·빈 칸·정수 입력을 모두 수용한다."""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(round(value))
+    s = str(value).strip()
+    if not s:
+        return default
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    try:
+        return int(round(float(s)))
+    except (TypeError, ValueError, OverflowError):
+        print("  Warning: 접촉 옵션카드 정수필드 '{v}' 해석 불가 - {d} 사용".format(v=s, d=default))
+        return default
+
+
 class KooContact:
     def __init__(self, cid, name, SSID, MSID,SSTYP,MSTYP,SBOXID,MBOXID,SPR,MPR,FS,FD,DC,VC,VDC,PENCHK,BT,DT,SFS,SFM,SST,MST,SFST,SFMT,FSF,VSF):
         self.cid = cid 
@@ -57,7 +101,12 @@ class KooContact:
             self.MSID += offsetnsid
 
     def SetOptCardA(self,SOFT=0, SOFSCL=0.1, LCIDAB=0, MAXPAR=1.025, SBOPT=2, DEPTH=2, BSORT=100, FRCFRQ=1):
-        self.OptCardA = [int(SOFT), SOFSCL, int(LCIDAB), MAXPAR, int(SBOPT), int(DEPTH), int(BSORT), int(FRCFRQ)]
+        # 정수 옵션이지만 Altair 등이 '2.0' 으로 기록하는 경우가 있어 int() 직접호출은
+        # ValueError 로 죽는다(빈 칸도 동일). 관대 변환으로 받되 값은 정수로 정규화한다.
+        # 타입: SOFT(I) SOFSCL(F) LCIDAB(I) MAXPAR(F) SBOPT(F) DEPTH(I) BSORT(I) FRCFRQ(I)
+        # SBOPT 는 규격상 실수 필드라 '2.0' 표기가 정상 — 정수 강제하지 않고 표기를 보존한다.
+        self.OptCardA = [_OptInt(SOFT), SOFSCL, _OptInt(LCIDAB), MAXPAR,
+                         _OptNum(SBOPT), _OptInt(DEPTH), _OptInt(BSORT), _OptInt(FRCFRQ)]
     
     def SetOptCardB(self,PENMAX=0.0, THKOPT=0, SHLTHK=0, SNLOG=0, ISYM=0, I2D3D=0, SLDTHK=0.0, SLDSTF=0.0):
         self.OptCardB = [PENMAX, THKOPT, SHLTHK, SNLOG, ISYM, I2D3D, SLDTHK, SLDSTF]

@@ -36,7 +36,13 @@ def KooDynaInt(value, default = 0):
         reValue = default
     # check it can be changed into integer include minus sign
     elif not value.replace("-","").strip().isdigit():
-        reValue = default
+        # Altair 등 일부 프리프로세서가 정수 필드를 '2.0' 처럼 실수로 기록한다.
+        # 기존에는 여기서 조용히 default(0)로 떨어져 SSID/SSTYP/SBOPT 등이 0 이 되는
+        # 무언 손상이 있었다 → 정수값을 가진 실수 표기는 정수로 복원한다.
+        try:
+            reValue = int(round(float(value)))
+        except (TypeError, ValueError, OverflowError):
+            reValue = default
     else:
         reValue = int(value)
     return reValue
