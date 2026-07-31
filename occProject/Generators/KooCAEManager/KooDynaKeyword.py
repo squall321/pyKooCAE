@@ -6096,9 +6096,13 @@ class ElementSolid(DynaKeyword):
     
     
     @staticmethod
-    def _parse_ten_nodes_block(block):
-        # *ELEMENT_SOLID (ten nodes format) 블록 → [헤더(EID,PID), 노드10필드] 쌍 리스트.
-        # 랩 우선 상태머신: 헤더(2토큰) 후 노드 필드를 10개 채울 때까지 전부 노드로 소비
+    def _parse_ten_nodes_block(block, expect=10):
+        # *ELEMENT_SOLID 2-카드 블록 → [헤더(EID,PID), 노드10필드] 쌍 리스트.
+        # 🔴 expect = Card 2 의 절점 개수. 키워드 선언이 진실이다.
+        #    "(ten nodes format)" → 10 / 옵션 없는 순수 *ELEMENT_SOLID → 8.
+        #    이걸 무시하고 무조건 10개까지 흡수하면, 8절점 2-카드 덱(HyperMesh 표준
+        #    출력)에서 다음 요소의 EID/PID 를 N9/N10 으로 삼켜 요소가 절반 소실된다.
+        # 랩 우선 상태머신: 헤더(2토큰) 후 노드 필드를 expect 개 채울 때까지 노드로 소비
         # (1줄/8+2/4+4+2/2개씩/1개씩 랩·빈 줄·앞공백 주석·후행 blank 필드·CRLF 전부 수용).
         # 폭은 헤더마다 재감지(원문 길이 16=I8, 20=I10, 그 외=토큰 모드 — I8/I10 혼합 블록 대응).
         # 노드줄 고정폭 슬라이스는 "전 필드가 정수 또는 빈칸"일 때만 채택, 아니면 공백 토큰화
@@ -6162,10 +6166,13 @@ class ElementSolid(DynaKeyword):
                 fields = toks
             # 랩 우선: 2필드 연속줄(n9 n10 / 0 0)도 노드 — 10개 찰 때까지 전부 소비
             nodes.extend(fields)
-            if len(nodes) >= 10:
+            # 한 줄에 10필드가 들어온 경우는 10 우선(순수 *ELEMENT_SOLID 인데 Card 2 가
+            # 10필드인 변형 대응), 그 외에는 선언이 지시하는 expect 에서 마감.
+            target = 10 if len(nodes) >= 10 else expect
+            if len(nodes) >= target:
                 if len(nodes) > 10:
                     if warn_cnt < 5:
-                        print(f"  Warning: ELEMENT_SOLID ten-nodes EID {header[0]} 노드 {len(nodes)}개(>10) — 앞 10개 사용")
+                        print(f"  Warning: ELEMENT_SOLID 2-카드 EID {header[0]} 노드 {len(nodes)}개(>10) — 앞 10개 사용")
                     warn_cnt += 1
                 finalize()
         finalize()
@@ -6191,7 +6198,9 @@ class ElementSolid(DynaKeyword):
             if fmt_i10:
                 self.has_i10 = True
             if probe is not None and len(probe.split()) == 2:
-                params_tn, saw_i10 = self._parse_ten_nodes_block(block)
+                _tn = getattr(self, 'block_tennodes', [])
+                _is_ten = bool(_tn[i]) if i < len(_tn) else False
+                params_tn, saw_i10 = self._parse_ten_nodes_block(block, 10 if _is_ten else 8)
                 if saw_i10:
                     self.has_i10 = True
                 self.parameters.append(params_tn)
@@ -11956,6 +11965,7 @@ class DynaManager():
         if not hasattr(self, '_block_formats'):
             # 독립 게이트: 같은 인스턴스가 이전 파일을 읽어 _include_sources 가 이미 있어도 초기화되도록
             self._block_formats = {}     # 키워드별 블록 포맷('i10'/'long'/None) — keyword_dict 와 정렬
+            self._block_tennodes = {}    # 키워드별 "(ten nodes format)" 선언 여부
             self._global_i10 = False     # *KEYWORD I10=Y
             self._keyword_line = ''      # *KEYWORD 원문(옵션 포함)
 
@@ -11979,6 +11989,7 @@ class DynaManager():
             print(f"  Warning: PARAMETER 해석 실패 (원본 유지): {e}")
 
         latest_fmt = 'i10' if getattr(self, '_global_i10', False) else None
+        latest_tennodes = False
         for line in raw_lines:
                 # Check if the line starts with an asterisk
                 if line.startswith('*'):
@@ -12001,6 +12012,7 @@ class DynaManager():
                         keyword_dict[latest_keyword].append(curLines)
                         # 블록별 포맷 태깅 (keyword_dict 블록과 1:1 정렬)
                         self._block_formats.setdefault(latest_keyword, []).append(latest_fmt)
+                        self._block_tennodes.setdefault(latest_keyword, []).append(latest_tennodes)
                         # source_file 태깅
                         if latest_keyword not in self._include_sources:
                             self._include_sources[latest_keyword] = []
@@ -12021,6 +12033,8 @@ class DynaManager():
                     latest_keyword = line[1:].strip()
                     # LS-DYNA 포맷 마커: 키워드 끝 '%'=I10, '+'=long, '-'=표준 강제, *KEYWORD I10=Y=전역
                     _kwtail = raw_kwline.split('$')[0].split('#')[0].rstrip()  # 후행 주석 제거
+                    # "(ten nodes format)" 선언 — Card 2 의 절점 개수(10 vs 8)를 결정한다
+                    latest_tennodes = 'TENNODES' in _kwtail.upper().replace(' ', '')
                     if latest_keyword == 'KEYWORD':
                         # *KEYWORD 옵션(I10=Y / LONG=S 등) 원문 보존 — 버리면 요소·절점 필드 폭
                         # 선언이 사라져 LS-DYNA 가 8칸으로 오독한다(Error 10267/10183).
@@ -13197,6 +13211,7 @@ class DynaManager():
 
         # 모델 파일 단위 포맷 테이블 리셋 — 같은 매니저 재사용(IMPORT_MERGE 등) 시 stale 오염 방지
         self._block_formats = {}
+        self._block_tennodes = {}
         self._global_i10 = False
         self._keyword_line = ''
         lines_with_asterisk, keyword_dict = self.ReadKeywordsfromFile(path,lines_with_asterisk, keyword_dict)
@@ -14403,6 +14418,7 @@ class DynaManager():
                 element_solid = keyword_dict["ELEMENT_SOLID"]
                 esolid = ElementSolid()
                 esolid.block_formats = getattr(self, "_block_formats", {}).get("ELEMENT_SOLID", [])
+                esolid.block_tennodes = getattr(self, "_block_tennodes", {}).get("ELEMENT_SOLID", [])
                 esolid.parse(element_solid)
                 esolid.write(file)
                 dynaKeywordMan.addKeyword(esolid)

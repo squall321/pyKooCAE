@@ -2443,6 +2443,10 @@ class KooPartManager():
                             part.AddQuadrangleQuadraticElementThetaBeta(eid, n1, n2, n3, n4, n5, n6, n7, n8, theta[0], theta[1], theta[2], theta[3], theta[4], theta[5], theta[6], theta[7], beta)
 
     def AddSolidElementsfromDynaAdvanced(self, parametersSolid):
+        # 개수 불변식: 조용한 요소 소실을 막기 위해 '입력 레코드 vs 실제 등록' 을 집계한다.
+        _rec_total = 0      # 입력에서 인식한 요소 레코드 수
+        _add_total = 0      # 실제로 파트에 등록된 요소 수
+        _pid_miss = 0       # PID 가 파트에 없어 버려진 수(기존엔 완전 무언)
         for i in range(len(parametersSolid)):
                 parameters = parametersSolid[i]
                 mode = 1
@@ -2473,17 +2477,23 @@ class KooPartManager():
                         pid = int(parameter[1])
                         nids = [KooDynaInt(i) for i in parameter[2:]]
 
+                        _rec_total += 1
+                        if pid not in self.parts:
+                            _pid_miss += 1
                         if pid in self.parts:
                             part = self.parts[pid]
                             if len(nids) == 4 or nids[4] == 0 or nids[4] == nids[3]:
                                 nodes = get_nodes(part.nodeManager, nids[:4])
                                 part.AddTetrahedronLinearElement(eid, *nodes)
+                                _add_total += 1
                             elif len(nids) == 6 or nids[6] == 0 or nids[6] == nids[5]:
                                 nodes = get_nodes(part.nodeManager, nids[:6])
                                 part.AddPentahedronLinearElement(eid, *nodes)
+                                _add_total += 1
                             elif len(nids) == 8:
                                 nodes = get_nodes(part.nodeManager, nids[:8])
                                 part.AddHexahedronLinearElement(eid, *nodes)
+                                _add_total += 1
 
                 elif mode == 2:
                     _warn_hdr = 0
@@ -2512,20 +2522,26 @@ class KooPartManager():
                                 print(f"  Warning: ELEMENT_SOLID EID {eid} 코너노드 부족(nids[:4]={nids[:4]}) — 요소 스킵")
                             continue
 
+                        _rec_total += 1
+                        if pid not in self.parts:
+                            _pid_miss += 1
                         if pid in self.parts:
                             part = self.parts[pid]
                             if len(nids) == 4 or nids[4] == 0 or nids[4] == nids[3]:
                                 nodes = get_nodes(part.nodeManager, nids[:4])
                                 part.AddTetrahedronLinearElement(eid, *nodes)
+                                _add_total += 1
                             elif len(nids) == 6 or nids[6] == 0 or nids[6] == nids[5]:
                                 nodes = get_nodes(part.nodeManager, nids[:6])
                                 part.AddPentahedronLinearElement(eid, *nodes)                                
                             elif len(nids) == 8 or nids[8] == 0 or nids[8] == nids[7]:
                                 nodes = get_nodes(part.nodeManager, nids[:8])
                                 part.AddHexahedronLinearElement(eid, *nodes)
+                                _add_total += 1
                             elif len(nids) == 10:
                                 nodes = get_nodes(part.nodeManager, nids[:10])
                                 part.AddTetrahedronQuadraticElement(eid, *nodes)
+                                _add_total += 1
                     if _warn_hdr > 5:
                         print(f"  Warning: ELEMENT_SOLID 2줄 포맷 헤더 이상 총 {_warn_hdr}건")
                     if _warn_corner > 5:
@@ -2540,11 +2556,25 @@ class KooPartManager():
                         pid = int(parameter1[1])
                         nids = [int(i) for i in parameter2 + parameter3]
 
+                        _rec_total += 1
+                        if pid not in self.parts:
+                            _pid_miss += 1
                         if pid in self.parts:
                             part = self.parts[pid]
                             if len(nids) == 20:
                                 nodes = get_nodes(part.nodeManager, nids[:20])
                                 part.AddHexahedronQuadraticElement(eid, *nodes)
+                                _add_total += 1
+
+        # 🔴 개수 불변식 보고 — 요소가 조용히 사라지는 것을 로그만 보고도 잡을 수 있게 한다.
+        if _rec_total:
+            _lost = _rec_total - _add_total
+            if _lost:
+                print(f"  🔴 ELEMENT_SOLID 개수 불일치: 입력 {_rec_total} → 등록 {_add_total} "
+                      f"({_lost}개 소실, PID 미존재 {_pid_miss}개). 결과를 신뢰하기 전에 확인 필요")
+            else:
+                print(f"  ELEMENT_SOLID 개수 검사: 입력 {_rec_total} = 등록 {_add_total} (소실 0)")
+
                                 
                                 
     
