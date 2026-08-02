@@ -811,32 +811,62 @@ echo "로그 동기화 완료"
     #    (3) -k all 은 노드 단위가 아니라 그 사용자의 라이선스 전체가 대상이라,
     #        동시에 돌던 다른 프로젝트의 정상 잡까지 죽였다.
     #    → 회수 대상을 pid@host 단위로 특정하고, 실패는 종료코드로 드러낸다.
-    lic_server = (
-        env.get("lstc_license_server", "")
-        or (env.get("lsdyna_apptainer_env") or {}).get("LSTC_LICENSE_SERVER", "")
-        or (env.get("apptainer_env") or {}).get("LSTC_LICENSE_SERVER", "")
-    )
-    node_ssh_user = env.get("node_ssh_user", "")
-    node_ssh_method = env.get("node_ssh_method", "auto")   # auto | key | sshpass | none
-    node_ssh_pw_env = env.get("node_ssh_password_env", "")
-
-    kill_dyna_header = f'''#!/bin/bash
+    #
+    # 설정은 생성 시점에 박지 않고 런타임에 scenario.json 에서 읽는다.
+    # 그래야 프로젝트마다 다른 라이선스 서버가 그대로 반영되고, 기존 프로젝트의
+    # 낡은 kill_dyna.sh 도 이 파일을 덮어쓰기만 하면 갱신된다(재생성 불필요).
+    kill_dyna_body = r'''#!/bin/bash
 # kill_dyna.sh - 취소한 잡의 LSTC 라이선스 홀드 회수 + 계산노드 잔여 프로세스 정리
 # stop.sh에서 자동 호출됨. 단독 실행도 가능. --dry-run 으로 대상만 확인 가능.
 #
 # 라이선스 회수는 헤드노드에서 라이선스 서버로 직접 수행한다(노드 SSH 불필요).
 # 회수 대상은 pid@host 단위로 특정하며, 실행 중인 잡의 홀드는 건드리지 않는다.
-SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JOBS_FILE="$SCRIPT_DIR/jobs.json"
 
-# --- 설정 (scenario.json 의 environment 에서 주입) ---
-LIC_SERVER="{lic_server}"
-NODE_SSH_USER="{node_ssh_user}"
-NODE_SSH_METHOD="{node_ssh_method}"
-NODE_SSH_PW_ENV="{node_ssh_pw_env}"
-'''
+# --- 설정: scenario.json 의 environment 에서 런타임에 읽는다 ---
+# shlex.quote 로 감싸므로 설정값에 공백/따옴표가 있어도 안전하다.
+eval "$(python3 -c "
+import json, shlex, sys
+try:
+    e = json.load(open(sys.argv[1])).get('environment', {}) or {}
+except Exception:
+    e = {}
+def s(k, d=''):
+    v = e.get(k, d)
+    return v if isinstance(v, str) else d
+lic = s('lstc_license_server')
+if not lic:
+    for sub in ('lsdyna_apptainer_env', 'apptainer_env'):
+        d = e.get(sub) or {}
+        if isinstance(d, dict) and d.get('LSTC_LICENSE_SERVER'):
+            lic = str(d['LSTC_LICENSE_SERVER']); break
+for name, val in (('CFG_LIC_SERVER', lic),
+                  ('CFG_SSH_USER', s('node_ssh_user')),
+                  ('CFG_SSH_METHOD', s('node_ssh_method', 'auto')),
+                  ('CFG_SSH_PW_ENV', s('node_ssh_password_env')),
+                  ('CFG_LSTC_BIN', s('lstc_bin_dir'))):
+    print('%s=%s' % (name, shlex.quote(val)))
+" "$SCRIPT_DIR/scenario.json" 2>/dev/null)"
 
-    kill_dyna_body = r'''
+LIC_SERVER="${CFG_LIC_SERVER:-$LSTC_LICENSE_SERVER}"
+NODE_SSH_USER="$CFG_SSH_USER"
+NODE_SSH_METHOD="${CFG_SSH_METHOD:-auto}"
+NODE_SSH_PW_ENV="$CFG_SSH_PW_ENV"
+
+# lstc_qrun/lstc_qkill 은 PATH 에 없는 설치가 흔하다(예: ~/LSTCManager).
+find_lstc() {
+    local name="$1" p
+    command -v "$name" 2>/dev/null && return 0
+    for p in "$CFG_LSTC_BIN" "$LSTC_BIN_DIR" "$HOME/LSTCManager" \
+             /usr/local/lstc /opt/lstc /usr/local/lsdyna/bin; do
+        [ -n "$p" ] && [ -x "$p/$name" ] && { echo "$p/$name"; return 0; }
+    done
+    return 1
+}
+QRUN="$(find_lstc lstc_qrun)"
+QKILL="$(find_lstc lstc_qkill)"
+
 LIC_USER="${USER:-$(whoami)}"
 DRY_RUN=false
 [ "$1" = "--dry-run" ] || [ "$1" = "-n" ] && DRY_RUN=true
@@ -888,7 +918,7 @@ NODES=$(for X in $NODES; do
         done | sort -u | grep -v '^$')
 echo "$NODES" > "$TMP/nodes.txt"
 
-NODE_COUNT=$(grep -c . "$TMP/nodes.txt" 2>/dev/null || echo 0)
+NODE_COUNT=$(grep -c . "$TMP/nodes.txt" 2>/dev/null); NODE_COUNT=${NODE_COUNT:-0}
 echo "이 프로젝트가 사용한 노드: ${NODE_COUNT}개"
 echo ""
 
@@ -897,20 +927,24 @@ echo ""
 # ============================================================
 echo "[1/3] 라이선스 홀드 회수"
 
-if [ -z "$LIC_SERVER" ]; then
-    echo "  ⚠ 라이선스 서버 미설정 — 회수를 건너뜁니다."
-    echo "     scenario.json 의 environment.lstc_license_server 또는"
-    echo "     environment.lsdyna_apptainer_env.LSTC_LICENSE_SERVER 를 설정하세요."
-    FAILED=1
-elif ! command -v lstc_qrun >/dev/null 2>&1; then
-    echo "  ⚠ lstc_qrun 을 찾을 수 없습니다 — 회수를 건너뜁니다. (PATH 확인 필요)"
+if [ -z "$QRUN" ] || [ -z "$QKILL" ]; then
+    echo "  ❌ lstc_qrun/lstc_qkill 을 찾을 수 없습니다 — 라이선스가 회수되지 않았습니다."
+    echo "     PATH 에 추가하거나 scenario.json 의 environment.lstc_bin_dir 을 설정하세요."
     FAILED=1
 else
     export LSTC_LICENSE=network
-    export LSTC_LICENSE_SERVER="$LIC_SERVER"
+    # 서버 미지정이면 lstc 기본 설정(LSTC_LICENSE_SERVER/네트워크 설정)을 그대로 쓴다.
+    if [ -n "$LIC_SERVER" ]; then
+        export LSTC_LICENSE_SERVER="$LIC_SERVER"
+        LIC_ARGS=(-s "$LIC_SERVER")
+        echo "  라이선스 서버: $LIC_SERVER"
+    else
+        LIC_ARGS=()
+        echo "  라이선스 서버: (미지정 — lstc 기본 설정 사용)"
+    fi
 
-    if ! lstc_qrun -s "$LIC_SERVER" > "$TMP/holds.txt" 2> "$TMP/holds.err"; then
-        echo "  ❌ lstc_qrun -s $LIC_SERVER 실패 — 라이선스가 회수되지 않았습니다."
+    if ! "$QRUN" "${LIC_ARGS[@]}" > "$TMP/holds.txt" 2> "$TMP/holds.err"; then
+        echo "  ❌ lstc_qrun 조회 실패 — 라이선스가 회수되지 않았습니다."
         sed 's/^/     /' "$TMP/holds.err" | head -5
         FAILED=1
     else
@@ -951,11 +985,17 @@ def lstc_time(s):
         t = t.replace(year=now.year - 1)
     return t
 
+# 배너/안내 줄에도 pid@host 모양이 나온다.
+# 예: "Using user specified server 0@192.168.122.1" → 홀드로 오인하면 안 된다.
+BANNER = re.compile(r'^\s*(Using|Defaulting|No\s+programs|Defined|Licensed|[-=]{3,})', re.I)
+
 holds = []
 with open(holds_f, errors='replace') as fh:
     for line in fh:
+        if BANNER.match(line):
+            continue
         m = PIDHOST.search(line)
-        if not m:
+        if not m or m.group(1).lstrip('0') == '':   # pid 0 은 홀드가 아니다
             continue
         toks = line.split()
         # 내 홀드만 대상 (사용자 컬럼 위치가 구현마다 달라 앞 두 토큰을 본다)
@@ -1008,9 +1048,9 @@ for h in holds:
     print('%s\t%s@%s\t%s' % (verdict, h['pid'], host, why))
 PYEOF
 
-        TOTAL=$(grep -c . "$TMP/verdict.txt" 2>/dev/null || echo 0)
+        TOTAL=$(grep -c . "$TMP/verdict.txt" 2>/dev/null); TOTAL=${TOTAL:-0}
         grep '^KILL' "$TMP/verdict.txt" > "$TMP/kill.txt" 2>/dev/null || : > "$TMP/kill.txt"
-        KILL_N=$(grep -c . "$TMP/kill.txt" 2>/dev/null || echo 0)
+        KILL_N=$(grep -c . "$TMP/kill.txt" 2>/dev/null); KILL_N=${KILL_N:-0}
         echo "  내 홀드 ${TOTAL}개 중 회수 대상 ${KILL_N}개"
 
         if [ "$KILL_N" -gt 0 ]; then
@@ -1020,7 +1060,7 @@ PYEOF
                     echo "    [dry-run] $TARGET — $WHY"
                     continue
                 fi
-                if lstc_qkill "$TARGET" -s "$LIC_SERVER" >/dev/null 2>"$TMP/qk.err"; then
+                if "$QKILL" "$TARGET" "${LIC_ARGS[@]}" >/dev/null 2>"$TMP/qk.err"; then
                     KILLED=$((KILLED + 1))
                 else
                     echo "    ❌ 회수 실패: $TARGET"
@@ -1115,15 +1155,15 @@ echo ""
 # ============================================================
 echo "[3/3] 자체 검증"
 
-if [ -n "$LIC_SERVER" ] && command -v lstc_qrun >/dev/null 2>&1 && ! $DRY_RUN; then
-    HOLDS_NOW=$(lstc_qrun -s "$LIC_SERVER" 2>/dev/null \
+if [ -n "$QRUN" ] && ! $DRY_RUN; then
+    HOLDS_NOW=$("$QRUN" "${LIC_ARGS[@]}" 2>/dev/null \
         | awk -v me="$LIC_USER" '/[0-9]+@/ { if ($1 == me || $2 == me) c++ } END { print c+0 }')
-    RUN_NOW=$(squeue -u "$LIC_USER" -h -t RUNNING,COMPLETING,CONFIGURING -o "%i" 2>/dev/null | grep -c . || echo 0)
+    RUN_NOW=$(squeue -u "$LIC_USER" -h -t RUNNING,COMPLETING,CONFIGURING -o "%i" 2>/dev/null | grep -c .); RUN_NOW=${RUN_NOW:-0}
     echo "  내 홀드 ${HOLDS_NOW}개 / 내 실행 잡 ${RUN_NOW}개"
     if [ "$HOLDS_NOW" -gt "$RUN_NOW" ]; then
         echo "  ⚠ 홀드가 실행 잡보다 $((HOLDS_NOW - RUN_NOW))개 많습니다 — 좀비 홀드가 남아 있을 수 있습니다."
         echo "     다른 프로젝트 노드의 홀드는 안전을 위해 회수하지 않습니다."
-        echo "     남은 홀드를 확인하려면: lstc_qrun -s $LIC_SERVER"
+        echo "     남은 홀드를 확인하려면: $QRUN ${LIC_ARGS[@]}"
     else
         echo "  ✅ 좀비 홀드 없음"
     fi
@@ -1142,7 +1182,7 @@ echo "========================================"
 exit $FAILED
 '''
 
-    kill_dyna_script = kill_dyna_header + kill_dyna_body
+    kill_dyna_script = kill_dyna_body
     kill_dyna_path = script_dir / "kill_dyna.sh"
     kill_dyna_path.write_text(kill_dyna_script, encoding="utf-8")
     kill_dyna_path.chmod(kill_dyna_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
