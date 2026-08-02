@@ -26,8 +26,10 @@
 - [x] scenario.json → prepare e2e
 
 ## 배포
-- [ ] 커밋
-- [ ] KooChainRun 빌드
-- [ ] SIF 소스 트리 갱신 (`appt313/opt/SmartTwinPreprocessor`) ← 빼먹기 쉬움
-- [ ] SIF + tar
-- [ ] node001 배포
+- [x] 커밋
+- [x] KooChainRun 빌드
+- [x] SIF 소스 트리 갱신 (`appt313/opt/SmartTwinPreprocessor`) ← 빼먹기 쉬움
+- [x] SIF + tar
+- [x] node001 배포
+
+배포 완료: **v79** (2026-08-02 22:10). node001 SIF 내 `previous_stages` 5건 확인.
