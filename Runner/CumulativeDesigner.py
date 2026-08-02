@@ -529,7 +529,8 @@ class CumulativeDesigner:
                     num_points=num_pts,
                     progressive=bool(fib_cfg.get("progressive", False)),
                     principal_directions=fib_cfg.get("principal_directions"),
-                    sampling_space=fib_cfg.get("sampling_space")
+                    sampling_space=fib_cfg.get("sampling_space"),
+                    previous_stages=fib_cfg.get("previous_stages")
                 )
             )
 

@@ -51,6 +51,13 @@ class FibonacciLatticeConfig:
                                     # "physical"=실제 낙하방향(DropAttitude 회전) 공간에서 등간격.
                                     # lat/lon 균일은 실제 충격방향 공간에선 한쪽 쏠림(비∞) → physical 권장.
                                     # principal_directions 설정 시 자동으로 physical 적용.
+    previous_stages: Optional[List[int]] = None  # 이미 돌린 단계들의 누적 개수 (오름차순).
+                                    # 예: [120, 500] + num_points=1000 → 이미 500개를 돌렸고
+                                    # 이번에 500개를 추가해 누적 1000개를 만든다.
+                                    # 이전 단계 위치를 결정론적으로 재현한 뒤, 이번 N세트에서
+                                    # 그것들과 가까운 점을 정확히 제거하고 나머지만 방출한다.
+                                    # → 단계 경로와 무관하게 누적 위치 셋이 항상 동일.
+                                    # 🔴 모든 단계가 num_points 를 제외하고 같은 설정이어야 한다.
 
 
 @dataclass
@@ -188,6 +195,10 @@ def parse_fibonacci_lattice(config: FibonacciLatticeConfig) -> List[Tuple[str, f
     N = config.num_points
     golden_angle = math.pi * (3.0 - math.sqrt(5.0))  # ≈ 137.508°
 
+    # 0-a) 단계별(staged) 생성: 이미 돌린 단계가 선언되면 그 위치를 재현하고 빼고 방출한다.
+    if getattr(config, "previous_stages", None):
+        return _staged_lattice(config)
+
     # 0) physical 공간 생성: 실제 낙하방향(DropAttitude 회전) 공간에서 등간격.
     #    principal_directions 가 설정되면(표준 자세 시드) 무조건 physical(그래야 면이 안 붕괴됨).
     principal = getattr(config, "principal_directions", None)
@@ -233,6 +244,89 @@ def parse_fibonacci_lattice(config: FibonacciLatticeConfig) -> List[Tuple[str, f
         angles.append((f"P{new_i+1:04d}", roll, pitch, yaw))
 
     return angles
+
+
+def _remove_nearest(cand_dirs: List[Tuple[float, float, float]],
+                    prev_dirs: List[Tuple[float, float, float]],
+                    k: int) -> List[int]:
+    """후보에서 prev 에 가까운 점을 정확히 k 개 제거하고, 남은 후보의 인덱스를 반환.
+
+    prev 를 순서대로 훑으며 각자 "가장 가까운 아직 안 지워진 후보" 하나씩을 가져간다.
+    - 결정론적(입력 순서만으로 결과가 정해짐)
+    - O(P·N) 시간 / O(N) 메모리. 전역 그리디 매칭과 품질이 동일함을 실측 확인했고
+      (누적 500 기준 둘 다 최소간격 4.59°), 메모리가 선형이라 큰 N 에서도 안전하다.
+    """
+    removed = set()
+    for p in prev_dirs:
+        if len(removed) >= k:
+            break
+        best_dot, best_i = -2.0, None
+        for i, c in enumerate(cand_dirs):
+            if i in removed:
+                continue
+            d = p[0] * c[0] + p[1] * c[1] + p[2] * c[2]   # 클수록 가깝다
+            if d > best_dot:
+                best_dot, best_i = d, i
+        if best_i is None:
+            break
+        removed.add(best_i)
+    return [i for i in range(len(cand_dirs)) if i not in removed]
+
+
+def _staged_lattice(config: FibonacciLatticeConfig) -> List[Tuple[str, float, float, float]]:
+    """이전 단계를 재현한 뒤, 이번 단계의 신규분만 방출.
+
+    previous_stages=[120,500], num_points=1000 이면
+      acc = gen(120)                              → 120
+      acc += gen(500) 에서 acc 근처 120개 제거     → 500
+      new  = gen(1000) 에서 acc 근처 500개 제거    → 500  ← 방출
+    이름은 누적 순번을 잇는다(P0501~P1000).
+    """
+    N = config.num_points
+    stages = list(config.previous_stages or [])
+
+    # --- 입력 검증: 조용히 틀린 각도 셋을 내보내지 않는다 ---
+    if any((not isinstance(s, int)) or s <= 0 for s in stages):
+        raise ValueError(f"previous_stages 는 양의 정수여야 합니다: {stages}")
+    if any(b <= a for a, b in zip(stages, stages[1:])):
+        raise ValueError(f"previous_stages 는 오름차순이어야 합니다: {stages}")
+    if stages[-1] >= N:
+        raise ValueError(
+            f"previous_stages 의 마지막({stages[-1]})은 num_points({N})보다 작아야 합니다. "
+            f"num_points 는 '최종 누적 총량'입니다.")
+
+    def _gen(n: int) -> List[Tuple[str, float, float, float]]:
+        """같은 설정으로 n 개 생성 (단계 재현용 — previous_stages 만 뗀다)."""
+        sub = FibonacciLatticeConfig(
+            num_points=n,
+            angle_spacing=config.angle_spacing,
+            progressive=config.progressive,
+            principal_directions=config.principal_directions,
+            sampling_space=config.sampling_space,
+            previous_stages=None,
+        )
+        return parse_fibonacci_lattice(sub)
+
+    # 거리는 실제 낙하방향 공간에서 잰다(파라미터 공간이 아니라 물리적으로 가까운지가 기준).
+    acc_dirs: List[Tuple[float, float, float]] = []
+    for s in stages:
+        cand = _gen(s)
+        cand_dirs = [_physical_drop_dir(r, p) for _, r, p, _ in cand]
+        keep = _remove_nearest(cand_dirs, acc_dirs, len(acc_dirs))
+        acc_dirs.extend(cand_dirs[i] for i in keep)
+
+    cand = _gen(N)
+    cand_dirs = [_physical_drop_dir(r, p) for _, r, p, _ in cand]
+    keep = _remove_nearest(cand_dirs, acc_dirs, len(acc_dirs))
+
+    base = len(acc_dirs)
+    # 🔴 이전 단계를 빠뜨리고 선언하면 재현이 어긋나 실제 기존 점과 겹치는 각도가 섞인다
+    #    (실측: [120,500] 을 [500] 로 잘못 적으면 1000개 중 4개가 1° 이내 중복).
+    #    실제로 돌린 단계를 하나도 빠짐없이 적었는지 이 줄로 확인할 것.
+    print(f"  단계별 각도 생성: 이전 단계 {stages} → 재현 누적 {base}개, "
+          f"이번 신규 {len(keep)}개, 최종 누적 {base + len(keep)}개")
+    return [(f"P{base + j + 1:04d}", cand[i][1], cand[i][2], cand[i][3])
+            for j, i in enumerate(keep)]
 
 
 def _farthest_point_order(vecs: List[Tuple[float, float, float]]) -> List[int]:
