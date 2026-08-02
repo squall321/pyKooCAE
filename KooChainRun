@@ -802,75 +802,347 @@ echo "로그 동기화 완료"
     copylog_path.write_text(copylog_script, encoding="utf-8")
     copylog_path.chmod(copylog_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    # kill_dyna.sh 생성 (계산노드의 LS-DYNA 좀비 프로세스 정리)
-    kill_dyna_script = f'''#!/bin/bash
-# kill_dyna.sh - 이 프로젝트에서 사용된 노드의 LS-DYNA 프로세스 강제 종료
-# lstc_qrun이 등록되어 있다고 가정
-# stop.sh에서 자동 호출됨. 단독 실행도 가능.
+    # kill_dyna.sh 생성 (취소 잡의 LSTC 라이선스 홀드 회수 + 선택적 노드 프로세스 정리)
+    #
+    # 🔴 라이선스 회수는 헤드노드에서 라이선스 서버로 직접 수행한다(노드 SSH 불필요).
+    #    구버전은 계산노드에 SSH 해 `lstc_qrun -k all` 을 실행했는데 3중 결함이었다.
+    #    (1) 작업 계정이 계산노드에 SSH 못 하는 클러스터에서 전 노드 100% 실패
+    #    (2) 2>/dev/null + || echo 로 실패가 은폐되어 stop.sh 가 정상 종료
+    #    (3) -k all 은 노드 단위가 아니라 그 사용자의 라이선스 전체가 대상이라,
+    #        동시에 돌던 다른 프로젝트의 정상 잡까지 죽였다.
+    #    → 회수 대상을 pid@host 단위로 특정하고, 실패는 종료코드로 드러낸다.
+    lic_server = (
+        env.get("lstc_license_server", "")
+        or (env.get("lsdyna_apptainer_env") or {}).get("LSTC_LICENSE_SERVER", "")
+        or (env.get("apptainer_env") or {}).get("LSTC_LICENSE_SERVER", "")
+    )
+    node_ssh_user = env.get("node_ssh_user", "")
+    node_ssh_method = env.get("node_ssh_method", "auto")   # auto | key | sshpass | none
+    node_ssh_pw_env = env.get("node_ssh_password_env", "")
+
+    kill_dyna_header = f'''#!/bin/bash
+# kill_dyna.sh - 취소한 잡의 LSTC 라이선스 홀드 회수 + 계산노드 잔여 프로세스 정리
+# stop.sh에서 자동 호출됨. 단독 실행도 가능. --dry-run 으로 대상만 확인 가능.
+#
+# 라이선스 회수는 헤드노드에서 라이선스 서버로 직접 수행한다(노드 SSH 불필요).
+# 회수 대상은 pid@host 단위로 특정하며, 실행 중인 잡의 홀드는 건드리지 않는다.
 SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
 JOBS_FILE="$SCRIPT_DIR/jobs.json"
 
+# --- 설정 (scenario.json 의 environment 에서 주입) ---
+LIC_SERVER="{lic_server}"
+NODE_SSH_USER="{node_ssh_user}"
+NODE_SSH_METHOD="{node_ssh_method}"
+NODE_SSH_PW_ENV="{node_ssh_pw_env}"
+'''
+
+    kill_dyna_body = r'''
+LIC_USER="${USER:-$(whoami)}"
+DRY_RUN=false
+[ "$1" = "--dry-run" ] || [ "$1" = "-n" ] && DRY_RUN=true
+
+FAILED=0
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
 echo "========================================"
-echo "LS-DYNA 프로세스 정리"
+echo "취소 잡 정리 (라이선스 회수 + 프로세스 정리)"
 echo "========================================"
+$DRY_RUN && echo "※ DRY RUN — 실제 회수는 하지 않습니다"
 
 # 이 프로젝트에서 사용된 노드 수집 (sacct + squeue)
-NODES=""
+NODES=""'''
 
-# 1. squeue에서 현재 실행 중인 노드
+    kill_dyna_body += r'''
+
+# 1. squeue에서 현재 할당된 노드
 if [ -f "$JOBS_FILE" ]; then
     JOB_IDS=$(python3 -c "
 import json
 d = json.load(open('$JOBS_FILE'))
-for v in d.get('jobs', {{}}).values():
+for v in d.get('jobs', {}).values():
     jid = v.get('job_id', '')
     if jid: print(jid)
 " 2>/dev/null | sort -u | grep -v '^$')
 
     for JID in $JOB_IDS; do
-        N=$(squeue -j "$JID" --noheader --format="%N" 2>/dev/null | tr ',' '\\n')
+        N=$(squeue -j "$JID" --noheader --format="%N" 2>/dev/null | tr ',' '\n')
         NODES="$NODES $N"
     done
 
     # 2. sacct에서 이미 완료된 잡의 노드
     if [ -n "$JOB_IDS" ]; then
-        JID_LIST=$(echo "$JOB_IDS" | tr '\\n' ',' | sed 's/,$//')
-        N=$(sacct -j "$JID_LIST" --noheader --format=NodeList --parsable2 2>/dev/null | tr '|,' '\\n')
+        JID_LIST=$(echo "$JOB_IDS" | tr '\n' ',' | sed 's/,$//')
+        N=$(sacct -j "$JID_LIST" --noheader --format=NodeList --parsable2 2>/dev/null | tr '|,' '\n')
         NODES="$NODES $N"
     fi
 fi
 
-# 중복 제거 + 빈 줄 제거
-NODES=$(echo "$NODES" | tr ' ' '\\n' | sort -u | grep -v '^$')
+# 노드리스트 압축표기(node[001-004]) 전개 + 중복 제거
+NODES=$(for X in $NODES; do
+            case "$X" in
+                *"["*) scontrol show hostnames "$X" 2>/dev/null || echo "$X" ;;
+                None|"") ;;
+                *) echo "$X" ;;
+            esac
+        done | sort -u | grep -v '^$')
+echo "$NODES" > "$TMP/nodes.txt"
 
-if [ -z "$NODES" ]; then
-    echo "대상 노드 없음"
-    exit 0
+NODE_COUNT=$(grep -c . "$TMP/nodes.txt" 2>/dev/null || echo 0)
+echo "이 프로젝트가 사용한 노드: ${NODE_COUNT}개"
+echo ""
+
+# ============================================================
+# STEP 1. LSTC 라이선스 홀드 회수 (헤드노드에서 직접, 노드 SSH 불필요)
+# ============================================================
+echo "[1/3] 라이선스 홀드 회수"
+
+if [ -z "$LIC_SERVER" ]; then
+    echo "  ⚠ 라이선스 서버 미설정 — 회수를 건너뜁니다."
+    echo "     scenario.json 의 environment.lstc_license_server 또는"
+    echo "     environment.lsdyna_apptainer_env.LSTC_LICENSE_SERVER 를 설정하세요."
+    FAILED=1
+elif ! command -v lstc_qrun >/dev/null 2>&1; then
+    echo "  ⚠ lstc_qrun 을 찾을 수 없습니다 — 회수를 건너뜁니다. (PATH 확인 필요)"
+    FAILED=1
+else
+    export LSTC_LICENSE=network
+    export LSTC_LICENSE_SERVER="$LIC_SERVER"
+
+    if ! lstc_qrun -s "$LIC_SERVER" > "$TMP/holds.txt" 2> "$TMP/holds.err"; then
+        echo "  ❌ lstc_qrun -s $LIC_SERVER 실패 — 라이선스가 회수되지 않았습니다."
+        sed 's/^/     /' "$TMP/holds.err" | head -5
+        FAILED=1
+    else
+        # 내 잡 현황 (노드리스트 전개해 한 줄 = 한 노드)
+        : > "$TMP/jobs.txt"
+        squeue -u "$LIC_USER" -h -o "%i|%T|%S|%N" 2>/dev/null > "$TMP/squeue.raw" || : > "$TMP/squeue.raw"
+        while IFS='|' read -r J_ID J_ST J_START J_NL; do
+            [ -z "$J_NL" ] && continue
+            for N in $(scontrol show hostnames "$J_NL" 2>/dev/null || echo "$J_NL"); do
+                printf '%s|%s|%s|%s\n' "$J_ID" "$J_ST" "$J_START" "$N" >> "$TMP/jobs.txt"
+            done
+        done < "$TMP/squeue.raw"
+
+        # 회수 대상 판정 (안전 규칙은 아래 파이썬 주석 참조)
+        python3 - "$TMP/holds.txt" "$TMP/jobs.txt" "$TMP/nodes.txt" "$LIC_USER" > "$TMP/verdict.txt" <<'PYEOF'
+# 좀비 라이선스 홀드 판정 — 실행 중인 잡의 홀드는 절대 회수하지 않는다.
+import sys, re, datetime
+
+holds_f, jobs_f, nodes_f, me = sys.argv[1:5]
+
+PIDHOST = re.compile(r'\b(\d+)@([A-Za-z0-9][A-Za-z0-9_.\-]*)')
+TS = re.compile(r'(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?')
+MON = {m: i + 1 for i, m in enumerate(
+    ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'])}
+now = datetime.datetime.now()
+
+def lstc_time(s):
+    """lstc_qrun 시각은 연도가 없다. 현재 연도로 보되 미래면 작년으로 되돌린다."""
+    m = TS.search(s)
+    if not m or m.group(1) not in MON:
+        return None
+    try:
+        t = datetime.datetime(now.year, MON[m.group(1)], int(m.group(2)),
+                              int(m.group(3)), int(m.group(4)), int(m.group(5) or 0))
+    except ValueError:
+        return None
+    if t > now + datetime.timedelta(days=1):
+        t = t.replace(year=now.year - 1)
+    return t
+
+holds = []
+with open(holds_f, errors='replace') as fh:
+    for line in fh:
+        m = PIDHOST.search(line)
+        if not m:
+            continue
+        toks = line.split()
+        # 내 홀드만 대상 (사용자 컬럼 위치가 구현마다 달라 앞 두 토큰을 본다)
+        if me not in toks[:2]:
+            continue
+        holds.append({'pid': m.group(1), 'host': m.group(2), 'started': lstc_time(line)})
+
+jobs = []
+with open(jobs_f, errors='replace') as fh:
+    for line in fh:
+        p = line.rstrip('\n').split('|')
+        if len(p) < 4 or not p[3].strip():
+            continue
+        try:
+            st = datetime.datetime.strptime(p[2].strip(), '%Y-%m-%dT%H:%M:%S')
+        except ValueError:
+            st = None
+        jobs.append({'state': p[1].strip().upper(), 'start': st, 'node': p[3].strip()})
+
+with open(nodes_f, errors='replace') as fh:
+    project_nodes = set(x.strip() for x in fh if x.strip())
+
+ACTIVE = ('RUNNING', 'COMPLETING', 'CONFIGURING', 'SUSPENDED', 'R', 'CG', 'CF', 'S')
+
+# 노드별 최신 홀드 = 지금 돌고 있는 잡의 홀드일 가능성이 가장 높다 → 보호
+newest = {}
+for h in holds:
+    if h['started'] is None:
+        continue
+    if h['host'] not in newest or h['started'] > newest[h['host']]:
+        newest[h['host']] = h['started']
+
+for h in holds:
+    host = h['host']
+    act = [j for j in jobs if j['node'] == host and j['state'] in ACTIVE]
+    if act:
+        starts = [j['start'] for j in act if j['start'] is not None]
+        if h['started'] is None or not starts:
+            verdict, why = 'SKIP', '시각 불명 — 판단 보류'
+        elif h['started'] >= min(starts):
+            verdict, why = 'SKIP', '실행 잡 시작 이후 취득 — 현재 잡의 홀드'
+        elif newest.get(host) == h['started']:
+            verdict, why = 'SKIP', '노드 최신 홀드 — 보호'
+        else:
+            verdict, why = 'KILL', '실행 잡보다 먼저 취득된 이전 잡의 잔재'
+    elif host in project_nodes:
+        verdict, why = 'KILL', '이 프로젝트 노드에 실행 잡 없음 — 취소 잡의 잔재'
+    else:
+        verdict, why = 'SKIP', '실행 잡 없음 + 타 프로젝트 노드 — 판단 보류'
+    print('%s\t%s@%s\t%s' % (verdict, h['pid'], host, why))
+PYEOF
+
+        TOTAL=$(grep -c . "$TMP/verdict.txt" 2>/dev/null || echo 0)
+        grep '^KILL' "$TMP/verdict.txt" > "$TMP/kill.txt" 2>/dev/null || : > "$TMP/kill.txt"
+        KILL_N=$(grep -c . "$TMP/kill.txt" 2>/dev/null || echo 0)
+        echo "  내 홀드 ${TOTAL}개 중 회수 대상 ${KILL_N}개"
+
+        if [ "$KILL_N" -gt 0 ]; then
+            KILLED=0
+            while IFS=$'\t' read -r _V TARGET WHY; do
+                if $DRY_RUN; then
+                    echo "    [dry-run] $TARGET — $WHY"
+                    continue
+                fi
+                if lstc_qkill "$TARGET" -s "$LIC_SERVER" >/dev/null 2>"$TMP/qk.err"; then
+                    KILLED=$((KILLED + 1))
+                else
+                    echo "    ❌ 회수 실패: $TARGET"
+                    sed 's/^/       /' "$TMP/qk.err" | head -2
+                    FAILED=1
+                fi
+            done < "$TMP/kill.txt"
+            $DRY_RUN || echo "  회수 완료: ${KILLED}/${KILL_N}"
+        fi
+    fi
+fi
+echo ""
+
+# ============================================================
+# STEP 2. 계산노드 잔여 프로세스 정리 (선택 — 노드 SSH 가능할 때만)
+# ============================================================
+echo "[2/3] 계산노드 잔여 프로세스 정리"
+
+SSH_TARGET_USER="${NODE_SSH_USER:-$LIC_USER}"
+SSH_BASE="ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes"
+SSH_PREFIX=""
+METHOD="$NODE_SSH_METHOD"
+
+if [ "$NODE_COUNT" -eq 0 ]; then
+    METHOD="none"
+    echo "  대상 노드 없음 — 건너뜁니다."
 fi
 
-NODE_COUNT=$(echo "$NODES" | wc -l)
-echo "대상 노드: $NODE_COUNT개"
+case "$METHOD" in
+    sshpass)
+        if ! command -v sshpass >/dev/null 2>&1; then
+            echo "  ❌ sshpass 미설치 — 프로세스 정리 불가"
+            METHOD="none"; FAILED=1
+        elif [ -z "$NODE_SSH_PW_ENV" ] || [ -z "${!NODE_SSH_PW_ENV}" ]; then
+            echo "  ❌ 비밀번호 환경변수 '$NODE_SSH_PW_ENV' 가 비어 있음 — 프로세스 정리 불가"
+            METHOD="none"; FAILED=1
+        else
+            # -p 는 비밀번호가 ps 에 노출되고 공백도 못 다룬다. -e(환경변수) 사용.
+            export SSHPASS="${!NODE_SSH_PW_ENV}"
+            SSH_PREFIX="sshpass -e"
+            SSH_BASE="$SSH_BASE -o PreferredAuthentications=password -o PubkeyAuthentication=no"
+            SSH_BASE="${SSH_BASE/-o BatchMode=yes/}"
+        fi
+        ;;
+    auto)
+        # 노드 1대로 접속 가능 여부를 먼저 확인한다.
+        # 실패는 이 클러스터의 정상 상태일 수 있으므로 오류가 아닌 안내로 처리한다.
+        PROBE=$(head -1 "$TMP/nodes.txt")
+        if [ -n "$PROBE" ] && $SSH_BASE "$SSH_TARGET_USER@$PROBE" true >/dev/null 2>&1; then
+            METHOD="key"
+        else
+            echo "  ℹ 계산노드 SSH 불가($SSH_TARGET_USER@$PROBE) — 프로세스 정리를 건너뜁니다."
+            echo "     필요하면 scenario.json 의 environment 에 설정하세요:"
+            echo '       "node_ssh_user": "stcx", "node_ssh_method": "sshpass",'
+            echo '       "node_ssh_password_env": "STCX_NODE_PW"'
+            echo "     (라이선스 회수는 위 [1/3]에서 이미 완료됐습니다 — SSH와 무관합니다.)"
+            METHOD="none"
+        fi
+        ;;
+esac
+
+if [ "$METHOD" = "key" ] || [ "$METHOD" = "sshpass" ]; then
+    OK_N=0; NG_N=0
+    while read -r NODE; do
+        [ -z "$NODE" ] && continue
+        if $DRY_RUN; then
+            echo "    [dry-run] $NODE 프로세스 정리"
+            OK_N=$((OK_N + 1)); continue
+        fi
+        # 프로세스 소유자는 잡 실행 계정($LIC_USER)이다. 접속 계정과 다를 수 있다.
+        if $SSH_PREFIX $SSH_BASE "$SSH_TARGET_USER@$NODE" \
+            "pkill -u $LIC_USER -f 'lsdyna|mpp_s|mpp_d|ls-dyna'; \
+             pkill -u $LIC_USER -f 'mpirun.*lsdyna|mpirun.*mpp'; \
+             pkill -u $LIC_USER -f 'squashfuse'; true" >/dev/null 2>&1; then
+            OK_N=$((OK_N + 1))
+        else
+            NG_N=$((NG_N + 1))
+        fi
+    done < "$TMP/nodes.txt"
+    echo "  정리 성공 ${OK_N}개 / 실패 ${NG_N}개 (전체 ${NODE_COUNT}개)"
+    if [ "$NG_N" -gt 0 ]; then
+        echo "  ❌ 대상 노드 ${NODE_COUNT}개 중 접속 실패 ${NG_N}개 — 잔여 프로세스가 남았을 수 있습니다."
+        FAILED=1
+    fi
+elif [ "$METHOD" = "none" ] && [ "$NODE_COUNT" -gt 0 ] && [ "$NODE_SSH_METHOD" = "none" ]; then
+    echo "  설정상 비활성(node_ssh_method=none) — 건너뜁니다."
+fi
 echo ""
 
-for NODE in $NODES; do
-    echo "  $NODE:"
-    # 1. lstc_qrun으로 등록된 LS-DYNA 잡 종료
-    ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes "$NODE" \\
-        "lstc_qrun -k all 2>/dev/null; echo '    lstc_qrun -k all done'" 2>/dev/null || echo "    lstc_qrun 실패 (미설치 또는 접근 불가)"
+# ============================================================
+# STEP 3. 자체 검증 — 홀드 수가 실행 잡 수를 넘으면 좀비가 남은 것
+# ============================================================
+echo "[3/3] 자체 검증"
 
-    # 2. 남은 lsdyna/mpirun 프로세스 강제 종료
-    ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes "$NODE" \\
-        "pkill -u $(whoami) -f 'lsdyna|mpp_s|mpp_d|ls-dyna' 2>/dev/null; \\
-         pkill -u $(whoami) -f 'mpirun.*lsdyna\\|mpirun.*mpp' 2>/dev/null; \\
-         pkill -u $(whoami) -f 'squashfuse' 2>/dev/null; \\
-         echo '    프로세스 정리 완료'" 2>/dev/null || echo "    프로세스 정리 실패"
-done
+if [ -n "$LIC_SERVER" ] && command -v lstc_qrun >/dev/null 2>&1 && ! $DRY_RUN; then
+    HOLDS_NOW=$(lstc_qrun -s "$LIC_SERVER" 2>/dev/null \
+        | awk -v me="$LIC_USER" '/[0-9]+@/ { if ($1 == me || $2 == me) c++ } END { print c+0 }')
+    RUN_NOW=$(squeue -u "$LIC_USER" -h -t RUNNING,COMPLETING,CONFIGURING -o "%i" 2>/dev/null | grep -c . || echo 0)
+    echo "  내 홀드 ${HOLDS_NOW}개 / 내 실행 잡 ${RUN_NOW}개"
+    if [ "$HOLDS_NOW" -gt "$RUN_NOW" ]; then
+        echo "  ⚠ 홀드가 실행 잡보다 $((HOLDS_NOW - RUN_NOW))개 많습니다 — 좀비 홀드가 남아 있을 수 있습니다."
+        echo "     다른 프로젝트 노드의 홀드는 안전을 위해 회수하지 않습니다."
+        echo "     남은 홀드를 확인하려면: lstc_qrun -s $LIC_SERVER"
+    else
+        echo "  ✅ 좀비 홀드 없음"
+    fi
+else
+    echo "  건너뜀 (라이선스 서버 미설정 또는 dry-run)"
+fi
 
 echo ""
 echo "========================================"
-echo "LS-DYNA 프로세스 정리 완료"
+if [ "$FAILED" -eq 0 ]; then
+    echo "정리 완료"
+else
+    echo "❌ 정리 중 실패가 있었습니다 — 위 메시지를 확인하세요."
+fi
 echo "========================================"
+exit $FAILED
 '''
+
+    kill_dyna_script = kill_dyna_header + kill_dyna_body
     kill_dyna_path = script_dir / "kill_dyna.sh"
     kill_dyna_path.write_text(kill_dyna_script, encoding="utf-8")
     kill_dyna_path.chmod(kill_dyna_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
