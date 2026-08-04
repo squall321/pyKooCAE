@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>전각도 낙하 · 전위치 부분충격 해석 개요</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --panel2:#1d2129; --line:#2a2f3a;
+  --tx:#e6e9ef; --tx2:#9aa4b6; --tx3:#6b7688;
+  --ac:#4da3ff; --ac2:#7c5cff; --ok:#3ecf8e; --wn:#f5a623; --cr:#ff5c5c;
+  --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+}
+@media print{
+  :root{--bg:#fff;--panel:#fff;--panel2:#f6f7f9;--line:#d5d9e0;--tx:#12151a;--tx2:#4a5464;--tx3:#79839a}
+  .page{page-break-after:always;box-shadow:none;border:none;margin:0;min-height:auto}
+  .nav,.toolbar{display:none!important}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;
+  line-height:1.65;font-size:14.5px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+
+/* ── nav ── */
+.nav{position:sticky;top:0;z-index:50;background:rgba(15,17,21,.93);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);margin:-28px -20px 26px;padding:11px 20px;
+  display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.nav b{color:var(--ac);margin-right:12px;font-size:13px;letter-spacing:.02em}
+.nav a{color:var(--tx2);text-decoration:none;font-size:12.5px;padding:5px 11px;border-radius:6px;
+  border:1px solid transparent;white-space:nowrap}
+.nav a:hover{color:var(--tx);background:var(--panel2);border-color:var(--line)}
+
+/* ── page ── */
+.page{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:34px 38px;margin-bottom:26px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.pnum{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--ac);
+  border:1px solid var(--ac);border-radius:5px;padding:2px 9px;margin-bottom:14px;letter-spacing:.06em}
+h1{font-size:29px;margin:0 0 8px;letter-spacing:-.02em;line-height:1.25}
+h2{font-size:22px;margin:0 0 6px;letter-spacing:-.01em}
+h3{font-size:16px;margin:26px 0 10px;color:var(--ac);letter-spacing:-.01em}
+h4{font-size:14px;margin:18px 0 8px;color:var(--tx)}
+.sub{color:var(--tx2);font-size:14px;margin:0 0 22px}
+p{margin:0 0 12px}
+ul,ol{margin:0 0 12px;padding-left:20px}
+li{margin:5px 0}
+code{font-family:var(--mono);font-size:.9em;background:var(--panel2);
+  border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:#a5d6ff}
+strong{color:#fff;font-weight:600}
+
+/* ── cover ── */
+.cover{background:linear-gradient(160deg,#1b2333 0%,#171a21 55%,#1d1a2b 100%);
+  border-color:#31384a;text-align:center;padding:64px 38px}
+.cover h1{font-size:38px;margin-bottom:14px}
+.cover .sub{font-size:16px;max-width:680px;margin:0 auto 26px}
+.badges{display:flex;gap:9px;justify-content:center;flex-wrap:wrap;margin-top:26px}
+.badge{background:rgba(77,163,255,.11);border:1px solid rgba(77,163,255,.35);
+  color:#9ecbff;border-radius:20px;padding:6px 16px;font-size:12.5px}
+
+/* ── grid / cards ── */
+.grid{display:grid;gap:14px;margin:16px 0}
+.g2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(165px,1fr))}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:15px 17px}
+.card h4{margin:0 0 7px;color:var(--ac);font-size:13.5px}
+.card p{margin:0;font-size:13px;color:var(--tx2)}
+.card.ok{border-left:3px solid var(--ok)}
+.card.wn{border-left:3px solid var(--wn)}
+.card.cr{border-left:3px solid var(--cr)}
+.card.ac{border-left:3px solid var(--ac)}
+
+/* ── kpi ── */
+.kpi{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:16px 14px;text-align:center}
+.kpi .v{font-size:26px;font-weight:700;color:var(--ac);font-family:var(--mono);letter-spacing:-.02em}
+.kpi .v.p{color:var(--ac2)} .kpi .v.g{color:var(--ok)} .kpi .v.w{color:var(--wn)}
+.kpi .l{font-size:11.5px;color:var(--tx3);margin-top:5px}
+
+/* ── table ── */
+.tw{overflow-x:auto;margin:14px 0;border:1px solid var(--line);border-radius:9px}
+table{width:100%;border-collapse:collapse;font-size:12.8px;min-width:520px}
+th{background:var(--panel2);color:var(--tx2);text-align:left;padding:9px 11px;
+  border-bottom:1px solid var(--line);font-weight:600;white-space:nowrap;font-size:12px}
+td{padding:8px 11px;border-bottom:1px solid rgba(42,47,58,.55);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:rgba(77,163,255,.045)}
+td code{font-size:11.5px;white-space:nowrap}
+.req{color:var(--cr);font-weight:600;font-size:11.5px}
+.opt{color:var(--tx3);font-size:11.5px}
+.auto{color:var(--ok);font-size:11.5px}
+.keep{color:var(--ac2);font-size:11.5px}
+
+/* ── code block ── */
+pre{background:#0c0e13;border:1px solid var(--line);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;font-family:var(--mono);font-size:12.3px;line-height:1.6;margin:12px 0;color:#c9d4e4}
+pre .k{color:#7ec7ff} pre .s{color:#9ae6a0} pre .n{color:#f0b98a}
+pre .c{color:#5f6b7f;font-style:italic} pre .b{color:#ff9ec4}
+
+/* ── note ── */
+.note{border-radius:9px;padding:13px 16px;margin:14px 0;font-size:13.2px;border:1px solid}
+.note.i{background:rgba(77,163,255,.07);border-color:rgba(77,163,255,.3)}
+.note.w{background:rgba(245,166,35,.07);border-color:rgba(245,166,35,.3)}
+.note.c{background:rgba(255,92,92,.07);border-color:rgba(255,92,92,.3)}
+.note.g{background:rgba(62,207,142,.07);border-color:rgba(62,207,142,.3)}
+.note b{display:block;margin-bottom:4px}
+
+/* ── flow ── */
+.flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:18px 0}
+.fs{flex:1;min-width:130px;background:var(--panel2);border:1px solid var(--line);
+  padding:13px 12px;text-align:center;position:relative}
+.fs:first-child{border-radius:9px 0 0 9px} .fs:last-child{border-radius:0 9px 9px 0}
+.fs .t{font-size:12.5px;font-weight:600;color:var(--tx)}
+.fs .d{font-size:11px;color:var(--tx3);margin-top:4px}
+.fs .n{font-family:var(--mono);font-size:10px;color:var(--ac);display:block;margin-bottom:5px}
+.fs:not(:last-child):after{content:'▸';position:absolute;right:-8px;top:50%;
+  transform:translateY(-50%);color:var(--ac);z-index:2;font-size:13px}
+
+/* ── misc ── */
+.hr{height:1px;background:var(--line);margin:26px 0;border:none}
+.blank{border:2px dashed var(--line);border-radius:12px;padding:52px 30px;text-align:center;
+  color:var(--tx3);background:repeating-linear-gradient(45deg,transparent,transparent 11px,rgba(42,47,58,.16) 11px,rgba(42,47,58,.16) 22px)}
+.blank h3{color:var(--tx2);margin:0 0 8px;border:none}
+.tag{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:2px 7px;
+  border-radius:4px;background:var(--panel2);border:1px solid var(--line);color:var(--tx2);margin-right:4px}
+.tag.d{background:rgba(77,163,255,.13);border-color:rgba(77,163,255,.35);color:#9ecbff}
+.tag.i{background:rgba(124,92,255,.13);border-color:rgba(124,92,255,.35);color:#c0b0ff}
+.foot{color:var(--tx3);font-size:12px;text-align:center;padding:22px 0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:720px){.two{grid-template-columns:1fr}.page{padding:24px 20px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<nav class="nav">
+  <b>목차</b>
+  <a href="#p0">표지</a>
+  <a href="#p1">1. 필요성</a>
+  <a href="#p2">2. 낙하 컨셉</a>
+  <a href="#p3">3. 낙하 보고서</a>
+  <a href="#p4">4. 충격 컨셉</a>
+  <a href="#p5">5. 충격 보고서</a>
+  <a href="#p6">6. 의뢰 입력</a>
+  <a href="#p7">7. 설정서</a>
+  <a href="#p8">8. 실제 예제</a>
+</nav>
+
+<!-- ══════════════ COVER ══════════════ -->
+<section class="page cover" id="p0">
+  <h1>전각도 낙하 · 전위치 부분충격 해석</h1>
+  <p class="sub">제품 하나를 받아 <strong>수백~수천 가지 충격 시나리오</strong>를 자동으로 돌리고,<br>
+  위험한 자세와 위치를 통계로 짚어내는 자동화 해석 체계</p>
+  <div class="badges">
+    <span class="badge">SmartTwinPreprocessor</span>
+    <span class="badge">KooChainRun · KooMeshModifier</span>
+    <span class="badge">LS-DYNA · Slurm 클러스터</span>
+  </div>
+  <div class="grid g4" style="margin-top:34px">
+    <div class="kpi"><div class="v">1</div><div class="l">제출물 — 순수 모델 .k</div></div>
+    <div class="kpi"><div class="v p">1</div><div class="l">설정 파일 — scenario.json</div></div>
+    <div class="kpi"><div class="v g">N</div><div class="l">자동 생성 해석 케이스</div></div>
+    <div class="kpi"><div class="v w">2</div><div class="l">통합 보고서 (HTML+JSON)</div></div>
+  </div>
+</section>
+
+<!-- ══════════════ P1 필요성 ══════════════ -->
+<section class="page" id="p1">
+  <span class="pnum">PAGE 1</span>
+  <h1>왜 필요한가</h1>
+  <p class="sub">한 번의 낙하 시험으로는 "그 자세에서 안 깨졌다"만 알 수 있습니다.</p>
+
+  <h3>지금의 한계</h3>
+  <div class="grid g3">
+    <div class="card cr"><h4>자세를 못 고른다</h4>
+      <p>실제 낙하는 무작위 자세로 떨어집니다. 6면 낙하만 검증하면 <strong>모서리·꼭짓점처럼 응력이 집중되는 자세</strong>를 놓칩니다.</p></div>
+    <div class="card cr"><h4>위치를 못 고른다</h4>
+      <p>부분 충격은 어디를 맞느냐로 결과가 뒤집힙니다. 대표점 몇 개로는 <strong>가장 취약한 지점</strong>을 특정할 수 없습니다.</p></div>
+    <div class="card cr"><h4>사람이 못 감당한다</h4>
+      <p>자세 500가지를 손으로 만들면 모델링·제출·수집에만 수 주가 걸립니다. 실수도 그만큼 늘어납니다.</p></div>
+  </div>
+
+  <h3>이 체계가 하는 일</h3>
+  <div class="flow">
+    <div class="fs"><span class="n">INPUT</span><div class="t">순수 모델 + 설정</div><div class="d">조건 없는 .k 한 벌<br>scenario.json 한 장</div></div>
+    <div class="fs"><span class="n">AUTO</span><div class="t">케이스 자동 생성</div><div class="d">자세·위치 DOE<br>바닥판·접촉·초기조건</div></div>
+    <div class="fs"><span class="n">RUN</span><div class="t">클러스터 병렬 실행</div><div class="d">수백 잡 자동 제출<br>실패 재시도·진단</div></div>
+    <div class="fs"><span class="n">POST</span><div class="t">통합 보고서</div><div class="d">위험 순위·분포도<br>항복 판정</div></div>
+  </div>
+
+  <h3>얻는 것</h3>
+  <div class="grid g2">
+    <div class="card ok"><h4>전수 탐색 — 놓치는 자세가 없다</h4>
+      <p>구면을 균등하게 덮는 자세 집합을 자동 생성합니다. 면·모서리·꼭짓점 26방향을 <strong>시드로 먼저 배치</strong>하고 그 사이를 채우는 방식도 지원해, 표준 시험 자세를 반드시 포함시킬 수 있습니다.</p></div>
+    <div class="card ok"><h4>단계적 확장 — 앞선 결과를 버리지 않는다</h4>
+      <p>120개를 먼저 돌려 경향을 보고, 이어서 500·1000개로 넓힐 수 있습니다. <strong>이전 단계 위치는 그대로 두고 빈틈만 채우므로</strong> 재계산이 없습니다.</p></div>
+    <div class="card ok"><h4>정량 판정 — 감이 아니라 숫자</h4>
+      <p>파트별 최대 응력·소성변형률·가속도와 <strong>안전계수(항복응력÷피크응력)</strong>를 전 케이스에 대해 산출하고, 항복 예상 파트를 자동 경고합니다.</p></div>
+    <div class="card ok"><h4>재현성 — 언제 돌려도 같은 조건</h4>
+      <p>같은 설정이면 같은 자세 집합이 나옵니다. 설계 변경 전후를 <strong>동일 조건에서 직접 비교</strong>할 수 있습니다.</p></div>
+  </div>
+
+  <div class="note i">
+    <b>의뢰자가 준비할 것은 두 가지뿐입니다</b>
+    낙하·충격 조건이 <strong>전혀 들어있지 않은 순수 해석 모델</strong>과, 조건을 적어 넣은 <code>scenario.json</code>.
+    바닥판, 초기 속도, 접촉, 출력 카드는 모두 자동으로 만들어집니다. (→ 6·7페이지)
+  </div>
+</section>
+
+<!-- ══════════════ P2 낙하 컨셉 ══════════════ -->
+<section class="page" id="p2">
+  <span class="pnum">PAGE 2</span>
+  <h1>전각도 낙하 <span class="tag d">DROP</span></h1>
+  <p class="sub">제품을 모든 자세로 떨어뜨려 가장 위험한 방향을 찾습니다.</p>
+
+  <h3>기본 개념</h3>
+  <p>제품 자세를 <strong>Roll·Pitch·Yaw</strong> 로 바꿔가며 같은 높이에서 떨어뜨립니다. 자세 하나가 해석 케이스(DOE) 하나입니다.
+  구(球) 표면 위의 한 점이 낙하 방향 하나에 대응하므로, <strong>구면을 얼마나 촘촘히 덮느냐</strong>가 곧 검증 밀도입니다.</p>
+
+  <div class="note i">
+    <b>모델을 회전시키지 않습니다</b>
+    제품은 원본 자세를 유지한 채, <strong>바닥판을 기울여</strong> 같은 효과를 냅니다.
+    덕분에 모든 케이스에서 제품 좌표계가 동일해 후처리 비교가 쉽습니다.
+  </div>
+
+  <h3>자세를 만드는 5가지 방법</h3>
+  <div class="tw"><table>
+    <thead><tr><th>방식</th><th>케이스 수</th><th>쓰임새</th></tr></thead>
+    <tbody>
+      <tr><td><code>cuboid_geometry</code></td><td>최대 26<br><span class="opt">면6+모서리12+꼭짓점8</span></td><td>표준 낙하 시험 대응. 가장 기본이며 <strong>기본값</strong>입니다.</td></tr>
+      <tr><td><code>fibonacci_lattice</code></td><td>임의 <span class="opt">(26~41,253)</span></td><td><strong>전각도 낙하의 주력.</strong> 구면 균등 분포를 원하는 개수만큼 생성합니다.</td></tr>
+      <tr><td><code>pitching_sweep</code></td><td>기본 19</td><td>Pitch 만 −90°~90° 훑기. 특정 축 경향 분석용.</td></tr>
+      <tr><td><code>rolling_sweep</code></td><td>기본 36</td><td>Roll 만 −180°~170° 훑기.</td></tr>
+      <tr><td><code>case_txt_file</code></td><td>파일에 따름</td><td>기존 각도 목록 파일 재사용. 특정 인덱스만 골라 쓸 수도 있습니다.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>고급 옵션 — 이 세 가지가 품질을 가릅니다</h3>
+  <div class="grid g3">
+    <div class="card ac"><h4>sampling_space: "physical"</h4>
+      <p>기본값은 위도·경도 공간 균등이라 <strong>실제 충격 방향으로 보면 한쪽에 쏠립니다.</strong>
+      <code>"physical"</code> 을 주면 실제 낙하 방향 공간에서 균등해집니다. <strong>전각도 낙하에는 권장</strong>합니다.</p></div>
+    <div class="card ac"><h4>principal_directions</h4>
+      <p>면 6개(<code>faces</code>) 또는 26방향(<code>cuboid26</code>)을 <strong>먼저 시드로 심고</strong> 나머지를 그 사이에 채웁니다.
+      표준 시험 자세를 반드시 포함시키면서 밀도를 올릴 때 씁니다.</p></div>
+    <div class="card ac"><h4>previous_stages</h4>
+      <p>단계적 확장. <code>[120, 500]</code> + <code>num_points: 1000</code> 이면
+      <strong>이미 돌린 500개를 재현해 제외하고 신규 500개만</strong> 내보냅니다.</p></div>
+  </div>
+
+  <h4>단계적 확장이 왜 유용한가</h4>
+  <div class="two">
+    <div>
+      <p>작게 시작해 필요하면 넓히는 방식이 가능합니다. 단계 목록만 선언하면 <strong>어느 경로로 확장하든 누적 위치 집합이 항상 동일</strong>합니다.</p>
+      <pre><span class="c"># 1단계 — 경향 파악</span>
+num_points: <span class="n">120</span>
+
+<span class="c"># 2단계 — 빈틈 채우기 (신규 380개)</span>
+num_points: <span class="n">500</span>
+previous_stages: [<span class="n">120</span>]
+
+<span class="c"># 3단계 — 정밀화 (신규 500개)</span>
+num_points: <span class="n">1000</span>
+previous_stages: [<span class="n">120</span>, <span class="n">500</span>]</pre>
+    </div>
+    <div>
+      <p>대가는 균일도가 약간 낮아지는 것입니다. 실측값입니다.</p>
+      <div class="tw"><table>
+        <thead><tr><th>구성</th><th>최소 간격</th><th>중앙값</th></tr></thead>
+        <tbody>
+          <tr><td>누적 1000 (120→500→1000)</td><td>3.15°</td><td>4.73°</td></tr>
+          <tr><td>정규 1000 (한 번에)</td><td>5.60°</td><td>6.10°</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note w"><b>정규 대비 최악 간격 56%</b>
+      서로 다른 격자를 겹치는 데서 오는 불가피한 손실입니다. 다만 <strong>중복·뭉침은 0개</strong>이고 중앙값은 거의 유지됩니다.
+      최고 균일도가 필요하면 단계 없이 목표 개수를 한 번에 돌리십시오.</div>
+    </div>
+  </div>
+
+  <div class="note c">
+    <b>단계를 빠뜨리면 안 됩니다</b>
+    실제로 <code>120 → 500</code> 을 돌려놓고 <code>previous_stages: [500]</code> 이라고만 적으면 재현이 어긋나
+    1000개 중 4개가 1° 이내로 겹칩니다. 로그의 <strong>"재현 누적 N개"</strong> 가 실제 돌린 개수와 같은지 확인하십시오.
+  </div>
+</section>
+
+<!-- ══════════════ P3 낙하 보고서 ══════════════ -->
+<section class="page" id="p3">
+  <span class="pnum">PAGE 3</span>
+  <h1>전각도 낙하 — 무엇을 볼 수 있나</h1>
+  <p class="sub">케이스별 상세 리포트와, 전 각도를 가로지르는 통합 리포트가 나옵니다.</p>
+
+  <div class="flow">
+    <div class="fs"><span class="n">STEP 1</span><div class="t">deep_report</div><div class="d">케이스 1개씩<br>d3plot → 상세 분석</div></div>
+    <div class="fs"><span class="n">STEP 2</span><div class="t">sphere_report</div><div class="d">전 각도 통합<br>위험 순위·분포도</div></div>
+  </div>
+  <div class="note i"><b>순서가 고정입니다</b>
+  <code>sphere_report</code> 는 각 케이스의 <code>deep_report</code> 결과를 모아 집계합니다.
+  deep 이 없으면 <strong>"정상 종료 시뮬 0개"</strong> 로 건너뜁니다. 정상 종료(<code>Normal termination</code>)한 케이스만 통계에 들어갑니다.</div>
+
+  <h3>① 케이스별 상세 — deep_report</h3>
+  <div class="grid g2">
+    <div class="card"><h4>전역 요약</h4>
+      <p>최대 Von Mises 응력과 그 파트 ID, 최대 소성변형률, 최대 변위, <strong>에너지 보존율 최소값</strong>(1에서 크게 벗어나면 해석 불안정 신호).</p></div>
+    <div class="card"><h4>파트별 16개 지표</h4>
+      <p>피크 응력과 <strong>도달 시각</strong>, 소성변형률, 변위, 가속도, 안전계수, 주응력 σ₁/σ₃, 피크 요소 번호까지.</p></div>
+    <div class="card"><h4>시계열 원본</h4>
+      <p>파트별 응력·변형률·주응력 이력과 에너지 이력(운동/내부/총/비율)을 CSV 와 JSON 으로 제공합니다.</p></div>
+    <div class="card"><h4>단면 애니메이션</h4>
+      <p>모델을 잘라 응력을 색칠한 mp4. 전체 단면 1개 + <strong>파트별 단면</strong>이 생성됩니다.</p></div>
+  </div>
+  <p style="margin-top:12px"><span class="tag">report.html 탭</span> Overview · 운동 · 응력/변형률 · 응력 텐서 · 에너지 · 부품 Deep Dive · 시스템 정보</p>
+
+  <h3>② 전 각도 통합 — sphere_report</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:150px">탭</th><th>보여주는 것</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Overview</strong></td><td><strong>Findings</strong> — 자동 판정 경고. <span class="req">CRITICAL</span> "항복 초과", <span class="opt">WARNING</span> "과대 충격 가속도" 등을 심각도·원인·권고와 함께 나열합니다.</td></tr>
+      <tr><td><strong>Mollweide Map</strong></td><td><strong>구면 분포도.</strong> 전 낙하 방향을 지도처럼 펼쳐 위험도를 등고선으로 칠하고 실제 케이스를 점으로 찍습니다. 회전하는 3D 구체와 방향별 위험 순위표가 함께 붙습니다.</td></tr>
+      <tr><td><strong>Part Risk</strong></td><td>파트별 <strong>전 방향 중 최악값</strong>. 어느 부품이 어느 자세에서 가장 위험한지 한 줄로 정리됩니다.</td></tr>
+      <tr><td><strong>Heatmap</strong></td><td><strong>파트 × 방향 행렬</strong>을 색으로. 응력·가속도·변형률·변위·속도를 전환할 수 있고 Top 20 값 표가 따라옵니다.</td></tr>
+      <tr><td><strong>Directional</strong></td><td>면/모서리/꼭짓점 <strong>카테고리 비교</strong>, 총응력 기준 방향 순위, 축 우세도, <strong>대칭성 분석</strong>(앞↔뒤·좌↔우·위↔아래 3쌍의 비대칭도로 모델·메시 편향을 잡아냅니다).</td></tr>
+      <tr><td><strong>Failure</strong></td><td><strong>항복 판정.</strong> 안전계수 = 항복응력 ÷ 피크응력 으로 <span class="auto">SF&gt;1.5 안전</span> / <span class="opt">1.0~1.5 한계</span> / <span class="req">&lt;1.0 항복예상</span> 3색 구분.</td></tr>
+      <tr><td><strong>Statistics</strong></td><td>파트별 기술통계, 응력↔G 상관, 속도↔응력 상관, 최대G 도달시간 산점도.</td></tr>
+      <tr><td><strong>Advanced</strong></td><td>충격 펄스 특성화, 핫스팟 빈도 추적, 에너지 흡수, 리바운드 정량화, 물리량 상관 매트릭스 등 심화 7종.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="grid g4" style="margin-top:18px">
+    <div class="kpi"><div class="v">12</div><div class="l">통합 리포트 탭</div></div>
+    <div class="kpi"><div class="v p">16</div><div class="l">파트당 지표 수</div></div>
+    <div class="kpi"><div class="v g">HTML<br>+JSON</div><div class="l">산출 형식</div></div>
+    <div class="kpi"><div class="v w">한/영</div><div class="l">언어 토글</div></div>
+  </div>
+
+  <div class="note w"><b>안전계수를 보려면 항복응력을 알려주셔야 합니다</b>
+  <code>yield_stress_mpa</code> 를 지정하지 않으면 SF 가 계산되지 않습니다.
+  다만 이 값은 <strong>전 파트에 동일하게 적용</strong>되므로, 재질이 섞인 모델은 파트별 항복값을 별도로 주는 편이 정확합니다.</div>
+</section>
+
+<!-- ══════════════ P4 충격 컨셉 ══════════════ -->
+<section class="page" id="p4">
+  <span class="pnum">PAGE 4</span>
+  <h1>전위치 부분충격 <span class="tag i">IMPACT</span></h1>
+  <p class="sub">제품 표면 곳곳을 때려 가장 취약한 지점을 찾습니다.</p>
+
+  <h3>기본 개념</h3>
+  <p>제품은 고정하고 <strong>충격추(impactor)를 떨어뜨립니다.</strong> 때리는 <strong>(x, y) 위치 하나가 케이스 하나</strong>입니다.
+  낙하가 "어느 자세로 떨어지나"를 훑는다면, 부분충격은 <strong>"어디를 맞으면 위험한가"</strong>를 훑습니다.</p>
+
+  <div class="two">
+    <div>
+      <h4>낙하와의 핵심 차이</h4>
+      <div class="tw"><table>
+        <thead><tr><th></th><th>전각도 낙하</th><th>전위치 부분충격</th></tr></thead>
+        <tbody>
+          <tr><td>훑는 대상</td><td>자세 (Roll/Pitch/Yaw)</td><td><strong>위치 (x, y)</strong></td></tr>
+          <tr><td>설정 키</td><td><code>angle_source</code></td><td><code>position_source</code></td></tr>
+          <tr><td>움직이는 것</td><td>제품이 떨어짐</td><td><strong>충격추가 떨어짐</strong></td></tr>
+          <tr><td>자세각</td><td>케이스마다 다름</td><td>전부 0 고정</td></tr>
+          <tr><td>받침</td><td><code>drop_surface</code> 바닥판</td><td><code>wall</code> 받침판</td></tr>
+          <tr><td>물성 위치</td><td><code>simulation_params</code> 최상위</td><td><code>simulation_params.impact</code></td></tr>
+          <tr><td>통합 보고서</td><td>sphere_report</td><td>impact_report</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div>
+      <h4>위치를 만드는 3가지 방법</h4>
+      <div class="tw"><table>
+        <thead><tr><th>방식</th><th>설명</th></tr></thead>
+        <tbody>
+          <tr><td><code>grid_nxm</code><br><span class="opt">기본값</span></td><td>nx × ny 균등 격자. 범위(<code>bbox</code>)를 생략하면 <strong>모델 전체에서 자동 계산</strong>합니다. 5×5 = 25 케이스.</td></tr>
+          <tr><td><code>grid_spacing</code></td><td>간격(mm)으로 지정. 제품 크기가 달라도 <strong>동일한 밀도</strong>를 유지합니다.</td></tr>
+          <tr><td><code>manual</code></td><td>좌표를 직접 나열. 커넥터·버튼 등 <strong>특정 지점만</strong> 집중 검증할 때.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note i" style="margin-top:14px"><b>충격추 형상</b>
+      구(Sphere)가 기본이며, 원통(cylinder)은 <strong>다단 구조</strong>(앞/중간/뒤 지름·높이·재질을 따로)까지 정의할 수 있어
+      실제 시험 지그를 모사할 수 있습니다.</div>
+    </div>
+  </div>
+
+  <h3>설정 예시 — 5×5 격자 25지점</h3>
+  <pre><span class="k">"position_source"</span>: {
+  <span class="k">"source_type"</span>: <span class="s">"grid_nxm"</span>,
+  <span class="k">"grid_nxm"</span>: { <span class="k">"nx"</span>: <span class="n">5</span>, <span class="k">"ny"</span>: <span class="n">5</span>, <span class="k">"bbox"</span>: [<span class="n">-40</span>, <span class="n">-40</span>, <span class="n">40</span>, <span class="n">40</span>] }
+},
+<span class="k">"simulation_params"</span>: {
+  <span class="k">"impact"</span>: {
+    <span class="k">"type"</span>: <span class="s">"Sphere"</span>,      <span class="c">// 충격추 형상</span>
+    <span class="k">"dimension"</span>: <span class="n">8</span>,          <span class="c">// 지름 8 mm</span>
+    <span class="k">"height"</span>: <span class="n">500</span>,          <span class="c">// 낙하 높이 500 mm → 속도 자동 계산</span>
+    <span class="k">"mesh_size"</span>: <span class="n">1</span>,          <span class="c">// 충격추 메시 크기</span>
+    <span class="k">"density"</span>: <span class="n">7.85e-9</span>,     <span class="c">// 강 (ton/mm³)</span>
+    <span class="k">"youngs_modulus"</span>: <span class="n">201000</span>, <span class="c">// MPa</span>
+    <span class="k">"tFinal"</span>: <span class="n">0.001</span>, <span class="k">"dt"</span>: <span class="n">1e-6</span>
+  },
+  <span class="k">"wall"</span>: { <span class="k">"density"</span>: <span class="n">1e-9</span>, <span class="k">"youngs_modulus"</span>: <span class="n">10000</span> }  <span class="c">// 받침판</span>
+}</pre>
+
+  <div class="note c"><b>단위계 주의 — 가장 흔한 사고</b>
+  <code>impact</code> 하위 값의 <strong>기본값은 SI(m) 기준</strong>입니다(<code>dimension</code> 0.008, <code>height</code> 0.5).
+  ton-mm-s 모델에서 생략하면 <strong>1000배 작은 충격추</strong>가 만들어집니다. 반드시 명시하십시오.</div>
+
+  <div class="note w"><b>속도는 높이로만 정합니다</b>
+  체인 IMPACT 경로에서 초기 속도는 0으로 고정되어 있고, 충격 속도는 <code>height</code> 에서 자동 계산됩니다.
+  속도를 직접 지정할 수는 없습니다.</div>
+</section>
+
+<!-- ══════════════ P5 충격 보고서 ══════════════ -->
+<section class="page" id="p5">
+  <span class="pnum">PAGE 5</span>
+  <h1>전위치 부분충격 — 무엇을 볼 수 있나</h1>
+  <p class="sub">위치 × 부품 조합 전체를 훑어 취약 지점을 짚어냅니다.</p>
+
+  <h3>핵심 데이터 구조</h3>
+  <p>통합 리포트의 뼈대는 <strong>(위치 × 부품)</strong> 격자입니다. 조합마다 4개 지표가 기록됩니다.</p>
+  <div class="grid g4">
+    <div class="kpi"><div class="v">peak_g</div><div class="l">최대 충격 가속도</div></div>
+    <div class="kpi"><div class="v p">peak_stress</div><div class="l">최대 응력</div></div>
+    <div class="kpi"><div class="v g">peak_strain</div><div class="l">최대 변형률</div></div>
+    <div class="kpi"><div class="v w">peak_disp</div><div class="l">최대 변위</div></div>
+  </div>
+  <div class="note i" style="margin-top:14px"><b>규모 예시</b>
+  25지점 × 25부품이면 <strong>625개 조합</strong>이 하나의 표로 정리됩니다.
+  "어느 위치를 때렸을 때 어느 부품이 가장 위험한가"를 정렬 한 번으로 알 수 있습니다.</div>
+
+  <h3>리포트 구성</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:180px">섹션</th><th>보여주는 것</th></tr></thead>
+    <tbody>
+      <tr><td><strong>안전 낙하 구역 지도</strong></td><td>제품 표면을 <strong>안전/주의/위험 구역으로 색칠</strong>합니다. 가장 직관적인 결과물로, 어디를 보강해야 하는지 바로 드러납니다.</td></tr>
+      <tr><td><strong>Impact Inspector</strong></td><td>충격 위치에 마우스를 올리면 <strong>그 위치에서의 부품별 응답</strong>이 즉시 표시됩니다.</td></tr>
+      <tr><td><strong>최악 25 조합</strong></td><td>(위치 × 부품) 조합을 심각도 순으로 세운 표. <strong>보고서에서 가장 먼저 볼 곳</strong>입니다.</td></tr>
+      <tr><td><strong>Verdict · 에너지 흐름</strong></td><td>다기준 합격/불합격 판정과 충격 에너지가 어느 부품으로 흘러 흡수되는지.</td></tr>
+      <tr><td><strong>FFT 스펙트럼 · SRS</strong></td><td>주파수 영역 분석과 <strong>충격응답스펙트럼</strong>. 전자부품 손상 평가에 쓰이는 표준 지표입니다.</td></tr>
+      <tr><td><strong>반발계수 · 댐핑</strong></td><td>위치별 반발계수(COR)와 부품별 감쇠·회복 시간.</td></tr>
+      <tr><td><strong>충격파 전파 속도</strong></td><td>충격이 구조를 타고 퍼지는 속도. 경로상 부품의 시간차 응답을 설명합니다.</td></tr>
+      <tr><td><strong>대칭성 · 경계 효과</strong></td><td>대칭이어야 할 위치의 응답 차이로 <strong>모델 편향이나 경계조건 문제</strong>를 잡아냅니다.</td></tr>
+      <tr><td><strong>이상치 자동 검출</strong></td><td>주변과 동떨어진 응답을 보이는 위치를 자동으로 표시합니다. 국부 취약점 또는 메시 문제 신호입니다.</td></tr>
+      <tr><td><strong>PCA 모달 분해</strong></td><td>전체 응답을 주성분으로 분해해 지배적인 변형 모드를 추출합니다.</td></tr>
+      <tr><td><strong>엔지니어링 자동 권고</strong></td><td>위 분석을 종합한 <strong>개선 방향 제안</strong>.</td></tr>
+      <tr><td><strong>3D 트래젝터리</strong></td><td>부품 운동 궤적을 3D 로 겹쳐 표시.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note g"><b>케이스별 상세 리포트도 동일하게 제공됩니다</b>
+  전각도 낙하와 마찬가지로 각 위치마다 <code>deep_report</code>(응력 이력·에너지·단면 애니메이션)가 생성됩니다.
+  통합 리포트에서 특정 위치가 의심되면 그 케이스의 상세 리포트로 바로 파고들 수 있습니다.</div>
+
+  <div class="note w"><b>항복 판정 기준</b>
+  <code>impact_yield_stress</code> 를 지정하면 그 값으로, 생략하면 <strong>모델의 파트별 재료 카드 값</strong>으로 판정합니다.
+  재질이 섞인 제품은 생략하는 편이 오히려 정확할 수 있습니다.</div>
+</section>
+
+<!-- ══════════════ P6 입력 조건 ══════════════ -->
+<section class="page" id="p6">
+  <span class="pnum">PAGE 6</span>
+  <h1>의뢰 시 준비물</h1>
+  <p class="sub">낙하·충격 조건이 없는 <strong>순수 모델</strong> 한 벌 + <code>scenario.json</code> 한 장.</p>
+
+  <div class="two">
+    <div>
+      <h3>모델에 반드시 있어야 할 것</h3>
+      <div class="tw"><table>
+        <thead><tr><th>카드</th><th>요건</th></tr></thead>
+        <tbody>
+          <tr><td><code>*NODE</code></td><td><span class="req">필수</span> 없으면 즉시 중단됩니다.</td></tr>
+          <tr><td><code>*ELEMENT_*</code></td><td><span class="req">필수</span> SOLID / SHELL / BEAM / MASS 중 최소 1종.</td></tr>
+          <tr><td><code>*PART</code></td><td><span class="req">필수</span> 제목줄 + 데이터줄 <strong>2줄 쌍</strong> 구조. 제목이 비어도 줄 자체는 있어야 합니다.</td></tr>
+          <tr><td><code>*SECTION_*</code></td><td><span class="req">필수</span> PART 의 SECID 에 대응.</td></tr>
+          <tr><td><code>*MAT_*</code></td><td><span class="req">필수</span> PART 의 MID 에 대응. 밀도·탄성계수가 있어야 합니다.</td></tr>
+          <tr><td>파트 간 접촉</td><td><span class="req">필수</span> <strong>제품 내부 부품끼리의 접촉은 모델에 있어야 합니다.</strong> 자동 생성되는 것은 제품↔바닥판 접촉뿐입니다.</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="note c" style="margin-top:14px"><b>고정폭 컬럼을 반드시 지키십시오</b>
+      절점·재료 카드는 <strong>고정폭으로만</strong> 읽습니다. 콤마나 가변 공백으로 쓴 절점은
+      <strong>에러 없이 좌표가 0이 되어</strong> 원점에 뭉칩니다. 재료 카드도 한 칸 밀리면 물성을 못 읽은 것처럼 보입니다.</div>
+
+      <div class="note w" style="margin-top:12px"><b>단위계는 ton-mm-s 로 통일</b>
+      길이 mm · 질량 tonne · 밀도 ton/mm³ · 탄성계수 MPa · 시간 s.
+      단위 변환을 하지 않고 그대로 씁니다.</div>
+    </div>
+
+    <div>
+      <h3>넣지 <u>말아야</u> 할 것</h3>
+      <div class="note c"><b>낙하·충격 조건은 빼 주십시오</b>
+      <ul style="margin:8px 0 0">
+        <li><code>*INITIAL_VELOCITY</code> — 자동 생성분과 <strong>중복 적용</strong>됩니다</li>
+        <li>제품 파트의 <code>*BOUNDARY_SPC</code> — <strong>자유낙하가 막힙니다</strong></li>
+        <li>바닥판·충격추 모델 — 자동 생성됩니다</li>
+      </ul></div>
+
+      <h3>자동으로 만들어 드리는 것</h3>
+      <div class="tw"><table>
+        <tbody>
+          <tr><td><span class="auto">자동</span></td><td>바닥판 파트·절점·요소 (크기·메시 자동 산정)</td></tr>
+          <tr><td><span class="auto">자동</span></td><td>바닥판 전용 단면·재료·하면 구속</td></tr>
+          <tr><td><span class="auto">자동</span></td><td>낙하 높이 → <strong>초기 속도·각속도</strong></td></tr>
+          <tr><td><span class="auto">자동</span></td><td>제품 ↔ 바닥판 접촉</td></tr>
+          <tr><td><span class="auto">자동</span></td><td>해석 종료 시간, d3plot 등 출력 카드</td></tr>
+          <tr><td><span class="auto">자동</span></td><td>누적 해석용 응력 이월 카드</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>그대로 보존되는 것</h3>
+      <div class="tw"><table>
+        <tbody>
+          <tr><td><span class="keep">보존</span></td><td><code>*CONTROL_*</code> 정밀도 설정 — <strong>의뢰 모델 값이 우선</strong></td></tr>
+          <tr><td><span class="keep">보존</span></td><td><code>*DATABASE_EXTENT_BINARY</code> (STRFLG 등)</td></tr>
+          <tr><td><span class="keep">보존</span></td><td>기존 Tied 접촉, 감쇠, 세트, 타이틀</td></tr>
+          <tr><td><span class="keep">보존</span></td><td><code>*KEYWORD</code> 옵션(<code>I10=Y</code> 등), <code>*PARAMETER</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="note i" style="margin-top:12px"><b>응력 텐서를 보시려면</b>
+      <code>*DATABASE_EXTENT_BINARY</code> 의 <strong>STRFLG 를 모델에 직접 넣어</strong> 주십시오.
+      이 카드는 자동 생성하지 않으며, 넣으신 값은 전 과정에서 그대로 유지됩니다.</div>
+    </div>
+  </div>
+
+  <hr class="hr">
+  <h3>제출 체크리스트</h3>
+  <div class="grid g3">
+    <div class="card ok"><h4>① 모델 .k</h4><p>파트·재료·단면·내부 접촉 포함. 낙하/충격 조건 없음. 단위 ton-mm-s.</p></div>
+    <div class="card ok"><h4>② scenario.json</h4><p>다음 페이지의 표에서 <strong>필수 항목만</strong> 채우면 됩니다.</p></div>
+    <div class="card ok"><h4>③ 판정 기준 (선택)</h4><p>항복응력을 알려주시면 안전계수·항복 판정이 리포트에 포함됩니다.</p></div>
+  </div>
+</section>
+
+<!-- ══════════════ P7 설정서 ══════════════ -->
+<section class="page" id="p7">
+  <span class="pnum">PAGE 7</span>
+  <h1>scenario.json 작성 안내</h1>
+  <p class="sub">빈칸을 채우는 방식입니다. <span class="req">필수</span> 표시만 채우면 나머지는 기본값으로 동작합니다.</p>
+
+  <h3>A. 전각도 낙하 — 최소 구성</h3>
+  <pre><span class="k">"project_name"</span>: <span class="s">"____"</span>,
+<span class="k">"simulation_params"</span>: {
+  <span class="k">"height"</span>: <span class="n">1500</span>,        <span class="c">// 낙하 높이 (mm)</span>
+  <span class="k">"tFinal"</span>: <span class="n">0.005</span>,        <span class="c">// 해석 시간 (s)</span>
+  <span class="k">"dt"</span>: <span class="n">1e-6</span>              <span class="c">// 출력 간격 (s)</span>
+},
+<span class="k">"scenarios"</span>: [{
+  <span class="k">"template"</span>: <span class="s">"____.k"</span>,   <span class="c">// 제출 모델</span>
+  <span class="k">"angle_source"</span>: {
+    <span class="k">"source_type"</span>: <span class="s">"fibonacci_lattice"</span>,
+    <span class="k">"fibonacci_lattice"</span>: {
+      <span class="k">"num_points"</span>: <span class="n">500</span>,           <span class="c">// 검증할 자세 개수</span>
+      <span class="k">"sampling_space"</span>: <span class="s">"physical"</span>  <span class="c">// 권장</span>
+    }
+  },
+  <span class="k">"cumulative"</span>: { <span class="k">"num_steps"</span>: <span class="n">1</span>, <span class="k">"mode_sequence"</span>: [<span class="s">"DROP"</span>] }
+}]</pre>
+
+  <h3>B. 전위치 부분충격 — 최소 구성</h3>
+  <pre><span class="k">"simulation_params"</span>: {
+  <span class="k">"impact"</span>: {
+    <span class="k">"type"</span>: <span class="s">"Sphere"</span>, <span class="k">"dimension"</span>: <span class="n">8</span>,   <span class="c">// 충격추 형상·지름(mm)</span>
+    <span class="k">"height"</span>: <span class="n">500</span>, <span class="k">"mesh_size"</span>: <span class="n">1</span>,      <span class="c">// 낙하높이(mm)·메시(mm)</span>
+    <span class="k">"density"</span>: <span class="n">7.85e-9</span>, <span class="k">"youngs_modulus"</span>: <span class="n">201000</span>,
+    <span class="k">"tFinal"</span>: <span class="n">0.001</span>, <span class="k">"dt"</span>: <span class="n">1e-6</span>
+  },
+  <span class="k">"wall"</span>: { <span class="k">"density"</span>: <span class="n">1e-9</span>, <span class="k">"youngs_modulus"</span>: <span class="n">10000</span> }
+},
+<span class="k">"scenarios"</span>: [{
+  <span class="k">"template"</span>: <span class="s">"____.k"</span>,
+  <span class="k">"position_source"</span>: {
+    <span class="k">"source_type"</span>: <span class="s">"grid_nxm"</span>,
+    <span class="k">"grid_nxm"</span>: { <span class="k">"nx"</span>: <span class="n">5</span>, <span class="k">"ny"</span>: <span class="n">5</span> }   <span class="c">// bbox 생략 시 모델에서 자동</span>
+  },
+  <span class="k">"cumulative"</span>: { <span class="k">"num_steps"</span>: <span class="n">1</span>, <span class="k">"mode_sequence"</span>: [<span class="s">"IMPACT"</span>] }
+}]</pre>
+
+  <h3>C. 항목별 설명</h3>
+  <h4>낙하 조건 <span class="tag d">DROP</span></h4>
+  <div class="tw"><table>
+    <thead><tr><th>항목</th><th>의미</th><th>기본값</th></tr></thead>
+    <tbody>
+      <tr><td><code>height</code></td><td>낙하 높이 (mm)</td><td>1500</td></tr>
+      <tr><td><code>tFinal</code></td><td>해석 종료 시간 (s)</td><td>0.005</td></tr>
+      <tr><td><code>dt</code></td><td>결과 출력 간격 (s)</td><td>1e-6</td></tr>
+      <tr><td><code>offset_distance</code></td><td>제품–바닥판 초기 간격 (mm)</td><td>0.05</td></tr>
+      <tr><td><code>density</code> / <code>youngs_modulus</code> / <code>poisson_ratio</code></td><td><strong>바닥판</strong> 물성 (제품 물성 아님)</td><td>7.85e-9 / 2.0e5 / 0.3</td></tr>
+      <tr><td><code>drop_surface</code></td><td>바닥면 종류 — 평판 / 외곽 성긴 평판 / 무한 강체벽 / 거친 면</td><td>평판</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>자세 생성 <span class="tag d">DROP</span></h4>
+  <div class="tw"><table>
+    <thead><tr><th>항목</th><th>의미</th><th>기본값</th></tr></thead>
+    <tbody>
+      <tr><td><code>source_type</code></td><td>자세 생성 방식 (2페이지 표 참조)</td><td><code>cuboid_geometry</code> (26방향)</td></tr>
+      <tr><td><code>num_points</code></td><td><span class="req">필수</span> 검증할 자세 개수</td><td>26</td></tr>
+      <tr><td><code>sampling_space</code></td><td><code>"physical"</code> 권장 — 실제 충격 방향 균등</td><td>위도·경도 균등</td></tr>
+      <tr><td><code>principal_directions</code></td><td>표준 자세를 먼저 배치 — <code>faces</code>(6) / <code>faces_corners</code>(14) / <code>cuboid26</code>(26)</td><td>사용 안 함</td></tr>
+      <tr><td><code>previous_stages</code></td><td>단계적 확장 — 이미 돌린 누적 개수를 오름차순으로</td><td>사용 안 함</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>충격 조건 <span class="tag i">IMPACT</span></h4>
+  <div class="tw"><table>
+    <thead><tr><th>항목</th><th>의미</th><th>기본값 <span class="opt">(⚠ SI 기준)</span></th></tr></thead>
+    <tbody>
+      <tr><td><code>impact.type</code></td><td>충격추 형상 — <code>Sphere</code> 또는 <code>cylinder</code></td><td>Sphere</td></tr>
+      <tr><td><code>impact.dimension</code></td><td><span class="req">필수</span> 충격추 치수 (mm)</td><td class="req">0.008 ← m 기준</td></tr>
+      <tr><td><code>impact.height</code></td><td><span class="req">필수</span> 충격추 낙하 높이 (mm)</td><td class="req">0.5 ← m 기준</td></tr>
+      <tr><td><code>impact.mesh_size</code></td><td><span class="req">필수</span> 충격추 메시 크기 (mm)</td><td class="req">0.001 ← m 기준</td></tr>
+      <tr><td><code>impact.density</code> 등</td><td>충격추 재질</td><td>강 (7.85e-9 / 2.01e5 / 0.3)</td></tr>
+      <tr><td><code>impact.cylinder_stages</code></td><td>다단 원통 정의 (앞/중간/뒤)</td><td>사용 안 함</td></tr>
+      <tr><td><code>wall.*</code></td><td>받침판 물성</td><td>1e-9 / 1e4 / 0.3</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>위치 생성 <span class="tag i">IMPACT</span></h4>
+  <div class="tw"><table>
+    <thead><tr><th>항목</th><th>의미</th><th>기본값</th></tr></thead>
+    <tbody>
+      <tr><td><code>grid_nxm.nx</code> / <code>ny</code></td><td>격자 분할 수 → 케이스 수 = nx × ny</td><td>5 × 5 = 25</td></tr>
+      <tr><td><code>grid_nxm.bbox</code></td><td>격자 범위 <code>[xmin,ymin,xmax,ymax]</code></td><td>모델에서 자동 계산</td></tr>
+      <tr><td><code>grid_spacing.spacing_x/y</code></td><td>간격 지정 방식 (mm)</td><td>—</td></tr>
+      <tr><td><code>manual.positions</code></td><td>좌표 직접 나열 <code>[[x,y],...]</code></td><td>—</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>안정성 · 보고서 <span class="tag d">공통</span></h4>
+  <div class="tw"><table>
+    <thead><tr><th>항목</th><th>의미</th><th>기본값</th></tr></thead>
+    <tbody>
+      <tr><td><code>dtmin</code></td><td>시간증분 붕괴 시 자동 종료. <strong>발산 케이스가 무한정 도는 것을 막습니다.</strong></td><td>사용 안 함</td></tr>
+      <tr><td><code>dynamic_relaxation</code></td><td>누적 해석에서 단계 사이 안정화</td><td>false</td></tr>
+      <tr><td><code>robust_contact</code></td><td>접촉 재구성 — 접촉 불안정으로 실패할 때</td><td>false</td></tr>
+      <tr><td><code>include_wall_in_general</code></td><td>바닥판을 기존 전역 접촉에 포함</td><td>false</td></tr>
+      <tr><td><code>postprocess.yield_stress_mpa</code></td><td><strong>항복응력 (MPa).</strong> 안전계수·항복 판정에 사용</td><td>미지정 시 판정 없음</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note i"><b>누적 낙하도 가능합니다</b>
+  <code>num_steps</code> 를 2 이상으로 두면 <strong>1차 낙하의 손상을 안고 2차 낙하</strong>를 수행합니다.
+  반복 낙하 시험을 모사할 때 사용합니다.</div>
+</section>
+
+<!-- ══════════════ P8 실제 예제 (공백) ══════════════ -->
+<section class="page" id="p8">
+  <span class="pnum">PAGE 8</span>
+  <h1>실제 적용 사례</h1>
+  <p class="sub">실제 제품 해석 결과를 이 페이지에 추가합니다.</p>
+
+  <div class="blank">
+    <h3>[ 작성 예정 ]</h3>
+    <p>실제 프로젝트 적용 결과 · 리포트 화면 · 도출된 개선안</p>
+  </div>
+
+  <div class="grid g2" style="margin-top:22px">
+    <div class="card"><h4>전각도 낙하 사례</h4>
+      <p style="color:var(--tx3)">대상 제품 / 검증 자세 수 / 발견된 위험 자세 / 항복 판정 결과 / 설계 반영 내용</p></div>
+    <div class="card"><h4>전위치 부분충격 사례</h4>
+      <p style="color:var(--tx3)">대상 제품 / 검증 위치 수 / 취약 지점 / 안전 구역 지도 / 보강 방안</p></div>
+  </div>
+
+  <hr class="hr">
+  <h3>문의</h3>
+  <p>모델 제출 방법이나 <code>scenario.json</code> 작성에 대해 궁금한 점은 담당자에게 문의해 주십시오.
+  <strong>모델만 주시면 설정 파일 작성까지 지원</strong>해 드립니다.</p>
+</section>
+
+<div class="foot">
+  전각도 낙하 · 전위치 부분충격 해석 개요 &nbsp;|&nbsp; SmartTwinPreprocessor
+</div>
+
+</div>
+</body>
+</html>
