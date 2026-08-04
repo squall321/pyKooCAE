@@ -127,6 +127,23 @@ pre .c{color:#5f6b7f;font-style:italic} pre .b{color:#ff9ec4}
 .foot{color:var(--tx3);font-size:12px;text-align:center;padding:22px 0}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 @media(max-width:720px){.two{grid-template-columns:1fr}.page{padding:24px 20px}}
+
+/* ── 실물 리포트 캡처 ── */
+figure{margin:16px 0;background:var(--panel2);border:1px solid var(--line);
+  border-radius:10px;overflow:hidden}
+figure img{width:100%;display:block;border-bottom:1px solid var(--line)}
+figcaption{padding:10px 14px;font-size:12.3px;color:var(--tx2)}
+figcaption b{color:var(--ac);font-weight:600}
+.shots{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));margin:16px 0}
+.shots figure{margin:0}
+.open{display:inline-flex;align-items:center;gap:7px;background:rgba(77,163,255,.12);
+  border:1px solid rgba(77,163,255,.42);color:#9ecbff;text-decoration:none;
+  border-radius:8px;padding:9px 16px;font-size:13px;margin:6px 8px 6px 0}
+.open:hover{background:rgba(77,163,255,.2)}
+.open .ic{font-size:14px}
+.livebar{background:linear-gradient(90deg,rgba(77,163,255,.1),rgba(124,92,255,.07));
+  border:1px solid rgba(77,163,255,.3);border-radius:10px;padding:14px 17px;margin:16px 0}
+.livebar b{display:block;margin-bottom:8px;color:#fff}
 </style>
 </head>
 <body>
@@ -160,6 +177,10 @@ pre .c{color:#5f6b7f;font-style:italic} pre .b{color:#ff9ec4}
     <div class="kpi"><div class="v p">1</div><div class="l">설정 파일 — scenario.json</div></div>
     <div class="kpi"><div class="v g">N</div><div class="l">자동 생성 해석 케이스</div></div>
     <div class="kpi"><div class="v w">2</div><div class="l">통합 보고서 (HTML+JSON)</div></div>
+  </div>
+  <div style="margin-top:30px">
+    <a class="open" href="samples/sample_sphere_report.html" target="_blank"><span class="ic">▶</span> 전각도 낙하 리포트 예제</a>
+    <a class="open" href="samples/sample_impact_report.html" target="_blank"><span class="ic">▶</span> 전위치 부분충격 리포트 예제</a>
   </div>
 </section>
 
@@ -312,6 +333,38 @@ previous_stages: [<span class="n">120</span>, <span class="n">500</span>]</pre>
   <p style="margin-top:12px"><span class="tag">report.html 탭</span> Overview · 운동 · 응력/변형률 · 응력 텐서 · 에너지 · 부품 Deep Dive · 시스템 정보</p>
 
   <h3>② 전 각도 통합 — sphere_report</h3>
+
+  <div class="livebar">
+    <b>실제 산출물을 함께 첨부했습니다</b>
+    아래 화면은 설명용 그림이 아니라 <strong>실제 해석 결과 리포트를 그대로 캡처한 것</strong>입니다.
+    파일을 열면 탭 전환·정렬·확대가 모두 동작합니다.
+    <div style="margin-top:9px">
+      <a class="open" href="samples/sample_sphere_report.html" target="_blank"><span class="ic">▶</span> 전각도 낙하 리포트 열기 <span class="opt">(20 케이스 · 7.2 MB)</span></a>
+    </div>
+  </div>
+
+  <figure>
+    <img src="samples/shots/shot_sphere_mollweide.png" alt="Mollweide 구면 분포도와 방향별 위험 순위">
+    <figcaption><b>Mollweide Map — 구면 분포도.</b> 전 낙하 방향을 지도로 펼쳐 위험도를 색으로 표시합니다.
+    붉은 영역이 응력이 집중되는 자세이고, 흰 점은 실제로 해석한 케이스입니다.
+    오른쪽 3D 구체는 제품 방향을 함께 보여주며, 아래 <strong>Risk Ranking</strong> 표가 방향을 응력 순으로 세웁니다
+    (1위 P0015 = 8194.7 MPa).</figcaption>
+  </figure>
+
+  <div class="shots">
+    <figure>
+      <img src="samples/shots/shot_sphere_overview.png" alt="Overview 탭의 자동 판정 Findings">
+      <figcaption><b>Overview — 자동 판정.</b> 상단 KPI(20/20 케이스 · 평균 간격 14.2° · 구면 커버리지 100%)와
+      <strong>Findings</strong>. <span class="req">CRITICAL</span> "Part 1: stress exceeds yield — SF 0.04" 처럼
+      원인과 권고까지 함께 제시됩니다.</figcaption>
+    </figure>
+    <figure>
+      <img src="samples/shots/shot_sphere_failure.png" alt="Failure 탭 안전계수 판정표">
+      <figcaption><b>Failure — 항복 판정.</b> 파트별 피크 응력 · <strong>최악 자세</strong> · 안전계수를 한 표로.
+      SF&lt;1.0 은 붉게 표시됩니다(Part 1 = 0.04). 하단에 낙하 높이·충돌 속도·비운동에너지가 정리됩니다.</figcaption>
+    </figure>
+  </div>
+
   <div class="tw"><table>
     <thead><tr><th style="width:150px">탭</th><th>보여주는 것</th></tr></thead>
     <tbody>
@@ -426,6 +479,30 @@ previous_stages: [<span class="n">120</span>, <span class="n">500</span>]</pre>
   "어느 위치를 때렸을 때 어느 부품이 가장 위험한가"를 정렬 한 번으로 알 수 있습니다.</div>
 
   <h3>리포트 구성</h3>
+
+  <div class="livebar">
+    <b>실제 산출물을 함께 첨부했습니다</b>
+    25지점 × 25부품 = <strong>625 조합</strong>을 실제로 해석한 리포트입니다.
+    <div style="margin-top:9px">
+      <a class="open" href="samples/sample_impact_report.html" target="_blank"><span class="ic">▶</span> 전위치 부분충격 리포트 열기 <span class="opt">(25 위치 · 16 MB)</span></a>
+    </div>
+  </div>
+
+  <figure>
+    <img src="samples/shots/shot_impact_safezone.png" alt="안전 낙하 구역 지도">
+    <figcaption><b>안전 낙하 구역 지도.</b> 충격 위치를 안전(녹)/위험(적)으로 칠해 <strong>어디를 보강해야 하는지</strong>를 한눈에 보여줍니다.
+    이 예제는 25지점 전부가 위험 판정(0/25 안전)이라 설계 보강이 필요한 상태입니다.
+    판정 기준(peak_g·peak_stress·peak_disp 임계값)이 오른쪽에 함께 표시되고, 각 칸의 <code>g</code>/<code>σ</code>/<code>d</code> 는
+    어느 지표가 기준을 넘겼는지를 나타냅니다.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="samples/shots/shot_impact_overview.png" alt="Impact 리포트 Overview">
+    <figcaption><b>Overview — 해석 개요와 KPI.</b> 충격추 제원(질량 · 초기속도 · 운동에너지)과
+    25 위치 / 25 부품 / <strong>최악 조합</strong>(X 20.0, Y 40.0 지점에서 PKG\SUBPKG 에 152k G)이 상단에 요약됩니다.
+    오른쪽 파이프라인 도식은 scenario → DOE → 해석 → 수집 → 리포트 5단계를 보여줍니다.</figcaption>
+  </figure>
+
   <div class="tw"><table>
     <thead><tr><th style="width:180px">섹션</th><th>보여주는 것</th></tr></thead>
     <tbody>
@@ -645,6 +722,15 @@ previous_stages: [<span class="n">120</span>, <span class="n">500</span>]</pre>
   <span class="pnum">PAGE 8</span>
   <h1>실제 적용 사례</h1>
   <p class="sub">실제 제품 해석 결과를 이 페이지에 추가합니다.</p>
+
+  <div class="note i">
+    <b>참고 — 리포트 형식은 아래 예제로 미리 확인하실 수 있습니다</b>
+    아래 두 파일은 <strong>실제 해석으로 생성된 리포트</strong>입니다. 이 페이지에는 향후 실제 제품 적용 사례를 채웁니다.
+    <div style="margin-top:9px">
+      <a class="open" href="samples/sample_sphere_report.html" target="_blank"><span class="ic">▶</span> 전각도 낙하 리포트 예제</a>
+      <a class="open" href="samples/sample_impact_report.html" target="_blank"><span class="ic">▶</span> 전위치 부분충격 리포트 예제</a>
+    </div>
+  </div>
 
   <div class="blank">
     <h3>[ 작성 예정 ]</h3>
