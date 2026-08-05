@@ -515,7 +515,8 @@ class CumulativeDesigner:
                 cuboid_geometry=CuboidGeometryConfig(
                     include_faces=cuboid_cfg.get("include_faces", True),
                     include_edges=cuboid_cfg.get("include_edges", True),
-                    include_corners=cuboid_cfg.get("include_corners", True)
+                    include_corners=cuboid_cfg.get("include_corners", True),
+                    only=cuboid_cfg.get("only")
                 )
             )
 

@@ -101,7 +101,13 @@ def generate_lhs_samples(
         10
     """
     n_samples = tolerance_config.doe_count
+    # 🔴 doe_index 는 base 각도 전체를 관통하는 전역 통번호여야 한다.
+    #    과거에는 base 마다 1 부터 다시 시작해 인덱스가 충돌했고,
+    #    CumulativeDesigner 의 doe_count = len(set(doe_index)) 가 base 수만큼 축소돼
+    #    러너의 range(1, doe_count+1) 루프에서 대부분의 케이스가 실행되지 않았다.
+    #    (예: 꼭짓점 8개 x doe_count 10 = 80 이어야 하는데 doe_count 가 10 으로 기록)
     result = []
+    doe_seq = 0
 
     # 각 base 각도에 대해 DOE 샘플 생성
     for base_name, base_roll, base_pitch, base_yaw in base_angles:
@@ -158,8 +164,9 @@ def generate_lhs_samples(
             new_pitch = base_pitch + pitch_delta
             new_yaw = base_yaw + yaw_delta
 
+            doe_seq += 1
             doe_name = f"{base_name}_DOE{i+1:03d}"
-            result.append((doe_name, new_roll, new_pitch, new_yaw, i+1))
+            result.append((doe_name, new_roll, new_pitch, new_yaw, doe_seq))
 
     return result
 
@@ -196,7 +203,13 @@ def generate_grid_samples(
         27
     """
     n_per_axis = tolerance_config.doe_count
+    # 🔴 doe_index 는 base 각도 전체를 관통하는 전역 통번호여야 한다.
+    #    과거에는 base 마다 1 부터 다시 시작해 인덱스가 충돌했고,
+    #    CumulativeDesigner 의 doe_count = len(set(doe_index)) 가 base 수만큼 축소돼
+    #    러너의 range(1, doe_count+1) 루프에서 대부분의 케이스가 실행되지 않았다.
+    #    (예: 꼭짓점 8개 x doe_count 10 = 80 이어야 하는데 doe_count 가 10 으로 기록)
     result = []
+    doe_seq = 0
 
     for base_name, base_roll, base_pitch, base_yaw in base_angles:
         # Grid 생성
@@ -236,8 +249,9 @@ def generate_grid_samples(
         for roll_val in roll_grid:
             for pitch_val in pitch_grid:
                 for yaw_val in yaw_grid:
+                    doe_seq += 1
                     doe_name = f"{base_name}_DOE{doe_idx:03d}"
-                    result.append((doe_name, roll_val, pitch_val, yaw_val, doe_idx))
+                    result.append((doe_name, roll_val, pitch_val, yaw_val, doe_seq))
                     doe_idx += 1
 
     return result
@@ -273,7 +287,13 @@ def generate_random_samples(
         10
     """
     n_samples = tolerance_config.doe_count
+    # 🔴 doe_index 는 base 각도 전체를 관통하는 전역 통번호여야 한다.
+    #    과거에는 base 마다 1 부터 다시 시작해 인덱스가 충돌했고,
+    #    CumulativeDesigner 의 doe_count = len(set(doe_index)) 가 base 수만큼 축소돼
+    #    러너의 range(1, doe_count+1) 루프에서 대부분의 케이스가 실행되지 않았다.
+    #    (예: 꼭짓점 8개 x doe_count 10 = 80 이어야 하는데 doe_count 가 10 으로 기록)
     result = []
+    doe_seq = 0
 
     for base_name, base_roll, base_pitch, base_yaw in base_angles:
         for i in range(n_samples):
@@ -304,8 +324,9 @@ def generate_random_samples(
             new_pitch = base_pitch + pitch_delta
             new_yaw = base_yaw + yaw_delta
 
+            doe_seq += 1
             doe_name = f"{base_name}_DOE{i+1:03d}"
-            result.append((doe_name, new_roll, new_pitch, new_yaw, i+1))
+            result.append((doe_name, new_roll, new_pitch, new_yaw, doe_seq))
 
     return result
 

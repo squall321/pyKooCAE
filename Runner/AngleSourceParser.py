@@ -35,6 +35,10 @@ class CuboidGeometryConfig:
     include_faces: bool = True      # F1-F6 포함
     include_edges: bool = True      # E1-E12 포함
     include_corners: bool = True    # C1-C8 포함
+    only: Optional[List[str]] = None  # 특정 자세만 선택. 설정 시 include_* 무시.
+                                    # 전체 이름("C1_Back_Right_Top") 또는 짧은 코드("C1","F5","E01")
+                                    # 둘 다 허용하며 대소문자 무관. 나열 순서대로 방출한다.
+                                    # 오타는 조용히 무시하지 않고 ValueError 로 막는다.
 
 
 @dataclass
@@ -158,6 +162,35 @@ def parse_cuboid_geometry(config: CuboidGeometryConfig) -> List[Tuple[str, float
         >>> len(angles)
         26
     """
+    all_dirs = {}
+    all_dirs.update(CUBOID_FACES)
+    all_dirs.update(CUBOID_EDGES)
+    all_dirs.update(CUBOID_CORNERS)
+
+    # only 가 있으면 그것만 (특정 자세 집중 조사용 — tolerance 와 함께 쓰는 것이 일반적)
+    only = getattr(config, "only", None)
+    if only:
+        if isinstance(only, str):
+            only = [only]
+        # 짧은 코드(C1/F5/E01) → 전체 이름. 대소문자 무관.
+        by_code = {}
+        for full in all_dirs:
+            by_code[full.upper()] = full
+            by_code[full.split('_')[0].upper()] = full
+        picked, bad = [], []
+        for token in only:
+            key = str(token).strip().upper()
+            if key in by_code:
+                name = by_code[key]
+                picked.append((name,) + all_dirs[name])
+            else:
+                bad.append(token)
+        if bad:
+            raise ValueError(
+                f"cuboid_geometry.only 에 알 수 없는 자세명: {bad}. "
+                f"사용 가능한 코드: F1~F6, E01~E12, C1~C8 (또는 전체 이름 {sorted(all_dirs)[:2]}...)")
+        return picked
+
     angles = []
 
     if config.include_faces:
