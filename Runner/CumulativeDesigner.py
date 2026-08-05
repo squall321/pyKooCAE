@@ -32,6 +32,7 @@ from Runner.AngleSourceParser import (
     AngleSourceConfig, AngleSourceType,
     CuboidGeometryConfig, FibonacciLatticeConfig,
     PitchingSweepConfig, RollingSweepConfig, CaseTxtFileConfig,
+    ExplicitAnglesConfig,
     parse_angle_source
 )
 from Runner.ToleranceDOEGenerator import (
@@ -48,6 +49,9 @@ from Runner.TemplateManager import (
 )
 from Runner.ImpactPositionSource import (
     ImpactPosition, parse_position_source
+)
+from Runner.PartMoveDOE import (
+    PartMoveCase, parse_part_doe, get_apply_step
 )
 
 # ── VIBRATION 모드 (P1: explicit_factors only) ────────────────────────────────
@@ -179,6 +183,12 @@ class CumulativeDesigner:
                 template_abs = template_raw
             self._current_model_file = template_abs
 
+        # 파트 이동 DOE 축 파싱 (조건 축과 직교 — 아래 _process_* 에서 곱한다)
+        # 블록이 없거나 enabled=false 면 빈 리스트 → 기존 경로 그대로 (회귀 0)
+        self._part_moves = self._parse_part_doe(scenario_cfg.get("part_doe"))
+        self._part_move_apply_step = get_apply_step(scenario_cfg.get("part_doe"))
+        self._doe_part_moves = {}   # doe_index(0-based) → PartMoveCase
+
         # 누적 모드 및 스텝 수
         cumulative_cfg = scenario_cfg.get("cumulative", {})
         num_steps = cumulative_cfg.get("num_steps", 1)
@@ -229,6 +239,15 @@ class CumulativeDesigner:
         if not conditions:
             conditions = ["THERM"]
 
+        # 파트 이동 축과 곱하기 (이동 축 없으면 무변경)
+        pairs = self._part_move_pairs(len(conditions))
+        if self._part_moves:
+            expanded = []
+            for cond_idx, move, doe_idx in pairs:
+                expanded.append(f"{conditions[cond_idx]}__{move.name}")
+                self._doe_part_moves[doe_idx] = move
+            conditions = expanded
+
         steps = []
         for doe_idx, cond in enumerate(conditions):
             for i in range(num_steps):
@@ -278,6 +297,16 @@ class CumulativeDesigner:
             # Tolerance 없으면 원본 그대로 (각 케이스에 고유 doe_index 부여)
             doe_angles = [(name, roll, pitch, yaw, idx) for idx, (name, roll, pitch, yaw) in enumerate(base_angles)]
 
+        # Step 2.5: 파트 이동 축과 곱하기 (이동 축 없으면 무변경)
+        pairs = self._part_move_pairs(len(doe_angles))
+        if self._part_moves:
+            expanded = []
+            for cond_idx, move, doe_idx in pairs:
+                name, roll, pitch, yaw, _ = doe_angles[cond_idx]
+                expanded.append((f"{name}__{move.name}", roll, pitch, yaw, doe_idx))
+                self._doe_part_moves[doe_idx] = move
+            doe_angles = expanded
+
         # Step 3: 각도 믹싱 전략
         mixing_cfg = cumulative_cfg.get("angle_mixing", {})
         base_angle_index = cumulative_cfg.get("base_angle_index", 0)
@@ -293,34 +322,42 @@ class CumulativeDesigner:
         doe_by_base = {}
         for name, roll, pitch, yaw, doe_idx in doe_angles:
             # Base 이름 추출 (DOE 접미사 제거)
-            base_name = name.split('_DOE')[0] if '_DOE' in name else name
+            # 파트이동 접미사(__M0001)는 base 각도 식별과 무관하다. 먼저 떼지 않으면
+            # 같은 각도가 이동 케이스 수만큼 다른 그룹으로 쪼개져 cyclic/random 믹싱의
+            # base 각도 목록이 M배로 부풀어 오른다.
+            base_name = name.split('__')[0] if '__' in name else name
+            base_name = base_name.split('_DOE')[0] if '_DOE' in base_name else base_name
 
             if base_name not in doe_by_base:
                 doe_by_base[base_name] = []
             doe_by_base[base_name].append((name, roll, pitch, yaw, doe_idx))
 
         # 전체 base 각도 리스트 (cyclic, random 등을 위해 모든 base 각도 사용)
+        base_order = sorted(doe_by_base.keys())
         all_base_angles = []
-        for base_name in sorted(doe_by_base.keys()):
+        for base_name in base_order:
             # 각 base_name의 첫 DOE만 사용 (Tolerance 없는 경우 1개씩만 존재)
             first_doe = doe_by_base[base_name][0]
             all_base_angles.append((first_doe[0], first_doe[1], first_doe[2], first_doe[3]))
 
         # 각 DOE에 대해 누적 Step 시퀀스 생성
-        for base_name in sorted(doe_by_base.keys()):
+        for base_idx, base_name in enumerate(base_order):
             doe_list = doe_by_base[base_name]
 
             for doe_name, doe_roll, doe_pitch, doe_yaw, doe_idx in doe_list:
-                # 현재 DOE가 전체 base 각도 리스트에서 몇 번째인지 찾기
-                current_base_idx = 0
-                for idx, (n, r, p, y) in enumerate(all_base_angles):
-                    if n == doe_name and abs(r - doe_roll) < 0.01 and abs(p - doe_pitch) < 0.01:
-                        current_base_idx = idx
-                        break
+                # 🔴 이 DOE 고유의 각도(tolerance 산포 / 파트이동 변종)를 자기 base 자리에
+                #    꽂아 넣는다. 예전에는 all_base_angles(각 base 그룹의 첫 DOE)를 그대로
+                #    넘겨서, 같은 그룹의 2번째 이후 DOE 가 이름 매칭에 실패 → base_idx 0 으로
+                #    떨어졌다. 그 결과 tolerance 18케이스가 고유 각도 6개로 뭉개지고
+                #    대부분이 첫 base 각도로 덮여 산포가 사실상 소실됐다.
+                #    (tolerance/파트이동이 없으면 그룹당 DOE 가 1개라 예전과 완전히 동일)
+                current_base_idx = base_idx
+                local_base_angles = list(all_base_angles)
+                local_base_angles[base_idx] = (doe_name, doe_roll, doe_pitch, doe_yaw)
 
                 # 각도 믹싱 전략 적용하여 Step별 각도 생성
                 angle_sequence = generate_cumulative_angle_sequence(
-                    all_base_angles, num_steps, mixing_config, current_base_idx
+                    local_base_angles, num_steps, mixing_config, current_base_idx
                 )
 
                 # 이 DOE의 Step 설정 생성
@@ -367,10 +404,29 @@ class CumulativeDesigner:
         """
         # position_source 파싱 (bbox 미지정 시 모델 파일에서 자동 계산)
         position_source_cfg = scenario_cfg.get("position_source", {})
+        # manual.file 은 scenario.json 위치 기준 상대경로 허용 (harvest 산출물 운용)
+        manual_cfg = position_source_cfg.get("manual")
+        if isinstance(manual_cfg, dict) and manual_cfg.get("file"):
+            mf = manual_cfg["file"]
+            if not os.path.isabs(mf):
+                position_source_cfg = dict(position_source_cfg)
+                position_source_cfg["manual"] = dict(manual_cfg)
+                position_source_cfg["manual"]["file"] = str(Path(self.scenario_dir) / mf)
         positions = parse_position_source(position_source_cfg, model_file=self._current_model_file)
 
         if not positions:
             raise ValueError("position_source에서 충격 위치가 생성되지 않았습니다")
+
+        # 파트 이동 축과 곱하기 (이동 축 없으면 무변경)
+        pairs = self._part_move_pairs(len(positions))
+        if self._part_moves:
+            expanded = []
+            for cond_idx, move, doe_idx in pairs:
+                src = positions[cond_idx]
+                expanded.append(ImpactPosition(name=f"{src.name}__{move.name}",
+                                               x=src.x, y=src.y))
+                self._doe_part_moves[doe_idx] = move
+            positions = expanded
 
         # 충격 위치 목록 저장 (save_runner_config에서 doe_positions 생성에 사용)
         self._impact_positions = positions
@@ -571,10 +627,61 @@ class CumulativeDesigner:
                 )
             )
 
+        elif source_type == AngleSourceType.EXPLICIT:
+            exp_cfg = angle_source_cfg.get("explicit", {})
+            # file 은 scenario.json 위치 기준 상대경로로 쓰는 것이 자연스럽다.
+            # (harvest 산출물을 scenario.json 옆에 두는 운용)
+            exp_file = exp_cfg.get("file")
+            if exp_file and not os.path.isabs(exp_file):
+                exp_file = str(Path(self.scenario_dir) / exp_file)
+            config = AngleSourceConfig(
+                source_type=source_type,
+                explicit=ExplicitAnglesConfig(
+                    angles=exp_cfg.get("angles"),
+                    file=exp_file
+                )
+            )
+
         else:
             raise ValueError(f"지원하지 않는 각도 소스 타입: {source_type}")
 
         return parse_angle_source(config)
+
+    def _parse_part_doe(self, part_doe_cfg: Optional[Dict[str, Any]]) -> List[PartMoveCase]:
+        """part_doe 설정 파싱. file 은 scenario.json 기준 상대경로 허용."""
+        if not part_doe_cfg:
+            return []
+        cfg = part_doe_cfg
+        pf = cfg.get("file")
+        if pf and not os.path.isabs(pf):
+            cfg = dict(cfg)
+            cfg["file"] = str(Path(self.scenario_dir) / pf)
+        return parse_part_doe(cfg)
+
+    def _part_move_pairs(self, n_conditions: int) -> List[tuple]:
+        """조건 축 × 파트이동 축 → [(cond_idx, move_case|None, doe_index), ...]
+
+        doe_index = cond_idx * n_moves + move_idx (0-based, 조밀 연속).
+        이동 축이 없으면 (i, None, i) 로 기존 인덱스를 그대로 유지한다 → 회귀 0.
+
+        🔴 doe_index 가 조밀 연속이어야 한다. save_runner_config 의
+           doe_count = len(set(doe_index)) 와 러너의 range(1, doe_count+1) 조회가
+           맞물리기 때문에, 구멍이 생기면 케이스가 조용히 사라진다.
+        """
+        moves = self._part_moves
+        if not moves:
+            return [(i, None, i) for i in range(n_conditions)]
+
+        n_moves = len(moves)
+        total = n_conditions * n_moves
+        print(f"파트 이동 DOE: 조건 {n_conditions} × 이동 {n_moves} = 총 {total} 케이스 "
+              f"(이동 적용 스텝: {self._part_move_apply_step})")
+        if total > 1000:
+            print(f"  ⚠️  총 케이스가 {total} 건입니다. 잡 수와 디스크 사용량을 확인하세요.")
+
+        return [(ci, moves[mi], ci * n_moves + mi)
+                for ci in range(n_conditions)
+                for mi in range(n_moves)]
 
     def _parse_tolerance_config(self, tolerance_cfg: Dict[str, Any]) -> ToleranceConfig:
         """Tolerance 설정 파싱"""
@@ -760,6 +867,21 @@ class CumulativeDesigner:
                                 "y": pos.y
                             }
 
+        # 파트 이동 DOE: doe_part_moves 생성
+        # doe_positions 와 동일한 1-based DOE key → step key 구조.
+        # 🔴 step key 는 apply_step 것 하나만 넣는다. 누적 step>=2 는 이전 스텝의
+        #    *_dti.k(이미 이동된 변형 형상)를 입력으로 쓰므로 재적용하면 이중 이동된다.
+        doe_part_moves = {}
+        if getattr(self, '_doe_part_moves', None):
+            apply_step = getattr(self, '_part_move_apply_step', 1)
+            for doe_idx, move in sorted(self._doe_part_moves.items()):
+                doe_part_moves[str(doe_idx + 1)] = {
+                    str(apply_step): {
+                        "move_name": move.name,
+                        "moves": [m.to_dict() for m in move.moves],
+                    }
+                }
+
         # VIBRATION 모드: doe_vibrations 생성 (P1: explicit_factors only)
         # 패턴: doe_positions와 동일 — 1-based DOE key, step_key → factor 딕셔너리
         # VibrationLoadSpec.doe_factors_list: [(case_name, ((pid, factor), ...)), ...]
@@ -826,6 +948,8 @@ class CumulativeDesigner:
                 # VIBRATION DOE 메타데이터 (P1: explicit_factors only)
                 # conditional spread로 비-VIB 시나리오 출력에 노이즈 없음
                 **({"doe_vibrations": doe_vibrations} if doe_vibrations else {}),
+                # 파트 이동 DOE (조건 축과 직교). 미사용 시 키 자체가 없어 회귀 0.
+                **({"doe_part_moves": doe_part_moves} if doe_part_moves else {}),
                 # batch_koomeshmodifier: 1-step 시나리오에서 헤드노드 일괄 생성 옵션
                 "batch_koomeshmodifier": self._get_batch_koomeshmodifier_flag()
             },

@@ -16,6 +16,7 @@ Email: koo.park@samsung.com
 Group: CAE
 """
 
+import json
 import os
 from typing import List, Optional
 from dataclasses import dataclass
@@ -171,23 +172,59 @@ def parse_grid_spacing(config: dict, bbox: Optional[List[float]] = None) -> List
 def parse_manual(config: dict) -> List[ImpactPosition]:
     """수동 좌표 목록 파싱
 
+    두 가지 항목 형식을 받는다.
+        - [x, y]                        (기존 형식 — 이름은 P_0001 자동)
+        - {"name": ..., "x": ..., "y": ...}  (이름 보존 — 취약위치 재조사용)
+
     Parameters:
         config: manual 설정
-            - positions: [[x1,y1], [x2,y2], ...]
+            - positions: 위 항목의 리스트
+            - file: JSON 파일 경로. 내용 {"positions": [...]}
+                    (전위치 충격 결과에서 뽑은 취약 위치를 그대로 물릴 때 사용.
+                     호출 측이 절대경로로 해석해 넘긴다.)
 
     Returns:
         ImpactPosition 리스트
     """
     pos_list = config.get("positions", [])
+    src_file = config.get("file")
+
+    if pos_list and src_file:
+        raise ValueError(
+            "position_source.manual 에 positions 와 file 을 동시에 지정할 수 없습니다. "
+            "둘 중 하나만 쓰세요.")
+
+    if src_file:
+        if not os.path.exists(src_file):
+            raise FileNotFoundError(
+                f"position_source.manual.file 을 찾을 수 없습니다: {src_file}")
+        with open(src_file, encoding="utf-8") as f:
+            doc = json.load(f)
+        pos_list = doc.get("positions") if isinstance(doc, dict) else doc
+
     if not pos_list:
         raise ValueError("manual에 positions 리스트가 필요합니다")
 
     positions = []
+    seen = set()
     for i, pos in enumerate(pos_list):
-        if len(pos) < 2:
-            raise ValueError(f"위치 {i}: [x, y] 형식이 필요합니다")
-        name = f"P_{i+1:04d}"
-        positions.append(ImpactPosition(name=name, x=float(pos[0]), y=float(pos[1])))
+        if isinstance(pos, dict):
+            if "x" not in pos or "y" not in pos:
+                raise ValueError(f"위치 {i}: x, y 는 필수입니다 (받은 값: {pos!r})")
+            name = str(pos.get("name") or f"P_{i+1:04d}").strip()
+            x, y = float(pos["x"]), float(pos["y"])
+        else:
+            if len(pos) < 2:
+                raise ValueError(f"위치 {i}: [x, y] 형식이 필요합니다")
+            name = f"P_{i+1:04d}"
+            x, y = float(pos[0]), float(pos[1])
+
+        if name in seen:
+            raise ValueError(
+                f"position_source.manual 에 중복된 이름: {name!r}. "
+                f"이름이 겹치면 결과 디렉토리가 충돌합니다.")
+        seen.add(name)
+        positions.append(ImpactPosition(name=name, x=x, y=y))
 
     return positions
 

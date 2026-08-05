@@ -7,13 +7,15 @@
     3. pitching_sweep: Pitch -90~90° 스윕 (Roll 고정)
     4. rolling_sweep: Roll -180~170° 스윕 (Pitch 고정)
     5. case_txt_file: 표준 Case txt 파일 (11개 파일 지원)
+    6. explicit: 각도 직접 열거 (취약각도 재조사용 — inline 또는 JSON 파일 참조)
 
 각도 소스 설정 → (name, roll, pitch, yaw) 리스트 반환
 """
 
 from typing import List, Tuple, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+import json
 import os
 import math
 
@@ -27,6 +29,7 @@ class AngleSourceType(Enum):
     PITCHING_SWEEP = "pitching_sweep"
     ROLLING_SWEEP = "rolling_sweep"
     CASE_TXT_FILE = "case_txt_file"
+    EXPLICIT = "explicit"
 
 
 @dataclass
@@ -92,6 +95,19 @@ class CaseTxtFileConfig:
 
 
 @dataclass
+class ExplicitAnglesConfig:
+    """각도 직접 열거 설정 (취약각도 재조사용)
+
+    전각도 낙하 결과에서 뽑은 취약 각도만 다시 돌릴 때 사용한다.
+    inline `angles` 와 `file` 은 배타적 — 둘 다 주면 어느 쪽이 유효한지
+    모호해지므로 ValueError 로 막는다.
+    """
+    angles: Optional[List[dict]] = None   # [{name?, roll, pitch, yaw?}, ...]
+    file: Optional[str] = None            # JSON 파일 경로. 내용 {"angles": [...]}
+                                          # 500개를 scenario.json 에 인라인하지 않기 위한 경로.
+
+
+@dataclass
 class AngleSourceConfig:
     """각도 소스 설정"""
     source_type: AngleSourceType
@@ -100,6 +116,7 @@ class AngleSourceConfig:
     pitching_sweep: Optional[PitchingSweepConfig] = None
     rolling_sweep: Optional[RollingSweepConfig] = None
     case_txt_file: Optional[CaseTxtFileConfig] = None
+    explicit: Optional[ExplicitAnglesConfig] = None
 
 
 # ============================================================================
@@ -605,6 +622,64 @@ def parse_case_txt_file_angles(config: CaseTxtFileConfig) -> List[Tuple[str, flo
     return angles
 
 
+def parse_explicit_angles(config: ExplicitAnglesConfig) -> List[Tuple[str, float, float, float]]:
+    """각도 직접 열거 → (name, roll, pitch, yaw) 리스트
+
+    전각도 낙하 결과에서 추출한 취약 각도를 그대로 다시 돌릴 때 쓴다.
+    `file` 은 호출 측(Designer)이 이미 절대경로로 해석해 넘긴다.
+
+    Returns:
+        List of (name, roll, pitch, yaw)
+
+    Example:
+        >>> cfg = ExplicitAnglesConfig(angles=[{"roll": 45.0, "pitch": -45.0}])
+        >>> parse_explicit_angles(cfg)
+        [('A0001', 45.0, -45.0, 0.0)]
+    """
+    if config.angles and config.file:
+        raise ValueError(
+            "angle_source.explicit 에 angles 와 file 을 동시에 지정할 수 없습니다. "
+            "둘 중 하나만 쓰세요.")
+
+    raw = config.angles
+    if config.file:
+        if not os.path.exists(config.file):
+            raise FileNotFoundError(f"angle_source.explicit.file 을 찾을 수 없습니다: {config.file}")
+        with open(config.file, encoding="utf-8") as f:
+            doc = json.load(f)
+        # {"angles": [...]} 또는 최상위가 바로 리스트인 경우 둘 다 수용
+        raw = doc.get("angles") if isinstance(doc, dict) else doc
+
+    if not raw:
+        raise ValueError(
+            "angle_source.explicit 에 각도가 없습니다. "
+            "angles 리스트 또는 file 경로를 지정하세요.")
+
+    angles = []
+    seen = set()
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ValueError(
+                f"angle_source.explicit 항목 {i}: "
+                f'{{"name":..., "roll":..., "pitch":..., "yaw":...}} 형식이어야 합니다 (받은 값: {item!r})')
+        if "roll" not in item or "pitch" not in item:
+            raise ValueError(f"angle_source.explicit 항목 {i}: roll, pitch 는 필수입니다")
+
+        name = str(item.get("name") or f"A{i + 1:04d}").strip()
+        if name in seen:
+            raise ValueError(
+                f"angle_source.explicit 에 중복된 이름: {name!r}. "
+                f"이름이 겹치면 결과 디렉토리가 충돌합니다.")
+        seen.add(name)
+
+        angles.append((name,
+                       float(item["roll"]),
+                       float(item["pitch"]),
+                       float(item.get("yaw") or 0.0)))
+
+    return angles
+
+
 def parse_angle_source(config: AngleSourceConfig) -> List[Tuple[str, float, float, float]]:
     """
     각도 소스 설정 → (name, roll, pitch, yaw) 리스트 반환
@@ -658,6 +733,11 @@ def parse_angle_source(config: AngleSourceConfig) -> List[Tuple[str, float, floa
         if config.case_txt_file is None:
             raise ValueError("case_txt_file 설정이 필요합니다.")
         return parse_case_txt_file_angles(config.case_txt_file)
+
+    elif config.source_type == AngleSourceType.EXPLICIT:
+        if config.explicit is None:
+            raise ValueError("explicit 설정이 필요합니다.")
+        return parse_explicit_angles(config.explicit)
 
     else:
         raise ValueError(f"지원하지 않는 각도 소스 타입: {config.source_type}")
