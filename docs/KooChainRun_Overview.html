@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KooChainRun — Feature Overview</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --accent: #58a6ff;
+    --accent2: #3fb950;
+    --accent3: #f78166;
+    --accent4: #d2a8ff;
+    --accent5: #ffa657;
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --text3: #c9d1d9;
+    --code-bg: #161b22;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  /* ── Slide Container ── */
+  .slides-wrap {
+    width: 100%;
+    height: 100vh;
+    position: relative;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 48px 64px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(60px);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  .slide.active {
+    opacity: 1;
+    pointer-events: all;
+    transform: translateX(0);
+  }
+  .slide.prev {
+    opacity: 0;
+    transform: translateX(-60px);
+  }
+
+  /* ── Slide Number Badge ── */
+  .slide-badge {
+    position: fixed;
+    bottom: 28px;
+    right: 36px;
+    font-size: 13px;
+    color: var(--text2);
+    letter-spacing: 1px;
+  }
+
+  /* ── Nav Buttons ── */
+  .nav {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .nav button {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text3);
+    padding: 8px 22px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s, color 0.2s;
+  }
+  .nav button:hover { background: var(--accent); color: #fff; }
+  .nav .dots {
+    display: flex; gap: 6px;
+  }
+  .nav .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background 0.2s;
+    cursor: pointer;
+  }
+  .nav .dot.on { background: var(--accent); }
+
+  /* ── Typography ── */
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+    padding: 3px 10px;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+  }
+  .tag.green  { color: var(--accent2); border-color: var(--accent2); }
+  .tag.orange { color: var(--accent5); border-color: var(--accent5); }
+  .tag.purple { color: var(--accent4); border-color: var(--accent4); }
+  .tag.red    { color: var(--accent3); border-color: var(--accent3); }
+
+  h1 {
+    font-size: 46px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1.1;
+    color: var(--text);
+  }
+  h2 {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--text);
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    font-size: 18px;
+    color: var(--text2);
+    margin-top: 12px;
+    max-width: 640px;
+  }
+  .desc {
+    font-size: 16px;
+    color: var(--text2);
+    margin-bottom: 28px;
+    max-width: 760px;
+  }
+
+  /* ── Code Block ── */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 22px;
+    font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #e6edf3;
+    overflow-x: auto;
+    margin-top: 6px;
+  }
+  pre .c  { color: var(--text2); }        /* comment */
+  pre .k  { color: var(--accent4); }      /* keyword/flag */
+  pre .s  { color: var(--accent2); }      /* string/value */
+  pre .p  { color: var(--accent5); }      /* path/command */
+  pre .b  { color: var(--accent); }       /* binary name */
+  pre .r  { color: var(--accent3); }      /* important/red */
+
+  /* ── Card Grid ── */
+  .card-grid {
+    display: grid;
+    gap: 16px;
+    margin-top: 8px;
+    flex: 1;
+  }
+  .card-grid.col2 { grid-template-columns: 1fr 1fr; }
+  .card-grid.col3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px 24px;
+  }
+  .card .cmd {
+    font-family: monospace;
+    font-size: 14px;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: block;
+  }
+  .card p { font-size: 14px; color: var(--text2); }
+  .card ul { padding-left: 18px; }
+  .card li { font-size: 14px; color: var(--text2); margin: 3px 0; }
+  .card .icon {
+    font-size: 24px;
+    margin-bottom: 10px;
+    display: block;
+  }
+  .card h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text3);
+    margin-bottom: 8px;
+  }
+
+  /* ── Two-column layout ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    flex: 1;
+  }
+  .two-col .left, .two-col .right {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ── Flow diagram ── */
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 20px 0;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .flow-step {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 18px;
+    font-size: 14px;
+    text-align: center;
+    min-width: 110px;
+  }
+  .flow-step .step-label {
+    font-size: 11px;
+    color: var(--text2);
+    margin-bottom: 4px;
+    letter-spacing: 0.5px;
+  }
+  .flow-step .step-name {
+    font-weight: 700;
+    color: var(--accent);
+    font-size: 15px;
+  }
+  .flow-arrow {
+    color: var(--text2);
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  /* ── Badge row ── */
+  .badges { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
+  .badge {
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .badge.blue   { background: rgba(88,166,255,.15); color: var(--accent); }
+  .badge.green  { background: rgba(63,185,80,.15);  color: var(--accent2); }
+  .badge.orange { background: rgba(255,166,87,.15); color: var(--accent5); }
+  .badge.purple { background: rgba(210,168,255,.15);color: var(--accent4); }
+  .badge.red    { background: rgba(247,129,102,.15);color: var(--accent3); }
+
+  /* ── Title Slide specific ── */
+  .title-slide {
+    justify-content: center;
+  }
+  .title-slide h1 { font-size: 56px; }
+  .version-bar {
+    margin-top: 32px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  /* ── Table ── */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    text-align: left;
+    padding: 10px 14px;
+    color: var(--text2);
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #21262d;
+    color: var(--text3);
+    vertical-align: top;
+  }
+  td:first-child { color: var(--accent); font-family: monospace; font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+
+  /* ── Separator line ── */
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 20px 0;
+  }
+
+  /* ── Highlight text ── */
+  .hl { color: var(--accent); }
+  .hl2 { color: var(--accent2); }
+  .hl3 { color: var(--accent5); }
+  .hl4 { color: var(--accent4); }
+  .hl5 { color: var(--accent3); }
+
+  .big-num {
+    font-size: 48px;
+    font-weight: 800;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .big-label {
+    font-size: 13px;
+    color: var(--text2);
+    margin-top: 4px;
+  }
+  .stat-row {
+    display: flex;
+    gap: 48px;
+    margin: 24px 0;
+  }
+
+  /* Keyboard hint */
+  .kbd-hint {
+    position: fixed;
+    top: 20px;
+    right: 24px;
+    font-size: 12px;
+    color: var(--text2);
+  }
+  kbd {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<div class="kbd-hint"><kbd>←</kbd> <kbd>→</kbd> or <kbd>Space</kbd></div>
+
+<div class="slides-wrap" id="slides">
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 1: Title
+  ══════════════════════════════════════════ -->
+  <div class="slide title-slide active" data-slide="0">
+    <div class="tag">KooChainRun v1.1.0</div>
+    <h1>KooChainRun</h1>
+    <p class="subtitle">
+      Sequential CAE Analysis Workflow Manager<br>
+      Slurm 기반 대규모 낙하 시뮬레이션 자동화 플랫폼
+    </p>
+    <div class="version-bar">
+      <span class="badge blue">Python 3.12 · Nuitka</span>
+      <span class="badge green">Slurm HPC</span>
+      <span class="badge orange">Apptainer</span>
+      <span class="badge purple">LS-DYNA</span>
+      <span class="badge red">NFS + Scratch</span>
+    </div>
+    <div class="divider" style="margin-top:40px;margin-bottom:24px;"></div>
+    <div class="stat-row">
+      <div>
+        <div class="big-num">8</div>
+        <div class="big-label">CLI 명령어</div>
+      </div>
+      <div>
+        <div class="big-num">200<span style="font-size:24px">+</span></div>
+        <div class="big-label">동시 DOE 지원</div>
+      </div>
+      <div>
+        <div class="big-num">∞</div>
+        <div class="big-label">다단계 누적 해석</div>
+      </div>
+      <div>
+        <div class="big-num">0</div>
+        <div class="big-label">수동 개입 필요</div>
+      </div>
+    </div>
+    <p style="color:var(--text2);font-size:14px;margin-top:16px;">
+      Koo Engineering &nbsp;·&nbsp; SmartTwinPreprocessor 패키지 내장
+    </p>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 2: Architecture Overview
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="1">
+    <div class="tag">Architecture</div>
+    <h2>전체 워크플로우</h2>
+    <p class="desc">scenario.json 한 파일로 수백 개 DOE의 누적 CAE 해석을 완전 자동화합니다.</p>
+
+    <div class="flow">
+      <div class="flow-step">
+        <div class="step-label">사용자 입력</div>
+        <div class="step-name">scenario.json</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-label">prepare</div>
+        <div class="step-name">runner_config</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-label">submit</div>
+        <div class="step-name">Slurm Jobs</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-label">run (노드)</div>
+        <div class="step-name">MeshModifier<br>→ LS-DYNA</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-label">status</div>
+        <div class="step-name">진행 모니터링</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-label">rerun / collect</div>
+        <div class="step-name">결과 수집</div>
+      </div>
+    </div>
+
+    <div class="card-grid col3" style="flex:0;margin-top:16px;">
+      <div class="card">
+        <span class="icon">📐</span>
+        <h3>CumulativeDesigner</h3>
+        <p>scenario.json → runner_config.json 변환. Fibonacci Lattice / 균등 분포 방향 자동 생성</p>
+      </div>
+      <div class="card">
+        <span class="icon">🖥️</span>
+        <h3>CumulativeScenarioRunner</h3>
+        <p>계산 노드에서 실행. KooMeshModifier → LS-DYNA → dynain 전달을 DOE별로 처리</p>
+      </div>
+      <div class="card">
+        <span class="icon">📋</span>
+        <h3>JobManager</h3>
+        <p>jobs.json + simulation_index 기반 상태 추적. 실패 진단 / 재실행 / 노드 제외 자동화</p>
+      </div>
+    </div>
+
+    <div class="divider" style="margin-top:20px;"></div>
+    <p style="color:var(--text2);font-size:13px;">
+      핵심 파일: &nbsp;
+      <code style="color:var(--accent);font-size:13px;">scenario.json</code> →
+      <code style="color:var(--accent2);font-size:13px;">runner_config.json</code> →
+      <code style="color:var(--accent5);font-size:13px;">jobs.json</code> →
+      <code style="color:var(--accent4);font-size:13px;">simulation_index_doe_*.json</code>
+    </p>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 3: prepare
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="2">
+    <div class="tag green">명령어 1/6</div>
+    <h2><span class="hl">prepare</span> — 설정 파일 생성</h2>
+    <p class="desc">사용자가 작성한 <code>scenario.json</code>을 실행 가능한 <code>runner_config.json</code>으로 변환합니다.<br>
+    DOE 각도/위치 계산, 디렉토리 생성, 헬퍼 스크립트 자동 생성까지 한 번에 처리합니다.</p>
+
+    <div class="two-col">
+      <div class="left">
+        <pre><span class="b">KooChainRun</span> <span class="k">prepare</span> scenario.json
+<span class="b">KooChainRun</span> <span class="k">prepare</span> scenario.json <span class="k">-o</span> <span class="p">./config.json</span></pre>
+
+        <div class="card">
+          <h3>생성 결과물</h3>
+          <ul>
+            <li>📄 <span class="hl">runner_config.json</span> — 상세 실행 설정</li>
+            <li>📁 <span class="hl2">output/slurm_scripts/</span> — 사전 생성</li>
+            <li>🔧 <span class="hl3">rerun.sh / stop.sh</span></li>
+            <li>🔧 <span class="hl3">diagnose.sh / copy.sh</span></li>
+            <li>🔧 <span class="hl3">copylog.sh / clean.sh</span></li>
+            <li>🔧 <span class="hl4">kill_dyna.sh</span></li>
+          </ul>
+        </div>
+      </div>
+      <div class="right">
+        <div class="card">
+          <h3>scenario.json 주요 구조</h3>
+          <pre style="margin-top:0;font-size:12px;"><span class="c">{
+  "project_name": "HWDrop",
+  "environment": {
+    "lsdyna_path": "...",
+    "ncpu": 128,
+    "memory": "300G",
+    "time_limit": "06:00:00"
+  },
+  "scenarios": [{
+    "angle_source": {
+      "source_type": "fibonacci_lattice",
+      "fibonacci_lattice": {
+        "num_directions": 200
+      }
+    },
+    "cumulative": {
+      "num_steps": 3,
+      "mode_sequence": ["DROP","BOUNCE","SLIDE"]
+    }
+  }]
+}</span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 4: submit
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="3">
+    <div class="tag green">명령어 2/6</div>
+    <h2><span class="hl">submit</span> — Slurm 잡 제출</h2>
+    <p class="desc">DOE별 sbatch 스크립트를 생성하고 Slurm에 제출합니다. 노드 헬스체크, 시간 제한 검증, 순차/병렬 모드를 지원합니다.</p>
+
+    <div class="two-col">
+      <div class="left">
+        <pre><span class="c"># 기본 (DOE당 1잡, 4노드 × 1잡)</span>
+<span class="b">KooChainRun</span> <span class="k">submit</span> runner_config.json \
+  <span class="k">--nodes</span> <span class="s">4</span> <span class="k">--partition</span> <span class="s">normal</span>
+
+<span class="c"># sequential 모드 (노드당 배치잡)</span>
+<span class="b">KooChainRun</span> <span class="k">submit</span> runner_config.json \
+  <span class="k">--nodes</span> <span class="s">4</span> <span class="k">--sequential</span></pre>
+
+        <div class="card">
+          <h3>자동 처리 항목</h3>
+          <ul>
+            <li>🔍 <span class="hl">Node Health Check</span> — SSH parallel ping</li>
+            <li>🚫 <span class="hl5">Dead node 자동 제외</span> (<code>--exclude</code>)</li>
+            <li>⏱️ Partition 시간 제한 자동 cap</li>
+            <li>🔒 <code>--exclusive</code> 노드 독점 (기본)</li>
+            <li>⏳ Job stagger (기본 300초, NFS 충돌 방지)</li>
+            <li>📝 jobs.json 즉시 생성</li>
+          </ul>
+        </div>
+      </div>
+      <div class="right">
+        <div class="card">
+          <h3>Scratch 모드 (성능 최적화)</h3>
+          <p style="margin-bottom:10px;">NFS 대신 로컬 scratch에서 연산 → 완료 시 NFS 동기화</p>
+          <pre style="margin-top:0;font-size:12px;"><span class="c"># scenario.json environment 설정</span>
+"scratch_run": {
+  "enabled": true,
+  "scratch_base": "/tmp",
+  "cleanup_on_success": true
+}</pre>
+        </div>
+        <div class="card" style="margin-top:0;">
+          <h3>--sequential 모드</h3>
+          <p>N개 노드에 DOE를 균등 분배.<br>노드당 1개 Slurm 잡, 내부에서 M개 DOE 순차 실행.<br>
+          대규모 DOE에서 잡 제출 오버헤드 최소화.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 5: run
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="4">
+    <div class="tag green">명령어 3/6</div>
+    <h2><span class="hl">run</span> — 단일 DOE 실행 (계산 노드)</h2>
+    <p class="desc">Slurm이 계산 노드에서 자동 호출합니다. KooMeshModifier → LS-DYNA → dynain 전달까지 누적 파이프라인을 실행합니다.</p>
+
+    <div class="two-col">
+      <div class="left">
+        <pre><span class="c"># Slurm 스크립트 내부에서 자동 호출</span>
+<span class="b">KooChainRun</span> <span class="k">run</span> runner_config.json \
+  <span class="k">--doe</span> <span class="s">42</span>
+
+<span class="c"># 중단 지점에서 재개</span>
+<span class="b">KooChainRun</span> <span class="k">run</span> runner_config.json \
+  <span class="k">--doe</span> <span class="s">42</span> <span class="k">--resume</span>
+
+<span class="c"># Batch KooMeshModifier 모드</span>
+<span class="b">KooChainRun</span> <span class="k">run</span> runner_config.json \
+  <span class="k">--doe</span> <span class="s">42</span> <span class="k">--skip-koomeshmodifier</span> \
+  <span class="k">--pregenerated-dir</span> <span class="p">./pregenerated</span></pre>
+
+        <div class="card">
+          <h3>NFS 안정성 보호</h3>
+          <ul>
+            <li>🔒 simulation_index flock (120초 타임아웃)</li>
+            <li>📖 lock 후 재읽기 + merge (double-check)</li>
+            <li>💀 stale lock 자동 회수 (dead node 대응)</li>
+            <li>🧹 Apptainer orphan 프로세스 정리</li>
+          </ul>
+        </div>
+      </div>
+      <div class="right">
+        <div class="card">
+          <h3>DOE별 파이프라인</h3>
+          <div class="flow" style="flex-direction:column;align-items:flex-start;gap:6px;margin:8px 0;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="badge blue">Step 1</span>
+              <span style="font-size:14px;color:var(--text3);">KooMeshModifier — DropSet.k 생성</span>
+            </div>
+            <div style="margin-left:16px;color:var(--text2);font-size:13px;">↓</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="badge green">Step 2</span>
+              <span style="font-size:14px;color:var(--text3);">LS-DYNA (Apptainer) — 해석 실행</span>
+            </div>
+            <div style="margin-left:16px;color:var(--text2);font-size:13px;">↓</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="badge orange">Step 3</span>
+              <span style="font-size:14px;color:var(--text3);">dynain 추출 → 다음 스텝 입력</span>
+            </div>
+            <div style="margin-left:16px;color:var(--text2);font-size:13px;">↓ (다단계 반복)</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="badge purple">완료</span>
+              <span style="font-size:14px;color:var(--text3);">simulation_index 업데이트</span>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:0;">
+          <h3>Checkpoint 시스템</h3>
+          <p><code>checkpoint_doe_N.json</code>으로 각 스텝 상태 저장.<br>
+          중단 후 <code>--resume</code>으로 마지막 완료 스텝부터 재개.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 6: status
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="5">
+    <div class="tag green">명령어 4/6</div>
+    <h2><span class="hl">status</span> — 진행 현황 모니터링</h2>
+    <p class="desc">모든 DOE의 완료/실행중/실패/미시작 상태를 실시간으로 확인합니다.</p>
+
+    <div class="two-col">
+      <div class="left">
+        <pre><span class="b">KooChainRun</span> <span class="k">status</span>
+<span class="b">KooChainRun</span> <span class="k">status</span> runner_config.json
+<span class="b">KooChainRun</span> <span class="k">status</span> <span class="k">--watch</span>   <span class="c"># 60초마다 자동 갱신</span></pre>
+
+        <div class="card">
+          <h3>DOE 상태 분류</h3>
+          <table>
+            <thead><tr><th>상태</th><th>설명</th></tr></thead>
+            <tbody>
+              <tr><td style="color:var(--accent2);">completed</td><td>모든 스텝 성공 완료</td></tr>
+              <tr><td style="color:var(--accent);">running</td><td>현재 Slurm RUNNING/PENDING</td></tr>
+              <tr><td style="color:var(--accent3);">failed</td><td>스텝 실패 (로그 에러 감지)</td></tr>
+              <tr><td style="color:var(--accent5);">killed</td><td>CANCELLED / TIMEOUT / NODE_FAIL</td></tr>
+              <tr><td style="color:var(--accent4);">license_error</td><td>LSTC 라이선스 체크아웃 실패</td></tr>
+              <tr><td style="color:var(--text2);">not_started</td><td>잡 미제출 또는 대기</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="right">
+        <div class="card">
+          <h3>상태 판단 로직</h3>
+          <ul>
+            <li>simulation_index에서 DOE별 스텝 alias 조회</li>
+            <li>중간 스텝: <span class="hl">dynain 파일 존재</span> 확인 (다음 스텝 입력 보장)</li>
+            <li>마지막 스텝: <span class="hl2">index status="completed"</span> 직접 신뢰</li>
+            <li>sacct / squeue로 Slurm 상태 cross-check</li>
+            <li>손상 JSON 감지 시 별도 경고 출력</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:0;">
+          <h3>출력 예시</h3>
+          <pre style="margin-top:0;font-size:12px;"><span class="c">완료: 156/200개
+실행중: 12개 (DOE 031~042...)
+실패: 3개
+미시작: 29개
+─────────────────────────────
+DOE  001: ✅ completed  (1/1)
+DOE  002: 🔄 running   (0/1)
+DOE  003: ❌ failed    (0/1)</span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 7: rerun
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="6">
+    <div class="tag orange">명령어 5/6</div>
+    <h2><span class="hl3">rerun</span> — 실패/미완료 DOE 재실행</h2>
+    <p class="desc">완료된 DOE는 건너뛰고 실패·미시작 DOE만 식별하여 재제출합니다. 노드 장애, 타임아웃, 취소 등 다양한 상황에 대응합니다.</p>
+
+    <div class="two-col">
+      <div class="left">
+        <pre><span class="c"># 기본 재실행 (확인 후 제출)</span>
+<span class="b">./rerun.sh</span>
+
+<span class="c"># 상태 미리 보기만 (dry-run)</span>
+<span class="b">./rerun.sh</span> <span class="k">--dry-run</span>
+
+<span class="c"># 확인 없이 즉시 재실행</span>
+<span class="b">./rerun.sh</span> <span class="k">--force</span>
+
+<span class="c"># 특정 DOE만 재실행</span>
+<span class="b">./rerun.sh</span> <span class="k">--does</span> <span class="s">3,7,15,42</span>
+
+<span class="c"># 실패 노드 자동 제외</span>
+<span class="b">./rerun.sh</span> <span class="k">--exclude-nodes</span> <span class="s">auto</span>
+
+<span class="c"># sequential 배치 모드 + stale 정리</span>
+<span class="b">./rerun.sh</span> <span class="k">--sequential</span> <span class="k">--nodes</span> <span class="s">4</span> \
+            <span class="k">--cleanup-stale</span></pre>
+      </div>
+      <div class="right">
+        <div class="card">
+          <h3>--exclude-nodes auto</h3>
+          <p>sacct에서 NODE_FAIL / TIMEOUT / FAILED 상태 잡의 노드를 자동 감지.<br>
+          <span class="hl5">CANCELLED(사용자 취소)는 제외하지 않음</span> — 건강한 노드에서 재실행 가능.</p>
+        </div>
+        <div class="card" style="margin-top:0;">
+          <h3>--sequential + --nodes</h3>
+          <p>남은 DOE를 N개 노드에 균등 분배.<br>
+          노드당 1개 Slurm 잡으로 여러 DOE 순차 처리.<br>
+          소수 노드에서 대량 DOE 재실행에 적합.</p>
+        </div>
+        <div class="card" style="margin-top:0;">
+          <h3>--cleanup-stale</h3>
+          <p>재실행 전 이전 중단 DOE의 Run 디렉토리 삭제.<br>
+          불완전한 결과 파일이 혼입되지 않도록 보장.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 8: stop / diagnose
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="7">
+    <div class="tag red">명령어 6/6</div>
+    <h2>
+      <span class="hl5">stop</span> &nbsp;/&nbsp; <span class="hl4">diagnose</span>
+    </h2>
+    <p class="desc">실행 중인 모든 잡을 안전하게 취소하거나, 실패 원인을 자동 진단합니다.</p>
+
+    <div class="two-col">
+      <div class="left">
+        <div class="tag red" style="font-size:10px;">stop</div>
+        <pre><span class="c"># 모든 잡 취소 + LS-DYNA 프로세스 강제 종료</span>
+<span class="b">./stop.sh</span>
+
+<span class="c"># 도움말 (취소 없이 옵션 확인)</span>
+<span class="b">./stop.sh</span> <span class="k">--help</span></pre>
+
+        <div class="card">
+          <h3>stop 동작</h3>
+          <ul>
+            <li>jobs.json에서 전체 job_id 조회</li>
+            <li>미완료 잡 scancel 실행</li>
+            <li><span class="hl5">kill_dyna.sh</span> 호출: 계산 노드 SSH 접속 후<br>
+              lsdyna / mpirun / squashfuse 프로세스 강제 종료</li>
+            <li>--help는 실제 취소 없이 도움말만 출력</li>
+          </ul>
+        </div>
+      </div>
+      <div class="right">
+        <div class="tag purple" style="font-size:10px;">diagnose</div>
+        <pre><span class="b">./diagnose.sh</span>
+<span class="b">KooChainRun</span> <span class="k">diagnose</span> <span class="p">./test_dir/</span></pre>
+
+        <div class="card">
+          <h3>diagnose 감지 항목</h3>
+          <table>
+            <thead><tr><th>원인 코드</th><th>감지 방법</th></tr></thead>
+            <tbody>
+              <tr><td>license_error</td><td>로그에서 LSTC_FILE / Cannot connect 패턴</td></tr>
+              <tr><td>disk_full</td><td>로그에서 No space left 패턴</td></tr>
+              <tr><td>out_of_memory</td><td>로그에서 out of memory / oom 패턴</td></tr>
+              <tr><td>apptainer_error</td><td>squashfuse / libfuse 패턴</td></tr>
+              <tr><td>cancelled</td><td>Slurm state = CANCELLED</td></tr>
+              <tr><td>slurm_timeout</td><td>Slurm state = TIMEOUT</td></tr>
+              <tr><td>not_started</td><td>잡 미제출 / 상태 없음</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 9: Helper Scripts
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="8">
+    <div class="tag purple">헬퍼 스크립트</div>
+    <h2>자동 생성 <span class="hl4">Helper Scripts</span></h2>
+    <p class="desc"><code>prepare</code> 실행 시 테스트 디렉토리에 자동 생성됩니다. 모두 <code>--help</code> 옵션을 지원합니다.</p>
+
+    <div class="card-grid col3">
+      <div class="card">
+        <span class="cmd">./rerun.sh</span>
+        <p>실패/미완료 DOE 재실행. <code>KooChainRun rerun</code>의 단축 래퍼.<br>
+        모든 rerun 옵션 pass-through 지원.</p>
+      </div>
+      <div class="card">
+        <span class="cmd">./stop.sh</span>
+        <p>모든 Slurm 잡 취소 + kill_dyna.sh 호출.<br>
+        <code>--help</code> 시 실제 취소 없이 도움말만 출력.</p>
+      </div>
+      <div class="card">
+        <span class="cmd">./diagnose.sh</span>
+        <p>실패 DOE 원인 자동 진단.<br>
+        라이선스 / 디스크 / OOM / Apptainer 에러 분류.</p>
+      </div>
+      <div class="card">
+        <span class="cmd">./copy.sh</span>
+        <p>로컬 scratch → NFS Output 동기화.<br>
+        <code>--all</code>: 전체 scratch 복사<br>
+        <code>N</code>: 병렬 스레드 수 지정 (기본 5)</p>
+      </div>
+      <div class="card">
+        <span class="cmd">./copylog.sh</span>
+        <p>계산 노드에서 로그 파일만 선택 복사.<br>
+        실행 중 실시간 로그 모니터링에 사용.</p>
+      </div>
+      <div class="card">
+        <span class="cmd">./kill_dyna.sh</span>
+        <p>이 프로젝트의 모든 계산 노드에 SSH 접속하여<br>
+        lsdyna / mpirun / squashfuse 프로세스 강제 종료.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;background:rgba(88,166,255,0.06);">
+      <h3>📌 안전한 --help 보장</h3>
+      <p>이전 버전의 <code>stop.sh --help</code>가 실제로 잡을 취소하는 버그 수정 완료.<br>
+      모든 헬퍼 스크립트는 <code>--help / -h</code> 감지 시 실제 동작 없이 도움말만 출력합니다.</p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 10: DOE Angle Generation
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="9">
+    <div class="tag blue">DOE 설계</div>
+    <h2>낙하 방향 DOE <span class="hl">자동 생성</span></h2>
+    <p class="desc">다양한 낙하 방향을 수학적으로 균등 분포시켜 커버리지를 최대화합니다.</p>
+
+    <div class="two-col">
+      <div class="left">
+        <div class="card">
+          <h3>Fibonacci Lattice (권장)</h3>
+          <p>구면 상의 N개 방향을 최대 균등 분포로 생성.<br>
+          소수 황금각(137.5°) 기반 나선 배치.</p>
+          <pre style="margin-top:10px;font-size:12px;">"angle_source": {
+  "source_type": "fibonacci_lattice",
+  "fibonacci_lattice": {
+    "num_directions": 200
+  }
+}</pre>
+        </div>
+        <div class="card" style="margin-top:0;">
+          <h3>균등 그리드</h3>
+          <p>roll/pitch/yaw 범위와 스텝 수로 격자 정의.</p>
+          <pre style="margin-top:10px;font-size:12px;">"angle_source": {
+  "source_type": "uniform_grid",
+  "uniform_grid": {
+    "roll": [0, 360, 10],
+    "pitch": [-90, 90, 10]
+  }
+}</pre>
+        </div>
+      </div>
+      <div class="right">
+        <div class="card">
+          <h3>누적 해석 (Cumulative)</h3>
+          <p style="margin-bottom:10px;">1개 DOE = N번 연속 해석.<br>
+          각 스텝의 결과(dynain)가 다음 스텝의 초기 상태가 됩니다.</p>
+          <pre style="font-size:12px;">"cumulative": {
+  "num_steps": 3,
+  "mode_sequence": [
+    "DROP",
+    "BOUNCE",
+    "SLIDE"
+  ],
+  "angle_mixing": {
+    "strategy": "same_angle"
+    <span class="c">// 또는 "random_angle"</span>
+  }
+}</pre>
+        </div>
+        <div class="card" style="margin-top:0;">
+          <h3>Alias 체계</h3>
+          <p>각 해석 결과의 고유 식별자:<br>
+          <code style="color:var(--accent);font-size:13px;">{Project}_CUM{steps:03d}_DOE{doe:03d}_S{step:03d}_{mode}_{condition}</code></p>
+          <p style="margin-top:8px;font-size:13px;color:var(--text2);">예: <code>HWDrop_CUM003_DOE042_S001_DROP_P0042</code></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 11: Reliability Features
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="10">
+    <div class="tag red">신뢰성</div>
+    <h2>안정성 &amp; 내결함성 기능</h2>
+    <p class="desc">실제 운영 환경에서 발견된 문제들을 해결하는 안전 메커니즘들입니다.</p>
+
+    <div class="card-grid col2">
+      <div class="card">
+        <span class="icon">🔒</span>
+        <h3>NFS flock 직렬화</h3>
+        <p>simulation_index.json 동시 쓰기 충돌 방지.<br>
+        120초 타임아웃 + stale lock(dead node) 자동 회수.<br>
+        lock 해제 후 파일 재읽기 + merge로 데이터 손실 방지.</p>
+      </div>
+      <div class="card">
+        <span class="icon">💀</span>
+        <h3>Dead Node 자동 감지</h3>
+        <p>submit 시 SSH parallel ping으로 응답 불가 노드 사전 감지.<br>
+        <code>--exclude</code>로 자동 제외하여 "launch failed requeued held" 방지.</p>
+      </div>
+      <div class="card">
+        <span class="icon">⚡</span>
+        <h3>Job Stagger</h3>
+        <p>여러 잡이 동시에 완료되어 NFS에 폭발적으로 쓰기 요청하는 것을 방지.<br>
+        잡 시작 시 최대 300초 랜덤 지연 (설정 가능).</p>
+      </div>
+      <div class="card">
+        <span class="icon">🧹</span>
+        <h3>Apptainer 정리</h3>
+        <p>잡 시작 전 orphan squashfuse 프로세스 자동 정리.<br>
+        stale .lock 파일 (10분 이상) 자동 삭제.</p>
+      </div>
+      <div class="card">
+        <span class="icon">📝</span>
+        <h3>Atomic JSON Write</h3>
+        <p>jobs.json / simulation_index.json 모두<br>
+        임시파일 쓰기 → rename 방식으로 저장.<br>
+        중단 시 파일 손상 완전 방지. 백업 파일 자동 유지.</p>
+      </div>
+      <div class="card">
+        <span class="icon">🏥</span>
+        <h3>노드 상태 점검 (잡 내)</h3>
+        <p>각 잡 시작 시 출력 디렉토리 쓰기 테스트.<br>
+        readonly / NFS 장애 노드는 즉시 exit 1로 탈출.<br>
+        정상 노드에서 자동 requeue.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 12: scenario.json Complete Reference
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="11">
+    <div class="tag blue">설정 레퍼런스</div>
+    <h2>scenario.json 완전 가이드</h2>
+    <p class="desc">테스트 디렉토리의 <code>scenario.json</code> 하나로 모든 것을 제어합니다.</p>
+
+    <div class="two-col">
+      <div class="left">
+        <pre style="font-size:12px;line-height:1.6;"><span class="c">{
+  "project_name": "HWWarrantyDrop",
+  "environment": {
+    "koomeshmodifier_path": "/opt/.../KooMeshModifier",
+    "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
+    "apptainer_sif": "/opt/apptainers/LSDyna.sif",
+    "apptainer_bind": "/data:/data",
+    "lsdyna_apptainer_env": {
+      "LSTC_LICENSE_SERVER": "192.168.1.1"
+    },
+    "apptainer_tmpdir": "/data/tmp",
+    "ncpu": 128,
+    "memory": "300G",
+    "time_limit": "06:00:00",
+    "partition": "normal",
+    "exclusive": true,
+    "job_stagger_seconds": 300,
+    "scratch_run": {
+      "enabled": true,
+      "scratch_base": "/tmp",
+      "cleanup_on_success": true
+    },
+    "koochainrun_path": "/data/.../KooChainRun"
+  }</span></pre>
+      </div>
+      <div class="right">
+        <pre style="font-size:12px;line-height:1.6;"><span class="c">  "simulation_params": {
+    "height": 1500,
+    "tFinal": 0.005,
+    "dt": 1e-6,
+    "density": 7850,
+    "youngs_modulus": 2e11,
+    "poisson_ratio": 0.3,
+    "drop_surface": {
+      "type": "Plane",
+      "size": [300, 300, 20],
+      "deformable_to_rigid": false
+    }
+  },
+  "scenarios": [{
+    "scenario_name": "Full200Drop",
+    "template": "MinimumModel.k",
+    "angle_source": {
+      "source_type": "fibonacci_lattice",
+      "fibonacci_lattice": {
+        "num_directions": 200
+      }
+    },
+    "cumulative": {
+      "num_steps": 1,
+      "mode_sequence": ["DROP"],
+      "base_angle_index": 0,
+      "angle_mixing": {
+        "strategy": "same_angle"
+      }
+    }
+  }]
+}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 13: Quick Start
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="12">
+    <div class="tag green">Quick Start</div>
+    <h2>5단계로 시작하기</h2>
+    <p class="desc">처음부터 결과 수집까지 전체 흐름입니다.</p>
+
+    <div class="card-grid col2" style="flex:1;">
+      <div class="card">
+        <h3><span class="badge blue">1</span> &nbsp; 설정 준비</h3>
+        <pre style="margin-top:10px;font-size:13px;"><span class="c"># scenario.json 작성 후</span>
+<span class="b">KooChainRun</span> <span class="k">prepare</span> scenario.json
+<span class="c"># → runner_config.json + 헬퍼 스크립트 생성</span></pre>
+      </div>
+      <div class="card">
+        <h3><span class="badge green">2</span> &nbsp; 잡 제출</h3>
+        <pre style="margin-top:10px;font-size:13px;"><span class="b">KooChainRun</span> <span class="k">submit</span> runner_config.json \
+  <span class="k">--nodes</span> <span class="s">4</span>
+<span class="c"># → jobs.json 생성, Slurm에 제출</span></pre>
+      </div>
+      <div class="card">
+        <h3><span class="badge orange">3</span> &nbsp; 진행 확인</h3>
+        <pre style="margin-top:10px;font-size:13px;"><span class="b">KooChainRun</span> <span class="k">status</span> <span class="k">--watch</span>
+<span class="c"># 또는 squeue -u $USER</span>
+<span class="c"># 완료: N/200개</span></pre>
+      </div>
+      <div class="card">
+        <h3><span class="badge purple">4</span> &nbsp; 실패 재실행</h3>
+        <pre style="margin-top:10px;font-size:13px;"><span class="b">./diagnose.sh</span>   <span class="c"># 원인 파악</span>
+<span class="b">./rerun.sh</span> <span class="k">--exclude-nodes</span> <span class="s">auto</span>
+<span class="c"># 실패 노드 제외하고 재실행</span></pre>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;background:rgba(63,185,80,0.06);border-color:rgba(63,185,80,0.3);">
+      <h3><span class="badge green">5</span> &nbsp; 결과 수집</h3>
+      <pre style="margin-top:8px;font-size:13px;"><span class="b">KooChainRun</span> <span class="k">collect</span> runner_config.json <span class="p">./results/</span>
+<span class="c"># 또는 copy.sh로 scratch → NFS 동기화</span>
+<span class="b">./copy.sh</span></pre>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SLIDE 14: Build & Deploy
+  ══════════════════════════════════════════ -->
+  <div class="slide" data-slide="13">
+    <div class="tag orange">빌드 &amp; 배포</div>
+    <h2>빌드 및 배포 시스템</h2>
+    <p class="desc">Nuitka로 컴파일하여 단일 바이너리로 배포합니다. Python 미설치 환경에서도 실행 가능합니다.</p>
+
+    <div class="two-col">
+      <div class="left">
+        <pre><span class="c"># 빌드 (Python 3.12 기준)</span>
+bash build_KooChainRun_python312.sh
+
+<span class="c"># 결과물</span>
+<span class="p">build_dist/bin/KooChainRun</span>   <span class="c">← symlink</span>
+<span class="p">build_dist/lib/KooChainRun/</span>
+  <span class="p">KooChainRun.bin</span>            <span class="c">← Nuitka 바이너리</span>
+  <span class="p">*.so</span>                       <span class="c">← 공유 라이브러리</span>
+
+<span class="c"># 자동 설치 (빌드 스크립트 내부)</span>
+<span class="p">/opt/SmartTwinPreprocessor/</span>
+<span class="p">/data/SmartTwinPreprocessor/</span></pre>
+
+        <div class="card" style="margin-top:0;">
+          <h3>배포 경로</h3>
+          <ul>
+            <li><span class="hl">개발:</span> <code>/opt/SmartTwinPreprocessor/</code></li>
+            <li><span class="hl2">운영:</span> <code>/data/SmartTwinPreprocessor/</code></li>
+            <li>scenario.json의 <code>koochainrun_path</code>로 참조</li>
+          </ul>
+        </div>
+      </div>
+      <div class="right">
+        <div class="card">
+          <h3>주의사항</h3>
+          <ul>
+            <li>Python 소스 파일은 직접 복사 불가<br>
+              → Nuitka 빌드 필요 (바이너리에 번들)</li>
+            <li>Runner/ 모듈 변경 후 반드시 재빌드</li>
+            <li>squashfuse 필요: <code>apt install libfuse2</code></li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:0;">
+          <h3>Apptainer 환경 주의</h3>
+          <ul>
+            <li><code>APPTAINER_TMPDIR</code>은 <strong>호스트 환경변수</strong>로 설정<br>
+              (<code>os.environ</code>, <code>--env</code> 아님)</li>
+            <li>LSTC_LICENSE_SERVER는 헤드노드 IP<br>
+              (localhost는 계산 노드 → signal 12 오류)</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:0;">
+          <h3>Apptainer 설정 (scenario.json)</h3>
+          <pre style="font-size:12px;margin-top:4px;">"lsdyna_apptainer_env": {
+  "LSTC_LICENSE_SERVER": "192.168.122.1",
+  "FI_PROVIDER": "tcp",
+  "I_MPI_FABRICS": "ofi"
+}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /slides-wrap -->
+
+<!-- Navigation -->
+<div class="nav" id="nav">
+  <button id="prevBtn" onclick="goSlide(-1)">← Prev</button>
+  <div class="dots" id="dots"></div>
+  <button id="nextBtn" onclick="goSlide(1)">Next →</button>
+</div>
+<div class="slide-badge" id="badge">1 / 14</div>
+
+<script>
+  const TOTAL = document.querySelectorAll('.slide').length;
+  let cur = 0;
+
+  // Build dots
+  const dotsEl = document.getElementById('dots');
+  for (let i = 0; i < TOTAL; i++) {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' on' : '');
+    d.onclick = () => showSlide(i);
+    dotsEl.appendChild(d);
+  }
+
+  function showSlide(n) {
+    const slides = document.querySelectorAll('.slide');
+    slides[cur].classList.remove('active');
+    slides[cur].classList.add('prev');
+    setTimeout(() => slides[cur < n ? cur : n].classList.remove('prev'), 400);
+
+    cur = (n + TOTAL) % TOTAL;
+    slides[cur].classList.add('active');
+    slides[cur].classList.remove('prev');
+
+    document.querySelectorAll('.dot').forEach((d, i) => {
+      d.classList.toggle('on', i === cur);
+    });
+    document.getElementById('badge').textContent = `${cur + 1} / ${TOTAL}`;
+  }
+
+  function goSlide(dir) { showSlide(cur + dir); }
+
+  // Keyboard
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goSlide(1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); goSlide(-1); }
+  });
+</script>
+</body>
+</html>

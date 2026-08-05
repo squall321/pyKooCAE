@@ -145,3 +145,41 @@ SmartTwinPreprocessor — 프로그램 설명서
 [공통]
 - PyQt5 기반 3D 뷰어 내장, --display 옵션으로 실시간 확인
 - CLI 모드(offscreen)로 배치 처리 지원
+
+
+4. KooRemapper — LS-DYNA .k 메쉬·재료 리매핑 CLI (46 op)
+--------------------------------------------------------------------------------
+
+- LS-DYNA 키워드(.k) 모델의 메쉬/재료를 변환·리매핑하는 C++ CLI 도구(v1.8.0, 46 op)
+- 위 3개(Nuitka) 도구와 달리 독립 C++ 바이너리이며, SmartTwinPreprocessor.sif 내부에
+  네이티브 바이너리(/opt/kooremapper/bin/KooRemapper)로 구워져 KooMeshModifier 와 동일하게
+  apptainer exec <sif> <바이너리> 로 호출된다
+- KooChainRun 시나리오의 REMAP 스텝(mode="REMAP")으로 삽입하거나, 독립 CLI 로도 실행
+- 호출: KooRemapper <op> <config.yaml>  (yaml ops)  또는  KooRemapper <op> <위치인자...>  (positional ops)
+
+[재료 (matdb)]
+- matdb: 모델의 *MAT 카드를 525종 재료 DB(material_db.json)로 일괄 교체
+  - 부품 *MAT TITLE → DB 이름/태그 최장부분일치, 이어서 MID 매칭
+  - match/match_part/mid 글롭 규칙, 선매칭 우선(first-match-wins)
+  - mat_type 지정: MAT_ELASTIC / MAT_PIECEWISE_LINEAR_PLASTICITY / MAT_VISCOELASTIC 등
+- matswap: 개별 재료 카드 스왑
+
+[메시/생성]
+- generate / generate-var: torus 등 파라메트릭 메시 생성
+- map / shellmap / unfold: 굽은/평평 메시 간 필드 매핑, 셸 매핑, 언폴드
+- refine / elform / disconnect / offset / wrap / convert / restack: 메시 정제·요소 변환·분리·오프셋 등
+- extract-surface / tetremesh / meshfix: 표면 추출, 사면체 재메시(gmsh), 메시 보정
+
+[해석 전처리]
+- strain / prestress / formstrain / warpage / bend / indent / squeeze / assemble: 초기변형·프리스트레스·워피지·조립 등
+- cclip: 육면체 파트를 F-δ 캘리브레이션된 C형 스프링 클립(쉘)으로 치환, 눌린 상태+초기응력 출력
+  - 스마트폰 스프링 접점(C-clip/Ground Spring) 단순화 모델링, 누름 방향(axis ±)·개구 방향(open ±) 지정 가능
+- load / boundary / rbe / contact / relax / stabilize / database: 하중·경계·강체·접촉·완화 등
+- explicit / implicit / modal / ale: 솔버 제어 카드 설정
+
+[정보]
+- info / version: 모델 정보/버전 조회
+
+[비고]
+- 재료 DB(material_db.json)는 바이너리 옆(materials/)에 번들되어, matdb 에서 database 생략 시 자동 사용
+- 전체 op 카탈로그·인자 규약은 docs/manual/04_KooRemapper/README.md 참조

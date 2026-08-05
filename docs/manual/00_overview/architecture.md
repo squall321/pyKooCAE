@@ -9,8 +9,11 @@ pyKooCAE는 전자패키지/HW의 낙하·충격·진동·열 CAE 해석을 **�
 | **KooChainRun** | KCR | Slurm 누적/DOE 시뮬레이션 오케스트레이션 CLI (`prepare`/`submit`/`run`/`status`/`collect`/`postprocess` 등) | `KooChainRun:1-9`, `KooChainRun:34-37` |
 | **KooMeshModifier** | KMM | LS-DYNA `.k` 모델을 읽어 모드 기반 변형(낙하 자세, 충격추, 재료 교환 등)을 적용·재출력. SIF(SmartTwinPreprocessor) 내부에서 실행 | `occProject/Generators/KooMeshModifier.py:1-6` |
 | **KooAutomatedModeller** | KAM | ODB++ PCB 패키지 정의 → STEP CAD 지오메트리 → 다중 솔버 포맷 메시(.k/.bdf/.cdb/.inp/.obj) 생성 | `occProject/Generators/KooAutomatedModeller.py:1-6` |
+| **KooRemapper** | KRM | LS-DYNA `.k` 메쉬·재료 리매핑 CLI(C++, 46 op: matdb 재료교체, map/generate 메시, warpage/assemble 등). SIF 내부 네이티브 바이너리로 실행, KooChainRun의 `REMAP` 체인 스텝으로 호출 | `Runner/KooRemapperStep.py:1-104`, `Runner/CumulativeScenarioRunner.py`(`_run_kooremapper_step`) |
 
 전체 데이터 흐름은 CAD(ODB++/STEP) → 메시(`.k`/`dynain`) → LS-DYNA → 후처리 리포트(deep/sphere/impact) 로 이어진다.
+
+> KooRemapper 는 위 3개(Nuitka) 도구와 달리 별도 C++ CLI 다. SmartTwinPreprocessor.sif 내부에 네이티브 바이너리(`/opt/kooremapper/bin/KooRemapper`)로 구워져 KooMeshModifier 와 동일하게 `apptainer exec <sif> <바이너리>` 로 호출된다. 재료 DB 교체·메시 리매핑을 시뮬레이션 체인의 전처리(`REMAP`) 스텝으로 삽입할 때 쓴다(빌드 반영은 `BuildSmartTwinPreprocessor.sh` 의 KooRemapper 복사 단계).
 
 ### 관계도 (텍스트 다이어그램)
 
@@ -168,6 +171,7 @@ dt,0.000001
 1. KooMeshModifier 실행 — `cmd = [koomesh_path, config_file]` 를 `ApptainerWrapper.wrap_command(...)` 로 SIF 래핑 후 실행, stdout 에서 `run_id` 파싱 (`Runner/CumulativeScenarioRunner.py:1524-1535`, `:1566-1571`). KMM 은 Nuitka 바이너리라 `python3` prefix 없이 직접 실행 (`:1531`).
 2. LS-DYNA 실행 후 `Output/dynain` 생성 대기 — 파일 크기 안정화로 완료 판정 (`:343-362`).
 3. 누적 체이닝 — 이전 step 의 `dynain` 을 다음 step 입력으로 사용 (`:916-921`, `:1161-1163`).
+4. (선택) REMAP 스텝 — `mode == "REMAP"` 이면 KooMeshModifier/LS-DYNA 대신 KooRemapper 를 실행해 입력 `.k` 를 변환(matdb 재료교체 등)하고 결과를 `Run_<id>/Output/Remap_dti.k` 로 써서 기존 `*_dti.k` 누적 규약으로 다음 스텝에 연결한다. 실행은 KMM 과 동일하게 `ApptainerWrapper.wrap_command` 로 SIF 래핑 (`Runner/CumulativeScenarioRunner.py` `_run_kooremapper_step`).
 
 ### 4.3 KooMeshModifier — 옵션→모드→변형→출력
 

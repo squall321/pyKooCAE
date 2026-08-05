@@ -2,23 +2,26 @@
 
 전자패키지/HW(PKG·PBA·PCB)의 **낙하·충격·진동·열** CAE 해석을 자동 생성부터 대량 시뮬레이션, 후처리까지 일괄 처리하는 도구 모음(pyKooCAE)의 통합 매뉴얼입니다.
 
-pyKooCAE는 Nuitka로 컴파일된 단일 바이너리 형태의 3개 도구로 구성되며, Slurm 클러스터와 Apptainer(SIF) 컨테이너 환경에서 동작합니다.
+pyKooCAE는 Nuitka로 컴파일된 3개 도구와 LS-DYNA `.k` 리매핑 CLI(KooRemapper)로 구성되며, Slurm 클러스터와 Apptainer(SIF) 컨테이너 환경에서 동작합니다.
 
 ---
 
-## 3개 도구 한눈에
+## 4개 도구 한눈에
 
 | 도구 | 역할 | 입력 → 출력 | 매뉴얼 |
 |------|------|-----------|--------|
 | **KooChainRun** | CAE 시뮬레이션 오케스트레이션 CLI. 시나리오 준비 → Slurm 제출 → 상태 추적 → 결과 수집 → 후처리까지 워크플로우 전체를 제어 | `scenario.json` → Slurm 작업 → 결과/리포트 | [01_KooChainRun](01_KooChainRun/README.md) |
 | **KooMeshModifier** | LS-DYNA `.k` 모델 변형 엔진. 낙하 자세, 메시 연산, 재료/파트 교체, DOE 변환, 하중 부여 등 30여 개 모드 제공 | 입력 `.k` + 제어 `.txt` → 변형된 `.k` | [02_KooMeshModifier](02_KooMeshModifier/README.md) |
 | **KooAutomatedModeller** | CAD/ECAD(ODB++) 기반 형상 자동 모델러. PKG/PBA/PCB/커패시터 등 패키지 형상을 생성하고 LS-DYNA `.k`·STEP으로 출력 | ODB++/정의파일 → `.k` + STEP | [03_KooAutomatedModeller](03_KooAutomatedModeller/README.md) |
+| **KooRemapper** | LS-DYNA `.k` 메쉬·재료 리매핑 CLI(C++, 46 op). 재료 DB 교체(matdb), 메시 매핑/생성(map·generate), warpage·assemble 등. KooChainRun의 `REMAP` 체인 스텝 또는 독립 CLI로 실행 | 입력 `.k`(+YAML) → 변환된 `.k` | [04_KooRemapper](04_KooRemapper/README.md) |
 
 일반적인 파이프라인:
 
 ```
 KooAutomatedModeller        KooMeshModifier            KooChainRun
 (CAD/ECAD → .k, STEP)  →   (.k 변형: 자세/메시/하중)  →  (DOE 생성 → Slurm 대량 실행 → 후처리)
+                              │
+                        (선택) KooRemapper: 재료 DB 교체·메시 리매핑을 KooChainRun의 REMAP 스텝으로 삽입
 ```
 
 ---
@@ -109,6 +112,12 @@ KooAutomatedModeller        KooMeshModifier            KooChainRun
 | 문서 | 설명 |
 |------|------|
 | [KooAutomatedModeller 예제](03_KooAutomatedModeller/examples/examples.md) | 실행 예제 모음 |
+
+### 04 · KooRemapper (`.k` 메쉬·재료 리매핑 CLI)
+
+| 문서 | 설명 |
+|------|------|
+| [KooRemapper 개요 · 46 op 카탈로그](04_KooRemapper/README.md) | 전체 op 목록(카테고리별)과 호출 규약, REMAP 체인 스텝 사용법 |
 
 ### 99 · 부록 (Appendix)
 

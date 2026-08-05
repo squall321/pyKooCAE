@@ -161,6 +161,25 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
 동봉 파일 예: `fibonacci_10deg_413cases.txt`, `fibonacci_40deg_26cases.txt`,
 `pitching_10deg_19cases.txt`, `rolling_10deg_36cases.txt` 등.
 
+#### (6) `explicit` — 각도 직접 열거
+
+전각도 낙하 결과에서 뽑은 **취약 각도만 다시 돌릴 때** 쓴다.
+
+| 키 | 기본값 | 설명 |
+|---|---|---|
+| `angles` | — | `[{"name":..., "roll":..., "pitch":..., "yaw":...}, ...]` |
+| `file` | — | JSON 파일 경로. 내용 `{"angles": [...]}`. `angles` 와 배타 |
+
+- `roll`, `pitch` 는 필수. `yaw` 생략 시 0.0, `name` 생략 시 `A0001` 자동.
+- `angles` 와 `file` 을 동시에 주면 어느 쪽이 유효한지 모호하므로 `ValueError`.
+- 이름 중복도 `ValueError` (결과 디렉토리 충돌 방지).
+- `file` 은 scenario.json 위치 기준 상대경로 허용.
+- 파일은 `KooChainRun harvest` 가 만들어 준다 (§2-G).
+
+```json
+"angle_source": { "source_type": "explicit", "explicit": { "file": "risk_angles.json" } }
+```
+
 ### 2-B. 각도 산포 DOE (`tolerance`, `Runner/ToleranceDOEGenerator.py`)
 
 각도 소스로 만든 base 각도에 ±산포를 더해 DOE 샘플을 만든다.
@@ -235,7 +254,12 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
 | `grid_spacing` | `spacing_x` | (필수) | X 간격 |
 | | `spacing_y` | (필수) | Y 간격 |
 | | `bbox` | (자동) | `[xmin, ymin, xmax, ymax]` |
-| `manual` | `positions` | (필수) | `[[x1,y1],[x2,y2],...]` |
+| `manual` | `positions` | (필수) | 항목은 `[x, y]` 또는 `{"name":..., "x":..., "y":...}` |
+| | `file` | — | JSON 파일 경로. 내용 `{"positions": [...]}`. `positions` 와 배타 |
+
+`manual` 항목에 `name` 을 주면 결과 디렉토리 이름에 그대로 쓰인다. 취약 위치를
+재조사할 때 원래 위치명(`P_003_005`)을 유지할 수 있다. 이름이 겹치면 결과가
+덮어써지므로 `ValueError` 로 막는다. 경로는 scenario.json 위치 기준 상대경로 허용.
 
 ### 2-E. 위치 소스 — 시스템 (B) `locations` (`Runner/DropWeightImpactWorkflow.py`)
 
@@ -255,6 +279,77 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
 | | `spacing` | 5.0 | 격자 간격(mm) |
 | | `layers` | 2 | 중심에서 확장 단수 → 파트당 `(2·layers+1)²` 개 (`line 451`) |
 | `lhs` | `n_samples` | 50 | Latin Hypercube 샘플 수 (scipy `qmc.LatinHypercube`, 없으면 `np.random` fallback) |
+
+### 2-F. 파트 위치 변경 DOE (`part_doe`, `Runner/PartMoveDOE.py`)
+
+특정 파트의 장착 위치를 흔드는 DOE 축. **조건 축(각도/위치)과 직교**하며 곱해진다.
+`scenarios[N]` 안, `angle_source`/`position_source`/`tolerance` 와 형제.
+
+```text
+doe_count = (조건 수) × (파트이동 케이스 수)
+condition = "{조건명}__{이동명}"        예: C1_Back_Right_Top__M0003
+```
+
+블록이 없거나 `enabled: false` 면 이동 축이 사라져 **기존 출력과 바이트 동일**하다.
+
+| 키 | 기본값 | 설명 |
+|---|---|---|
+| `enabled` | `true` | 블록을 썼다면 쓰겠다는 뜻 |
+| `apply_step` | `1` | 이동을 적용할 스텝 번호 |
+| `sampling.method` | `lhs` | `lhs` \| `grid` \| `explicit` |
+| `sampling.num_samples` | 10 | (`lhs`) 샘플 수 |
+| `sampling.seed` | `None` | (`lhs`) 시드. 같은 시드 → 같은 이동량 |
+| `sampling.nx`/`ny`/`nz` | 1 | (`grid`) 축별 분할 수. 총 조합 = nx·ny·nz |
+| `parts` | (필수) | (`lhs`/`grid`) `[{pid, dx, dy, dz}, ...]` |
+| `cases` | (필수) | (`explicit`) `[{name, moves:[{pid,dx,dy,dz}]}, ...]` |
+| `file` | — | 위 설정 전체를 담은 JSON 경로 |
+
+- `dx`/`dy`/`dz` 는 `[최소, 최대]` 또는 스칼라(고정 이동). **생략하면 그 축은 0**.
+- 좌표계는 모델 글로벌 XYZ, 단위는 모델 단위 그대로 (환산 없음).
+- `grid` 는 전 파트가 같은 격자 인덱스를 공유한다. 파트마다 독립 격자를 쓰면
+  조합수가 `(nx·ny·nz)^파트수` 로 폭발하기 때문이며, "여러 파트가 함께 어긋난다"는
+  공차 해석 의미와도 맞다.
+- 검증 실패는 조용히 넘어가지 않고 `ValueError`. PID 중복, 최소>최대, 전 축 생략,
+  빈 `parts`/`cases`, 알 수 없는 `method` 모두 해당.
+
+**🔴 `apply_step` 이 1인 이유.** 누적 step≥2 는 이전 스텝의 `*_dti.k`(이미 이동된
+변형 형상)를 입력으로 쓴다. 매 스텝 적용하면 step N 에서 N배 이동한다.
+
+**⚠️ `tolerance` 와 병용하면 3중 곱**이다 (조건 × 산포 × 이동).
+26방향 × 10산포 × 20이동 = 5200 케이스. prepare 시 총 케이스 수가 로그로
+찍히고 1000건 초과 시 경고한다.
+
+### 2-G. 취약조건 수확 (`KooChainRun harvest`, `Runner/RiskHarvester.py`)
+
+완료된 전각도 낙하/전위치 충격 결과에서 위험도 상위 조건을 뽑아, §2-A(6) 과
+§2-D 가 물릴 JSON 을 만든다.
+
+```bash
+KooChainRun harvest <test_dir> --top 10 [--hot-only] [-o risk_angles.json]
+```
+
+| 인자 | 기본값 | 설명 |
+|---|---|---|
+| `test_dir` | `.` | 통합 리포트 또는 `result.json` 이 있는 디렉토리 |
+| `-o` / `--out` | `test_dir/risk_<kind>.json` | 출력 경로 |
+| `--top` | (전체) | 위험도 상위 N개 |
+| `--hot-only` | off | 핫 판정된 조건만 |
+| `--z-thr` | 1.5 | 핫 판정 z-score 임계 |
+| `--yield-factor` | 1.0 | 핫 판정 yield 절대비 임계 |
+
+소스는 자동 판별한다.
+
+1. `sphere_report.json` (전각도 낙하 통합) → `{"angles": [...]}`
+2. `impact_report.json` (전위치 충격 통합) → `{"positions": [...]}`
+3. 개별 `result.json` 스캔 (통합 리포트 부재 시 폴백, 각도 결과만)
+
+위험도는 `AdaptiveOrientation.compute_risk` 를 그대로 쓴다
+(per-part z-score 상대 + yield 절대비 병행).
+
+**scenario.json 안에서 자동 해석(`from_run`)하지 않는 이유.** 수백 잡을 던지기
+전에 뽑힌 조건을 사람이 확인해야 하고, 이전 run 디렉토리가 바뀌면 같은
+scenario.json 이 다른 결과를 내 재현성이 깨진다. 파일로 분리하면 목록을 손으로
+추가·제외할 수도 있다.
 
 ---
 
@@ -330,6 +425,77 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
   "source_type": "grid_nxm",
   "grid_nxm": { "nx": 3, "ny": 3, "bbox": [0,0,100,100] }
 }
+```
+
+---
+
+### 3-5. 취약조건 × 파트이동 DOE — 전체 워크플로우
+
+1단계 — 전각도 낙하를 돌리고 후처리까지 끝낸다 (평소대로).
+
+2단계 — 취약 각도를 뽑는다.
+
+```bash
+KooChainRun harvest /data/koopark/Test_FullAngle --top 10 -o risk_angles.json
+```
+
+```text
+전체 각도 : 500건 (핫 23건)
+선별     : 10건 (위험도 내림차순)
+  [HOT] risk=  2.834  Run_147   roll= -60.00 pitch=  35.00  P2,P5
+  ...
+✅ 방출: risk_angles.json  (10건)
+```
+
+3단계 — 뽑힌 각도 × 파트이동으로 새 시나리오를 만든다.
+
+```json
+{
+  "project": { "name": "RISK_PARTDOE", "model_file": "Model.k", "output_dir": "out" },
+  "scenarios": [{
+    "name": "RiskAngleXPartMove",
+    "angle_source": {
+      "source_type": "explicit",
+      "explicit": { "file": "risk_angles.json" }
+    },
+    "part_doe": {
+      "enabled": true,
+      "apply_step": 1,
+      "sampling": { "method": "lhs", "num_samples": 20, "seed": 42 },
+      "parts": [
+        { "pid": 12, "dx": [-0.5, 0.5], "dy": [-0.3, 0.3] },
+        { "pid": 15, "dz": [-0.1, 0.1] }
+      ]
+    },
+    "cumulative": { "num_steps": 1, "mode_sequence": ["DROP"] }
+  }]
+}
+```
+
+→ 10 각도 × 20 이동 = **200 케이스**. `condition` 은 `Run_147__M0007` 형태.
+
+4단계 — 평소대로 돌린다.
+
+```bash
+KooChainRun prepare scenario.json && KooChainRun submit
+```
+
+전위치 부분충격도 동일하다. 2단계에서 `impact_report.json` 이 잡히면
+`{"positions": [...]}` 가 나오고, 3단계에서 `angle_source` 대신
+`position_source.manual.file` 에 물리면 된다.
+
+생성되는 KMM 옵션 txt 는 다음과 같이 이동이 먼저 오고 낙하가 뒤따른다.
+
+```text
+*Mode
+PART_TRANSLATE,1
+DROP_ATTITUDE,2
+**PartTranslate,1
+Translate,12,0.3,-0.1,0.0
+Translate,15,0.0,0.0,0.05
+**EndPartTranslate
+**DropAttitude,2
+...
 ```
 
 ---
@@ -441,9 +607,23 @@ scenario.json 파일이 동봉됨).
 - 위치 (B) 4종: `Runner/DropWeightImpactWorkflow.py` (grid/list/part_center/lhs),
   실제 예제 `Examples/drop_weight_impact/scenario_{grid_auto,grid_spacing,lhs,list,part_center}.json`.
 
+- 취약조건 열거(2026-08): `angle_source.source_type="explicit"`,
+  `position_source.manual` 의 dict/`file` 수용 — `AngleSourceParser.parse_explicit_angles`,
+  `ImpactPositionSource.parse_manual`.
+- 파트이동 DOE(2026-08): `Runner/PartMoveDOE.py` (lhs/grid/explicit), Designer 곱셈,
+  `doe_part_moves` 카탈로그, Runner 의 `PART_TRANSLATE` 블록 삽입
+  (`StepConfigBuilder.build_part_translate_block`), KMM `PART_TRANSLATE` 모드.
+- 취약조건 수확(2026-08): `Runner/RiskHarvester.py` + `KooChainRun harvest`.
+
 **수정 이력**:
 - 2026-08-05 `tolerance` 의 `doe_index` 가 base 각도마다 재시작해 충돌 → 대부분의 케이스가
   실행되지 않던 결함 수정(전역 통번호). base 2개 이상 + tolerance 조합에만 해당.
+- 2026-08-05 `tolerance` 의 `doe_index` 가 1-based 라 `doe_angles` 키가 2..N+1 이 되던
+  off-by-one 수정. DOE 1 이 각도 조회에 실패해 `_condition_to_euler` 폴백으로 떨어지고
+  DOE N+1 은 실행되지 않았다.
+- 2026-08-05 각 DOE 고유 각도(tolerance 산포)가 버려지고 base 그룹 대표 각도로 덮이던
+  결함 수정. 실측 18케이스 → 고유 각도 6개, 13건이 첫 base 각도 중복이었다.
+  자기 각도를 자기 base 자리에 주입하도록 변경 → 18/18 고유.
 - 2026-08-05 `sampling_space` 기본값 `latlon` → `physical`.
 
 **부분구현/확인 필요**:

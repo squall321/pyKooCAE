@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIRMESH — STEP 공기영역/공동 메시 + STL 추출</title>
+<style>
+:root{--bg:#fff;--fg:#1f2328;--muted:#59636e;--line:#d1d9e0;--acc:#0969da;
+--code-bg:#f6f8fa;--th:#f6f8fa;--quote:#f0f4f8;--warn:#fff8c5}
+@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#9198a1;
+--line:#3d444d;--acc:#4493f8;--code-bg:#161b22;--th:#161b22;--quote:#161b22;--warn:#282215}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR","Malgun Gothic",
+"Apple SD Gothic Neo",Roboto,sans-serif;line-height:1.7;font-size:16px}
+.wrap{max-width:960px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:2em;border-bottom:1px solid var(--line);padding-bottom:.3em;margin-top:0}
+h2{font-size:1.5em;border-bottom:1px solid var(--line);padding-bottom:.3em;margin-top:2em}
+h3{font-size:1.2em;margin-top:1.8em}
+h1,h2,h3,h4{line-height:1.3;scroll-margin-top:16px}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+code{background:var(--code-bg);padding:.15em .4em;border-radius:6px;font-size:.88em;
+font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
+pre{background:var(--code-bg);padding:14px 16px;border-radius:8px;overflow-x:auto;
+border:1px solid var(--line)}
+pre code{background:none;padding:0;font-size:.85em;line-height:1.55}
+blockquote{margin:1em 0;padding:.6em 1em;background:var(--quote);
+border-left:4px solid var(--acc);border-radius:0 6px 6px 0;color:var(--fg)}
+blockquote p{margin:.4em 0}
+.tw{overflow-x:auto;margin:1em 0}
+table{border-collapse:collapse;width:100%;font-size:.93em}
+th,td{border:1px solid var(--line);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600;white-space:nowrap}
+td code{white-space:nowrap}
+hr{border:0;border-top:1px solid var(--line);margin:2.5em 0}
+ul,ol{padding-left:1.6em}li{margin:.3em 0}
+.meta{color:var(--muted);font-size:.85em;margin-bottom:2em;padding-bottom:1em;
+border-bottom:1px solid var(--line)}
+@media print{body{font-size:11pt}.wrap{max-width:none;padding:0}pre,.tw{page-break-inside:avoid}}
+</style></head>
+<body><div class="wrap">
+<div class="meta">pyKooCAE 매뉴얼 · 원본 <code>docs/manual/03_KooAutomatedModeller/generators/airmesh.md</code></div>
+<h1 id="airmesh--step-공기영역공동-메시--stl-추출">AIRMESH — STEP 공기영역/공동 메시 + STL 추출</h1>
+<blockquote>
+<p><strong>한 줄 요약.</strong> 솔리드 STEP 하나와 JSON 하나로, bounding box(+패딩)에서 솔리드를 뺀 <strong>공기영역</strong>을 경계추종 사면체로 채우고 공동/외곽 STL을 뽑는다.</p>
+<p>소스 <code>occProject/Generators/KooAirMesh/</code> (AirMeshCore.py / AirMeshGenerator.py) · 후크 <code>KooAutomatedModeller.py</code>의 <code>GenerateAirMesh</code> + <code>elif mode == &quot;AIRMESH&quot;</code>
+설계 문서 <code>docs/PLAN_AirMeshGeneration.md</code> · 회귀 테스트 <code>tests/test_airmesh_regression.py</code> (29체크)
+이 문서의 예제 설정값은 전부 회귀 스위트에서 실제로 도는 값이다.</p>
+</blockquote>
+<hr />
+<h2 id="목차">목차</h2>
+<ol>
+<li><a href="#1-목적">목적</a></li>
+<li><a href="#2-실행-방법">실행 방법</a></li>
+<li><a href="#3-예제-모음">예제 모음</a></li>
+<li><a href="#4-설정-레퍼런스">설정 레퍼런스</a></li>
+<li><a href="#5-산출물">산출물</a></li>
+<li><a href="#6-성패-판정과-오류-코드">성패 판정과 오류 코드</a></li>
+<li><a href="#7-주의사항-실증-기반">주의사항 (실증 기반)</a></li>
+<li><a href="#8-검증-방법">검증 방법</a></li>
+<li><a href="#9-설계배포-노트">설계·배포 노트</a></li>
+<li><a href="#10-범위-밖-v1-미구현">범위 밖</a></li>
+</ol>
+<hr />
+<h2 id="1-목적">1. 목적</h2>
+<p>솔리드 STEP 파일 하나와 문제정의 JSON 하나로, bounding box(+패딩)에서 솔리드를 뺀 <strong>공기영역</strong>을 경계추종(boundary-conforming) 사면체로 채우고 외곽 삼각형 스킨을 STL로 추출한다. 메시가 B-rep 표면을 그대로 따르므로 복셀 방식의 계단(staircase) 문제가 없다.</p>
+<p>백엔드는 gmsh Python API(in-process)이며 기존 <code>KooMeshManagerGMSH</code>(.geo/서브프로세스)와 완전히 분리되어 있다.</p>
+<hr />
+<h2 id="2-실행-방법">2. 실행 방법</h2>
+<pre><code class="language-bash"># 운영 (배포 바이너리)
+KooAutomatedModeller AIRMESH airmesh.json /출력/디렉토리
+
+# 개발 (소스)
+cd occProject/Generators
+../../venv312/bin/python KooAutomatedModeller.py AIRMESH airmesh.json /출력/디렉토리
+</code></pre>
+<ul>
+<li>argv 관행은 기존 모드와 동일하다(라이선스/IP 게이트, workdir chdir 상속). 4번째 인자 <code>displayMode</code>는 받되 무시한다(완전 headless).</li>
+<li>3번째 인자 = 작업/출력 디렉토리(생략 시 현재 디렉토리). <code>outputs.dir</code>로도 지정할 수 있다.</li>
+<li><strong>종료 코드는 항상 0이다</strong>(하우스 컨벤션). 성패는 <a href="#6-성패-판정과-오류-코드">§6</a> 방법으로 판정해야 한다.</li>
+</ul>
+<h3 id="최소-설정-필수-3키">최소 설정 (필수 3키)</h3>
+<pre><code class="language-json">{
+  &quot;airmesh_version&quot;: 1,
+  &quot;input_step&quot;: &quot;housing.stp&quot;,
+  &quot;mesh_size&quot;: 2.0
+}
+</code></pre>
+<p><code>input_step</code>은 <strong>JSON 파일 위치 기준</strong> 상대경로로 해석된다. 산출물 접두어(<code>prefix</code>)의 기본값은 <strong>JSON 파일명</strong>이라 <code>airmesh.json</code> → <code>airmesh_air.stl</code> / <code>airmesh_cavity.stl</code>로 떨어진다.</p>
+<hr />
+<h2 id="3-예제-모음">3. 예제 모음</h2>
+<h3 id="e1-기본--단순-솔리드-주변-공기-골든-예제">E1. 기본 — 단순 솔리드 주변 공기 (골든 예제)</h3>
+<p><code>Examples/automatedmodeller/airmesh_sphere/</code>를 그대로 실행한다(<code>run.sh</code>).</p>
+<pre><code class="language-json">{
+  &quot;airmesh_version&quot;: 1,
+  &quot;input_step&quot;: &quot;sphere_cyl.stp&quot;,
+  &quot;mesh_size&quot;: 4.0,
+  &quot;units&quot;: &quot;mm&quot;,
+  &quot;padding&quot;: 15.0
+}
+</code></pre>
+<p>솔리드 bbox를 사방 15mm 키운 박스에서 솔리드를 뺀 공기영역을 4mm 사면체로 채운다.</p>
+<h3 id="e2-밀폐-내부-보이드가-있는-하우징">E2. 밀폐 내부 보이드가 있는 하우징</h3>
+<p>속이 빈 하우징처럼 <strong>내부에 갇힌 공동</strong>이 있어도 그대로 잡힌다(공기 = 외부 공기 + 내부 보이드).</p>
+<pre><code class="language-json">{
+  &quot;airmesh_version&quot;: 1,
+  &quot;input_step&quot;: &quot;hollow_housing.step&quot;,
+  &quot;mesh_size&quot;: 2.0,
+  &quot;padding&quot;: 5.0
+}
+</code></pre>
+<blockquote>
+<p>검증(T2). 30³ 박스 − (20³ 솔리드 − 10³ 보이드) = 공기 20000(보이드 1000 포함) 체적 일치.
+내부 보이드 법선은 <code>outputs.fix_orientation</code>(기본 on)이 중첩 깊이 홀짝 규칙으로 보정한다.</p>
+</blockquote>
+<h3 id="e3-솔리드가-여러-개인-step">E3. 솔리드가 여러 개인 STEP</h3>
+<pre><code class="language-json">{
+  &quot;airmesh_version&quot;: 1,
+  &quot;input_step&quot;: &quot;assembly.step&quot;,
+  &quot;mesh_size&quot;: 3.0,
+  &quot;padding&quot;: 8.0
+}
+</code></pre>
+<p><code>solid_selection</code> 기본값이 <code>&quot;all&quot;</code>이라 STEP 안의 모든 솔리드가 차집합 도구로 쓰인다.</p>
+<h3 id="e4-일부-솔리드만-빼고-싶을-때">E4. 일부 솔리드만 빼고 싶을 때</h3>
+<pre><code class="language-json">{
+  &quot;airmesh_version&quot;: 1,
+  &quot;input_step&quot;: &quot;assembly.step&quot;,
+  &quot;mesh_size&quot;: 2.0,
+  &quot;padding&quot;: 5.0,
+  &quot;solid_selection&quot;: [1]
+}
+</code></pre>
+<ul>
+<li>인덱스는 <strong>1-based</strong>다.</li>
+<li>⚠ <strong>미선택 솔리드는 모델에서 제거된다</strong>(공기영역에 흡수됨). 리포트에 경고가 남는다.</li>
+</ul>
+<h3 id="e5-한쪽-면만-벽에-붙이기-방향별-패딩">E5. 한쪽 면만 벽에 붙이기 (방향별 패딩)</h3>
+<pre><code class="language-json">{
+  &quot;airmesh_version&quot;: 1,
+  &quot;input_step&quot;: &quot;solid_box.step&quot;,
+  &quot;mesh_size&quot;: 2.0,
+  &quot;padding&quot;: [0, 5, 5, 5, 5, 5]
+}
+</code></pre>
+<p>배열 순서는 <code>[x-, x+, y-, y+, z-, z+]</code>이다. 위 예는 x− 방향만 밀착(패딩 0)이다.</p>
+<blockquote>
+<p>주의. <strong>모든 방향을 0으로 주면</strong> 솔리드가 박스를 꽉 채워 공기가 0이 되고 <code>E_BOOLEAN</code>으로 실패한다(T9에서 의도적으로 검증).</p>
+</blockquote>
+<h3 id="e6-미터-단위-모델">E6. 미터 단위 모델</h3>
+<pre><code class="language-json">{
+  &quot;airmesh_version&quot;: 1,
+  &quot;input_step&quot;: &quot;part_in_meters.step&quot;,
+  &quot;mesh_size&quot;: 0.002,
+  &quot;padding&quot;: 0.005
+}
+</code></pre>
+<p><code>mesh_size</code>/<code>padding</code>은 <strong>모델 단위 그대로</strong>다. 단위 변환이 필요하면 <code>occ_target_unit</code>(<code>&quot;MM&quot;</code>, <code>&quot;M&quot;</code> 등)으로 OCC 리스케일을 건다.</p>
+<h3 id="e7-미세-형상pcbecad-등--요소-폭발-방지">E7. 미세 형상(PCB/ECAD 등) — 요소 폭발 방지</h3>
+<pre><code class="language-json">{
+  &quot;airmesh_version&quot;: 1,
+  &quot;input_step&quot;: &quot;pcb_multiscale.stp&quot;,
+  &quot;mesh_size&quot;: 0.2,
+  &quot;padding&quot;: 2.0,
+  &quot;mesh&quot;: { &quot;size_guard&quot;: false }
+}
+</code></pre>
+<p><code>size_guard</code>(기본 on)는 <code>h ≤ 0.25 × 최소 솔리드 대각</code>으로 클램프하는데, 15µm 층 같은 미세 피처가 있으면 h가 극단적으로 작아져 요소가 폭발한다. <strong>의도한 해상도를 강제</strong>하려면 위처럼 끄고 <code>mesh_size</code>를 명시한다.</p>
+<blockquote>
+<p>실증. 273 트레이스 멀티스케일 Cu/PPG 회로에서 watertight 공기 STL 생성을 확인했다.
+겹치는 Cu/PPG 솔리드가 있으면 air.stl은 정확하나(union 절단) 체적 교차검증이 겹침을 경고한다.</p>
+</blockquote>
+<h3 id="e8-대형-모델--안전하게-먼저-찔러보기">E8. 대형 모델 — 안전하게 먼저 찔러보기</h3>
+<pre><code class="language-json">{
+  &quot;airmesh_version&quot;: 1,
+  &quot;input_step&quot;: &quot;big_assembly.step&quot;,
+  &quot;mesh_size&quot;: 5.0,
+  &quot;padding&quot;: 10.0,
+  &quot;mesh&quot;: { &quot;max_estimated_elements&quot;: 5000000 },
+  &quot;outputs&quot;: { &quot;volume_mesh&quot;: &quot;none&quot; }
+}
+</code></pre>
+<ul>
+<li><code>max_estimated_elements</code>. <strong>메시 생성 전에</strong> 요소 수를 추산해 초과 시 <code>E_TOO_LARGE</code>로 중단한다 → 메모리 사고 방지.</li>
+<li><code>volume_mesh: &quot;none&quot;</code>. STL만 필요할 때 .msh를 안 써서 시간·용량을 절약한다.</li>
+</ul>
+<h3 id="e9-메시-알고리즘-바꾸기">E9. 메시 알고리즘 바꾸기</h3>
+<pre><code class="language-json">{
+  &quot;airmesh_version&quot;: 1,
+  &quot;input_step&quot;: &quot;tricky.step&quot;,
+  &quot;mesh_size&quot;: 1.5,
+  &quot;padding&quot;: 5.0,
+  &quot;mesh&quot;: { &quot;algorithm3d&quot;: &quot;delaunay&quot;, &quot;fallback&quot;: true }
+}
+</code></pre>
+<p>기본 <code>hxt</code>가 실패하면 <code>fallback: true</code>(기본값)가 <code>delaunay</code> → <code>frontal</code> 사다리를 자동으로 탄다. 특정 알고리즘을 고정하고 싶을 때만 지정한다.</p>
+<hr />
+<h2 id="4-설정-레퍼런스">4. 설정 레퍼런스</h2>
+<p>필수 키는 3개뿐이며 나머지는 전부 디폴트가 있다.</p>
+<h3 id="최상위">최상위</h3>
+<div class="tw"><table><thead>
+<tr>
+  <th>키</th>
+  <th>기본값</th>
+  <th>의미</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>airmesh_version</code></td>
+  <td><strong>필수</strong></td>
+  <td>스키마 버전, <code>1</code> 고정</td>
+</tr>
+<tr>
+  <td><code>input_step</code></td>
+  <td><strong>필수</strong></td>
+  <td>STEP 경로 — config 파일 위치 기준 상대경로 해석</td>
+</tr>
+<tr>
+  <td><code>mesh_size</code></td>
+  <td><strong>필수</strong></td>
+  <td>목표 요소 크기 h (&gt;0, 모델 단위)</td>
+</tr>
+<tr>
+  <td><code>units</code></td>
+  <td><code>&quot;model&quot;</code></td>
+  <td>문서화 라벨 — 변환 없음, 리포트에 에코</td>
+</tr>
+<tr>
+  <td><code>occ_target_unit</code></td>
+  <td><code>&quot;&quot;</code></td>
+  <td>비었으면 파일 단위 유지, <code>&quot;MM&quot;</code>/<code>&quot;M&quot;</code> 등이면 OCC가 리스케일</td>
+</tr>
+<tr>
+  <td><code>padding</code></td>
+  <td><code>0.0</code></td>
+  <td>스칼라 또는 <code>[x-,x+,y-,y+,z-,z+]</code></td>
+</tr>
+<tr>
+  <td><code>padding_relative</code></td>
+  <td><code>false</code></td>
+  <td><code>true</code>면 padding을 bbox 대각선 비율로 해석</td>
+</tr>
+<tr>
+  <td><code>solid_selection</code></td>
+  <td><code>&quot;all&quot;</code></td>
+  <td><code>&quot;all&quot;</code> 또는 1-based 인덱스 리스트. 미선택 솔리드는 제거됨</td>
+</tr>
+<tr>
+  <td><code>heal</code></td>
+  <td><code>&quot;auto&quot;</code></td>
+  <td><code>auto</code>(필요 시만) | <code>always</code> | <code>never</code> — ⚠ <code>always</code> 금지 권장(<a href="#7-주의사항-실증-기반">§7</a>)</td>
+</tr>
+<tr>
+  <td><code>heal_tolerance</code></td>
+  <td><code>1e-8</code></td>
+  <td>힐링 허용오차</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="mesh"><code>mesh</code></h3>
+<div class="tw"><table><thead>
+<tr>
+  <th>키</th>
+  <th>기본값</th>
+  <th>의미</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>mode</code></td>
+  <td><code>&quot;tetra&quot;</code></td>
+  <td>v1은 tetra만 (<code>hex_core</code>는 Phase 5 예약)</td>
+</tr>
+<tr>
+  <td><code>algorithm3d</code></td>
+  <td><code>&quot;hxt&quot;</code></td>
+  <td><code>hxt</code> | <code>delaunay</code> | <code>frontal</code></td>
+</tr>
+<tr>
+  <td><code>fallback</code></td>
+  <td><code>true</code></td>
+  <td>실패 시 알고리즘 사다리 자동 재시도</td>
+</tr>
+<tr>
+  <td><code>optimize</code></td>
+  <td><code>true</code></td>
+  <td>메시 품질 최적화</td>
+</tr>
+<tr>
+  <td><code>threads</code></td>
+  <td><code>0</code></td>
+  <td>0 = 자동</td>
+</tr>
+<tr>
+  <td><code>size_guard</code></td>
+  <td><code>true</code></td>
+  <td><code>h ≤ 0.25×최소솔리드대각</code> 클램프 + 경고</td>
+</tr>
+<tr>
+  <td><code>max_estimated_elements</code></td>
+  <td><code>50000000</code></td>
+  <td>사전 요소수 가드 — 초과 시 실행 전 중단</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="outputs"><code>outputs</code></h3>
+<div class="tw"><table><thead>
+<tr>
+  <th>키</th>
+  <th>기본값</th>
+  <th>의미</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>prefix</code></td>
+  <td>config 파일명 stem</td>
+  <td>산출물 접두어</td>
+</tr>
+<tr>
+  <td><code>dir</code></td>
+  <td>cwd (=workdir 인자)</td>
+  <td>출력 디렉토리</td>
+</tr>
+<tr>
+  <td><code>air_stl</code></td>
+  <td><code>true</code></td>
+  <td>공기영역 STL 생성</td>
+</tr>
+<tr>
+  <td><code>split_stls</code></td>
+  <td><code>true</code></td>
+  <td>cavity / outer_box 분리 STL</td>
+</tr>
+<tr>
+  <td><code>volume_mesh</code></td>
+  <td><code>&quot;msh&quot;</code></td>
+  <td><code>msh</code>(4.1 ASCII) | <code>vtk</code> | <code>both</code> | <code>none</code></td>
+</tr>
+<tr>
+  <td><code>stl_binary</code></td>
+  <td><code>true</code></td>
+  <td>binary STL (false면 ASCII)</td>
+</tr>
+<tr>
+  <td><code>fix_orientation</code></td>
+  <td><code>true</code></td>
+  <td>air.stl 법선을 공기-외향으로 보정 — ⚠ 끄지 말 것</td>
+</tr>
+<tr>
+  <td><code>geometry_debug</code></td>
+  <td><code>false</code></td>
+  <td>디버그 형상 덤프</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="validation"><code>validation</code></h3>
+<div class="tw"><table><thead>
+<tr>
+  <th>키</th>
+  <th>기본값</th>
+  <th>의미</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>volume_error_warn</code></td>
+  <td><code>0.05</code></td>
+  <td>체적 오차 경고 임계 (5%)</td>
+</tr>
+<tr>
+  <td><code>min_sicn_warn</code></td>
+  <td><code>0.10</code></td>
+  <td>최소 품질 경고 임계</td>
+</tr>
+<tr>
+  <td><code>fail_on_inverted</code></td>
+  <td><code>true</code></td>
+  <td>역요소 존재 시 status=failed (산출물은 보존)</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="5-산출물">5. 산출물</h2>
+<p><code>prefix</code>가 <code>airmesh</code>일 때 기준이다.</p>
+<div class="tw"><table><thead>
+<tr>
+  <th>파일</th>
+  <th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>airmesh_air.stl</code></td>
+  <td><strong>주 산출물.</strong> 공기영역 폐곡면(binary), 공기-외향 법선, signed volume = 이산 공기체적</td>
+</tr>
+<tr>
+  <td><code>airmesh_cavity.stl</code></td>
+  <td><strong>솔리드 스킨 = 내부 공동 면</strong></td>
+</tr>
+<tr>
+  <td><code>airmesh_outer_box.stl</code></td>
+  <td>패딩 박스 6면</td>
+</tr>
+<tr>
+  <td><code>airmesh_air.msh</code></td>
+  <td>체적 사면체 메시 + 물리그룹(<code>air_volume</code>/<code>cavity</code>/<code>outer_box</code>)</td>
+</tr>
+<tr>
+  <td><code>airmesh_report.json</code></td>
+  <td><strong>실패해도 항상 기록.</strong> status/error, bbox, 불리언 재시도 이력, 품질(minSICN 히스토그램), 체적 검증, STL watertight, 타이밍, gmsh 로그 꼬리</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="6-성패-판정과-오류-코드">6. 성패 판정과 오류 코드</h2>
+<p>종료 코드는 <strong>항상 0</strong>이므로 아래 둘 중 하나로 판정한다.</p>
+<pre><code class="language-bash"># 방법 1 — stdout 라인
+KooAutomatedModeller AIRMESH airmesh.json &quot;$OUT&quot; | tee log.txt
+grep -q &quot;^Complete AIRMESH&quot; log.txt &amp;&amp; echo OK || echo FAIL
+
+# 방법 2 — 리포트 status (권장)
+python -c &quot;import json;print(json.load(open('$OUT/airmesh_report.json'))['status'])&quot;
+</code></pre>
+<p>성공 시 <code>Complete AIRMESH : &lt;report경로&gt;</code>, 실패 시 <code>AIRMESH FAILED : &lt;사유&gt;</code>가 stdout에 찍힌다.</p>
+<div class="tw"><table><thead>
+<tr>
+  <th>코드</th>
+  <th>원인</th>
+  <th>대처</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>E_CONFIG</code></td>
+  <td>설정 오류 (전부 나열됨)</td>
+  <td>메시지대로 수정. 필수 3키·경로 확인</td>
+</tr>
+<tr>
+  <td><code>E_STEP_IMPORT</code></td>
+  <td>STEP 임포트 실패</td>
+  <td>파일 손상/버전 확인</td>
+</tr>
+<tr>
+  <td><code>E_STEP_NO_SOLID</code></td>
+  <td><strong>서피스 모델</strong> (닫힌 솔리드 없음)</td>
+  <td>리포트의 엔티티 요약(dim:개수) 확인 → CAD에서 솔리드화</td>
+</tr>
+<tr>
+  <td><code>E_BOOLEAN</code></td>
+  <td>공기 볼륨 0 (eps-pad·힐링 재시도 후)</td>
+  <td><code>padding</code>을 키운다. 솔리드가 박스를 꽉 채운 상태</td>
+</tr>
+<tr>
+  <td><code>E_TOO_LARGE</code></td>
+  <td>사전 요소수 가드 초과</td>
+  <td><code>mesh_size</code>를 키우거나 <code>max_estimated_elements</code> 조정</td>
+</tr>
+<tr>
+  <td><code>E_MESH</code></td>
+  <td>알고리즘 사다리 소진</td>
+  <td>형상 품질 점검, <code>heal:&quot;auto&quot;</code> 유지, <code>mesh_size</code> 조정</td>
+</tr>
+<tr>
+  <td><code>E_QUALITY</code></td>
+  <td>역요소 존재</td>
+  <td><code>mesh_size</code> 조정. 산출물은 보존되니 리포트 히스토그램 확인</td>
+</tr>
+<tr>
+  <td><code>E_STL_INVALID</code></td>
+  <td>비수밀 STL</td>
+  <td>형상/패딩 재검토</td>
+</tr>
+<tr>
+  <td><code>E_GMSH_INIT</code></td>
+  <td>libgmsh 로드 실패</td>
+  <td><strong>배포 문제.</strong> dist에 <code>libgmsh.so.4.15</code> 누락</td>
+</tr>
+<tr>
+  <td><code>E_INTERNAL</code></td>
+  <td>기타</td>
+  <td>리포트의 gmsh 로그 꼬리 확인</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="7-주의사항-실증-기반">7. 주의사항 (실증 기반)</h2>
+<ul>
+<li><strong>P1 orientation.</strong> gmsh가 쓰는 air STL의 cavity 법선은 솔리드-외향이라 signed volume이 틀어진다. <code>fix_orientation</code>(기본 on)이 중첩 깊이 홀짝 규칙으로 보정한다 — 밀폐 하우징의 내부 보이드, 분리 공기영역까지 처리한다. <strong>끄지 말 것.</strong></li>
+<li><strong><code>heal: &quot;always&quot;</code> 금지 권장.</strong> 깨끗한 형상에 healShapes를 강제하면 구면이 주기면으로 재구성되어 메시가 불가능해진다(<code>Impossible to mesh periodic surface</code>). 기본 <code>auto</code>를 유지한다.</li>
+<li><strong>불리언 재시도 사다리.</strong> eps-pad(1e-3·diag, 형상 무손상) → 힐링(최후 수단) 순이다. 재시도 시 유효 bbox가 분류·리포트에 반영된다.</li>
+<li><strong>체적 검증.</strong> 이산 기대값(box − 이산 cavity) 대비로 판정하고 CAD 차이는 faceting 오차로 별도 보고한다. 조대 메시는 에러가 아니라 경고+클램프다.</li>
+<li><strong>요소 수 폭발.</strong> 미세 피처 + <code>size_guard</code> on 조합에서 발생한다. <a href="#e7-미세-형상pcbecad-등--요소-폭발-방지">E7</a> 참고.</li>
+<li><strong>실제 ECAD/PCB 실증됨.</strong> 멀티스케일 Cu/PPG 회로(273 트레이스, 15µm 층)까지 watertight 공기 STL 생성을 확인했다. 겹치는 Cu/PPG 솔리드는 air.stl이 정확하나(union 절단) 체적 교차검증이 겹침을 경고한다.</li>
+</ul>
+<hr />
+<h2 id="8-검증-방법">8. 검증 방법</h2>
+<p>기능을 수정했으면 아래를 돌린다.</p>
+<pre><code class="language-bash">cd /home/koopark/serviceApptainers/appt313/opt/pyKooCAE
+./venv312/bin/python tests/test_airmesh_regression.py     # 29체크, ~1분
+</code></pre>
+<p>커버 범위. 골든 재현(T1), 밀폐 보이드 체적(T2), 다중 솔리드(T3), 솔리드 선택 + 잔류메시 없음(T4), eps-pad 재시도(T5), 미터 스케일(T6), 실패 계약/리포트(T7), 서피스 모델 우아한 실패(T8), 한 면 밀착·공기 0(T9).</p>
+<hr />
+<h2 id="9-설계배포-노트">9. 설계·배포 노트</h2>
+<ul>
+<li><strong>백엔드 분리.</strong> gmsh Python API를 in-process로 쓴다. 기존 <code>KooMeshManagerGMSH</code>(.geo 파일 + 서브프로세스)와 코드·수명주기가 완전히 분리되어 있다.</li>
+<li><strong>배포(Nuitka) 함정.</strong> gmsh Python API의 libgmsh는 ctypes 로드라 Nuitka가 번들하지 않는다. 빌드 스크립트가 <code>libgmsh.so.4.15</code>를 dist 루트에 복사하고 AIRMESH 스모크 테스트로 검증한다(<code>build_automatedmodeller_python312.sh</code>). 누락되면 배포 머신에서 첫 호출에 크래시한다(<code>E_GMSH_INIT</code>).</li>
+<li><strong>healShapes 수명주기.</strong> gmsh healShapes는 원본을 소모하고 치유본으로 교체한다. 원본 remove 금지이며 <code>getEntities(3)</code>로 다시 조회해야 한다.</li>
+<li><strong>분류 eps.</strong> OCC bbox는 절대 1e-7만큼 부풀려 나오므로 분류 epsilon의 하한으로 쓴다.</li>
+<li><strong>물리그룹.</strong> 빈 물리그룹 + <code>SaveAll=0</code> 조합이면 전체 요소가 유출된다.</li>
+</ul>
+<hr />
+<h2 id="10-범위-밖-v1-미구현">10. 범위 밖 (v1 미구현)</h2>
+<ul>
+<li><code>mesh.mode: &quot;hex_core&quot;</code> (헥사 코어 + 오면체 피라미드 전이) — Phase 5 계약, <code>docs/PLAN_AirMeshGeneration.md</code> §8에 예약되어 있다.</li>
+</ul>
+
+</div></body></html>

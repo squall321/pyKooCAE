@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAD BOM 기반 CAE 시뮬레이션 자동화 - SmartTwinCluster</title>
+<style>
+  :root {
+    --primary: #0d47a1;
+    --primary-light: #1565c0;
+    --primary-bg: #e3f2fd;
+    --bg: #f5f7fa;
+    --card: #ffffff;
+    --text: #1a1a2e;
+    --text-secondary: #546e7a;
+    --border: #e0e0e0;
+    --success: #2e7d32;
+    --success-bg: #e8f5e9;
+    --warning: #f57f17;
+    --warning-bg: #fff8e1;
+    --accent: #c62828;
+    --accent-bg: #ffebee;
+    --purple: #6a1b9a;
+    --purple-bg: #f3e5f5;
+    --teal: #00695c;
+    --teal-bg: #e0f2f1;
+    --orange: #e65100;
+    --orange-bg: #fff3e0;
+    --code-bg: #263238;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif; background:var(--bg); color:var(--text); line-height:1.75; }
+
+  /* ── Header ── */
+  .hero {
+    background: linear-gradient(135deg, #0d47a1 0%, #1565c0 40%, #1976d2 70%, #42a5f5 100%);
+    color:#fff; padding:80px 40px 60px; text-align:center; position:relative; overflow:hidden;
+  }
+  .hero::before {
+    content:''; position:absolute; top:0; left:0; right:0; bottom:0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 30h60M30 0v60' stroke='rgba(255,255,255,0.06)' stroke-width='1'/%3E%3C/svg%3E");
+  }
+  .hero>* { position:relative; z-index:1; }
+  .hero-badge { display:inline-block; background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); border-radius:20px; padding:5px 18px; font-size:0.85em; margin-bottom:16px; backdrop-filter:blur(4px); }
+  .hero h1 { font-size:2.6em; font-weight:800; margin-bottom:14px; letter-spacing:-0.5px; }
+  .hero p { font-size:1.15em; opacity:0.9; max-width:750px; margin:0 auto 24px; }
+  .hero-stats { display:flex; justify-content:center; gap:40px; margin-top:30px; flex-wrap:wrap; }
+  .hero-stat { text-align:center; }
+  .hero-stat .val { font-size:2.2em; font-weight:800; }
+  .hero-stat .lbl { font-size:0.82em; opacity:0.8; }
+
+  /* ── Nav ── */
+  .nav { background:var(--card); border-bottom:1px solid var(--border); padding:0 20px; position:sticky; top:0; z-index:100; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+  .nav ul { list-style:none; display:flex; max-width:1300px; margin:0 auto; overflow-x:auto; scrollbar-width:none; }
+  .nav ul::-webkit-scrollbar { display:none; }
+  .nav a { display:block; padding:14px 18px; color:var(--text-secondary); text-decoration:none; font-size:0.85em; font-weight:600; border-bottom:3px solid transparent; white-space:nowrap; transition:all .2s; }
+  .nav a:hover,.nav a.active { color:var(--primary); border-bottom-color:var(--primary); }
+
+  /* ── Container ── */
+  .container { max-width:1300px; margin:0 auto; padding:48px 40px 80px; }
+
+  /* ── Section ── */
+  section { margin-bottom:56px; }
+  .section-header { display:flex; align-items:center; gap:14px; margin-bottom:24px; padding-bottom:14px; border-bottom:2px solid var(--primary); }
+  .section-num { background:var(--primary); color:#fff; min-width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:0.9em; }
+  .section-header h2 { font-size:1.55em; color:var(--primary); }
+  h3 { font-size:1.15em; margin:28px 0 14px; color:var(--text); }
+  p { margin-bottom:14px; color:var(--text-secondary); }
+
+  /* ── Cards ── */
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:28px; margin-bottom:20px; box-shadow:0 2px 6px rgba(0,0,0,0.03); transition:box-shadow .2s; }
+  .card:hover { box-shadow:0 4px 16px rgba(0,0,0,0.08); }
+  .card h4 { font-size:1.05em; margin-bottom:10px; display:flex; align-items:center; gap:8px; }
+  .card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:20px; margin:20px 0; }
+  .card-grid-3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:18px; margin:20px 0; }
+
+  /* ── Simulation Cards (special) ── */
+  .sim-card { border-left:4px solid var(--primary); position:relative; overflow:hidden; }
+  .sim-card.drop { border-left-color:#c62828; }
+  .sim-card.process { border-left-color:#2e7d32; }
+  .sim-card.thermal { border-left-color:#e65100; }
+  .sim-card.subset { border-left-color:#6a1b9a; }
+  .sim-card .sim-icon { font-size:2em; margin-bottom:10px; }
+  .sim-card .sim-type { font-size:0.75em; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
+  .sim-card.drop .sim-type { color:#c62828; }
+  .sim-card.process .sim-type { color:#2e7d32; }
+  .sim-card.thermal .sim-type { color:#e65100; }
+  .sim-card.subset .sim-type { color:#6a1b9a; }
+
+  /* ── Code ── */
+  pre { background:var(--code-bg); color:#eeffff; border-radius:12px; padding:24px; overflow-x:auto; font-family:'Cascadia Code','Fira Code','JetBrains Mono',monospace; font-size:0.85em; line-height:1.65; margin:16px 0; }
+  code { background:#eceff1; padding:2px 7px; border-radius:4px; font-family:'Cascadia Code','Fira Code',monospace; font-size:0.88em; color:var(--primary); }
+  pre code { background:none; padding:0; color:inherit; }
+  .kw { color:#89ddff; } .str { color:#c3e88d; } .num { color:#f78c6c; }
+  .cmt { color:#546e7a; font-style:italic; } .key { color:#82aaff; } .bool { color:#89ddff; }
+
+  /* ── Naming Visual ── */
+  .naming-visual { display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:center; margin:24px 0; padding:28px; background:var(--card); border:1px solid var(--border); border-radius:14px; }
+  .naming-seg { text-align:center; }
+  .naming-seg .val { display:block; padding:10px 20px; border-radius:10px; font-family:'Cascadia Code',monospace; font-size:1.05em; font-weight:700; color:#fff; margin-bottom:6px; }
+  .naming-seg .lbl { font-size:0.78em; color:var(--text-secondary); font-weight:600; }
+  .naming-sep { font-size:1.6em; color:#bbb; margin-bottom:20px; }
+  .c1 .val{background:#0d47a1;} .c2 .val{background:#2e7d32;} .c3 .val{background:#e65100;} .c4 .val{background:#c62828;} .c5 .val{background:#6a1b9a;}
+
+  /* ── Pipeline ── */
+  .pipeline { display:flex; flex-wrap:wrap; gap:0; align-items:stretch; justify-content:center; margin:28px 0; }
+  .pipe-step { background:var(--card); border:2px solid var(--primary); border-radius:14px; padding:18px 22px; text-align:center; min-width:160px; flex:1; max-width:220px; display:flex; flex-direction:column; justify-content:center; }
+  .pipe-step .icon { font-size:1.8em; margin-bottom:6px; }
+  .pipe-step .title { font-weight:700; color:var(--primary); font-size:0.92em; margin-bottom:3px; }
+  .pipe-step .desc { font-size:0.78em; color:var(--text-secondary); }
+  .pipe-step.highlight { background:var(--primary); color:#fff; border-color:var(--primary); }
+  .pipe-step.highlight .title { color:#fff; }
+  .pipe-step.highlight .desc { color:rgba(255,255,255,0.8); }
+  .pipe-arrow { display:flex; align-items:center; font-size:1.6em; color:var(--primary); padding:0 6px; }
+
+  /* ── Table ── */
+  table { width:100%; border-collapse:collapse; margin:16px 0; background:var(--card); border-radius:12px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.04); }
+  th { background:var(--primary); color:#fff; padding:13px 16px; text-align:left; font-weight:600; font-size:0.88em; }
+  td { padding:11px 16px; border-bottom:1px solid var(--border); font-size:0.88em; }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:#f0f4ff; }
+
+  /* ── Tags ── */
+  .tag { display:inline-block; padding:3px 10px; border-radius:12px; font-size:0.76em; font-weight:700; margin:2px; }
+  .tag-blue { background:var(--primary-bg); color:var(--primary); }
+  .tag-green { background:var(--success-bg); color:var(--success); }
+  .tag-orange { background:var(--orange-bg); color:var(--orange); }
+  .tag-red { background:var(--accent-bg); color:var(--accent); }
+  .tag-purple { background:var(--purple-bg); color:var(--purple); }
+  .tag-teal { background:var(--teal-bg); color:var(--teal); }
+
+  /* ── Callout ── */
+  .callout { border-left:4px solid var(--primary); background:var(--primary-bg); padding:18px 22px; border-radius:0 10px 10px 0; margin:18px 0; }
+  .callout.success { border-left-color:var(--success); background:var(--success-bg); }
+  .callout.warning { border-left-color:var(--warning); background:var(--warning-bg); }
+  .callout.purple { border-left-color:var(--purple); background:var(--purple-bg); }
+  .callout strong { color:var(--text); }
+
+  /* ── Subset Visual ── */
+  .subset-visual { display:grid; grid-template-columns:1fr auto 1fr; gap:20px; align-items:center; margin:24px 0; }
+  .subset-full { background:var(--card); border:2px solid var(--border); border-radius:14px; padding:20px; }
+  .subset-full h4 { margin-bottom:12px; font-size:0.95em; }
+  .subset-arrow { font-size:2em; color:var(--purple); text-align:center; }
+  .subset-target { background:var(--purple-bg); border:2px solid var(--purple); border-radius:14px; padding:20px; }
+  .subset-target h4 { color:var(--purple); margin-bottom:12px; font-size:0.95em; }
+  .part-chip { display:inline-block; padding:4px 12px; border-radius:8px; font-size:0.8em; margin:3px; font-weight:600; }
+  .part-chip.active { background:var(--purple); color:#fff; }
+  .part-chip.dim { background:#eee; color:#aaa; }
+
+  /* ── Interactive Demo ── */
+  .demo-box { background:var(--card); border:2px solid var(--border); border-radius:14px; padding:32px; margin:20px 0; }
+  .demo-box label { display:block; font-size:0.85em; font-weight:600; color:var(--text-secondary); margin:14px 0 5px; }
+  .demo-box label:first-child { margin-top:0; }
+  .demo-box select,.demo-box input[type=number] { width:100%; padding:10px 14px; border:1px solid var(--border); border-radius:10px; font-size:0.95em; font-family:inherit; }
+  .demo-box select:focus,.demo-box input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(13,71,161,0.12); }
+  .demo-result { margin-top:20px; padding:18px; background:var(--code-bg); border-radius:12px; color:#eeffff; font-family:'Cascadia Code',monospace; font-size:1.05em; text-align:center; letter-spacing:.5px; }
+  .demo-infer { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-top:16px; }
+  .demo-infer-item { padding:12px; background:var(--bg); border-radius:10px; text-align:center; }
+  .demo-infer-item .di-label { font-size:0.75em; color:var(--text-secondary); font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
+  .demo-infer-item .di-value { font-size:1em; font-weight:700; color:var(--primary); margin-top:3px; }
+
+  /* ── Scenario selector ── */
+  .scenario-tabs { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+  .scenario-tab { padding:8px 18px; border:2px solid var(--border); border-radius:10px; cursor:pointer; font-size:0.85em; font-weight:600; color:var(--text-secondary); transition:all .2s; background:var(--card); }
+  .scenario-tab:hover { border-color:var(--primary); color:var(--primary); }
+  .scenario-tab.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+  .scenario-content { display:none; }
+  .scenario-content.active { display:block; }
+
+  /* ── Footer ── */
+  .footer { text-align:center; padding:40px; color:var(--text-secondary); font-size:0.85em; border-top:1px solid var(--border); margin-top:40px; }
+
+  /* ── Responsive ── */
+  @media(max-width:900px) {
+    .hero { padding:50px 20px 40px; }
+    .hero h1 { font-size:1.7em; }
+    .container { padding:24px 16px 60px; }
+    .card-grid,.card-grid-3 { grid-template-columns:1fr; }
+    .pipeline { flex-direction:column; align-items:center; }
+    .pipe-arrow { transform:rotate(90deg); }
+    .naming-visual { flex-direction:column; gap:10px; }
+    .naming-sep { display:none; }
+    .subset-visual { grid-template-columns:1fr; }
+    .subset-arrow { transform:rotate(90deg); }
+    .hero-stats { gap:24px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════ HERO ═══════ -->
+<div class="hero">
+  <span class="hero-badge">SmartTwinCluster &times; CAD Standardization</span>
+  <h1>CAD BOM 기반<br>CAE 시뮬레이션 완전 자동화</h1>
+  <p>기구 CAD의 BOM 정보와 이름 표준으로 전각도 낙하, 공정 시뮬레이션, 서브셋 해석까지<br>SmartTwinCluster에서 원클릭 자동화</p>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="val">90%</div><div class="lbl">모델 구성 시간 단축</div></div>
+    <div class="hero-stat"><div class="val">26+</div><div class="lbl">전각도 낙하 자동 생성</div></div>
+    <div class="hero-stat"><div class="val">1 JSON</div><div class="lbl">제품 메타데이터로 통합</div></div>
+    <div class="hero-stat"><div class="val">Subset</div><div class="lbl">부분 모델 자동 추출</div></div>
+  </div>
+</div>
+
+<!-- ═══════ NAV ═══════ -->
+<nav class="nav">
+  <ul>
+    <li><a href="#overview" class="active">개요</a></li>
+    <li><a href="#naming">이름 표준</a></li>
+    <li><a href="#metadata">메타데이터</a></li>
+    <li><a href="#simulations">시뮬레이션 시나리오</a></li>
+    <li><a href="#subset">서브셋 시뮬레이션</a></li>
+    <li><a href="#pipeline">자동화 파이프라인</a></li>
+    <li><a href="#mapping">매핑 테이블</a></li>
+    <li><a href="#validation">검증</a></li>
+    <li><a href="#demo">데모</a></li>
+  </ul>
+</nav>
+
+<!-- ═══════ CONTENT ═══════ -->
+<div class="container">
+
+<!-- ── 1. Overview ── -->
+<section id="overview">
+  <div class="section-header">
+    <span class="section-num">1</span>
+    <h2>CAD 표준화가 시뮬레이션 자동화의 열쇠인 이유</h2>
+  </div>
+
+  <p>기구 CAD에 BOM이 정해져 있으면, 파트 이름에서 <strong>재질 · 요소 타입 · 접촉 조건 · 공정 조건</strong>을 자동으로 유추할 수 있습니다. 이 정보만 있으면 SmartTwinCluster에서 <strong>전각도 낙하</strong>부터 <strong>특정 부품만 추출한 공정 시뮬레이션</strong>까지 모든 것이 자동화됩니다.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>현재의 병목</h4>
+      <ul style="color:var(--text-secondary); padding-left:18px; line-height:2;">
+        <li>CAD 파트 이름이 <strong>설계자마다 다름</strong></li>
+        <li>BOM → FE 모델 매핑에 <strong>수작업 필요</strong></li>
+        <li>시뮬레이션마다 모델을 <strong>처음부터 구성</strong></li>
+        <li>공정 시뮬레이션은 <strong>별도 모델을 수동 생성</strong></li>
+        <li>낙하 각도별로 <strong>26개+ 케이스 수동 설정</strong></li>
+      </ul>
+    </div>
+    <div class="card" style="border:2px solid var(--success);">
+      <h4 style="color:var(--success);">표준화 후 자동화</h4>
+      <ul style="color:var(--text-secondary); padding-left:18px; line-height:2;">
+        <li>BOM 변경 → 시뮬레이션 <strong>자동 재구성</strong></li>
+        <li>이름에서 재질·메쉬·접촉 <strong>자동 추론</strong></li>
+        <li>하나의 풀 모델에서 <strong>서브셋 자동 추출</strong></li>
+        <li>디스플레이 압착, 배터리 압착 등 <strong>자동 구성</strong></li>
+        <li>전각도 낙하 26개 케이스 <strong>원클릭 생성</strong></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>핵심 원칙:</strong> 파트 이름 = 메타데이터. 이름만 보고도 MAT 카드, 요소 타입, 접촉 조건, 서브셋 추출 범위를 결정할 수 있어야 한다.
+  </div>
+</section>
+
+<!-- ── 2. Naming Standard ── -->
+<section id="naming">
+  <div class="section-header">
+    <span class="section-num">2</span>
+    <h2>파트 이름 표준 (Naming Convention)</h2>
+  </div>
+
+  <p>5개 필드를 언더스코어(<code>_</code>)로 연결하는 계층적 구조. 각 필드가 자동화 파이프라인에서 구체적인 역할을 합니다.</p>
+
+  <div class="naming-visual">
+    <div class="naming-seg c1"><span class="val">PHONE</span><span class="lbl">Assembly</span></div>
+    <span class="naming-sep">_</span>
+    <div class="naming-seg c2"><span class="val">HOUSING</span><span class="lbl">SubAssy</span></div>
+    <span class="naming-sep">_</span>
+    <div class="naming-seg c3"><span class="val">COVER</span><span class="lbl">PartType</span></div>
+    <span class="naming-sep">_</span>
+    <div class="naming-seg c4"><span class="val">PC-ABS</span><span class="lbl">Material</span></div>
+    <span class="naming-sep">_</span>
+    <div class="naming-seg c5"><span class="val">001</span><span class="lbl">Instance</span></div>
+  </div>
+
+  <table>
+    <thead><tr><th>필드</th><th>역할</th><th>자동화 활용</th><th>규칙</th><th>예시</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="tag tag-blue">Assembly</span></td>
+        <td>제품 / 최상위 어셈블리</td>
+        <td>시뮬레이션 프로젝트 분류</td>
+        <td>대문자, 약어 가능</td>
+        <td>PHONE, TABLET, MODULE</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-green">SubAssy</span></td>
+        <td>BOM 중간 레벨 서브어셈블리</td>
+        <td><strong>서브셋 추출 단위</strong>, 접촉 규칙 기준</td>
+        <td>기능 그룹 단위</td>
+        <td>HOUSING, BATTERY, DISPLAY</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-orange">PartType</span></td>
+        <td>파트의 기능/형상 역할</td>
+        <td>요소 타입 · 메쉬 전략 결정</td>
+        <td>사전 정의 어휘</td>
+        <td>COVER, FRAME, POUCH, CELL</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-red">Material</span></td>
+        <td>재질 코드</td>
+        <td>MAT 카드 자동 매핑</td>
+        <td>하이픈으로 등급 구분</td>
+        <td>PC-ABS, AL6061, SUS304</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-purple">Instance</span></td>
+        <td>동일 파트 복수 배치</td>
+        <td>Part ID 자동 부여</td>
+        <td>3자리 숫자 (001~)</td>
+        <td>001, 002, 003</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>SubAssy가 핵심인 이유</h3>
+  <div class="callout purple">
+    <strong>SubAssy 필드</strong>는 단순 분류가 아닙니다. 이 필드가 다음을 자동으로 결정합니다:<br>
+    &bull; <strong>접촉 규칙</strong> — 같은 SubAssy 내부 = TIED (접합), 다른 SubAssy 간 = CONTACT (접촉)<br>
+    &bull; <strong>서브셋 범위</strong> — <code>*_DISPLAY_*</code>로 디스플레이 관련 파트만 추출<br>
+    &bull; <strong>공정 시뮬레이션 대상</strong> — SubAssy 단위로 공정 조건 자동 매핑
+  </div>
+
+  <h3>실제 제품 적용 예시 (스마트폰)</h3>
+  <table>
+    <thead><tr><th>표준 이름</th><th>설명</th><th>자동 추론 결과</th></tr></thead>
+    <tbody>
+      <tr><td style="font-family:monospace;font-size:0.85em;">PHONE_HOUSING_COVER_PC-ABS_001</td><td>후면 커버</td><td>Shell, MAT_024, exterior contact</td></tr>
+      <tr><td style="font-family:monospace;font-size:0.85em;">PHONE_HOUSING_FRAME_AL6061_001</td><td>미드프레임</td><td>Shell/Solid, MAT_024, exterior contact</td></tr>
+      <tr><td style="font-family:monospace;font-size:0.85em;">PHONE_DISPLAY_GLASS_GORILLA_001</td><td>강화유리</td><td>Solid, MAT_032, fracture model</td></tr>
+      <tr><td style="font-family:monospace;font-size:0.85em;">PHONE_DISPLAY_PANEL_OLED_001</td><td>OLED 패널</td><td>Shell, MAT_024, process target</td></tr>
+      <tr><td style="font-family:monospace;font-size:0.85em;">PHONE_DISPLAY_ADHESIVE_OCA_001</td><td>OCA 접착제</td><td>Solid, MAT_083, bonding layer</td></tr>
+      <tr><td style="font-family:monospace;font-size:0.85em;">PHONE_BATTERY_POUCH_AL1100_001</td><td>배터리 파우치</td><td>Shell, MAT_024, process target</td></tr>
+      <tr><td style="font-family:monospace;font-size:0.85em;">PHONE_BATTERY_CELL_JELLYROLL_001</td><td>젤리롤</td><td>Solid, MAT_126, internal</td></tr>
+      <tr><td style="font-family:monospace;font-size:0.85em;">PHONE_PCB_MAIN_FR4_001</td><td>메인 기판</td><td>Shell, MAT_024, can rigidify</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ── 3. Metadata ── -->
+<section id="metadata">
+  <div class="section-header">
+    <span class="section-num">3</span>
+    <h2>제품 메타데이터 구조 (Product Metadata JSON)</h2>
+  </div>
+
+  <p>BOM + CAE 속성 + 시뮬레이션 시나리오를 하나의 JSON으로 통합. 이 파일이 SmartTwinCluster의 <strong>전체 자동화 입력</strong>이 됩니다.</p>
+
+  <h3>3.1 파트 정의 — BOM / CAE / Automation 3계층</h3>
+  <pre><code>{
+  <span class="key">"product"</span>: <span class="str">"PHONE_X1"</span>,
+  <span class="key">"bom_version"</span>: <span class="str">"R03"</span>,
+  <span class="key">"material_library"</span>: <span class="str">"material_library.json"</span>,
+
+  <span class="key">"parts"</span>: [
+    {
+      <span class="key">"part_name"</span>: <span class="str">"PHONE_HOUSING_COVER_PC-ABS_001"</span>,
+
+      <span class="cmt">// BOM 원본 정보 (CAD/PDM에서 추출)</span>
+      <span class="key">"bom"</span>: {
+        <span class="key">"part_number"</span>: <span class="str">"PN-10234"</span>,
+        <span class="key">"material_spec"</span>: <span class="str">"PC/ABS T65XF"</span>,
+        <span class="key">"thickness_mm"</span>: <span class="num">0.8</span>,
+        <span class="key">"mass_g"</span>: <span class="num">12.3</span>,
+        <span class="key">"supplier"</span>: <span class="str">"ABC Corp"</span>
+      },
+
+      <span class="cmt">// 시뮬레이션 속성 (이름에서 자동 추론 + 오버라이드)</span>
+      <span class="key">"cae"</span>: {
+        <span class="key">"element_type"</span>: <span class="str">"shell"</span>,
+        <span class="key">"material_model"</span>: <span class="str">"MAT_024"</span>,
+        <span class="key">"material_card"</span>: <span class="str">"PC-ABS_T65XF.k"</span>,
+        <span class="key">"mesh_size_mm"</span>: <span class="num">1.0</span>,
+        <span class="key">"contact_role"</span>: <span class="str">"exterior"</span>
+      },
+
+      <span class="cmt">// 자동화 파이프라인 제어</span>
+      <span class="key">"automation"</span>: {
+        <span class="key">"mesh_source"</span>: <span class="str">"cad_auto"</span>,
+        <span class="key">"requires_midsurf"</span>: <span class="bool">true</span>,
+        <span class="key">"can_rigidify"</span>: <span class="bool">false</span>,
+        <span class="key">"process_target"</span>: <span class="bool">false</span>,
+        <span class="key">"subset_groups"</span>: [<span class="str">"housing"</span>, <span class="str">"full_drop"</span>]
+      }
+    }
+  ]
+}</code></pre>
+
+  <h3>3.2 접촉 규칙 — 이름 기반 자동 정의</h3>
+  <pre><code><span class="key">"contact_rules"</span>: [
+  {
+    <span class="key">"name"</span>: <span class="str">"subassy_internal_bond"</span>,
+    <span class="key">"rule"</span>: <span class="str">"SAME_SUBASSY"</span>,
+    <span class="key">"type"</span>: <span class="str">"TIED_SURFACE_TO_SURFACE"</span>,
+    <span class="key">"tolerance_mm"</span>: <span class="num">0.5</span>,
+    <span class="cmt">// 같은 SubAssy 내 인접 → 자동 TIED</span>
+  },
+  {
+    <span class="key">"name"</span>: <span class="str">"inter_assy_contact"</span>,
+    <span class="key">"rule"</span>: <span class="str">"DIFF_SUBASSY"</span>,
+    <span class="key">"type"</span>: <span class="str">"AUTOMATIC_SURFACE_TO_SURFACE"</span>,
+    <span class="key">"friction"</span>: <span class="num">0.3</span>,
+    <span class="cmt">// 다른 SubAssy 간 → 접촉</span>
+  },
+  {
+    <span class="key">"name"</span>: <span class="str">"exterior_self"</span>,
+    <span class="key">"scope"</span>: <span class="str">"contact_role:exterior"</span>,
+    <span class="key">"type"</span>: <span class="str">"AUTOMATIC_SINGLE_SURFACE"</span>,
+    <span class="key">"soft"</span>: <span class="num">2</span>, <span class="key">"depth"</span>: <span class="num">3</span>
+  }
+]</code></pre>
+
+  <h3>3.3 시뮬레이션 시나리오 목록</h3>
+  <pre><code><span class="key">"simulations"</span>: [
+  {
+    <span class="key">"name"</span>: <span class="str">"FULL_DROP_26ANGLES"</span>,
+    <span class="key">"type"</span>: <span class="str">"drop"</span>,
+    <span class="key">"subset"</span>: <span class="str">"ALL"</span>,
+    <span class="key">"angles"</span>: <span class="str">"auto_26"</span>,
+    <span class="key">"height_m"</span>: <span class="num">1.2</span>,
+    <span class="key">"rigidify"</span>: [<span class="str">"*_PCB_*"</span>, <span class="str">"*_CAMERA_*"</span>]
+  },
+  {
+    <span class="key">"name"</span>: <span class="str">"DISPLAY_BONDING"</span>,
+    <span class="key">"type"</span>: <span class="str">"process"</span>,
+    <span class="key">"subset"</span>: [<span class="str">"DISPLAY"</span>, <span class="str">"HOUSING_FRAME"</span>],
+    <span class="key">"process"</span>: <span class="str">"press_bonding"</span>,
+    <span class="key">"pressure_MPa"</span>: <span class="num">0.5</span>,
+    <span class="key">"temperature_C"</span>: <span class="num">60</span>
+  },
+  {
+    <span class="key">"name"</span>: <span class="str">"BATTERY_PRESS_FIT"</span>,
+    <span class="key">"type"</span>: <span class="str">"process"</span>,
+    <span class="key">"subset"</span>: [<span class="str">"BATTERY"</span>, <span class="str">"HOUSING_FRAME"</span>],
+    <span class="key">"process"</span>: <span class="str">"interference_fit"</span>,
+    <span class="key">"clearance_mm"</span>: <span class="num">-0.05</span>
+  }
+]</code></pre>
+</section>
+
+<!-- ── 4. Simulation Scenarios ── -->
+<section id="simulations">
+  <div class="section-header">
+    <span class="section-num">4</span>
+    <h2>시뮬레이션 시나리오 — CAD 표준화로 가능해지는 것들</h2>
+  </div>
+
+  <p>하나의 표준화된 제품 메타데이터에서 <strong>다양한 종류의 시뮬레이션</strong>을 자동 구성할 수 있습니다. 풀 모델 해석은 물론, 필요한 부품만 추출한 서브셋 해석까지 모든 것이 이름 표준에서 시작됩니다.</p>
+
+  <!-- Scenario Tabs -->
+  <div class="scenario-tabs">
+    <div class="scenario-tab active" onclick="switchScenario('drop')">전각도 낙하</div>
+    <div class="scenario-tab" onclick="switchScenario('display')">디스플레이 압착</div>
+    <div class="scenario-tab" onclick="switchScenario('battery')">배터리 압착</div>
+    <div class="scenario-tab" onclick="switchScenario('thermal')">열 해석</div>
+    <div class="scenario-tab" onclick="switchScenario('bend')">굽힘 시험</div>
+  </div>
+
+  <!-- Drop -->
+  <div class="scenario-content active" id="sc-drop">
+    <div class="card sim-card drop">
+      <div class="sim-type">Full Model &bull; Drop Simulation</div>
+      <h4>전각도 낙하 시뮬레이션 (26 Angles)</h4>
+      <p>6면 + 12모서리 + 8꼭짓점 = <strong>26개 방향</strong>의 낙하 시뮬레이션을 자동 생성합니다.</p>
+
+      <table>
+        <thead><tr><th>방향 유형</th><th>개수</th><th>각도 자동 계산</th></tr></thead>
+        <tbody>
+          <tr><td>면 낙하 (Face)</td><td>6</td><td>Front, Back, Left, Right, Top, Bottom</td></tr>
+          <tr><td>모서리 낙하 (Edge)</td><td>12</td><td>각 모서리의 중심선 방향으로 45° 조합</td></tr>
+          <tr><td>꼭짓점 낙하 (Corner)</td><td>8</td><td>대각선 방향 (45°, 45°) 조합</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>자동화 포인트:</strong> 이름 표준에서 <code>can_rigidify</code> 속성으로 PCB, 카메라 등을 강체로 자동 전환.
+        <code>contact_role: exterior</code>인 파트만 자동으로 SINGLE_SURFACE 접촉 적용.
+      </div>
+
+      <pre><code><span class="cmt">// SmartTwinCluster에 전달되는 자동 생성 시나리오</span>
+{
+  <span class="key">"simulation"</span>: <span class="str">"PHONE_X1_DROP"</span>,
+  <span class="key">"model"</span>: <span class="str">"FULL"</span>,
+  <span class="key">"height_m"</span>: <span class="num">1.2</span>,
+  <span class="key">"surface"</span>: <span class="str">"steel_plate"</span>,
+  <span class="key">"angles"</span>: [
+    { <span class="key">"id"</span>: <span class="str">"F01"</span>, <span class="key">"name"</span>: <span class="str">"face_front"</span>,  <span class="key">"pitch"</span>: <span class="num">0</span>,   <span class="key">"yaw"</span>: <span class="num">0</span> },
+    { <span class="key">"id"</span>: <span class="str">"F02"</span>, <span class="key">"name"</span>: <span class="str">"face_back"</span>,   <span class="key">"pitch"</span>: <span class="num">180</span>, <span class="key">"yaw"</span>: <span class="num">0</span> },
+    { <span class="key">"id"</span>: <span class="str">"E01"</span>, <span class="key">"name"</span>: <span class="str">"edge_top_fr"</span>, <span class="key">"pitch"</span>: <span class="num">45</span>,  <span class="key">"yaw"</span>: <span class="num">0</span> },
+    { <span class="key">"id"</span>: <span class="str">"C01"</span>, <span class="key">"name"</span>: <span class="str">"corner_TFL"</span>, <span class="key">"pitch"</span>: <span class="num">45</span>,  <span class="key">"yaw"</span>: <span class="num">45</span> },
+    <span class="cmt">// ... 26개 자동 생성</span>
+  ],
+  <span class="key">"rigidified"</span>: [<span class="str">"PHONE_PCB_*"</span>, <span class="str">"PHONE_CAMERA_*"</span>],
+  <span class="key">"cluster"</span>: { <span class="key">"nodes"</span>: <span class="num">4</span>, <span class="key">"cores_per_job"</span>: <span class="num">16</span> }
+}</code></pre>
+    </div>
+  </div>
+
+  <!-- Display -->
+  <div class="scenario-content" id="sc-display">
+    <div class="card sim-card process">
+      <div class="sim-type">Subset Model &bull; Process Simulation</div>
+      <h4>디스플레이 압착 (Display Bonding) 시뮬레이션</h4>
+      <p>OLED 패널을 프레임에 OCA 접착제로 압착하는 공정. <strong>DISPLAY SubAssy + HOUSING_FRAME</strong>만 추출하여 해석합니다.</p>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0;">
+        <div>
+          <strong style="font-size:0.9em;">추출되는 파트:</strong>
+          <div style="margin-top:8px;">
+            <span class="part-chip active">DISPLAY_GLASS_GORILLA</span>
+            <span class="part-chip active">DISPLAY_PANEL_OLED</span>
+            <span class="part-chip active">DISPLAY_ADHESIVE_OCA</span>
+            <span class="part-chip active">HOUSING_FRAME_AL6061</span>
+          </div>
+        </div>
+        <div>
+          <strong style="font-size:0.9em;">자동 설정:</strong>
+          <ul style="font-size:0.88em; color:var(--text-secondary); padding-left:18px; margin-top:8px;">
+            <li>프레임 하면 고정 (fixed BC)</li>
+            <li>유리 상면에 균일 압력 0.5 MPa</li>
+            <li>OCA 접착층에 MAT_083 (점탄성)</li>
+            <li>온도 조건 60°C (열 연화 반영)</li>
+          </ul>
+        </div>
+      </div>
+
+      <pre><code>{
+  <span class="key">"simulation"</span>: <span class="str">"PHONE_X1_DISPLAY_BONDING"</span>,
+  <span class="key">"type"</span>: <span class="str">"process"</span>,
+  <span class="key">"subset_filter"</span>: [<span class="str">"*_DISPLAY_*"</span>, <span class="str">"*_HOUSING_FRAME_*"</span>],
+  <span class="key">"boundary"</span>: {
+    <span class="key">"fixed"</span>: <span class="str">"*_HOUSING_FRAME_*:bottom_face"</span>,
+    <span class="key">"pressure"</span>: { <span class="key">"target"</span>: <span class="str">"*_DISPLAY_GLASS_*:top_face"</span>, <span class="key">"value_MPa"</span>: <span class="num">0.5</span> }
+  },
+  <span class="key">"thermal"</span>: { <span class="key">"uniform_C"</span>: <span class="num">60</span> },
+  <span class="key">"output"</span>: [<span class="str">"stress_OCA"</span>, <span class="str">"gap_distribution"</span>, <span class="str">"bonding_area_ratio"</span>]
+}</code></pre>
+    </div>
+  </div>
+
+  <!-- Battery -->
+  <div class="scenario-content" id="sc-battery">
+    <div class="card sim-card process">
+      <div class="sim-type">Subset Model &bull; Process Simulation</div>
+      <h4>배터리 압착 (Battery Press-Fit) 시뮬레이션</h4>
+      <p>배터리를 하우징 프레임 안에 끼워넣는 공정. <strong>BATTERY SubAssy + HOUSING_FRAME</strong>을 추출하여 간섭 끼워맞춤 해석.</p>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0;">
+        <div>
+          <strong style="font-size:0.9em;">추출되는 파트:</strong>
+          <div style="margin-top:8px;">
+            <span class="part-chip active">BATTERY_POUCH_AL1100</span>
+            <span class="part-chip active">BATTERY_CELL_JELLYROLL</span>
+            <span class="part-chip active">BATTERY_PAD_FOAM</span>
+            <span class="part-chip active">HOUSING_FRAME_AL6061</span>
+          </div>
+        </div>
+        <div>
+          <strong style="font-size:0.9em;">자동 설정:</strong>
+          <ul style="font-size:0.88em; color:var(--text-secondary); padding-left:18px; margin-top:8px;">
+            <li>프레임 외면 고정</li>
+            <li>배터리에 press 변위 하중</li>
+            <li>폼 패드에 MAT_057 (저밀도 폼)</li>
+            <li>간섭량 -0.05mm 자동 적용</li>
+          </ul>
+        </div>
+      </div>
+
+      <pre><code>{
+  <span class="key">"simulation"</span>: <span class="str">"PHONE_X1_BATTERY_PRESS"</span>,
+  <span class="key">"type"</span>: <span class="str">"process"</span>,
+  <span class="key">"subset_filter"</span>: [<span class="str">"*_BATTERY_*"</span>, <span class="str">"*_HOUSING_FRAME_*"</span>],
+  <span class="key">"boundary"</span>: {
+    <span class="key">"fixed"</span>: <span class="str">"*_HOUSING_FRAME_*:outer_face"</span>,
+    <span class="key">"displacement"</span>: { <span class="key">"target"</span>: <span class="str">"*_BATTERY_*:top"</span>, <span class="key">"dz_mm"</span>: <span class="num">-2.0</span> }
+  },
+  <span class="key">"interference"</span>: { <span class="key">"clearance_mm"</span>: <span class="num">-0.05</span> },
+  <span class="key">"output"</span>: [<span class="str">"cell_deformation"</span>, <span class="str">"frame_stress"</span>, <span class="str">"insertion_force"</span>]
+}</code></pre>
+    </div>
+  </div>
+
+  <!-- Thermal -->
+  <div class="scenario-content" id="sc-thermal">
+    <div class="card sim-card thermal">
+      <div class="sim-type">Full / Subset Model &bull; Thermal Simulation</div>
+      <h4>열 해석 (Thermal Analysis)</h4>
+      <p>충전 중 배터리 발열이 디스플레이와 PCB에 미치는 영향 해석. 전체 모델 또는 관심 영역 서브셋 선택 가능.</p>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0;">
+        <div>
+          <strong style="font-size:0.9em;">열원 파트 (자동 감지):</strong>
+          <div style="margin-top:8px;">
+            <span class="part-chip active">BATTERY_CELL_JELLYROLL</span>
+            <span class="part-chip active">PCB_MAIN_FR4</span>
+          </div>
+        </div>
+        <div>
+          <strong style="font-size:0.9em;">자동 설정:</strong>
+          <ul style="font-size:0.88em; color:var(--text-secondary); padding-left:18px; margin-top:8px;">
+            <li>배터리 셀 → 열원 (발열량 자동)</li>
+            <li>PCB → 칩 위치별 국부 열원</li>
+            <li>외면 → 자연대류 경계조건</li>
+            <li>재질별 열전도도 자동 매핑</li>
+          </ul>
+        </div>
+      </div>
+
+      <pre><code>{
+  <span class="key">"simulation"</span>: <span class="str">"PHONE_X1_THERMAL"</span>,
+  <span class="key">"type"</span>: <span class="str">"thermal"</span>,
+  <span class="key">"subset_filter"</span>: <span class="str">"ALL"</span>,
+  <span class="key">"heat_sources"</span>: [
+    { <span class="key">"target"</span>: <span class="str">"*_BATTERY_CELL_*"</span>, <span class="key">"power_W"</span>: <span class="num">3.5</span> },
+    { <span class="key">"target"</span>: <span class="str">"*_PCB_MAIN_*"</span>,    <span class="key">"power_W"</span>: <span class="num">2.0</span> }
+  ],
+  <span class="key">"convection"</span>: { <span class="key">"scope"</span>: <span class="str">"contact_role:exterior"</span>, <span class="key">"h_W_m2K"</span>: <span class="num">10</span>, <span class="key">"T_amb_C"</span>: <span class="num">25</span> }
+}</code></pre>
+    </div>
+  </div>
+
+  <!-- Bend -->
+  <div class="scenario-content" id="sc-bend">
+    <div class="card sim-card subset">
+      <div class="sim-type">Full Model &bull; Structural Simulation</div>
+      <h4>3점 굽힘 시험 (Three-Point Bending)</h4>
+      <p>완제품의 구조 강성 평가. 전체 모델을 사용하되, 일부 내부 부품은 강체로 단순화.</p>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0;">
+        <div>
+          <strong style="font-size:0.9em;">전체 모델 사용, 강체화:</strong>
+          <div style="margin-top:8px;">
+            <span class="part-chip active">ALL PARTS (Full Model)</span><br>
+            <span class="part-chip dim">PCB_* → Rigid</span>
+            <span class="part-chip dim">CAMERA_* → Rigid</span>
+          </div>
+        </div>
+        <div>
+          <strong style="font-size:0.9em;">자동 설정:</strong>
+          <ul style="font-size:0.88em; color:var(--text-secondary); padding-left:18px; margin-top:8px;">
+            <li>하부 2점 지지 (양 끝단)</li>
+            <li>상부 1점 하중 (중앙)</li>
+            <li><code>can_rigidify: true</code> 파트 자동 강체화</li>
+            <li>출력: 하중-변위 곡선, 최대 응력</li>
+          </ul>
+        </div>
+      </div>
+
+      <pre><code>{
+  <span class="key">"simulation"</span>: <span class="str">"PHONE_X1_3POINT_BEND"</span>,
+  <span class="key">"type"</span>: <span class="str">"structural"</span>,
+  <span class="key">"subset_filter"</span>: <span class="str">"ALL"</span>,
+  <span class="key">"rigidify_auto"</span>: <span class="bool">true</span>,
+  <span class="key">"boundary"</span>: {
+    <span class="key">"support_span_mm"</span>: <span class="num">120</span>,
+    <span class="key">"load_point"</span>: <span class="str">"center"</span>,
+    <span class="key">"force_N"</span>: <span class="num">50</span>
+  },
+  <span class="key">"output"</span>: [<span class="str">"force_displacement"</span>, <span class="str">"max_stress_by_part"</span>, <span class="str">"stiffness_N_mm"</span>]
+}</code></pre>
+    </div>
+  </div>
+
+</section>
+
+<!-- ── 5. Subset ── -->
+<section id="subset">
+  <div class="section-header">
+    <span class="section-num">5</span>
+    <h2>서브셋 시뮬레이션 — 부분 모델 자동 추출</h2>
+  </div>
+
+  <p>전체 FE 메쉬가 있을 때, <strong>SubAssy 이름 기반으로 관심 영역만 자동 추출</strong>하여 별도 시뮬레이션을 구성합니다. 접촉, 경계조건, 재질 모두 자동으로 재구성됩니다.</p>
+
+  <div class="callout purple">
+    <strong>서브셋 시뮬레이션의 핵심:</strong> 풀 모델을 한 번만 구성하면, 이름 필터(<code>*_DISPLAY_*</code>, <code>*_BATTERY_*</code>)만으로 다양한 공정 시뮬레이션 모델을 무한히 파생할 수 있습니다.
+  </div>
+
+  <!-- Visual: Full → Subset extraction -->
+  <div class="subset-visual">
+    <div class="subset-full">
+      <h4>풀 모델 (Full Model)</h4>
+      <span class="part-chip active" style="background:#0d47a1;">HOUSING_COVER</span>
+      <span class="part-chip active" style="background:#0d47a1;">HOUSING_FRAME</span>
+      <span class="part-chip active" style="background:#2e7d32;">DISPLAY_GLASS</span>
+      <span class="part-chip active" style="background:#2e7d32;">DISPLAY_PANEL</span>
+      <span class="part-chip active" style="background:#2e7d32;">DISPLAY_ADHESIVE</span>
+      <span class="part-chip active" style="background:#e65100;">BATTERY_POUCH</span>
+      <span class="part-chip active" style="background:#e65100;">BATTERY_CELL</span>
+      <span class="part-chip active" style="background:#e65100;">BATTERY_PAD</span>
+      <span class="part-chip active" style="background:#546e7a;">PCB_MAIN</span>
+      <span class="part-chip active" style="background:#546e7a;">CAMERA_MODULE</span>
+      <span class="part-chip active" style="background:#546e7a;">SPEAKER_UNIT</span>
+    </div>
+    <div class="subset-arrow">&#10132;</div>
+    <div class="subset-target">
+      <h4>서브셋: 디스플레이 압착</h4>
+      <span class="part-chip dim">HOUSING_COVER</span>
+      <span class="part-chip active" style="background:#0d47a1;">HOUSING_FRAME</span>
+      <span class="part-chip active" style="background:#2e7d32;">DISPLAY_GLASS</span>
+      <span class="part-chip active" style="background:#2e7d32;">DISPLAY_PANEL</span>
+      <span class="part-chip active" style="background:#2e7d32;">DISPLAY_ADHESIVE</span>
+      <span class="part-chip dim">BATTERY_*</span>
+      <span class="part-chip dim">PCB_*</span>
+      <span class="part-chip dim">CAMERA_*</span>
+      <span class="part-chip dim">SPEAKER_*</span>
+    </div>
+  </div>
+
+  <h3>서브셋 추출 시 자동 처리 항목</h3>
+  <table>
+    <thead><tr><th>항목</th><th>자동 처리</th><th>이름 활용</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>파트 추출</strong></td>
+        <td>SubAssy 필터로 포함/제외 결정</td>
+        <td><code>*_DISPLAY_*</code> → DISPLAY 하위 전체 포함</td>
+      </tr>
+      <tr>
+        <td><strong>접촉 재구성</strong></td>
+        <td>추출된 파트 간 접촉만 유지</td>
+        <td>제외된 파트 관련 접촉 자동 제거</td>
+      </tr>
+      <tr>
+        <td><strong>경계조건</strong></td>
+        <td>절단면에 고정/대칭 BC 자동 부여</td>
+        <td>인접 SubAssy 파트의 면을 경계로 사용</td>
+      </tr>
+      <tr>
+        <td><strong>재질 카드</strong></td>
+        <td>추출 파트의 MAT만 포함</td>
+        <td>Material 필드 → material_library 조회</td>
+      </tr>
+      <tr>
+        <td><strong>Part ID 재번호</strong></td>
+        <td>연속 ID로 재할당</td>
+        <td>충돌 없는 ID 범위 자동 계산</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>서브셋 시뮬레이션 유형 예시</h3>
+  <div class="card-grid-3">
+    <div class="card sim-card process">
+      <div class="sim-type">공정 시뮬레이션</div>
+      <h4>디스플레이 압착</h4>
+      <p style="font-size:0.88em;">SubAssy: DISPLAY + HOUSING_FRAME<br>OCA 접착제 경화, 기포 분포, 접합 면적률 예측</p>
+      <span class="tag tag-green">SUBSET</span>
+    </div>
+    <div class="card sim-card process">
+      <div class="sim-type">공정 시뮬레이션</div>
+      <h4>배터리 삽입</h4>
+      <p style="font-size:0.88em;">SubAssy: BATTERY + HOUSING_FRAME<br>간섭 끼워맞춤 응력, 삽입력, 셀 변형량 예측</p>
+      <span class="tag tag-green">SUBSET</span>
+    </div>
+    <div class="card sim-card process">
+      <div class="sim-type">공정 시뮬레이션</div>
+      <h4>커버 스냅핏</h4>
+      <p style="font-size:0.88em;">SubAssy: HOUSING_COVER + HOUSING_FRAME<br>스냅 조립력, 후크 응력, 체결 신뢰성 예측</p>
+      <span class="tag tag-green">SUBSET</span>
+    </div>
+    <div class="card sim-card drop">
+      <div class="sim-type">낙하 시뮬레이션</div>
+      <h4>디스플레이 단품 낙하</h4>
+      <p style="font-size:0.88em;">SubAssy: DISPLAY만 추출<br>유리 파손 예측, 접착 박리, 패널 변형 해석</p>
+      <span class="tag tag-red">SUBSET</span>
+    </div>
+    <div class="card sim-card thermal">
+      <div class="sim-type">열 해석</div>
+      <h4>배터리 열 전파</h4>
+      <p style="font-size:0.88em;">SubAssy: BATTERY + 인접 파트<br>충전 발열 → 주변 파트 온도 분포 예측</p>
+      <span class="tag tag-orange">SUBSET</span>
+    </div>
+    <div class="card sim-card subset">
+      <div class="sim-type">구조 해석</div>
+      <h4>카메라 모듈 강성</h4>
+      <p style="font-size:0.88em;">SubAssy: CAMERA + HOUSING_FRAME<br>모듈 체결 강성, 렌즈 틸트 예측</p>
+      <span class="tag tag-purple">SUBSET</span>
+    </div>
+  </div>
+</section>
+
+<!-- ── 6. Pipeline ── -->
+<section id="pipeline">
+  <div class="section-header">
+    <span class="section-num">6</span>
+    <h2>SmartTwinCluster 자동화 파이프라인</h2>
+  </div>
+
+  <p>CAD 파일에서 시뮬레이션 결과까지의 전체 흐름. SmartTwinCluster가 메타데이터 기반으로 모든 단계를 자동 실행합니다.</p>
+
+  <div class="pipeline">
+    <div class="pipe-step"><div class="icon">📐</div><div class="title">CAD Assembly</div><div class="desc">STEP / JT / CATIA</div></div>
+    <div class="pipe-arrow">&rarr;</div>
+    <div class="pipe-step"><div class="icon">📋</div><div class="title">BOM Export</div><div class="desc">CSV / XML</div></div>
+    <div class="pipe-arrow">&rarr;</div>
+    <div class="pipe-step highlight"><div class="icon">🏷️</div><div class="title">Name Mapping</div><div class="desc">표준 이름 변환</div></div>
+    <div class="pipe-arrow">&rarr;</div>
+    <div class="pipe-step highlight"><div class="icon">📦</div><div class="title">Metadata JSON</div><div class="desc">통합 메타데이터</div></div>
+    <div class="pipe-arrow">&rarr;</div>
+    <div class="pipe-step"><div class="icon">🔧</div><div class="title">FE Model</div><div class="desc">.k 파일 생성</div></div>
+    <div class="pipe-arrow">&rarr;</div>
+    <div class="pipe-step" style="border-color:var(--teal); background:var(--teal); color:#fff;">
+      <div class="icon">🖥️</div><div class="title" style="color:#fff;">SmartTwinCluster</div><div class="desc" style="color:rgba(255,255,255,0.8);">시뮬레이션 실행</div>
+    </div>
+  </div>
+
+  <h3>SmartTwinCluster 연동 포인트</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>1. 시나리오 자동 생성</h4>
+      <p>Product Metadata의 <code>simulations</code> 배열에서 각 시뮬레이션의 입력 파일을 자동 생성합니다.</p>
+      <ul style="font-size:0.88em; color:var(--text-secondary); padding-left:18px;">
+        <li>풀 모델 → 낙하/굽힘/열해석 입력</li>
+        <li>서브셋 모델 → 공정 시뮬레이션 입력</li>
+        <li>재질 카드 → material_library에서 자동 수집</li>
+        <li>접촉 정의 → contact_rules에서 자동 생성</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>2. 클러스터 병렬 실행</h4>
+      <p>26개 낙하 케이스를 클러스터 노드에 자동 분배하여 병렬 실행합니다.</p>
+      <ul style="font-size:0.88em; color:var(--text-secondary); padding-left:18px;">
+        <li>26개 낙하 → 4노드 × 7잡 자동 분배</li>
+        <li>공정 시뮬레이션 → 우선순위 큐 실행</li>
+        <li>실패 잡 자동 재실행</li>
+        <li>결과 자동 수집 · 비교</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ── 7. Mapping Tables ── -->
+<section id="mapping">
+  <div class="section-header">
+    <span class="section-num">7</span>
+    <h2>매핑 테이블</h2>
+  </div>
+
+  <h3>7.1 PartType → 요소 타입 · 메쉬 전략</h3>
+  <table>
+    <thead><tr><th>PartType</th><th>Element</th><th>판단 기준</th><th>메쉬 전략</th></tr></thead>
+    <tbody>
+      <tr><td>COVER, PANEL, SHEET</td><td><span class="tag tag-blue">Shell</span></td><td>두께 &lt; 3mm</td><td>중립면 추출, Tria/Quad</td></tr>
+      <tr><td>FRAME, BRACKET</td><td><span class="tag tag-blue">Shell/Solid</span></td><td>Aspect ratio</td><td>얇으면 Shell, 아니면 Tet</td></tr>
+      <tr><td>POUCH, FILM, ADHESIVE</td><td><span class="tag tag-blue">Shell</span></td><td>t &lt; 0.3mm</td><td>접합 레이어, Cohesive 가능</td></tr>
+      <tr><td>CELL, BLOCK, MASS</td><td><span class="tag tag-green">Solid</span></td><td>두꺼운 덩어리</td><td>Hex 우선, Tet 허용</td></tr>
+      <tr><td>GLASS, LENS</td><td><span class="tag tag-green">Solid</span></td><td>취성 재료</td><td>파괴 모델 적용, 미세 메쉬</td></tr>
+      <tr><td>FOAM, PAD, GASKET</td><td><span class="tag tag-green">Solid</span></td><td>다공성/탄성</td><td>MAT_057/083 적용</td></tr>
+      <tr><td>SCREW, BOLT</td><td><span class="tag tag-purple">Beam/Rigid</span></td><td>체결 요소</td><td>CNRB 또는 Beam 단순화</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.2 Material 코드 → MAT 카드</h3>
+  <table>
+    <thead><tr><th>Material</th><th>MAT 카드</th><th>분류</th><th>비고</th></tr></thead>
+    <tbody>
+      <tr><td>PC-ABS</td><td>MAT_024</td><td>엔지니어링 플라스틱</td><td>Piecewise Linear Plasticity</td></tr>
+      <tr><td>AL6061, AL1100</td><td>MAT_024</td><td>알루미늄 합금</td><td>등급별 물성 분리</td></tr>
+      <tr><td>SUS304</td><td>MAT_024</td><td>스테인리스강</td><td>고강도</td></tr>
+      <tr><td>GORILLA</td><td>MAT_032</td><td>강화유리</td><td>Laminated Glass + 파괴</td></tr>
+      <tr><td>OLED</td><td>MAT_024</td><td>유기 패널</td><td>등가 물성</td></tr>
+      <tr><td>OCA</td><td>MAT_083</td><td>접착제</td><td>점탄성 (Fu Chang)</td></tr>
+      <tr><td>JELLYROLL</td><td>MAT_126</td><td>배터리 셀</td><td>이방성 압축</td></tr>
+      <tr><td>FR4</td><td>MAT_024</td><td>PCB 기판</td><td>Orthotropic 가능</td></tr>
+      <tr><td>SILICONE</td><td>MAT_083</td><td>실리콘 고무</td><td>초탄성</td></tr>
+      <tr><td>EPP, FOAM</td><td>MAT_057</td><td>발포체</td><td>Low Density Foam</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.3 접촉 규칙 매트릭스</h3>
+  <table>
+    <thead><tr><th>관계</th><th>Contact Type</th><th>자동 판단 기준</th></tr></thead>
+    <tbody>
+      <tr><td>같은 SubAssy 내 인접</td><td>TIED_SURFACE_TO_SURFACE</td><td>SubAssy 동일 + proximity &lt; tolerance</td></tr>
+      <tr><td>다른 SubAssy 간</td><td>AUTO_SURFACE_TO_SURFACE</td><td>SubAssy 상이 + proximity &lt; tolerance</td></tr>
+      <tr><td>외부면 전체</td><td>AUTO_SINGLE_SURFACE</td><td>contact_role: exterior</td></tr>
+      <tr><td>체결 요소</td><td>CONSTRAINED_NODAL_RIGID_BODY</td><td>PartType: SCREW, BOLT</td></tr>
+      <tr><td>접착 레이어</td><td>TIED + Cohesive</td><td>PartType: ADHESIVE</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ── 8. Validation ── -->
+<section id="validation">
+  <div class="section-header">
+    <span class="section-num">8</span>
+    <h2>BOM 대비 자동 검증</h2>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4 style="color:var(--success);">Mass Check</h4>
+      <p>BOM 질량 vs FE 모델 질량<br>허용 오차: ±5%</p>
+      <code>|FE - BOM| / BOM &lt; 0.05</code>
+    </div>
+    <div class="card">
+      <h4 style="color:var(--primary);">Thickness Check</h4>
+      <p>Shell 요소 두께 vs BOM 두께<br>단위 변환 포함 검증</p>
+      <code>section_t == bom.thickness_mm</code>
+    </div>
+    <div class="card">
+      <h4 style="color:var(--orange);">Part Count Check</h4>
+      <p>BOM 파트 수 vs FE PART 수<br>단순화 파트 WARN 처리</p>
+      <code>BOM_count ≈ FE_count</code>
+    </div>
+    <div class="card">
+      <h4 style="color:var(--purple);">Material Check</h4>
+      <p>Material 코드 → MAT 카드 일치<br>물성치 범위 확인</p>
+      <code>mat_code → MAT card verified</code>
+    </div>
+  </div>
+
+  <div class="callout success">
+    <strong>자동 검증 리포트 예시:</strong><br><br>
+    <span style="font-family:monospace; font-size:0.9em;">
+    [PASS] Mass Check &mdash; 14/14 parts within 5% tolerance<br>
+    [PASS] Thickness Check &mdash; 8/8 shell parts matched<br>
+    [WARN] Part Count &mdash; BOM=16, FE=14 (SCREW parts → CNRB)<br>
+    [PASS] Material Check &mdash; All MAT cards verified<br>
+    [PASS] Subset Integrity &mdash; 3 subsets extracted, all contacts valid
+    </span>
+  </div>
+</section>
+
+<!-- ── 9. Demo ── -->
+<section id="demo">
+  <div class="section-header">
+    <span class="section-num">9</span>
+    <h2>파트 이름 생성기 & 자동 추론 데모</h2>
+  </div>
+
+  <p>각 필드를 선택하면 표준 이름이 생성되고, 시뮬레이션 속성이 자동으로 추론됩니다.</p>
+
+  <div class="demo-box">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px;">
+      <div>
+        <label for="d-assy">Assembly</label>
+        <select id="d-assy" onchange="updateDemo()">
+          <option>PHONE</option><option>TABLET</option><option>MODULE</option><option>PACK</option><option>LAPTOP</option>
+        </select>
+      </div>
+      <div>
+        <label for="d-sub">SubAssy</label>
+        <select id="d-sub" onchange="updateDemo()">
+          <option>HOUSING</option><option>DISPLAY</option><option>BATTERY</option><option>PCB</option><option>CAMERA</option><option>SPEAKER</option>
+        </select>
+      </div>
+      <div>
+        <label for="d-type">PartType</label>
+        <select id="d-type" onchange="updateDemo()">
+          <option>COVER</option><option>FRAME</option><option>GLASS</option><option>PANEL</option><option>ADHESIVE</option><option>POUCH</option><option>CELL</option><option>PAD</option><option>BRACKET</option><option>SCREW</option>
+        </select>
+      </div>
+      <div>
+        <label for="d-mat">Material</label>
+        <select id="d-mat" onchange="updateDemo()">
+          <option>PC-ABS</option><option>AL6061</option><option>SUS304</option><option>GORILLA</option><option>OLED</option><option>OCA</option><option>AL1100</option><option>JELLYROLL</option><option>FR4</option><option>SILICONE</option><option>EPP</option>
+        </select>
+      </div>
+      <div>
+        <label for="d-inst">Instance</label>
+        <input type="number" id="d-inst" value="1" min="1" max="999" onchange="updateDemo()" oninput="updateDemo()">
+      </div>
+    </div>
+
+    <div class="demo-result" id="demo-result">PHONE_HOUSING_COVER_PC-ABS_001</div>
+
+    <div class="demo-infer">
+      <div class="demo-infer-item"><div class="di-label">Element Type</div><div class="di-value" id="di-elem">Shell</div></div>
+      <div class="demo-infer-item"><div class="di-label">MAT Card</div><div class="di-value" id="di-mat">MAT_024</div></div>
+      <div class="demo-infer-item"><div class="di-label">Contact Role</div><div class="di-value" id="di-contact">exterior</div></div>
+      <div class="demo-infer-item"><div class="di-label">Subset Group</div><div class="di-value" id="di-subset">housing</div></div>
+      <div class="demo-infer-item"><div class="di-label">Can Rigidify</div><div class="di-value" id="di-rigid">No</div></div>
+      <div class="demo-infer-item"><div class="di-label">Process Target</div><div class="di-value" id="di-process">-</div></div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  CAD BOM 기반 CAE 시뮬레이션 완전 자동화 &mdash; SmartTwinCluster<br>
+  Naming Standard &amp; Metadata Architecture &bull; 2026
+</div>
+
+<!-- ═══════ JS ═══════ -->
+<script>
+const TYPE_MAP = {
+  COVER:    { elem:'Shell',      role:'exterior',  rigid:false, process:false },
+  FRAME:    { elem:'Shell/Solid', role:'exterior', rigid:false, process:false },
+  GLASS:    { elem:'Solid',      role:'exterior',  rigid:false, process:false },
+  PANEL:    { elem:'Shell',      role:'interior',  rigid:false, process:true  },
+  ADHESIVE: { elem:'Shell',     role:'interior',  rigid:false, process:true  },
+  POUCH:    { elem:'Shell',      role:'interior',  rigid:false, process:true  },
+  CELL:     { elem:'Solid',      role:'interior',  rigid:false, process:false },
+  PAD:      { elem:'Solid',      role:'interior',  rigid:false, process:false },
+  BRACKET:  { elem:'Shell',      role:'interior',  rigid:false, process:false },
+  SCREW:    { elem:'Beam/Rigid', role:'fastener',  rigid:true,  process:false },
+};
+const MAT_MAP = {
+  'PC-ABS':'MAT_024','AL6061':'MAT_024','SUS304':'MAT_024','GORILLA':'MAT_032',
+  'OLED':'MAT_024','OCA':'MAT_083','AL1100':'MAT_024','JELLYROLL':'MAT_126',
+  'FR4':'MAT_024','SILICONE':'MAT_083','EPP':'MAT_057',
+};
+const SUB_MAP = {
+  HOUSING:'housing', DISPLAY:'display', BATTERY:'battery',
+  PCB:'pcb', CAMERA:'camera', SPEAKER:'speaker',
+};
+const RIGID_SUB = new Set(['PCB','CAMERA','SPEAKER']);
+const PROCESS_SUB = new Set(['DISPLAY','BATTERY']);
+
+function updateDemo() {
+  const a = document.getElementById('d-assy').value;
+  const s = document.getElementById('d-sub').value;
+  const t = document.getElementById('d-type').value;
+  const m = document.getElementById('d-mat').value;
+  let i = parseInt(document.getElementById('d-inst').value)||1;
+  i = String(Math.min(Math.max(i,1),999)).padStart(3,'0');
+
+  document.getElementById('demo-result').textContent = `${a}_${s}_${t}_${m}_${i}`;
+
+  const info = TYPE_MAP[t] || { elem:'Shell', role:'exterior', rigid:false, process:false };
+  document.getElementById('di-elem').textContent = info.elem;
+  document.getElementById('di-mat').textContent = MAT_MAP[m]||'MAT_024';
+  document.getElementById('di-contact').textContent = info.role;
+  document.getElementById('di-subset').textContent = SUB_MAP[s]||s.toLowerCase();
+
+  const canRigid = RIGID_SUB.has(s) || info.rigid;
+  document.getElementById('di-rigid').textContent = canRigid ? 'Yes' : 'No';
+  document.getElementById('di-rigid').style.color = canRigid ? '#c62828' : 'var(--primary)';
+
+  const isProcTarget = PROCESS_SUB.has(s) || info.process;
+  document.getElementById('di-process').textContent = isProcTarget ? 'Yes' : '-';
+  document.getElementById('di-process').style.color = isProcTarget ? '#2e7d32' : 'var(--primary)';
+}
+
+// Scenario tabs
+function switchScenario(id) {
+  document.querySelectorAll('.scenario-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.scenario-content').forEach(c => c.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('sc-'+id).classList.add('active');
+}
+
+// Scroll spy
+const navLinks = document.querySelectorAll('.nav a');
+const sections = document.querySelectorAll('section');
+window.addEventListener('scroll', () => {
+  let cur='';
+  sections.forEach(s => { if(window.scrollY >= s.offsetTop-130) cur=s.id; });
+  navLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href')==='#'+cur));
+});
+</script>
+</body>
+</html>

@@ -223,5 +223,3 @@ KooChainRun harvest --test-dir <이전 테스트 디렉토리> \
 3. `PART_TRANSLATE` + `DROP_ATTITUDE` 체이닝 → 이동+회전이 모두 반영된 단일 .k
 4. 누적 2스텝: step1 만 이동, step2 는 `*_dti.k` 승계 (이중 이동 없음)
 5. `harvest` → `explicit.file` → `prepare` 왕복 e2e
-</content>
-</invoke>
