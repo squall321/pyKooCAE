@@ -201,9 +201,18 @@ def parse_fibonacci_lattice(config: FibonacciLatticeConfig) -> List[Tuple[str, f
 
     # 0) physical 공간 생성: 실제 낙하방향(DropAttitude 회전) 공간에서 등간격.
     #    principal_directions 가 설정되면(표준 자세 시드) 무조건 physical(그래야 면이 안 붕괴됨).
+    #
+    # 🔴 기본값이 physical 이다(2026-08-05 변경). 과거 기본이던 lat/lon 파라미터 공간 균등은
+    #    실제 낙하방향으로 환산하면 심하게 뒤틀린다 — 실측(낙하방향 이웃 각거리 최대/최소):
+    #      N=20  기본 ∞배(중복 발생) vs physical 1.1배
+    #      N=100 기본 65.6배        vs physical 1.1배
+    #      N=500 기본 ∞배(중복 발생) vs physical 1.1배
+    #    게다가 방향이 적도 부근에 74% 몰리고 극(위/아래 낙하)은 5% 밖에 안 뽑혀,
+    #    N=20 에서는 20개 중 1쌍이 완전히 같은 방향이 되는 사고가 실제로 있었다.
+    #    구 동작이 필요하면 sampling_space 에 "latlon" 을 명시해야 한다.
     principal = getattr(config, "principal_directions", None)
-    space = getattr(config, "sampling_space", None)
-    if space == "physical" or principal:
+    space = getattr(config, "sampling_space", None) or "physical"
+    if space != "latlon" or principal:
         return _physical_lattice(N, principal, bool(getattr(config, "progressive", False)), golden_angle)
 
     # 1) 구면 균등 분포 점 + 오일러 각 생성 (스파이럴 순서) — 기존 lat/lon 경로 (호환)
@@ -400,8 +409,12 @@ def _physical_lattice(N: int, principal: Optional[str], progressive: bool,
                       golden_angle: float) -> List[Tuple[str, float, float, float]]:
     """실제 낙하방향 공간에서 등간격 생성.
 
-    - principal 설정 시: 표준 자세(면/꼭짓점)를 먼저 시드(이름·euler 보존) + 나머지를
-      seeded farthest-point(max-min)로 채움. 표준의 물리방향 = _physical_drop_dir(euler).
+    - principal 설정 시: 표준 자세(면/모서리/꼭짓점)를 먼저 시드(이름·euler 보존) +
+      **정규 N세트에서 시드와 가장 가까운 점을 시드 개수만큼 제거한 나머지**로 채움.
+      즉 principal_directions="cuboid26", num_points=100 이면
+      26개 표준 자세 + (정규 100세트 − 표준에 가장 가까운 26개) = 74개 → 총 100개.
+      previous_stages 의 단계별 규칙과 동일한 로직(_remove_nearest)이므로,
+      채워지는 74개는 정규 100세트의 실제 위치이고 단계 확장과도 일관된다.
     - principal 없음 + progressive: 후보를 farthest-point 순서로 정렬.
     - principal 없음 + non-progressive: 후보 스파이럴 순서 그대로.
     채움/후보 방향은 모두 _dir_to_euler 로 정규형 euler 변환(P#### 이름).
@@ -439,19 +452,29 @@ def _physical_lattice(N: int, principal: Optional[str], progressive: bool,
             out.append((f"P{i + 1:04d}", r, p, yw))
         return out
 
-    # 채움(farthest-point): 후보풀을 넉넉히(≥4N) 잡아 표준 근처/상호 중복 없이 균일 선택
+    if seed_dirs:
+        # 표준 자세 시드 + 정규 N세트에서 시드 최근접분을 제거한 나머지로 채움.
+        # 임의 후보풀(4N)에서 고르지 않고 정규 N세트의 실제 위치를 쓰므로,
+        # previous_stages 단계 확장과 같은 규칙이 되어 결과가 서로 일관된다.
+        cand_dirs = gen_cands(N)
+        keep = _remove_nearest(cand_dirs, seed_dirs, len(seed_dirs))
+        for i in keep:
+            if len(out) >= N:
+                break
+            r, p, yw = _dir_to_euler(*cand_dirs[i])
+            out.append((f"P{len(out) + 1:04d}", r, p, yw))
+        return out
+
+    # 여기부터는 principal 없음 + progressive 경로만 도달한다(위 seed 분기에서 return).
+    # 채움(farthest-point): 후보풀을 넉넉히(≥4N) 잡아 상호 중복 없이 균일 선택
     cand_dirs = gen_cands(max(4 * N, 64))
 
-    # seeded farthest-point: seed(표준) 또는 후보0 으로 시작, 멀리 있는 점부터 채움
     remaining = set(range(len(cand_dirs)))
-    if seed_dirs:
-        nearest = [max(dot(cand_dirs[i], sv) for sv in seed_dirs) for i in range(len(cand_dirs))]
-    else:
-        first = cand_dirs[0]
-        r, p, yw = _dir_to_euler(*first)
-        out.append((f"P{len(out) + 1:04d}", r, p, yw))
-        remaining.discard(0)
-        nearest = [dot(cand_dirs[i], first) for i in range(len(cand_dirs))]
+    first = cand_dirs[0]
+    r, p, yw = _dir_to_euler(*first)
+    out.append((f"P{len(out) + 1:04d}", r, p, yw))
+    remaining.discard(0)
+    nearest = [dot(cand_dirs[i], first) for i in range(len(cand_dirs))]
 
     while len(out) < N and remaining:
         best = min(remaining, key=lambda i: nearest[i])
