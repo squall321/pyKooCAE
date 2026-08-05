@@ -1469,6 +1469,7 @@ class CumulativeScenarioRunner:
                 sim_params=sim_params,
                 run_directory_mode=True,
                 preserve_includes=preserve_includes,
+                part_moves=self._get_doe_part_moves(doe_index, step_num),
             )
 
         elif mode == "IMPACT":
@@ -1527,6 +1528,12 @@ class CumulativeScenarioRunner:
                     f"PoissonRatioImpactorFront,{front.get('poisson', 0.49)}\n"
                 )
 
+            # 파트 이동 DOE — 이동 모드를 앞 번호로 선언 (없으면 두 조각 모두 빈 문자열)
+            from Runner.StepConfigBuilder import build_part_translate_block
+            pt_decl, pt_block = build_part_translate_block(
+                self._get_doe_part_moves(doe_index, step_num), mode_id=1)
+            dwit_mode_id = 2 if pt_decl else 1
+
             config_content = f"""*Inputfile
 {model_file}
 *RunDirectoryMode,True,{self.output_dir}
@@ -1534,8 +1541,8 @@ class CumulativeScenarioRunner:
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
 {preserve_block}*Mode
-DROP_WEIGHT_IMPACT_TEST,1
-**DropWeightImpactTest,1
+{pt_decl}DROP_WEIGHT_IMPACT_TEST,{dwit_mode_id}
+{pt_block}**DropWeightImpactTest,{dwit_mode_id}
 GenerationMode,DampingSpring
 LocationX,{pos['x']}
 LocationY,{pos['y']}
@@ -1800,6 +1807,21 @@ DefaultCTE,{default_cte}{dtmin_block}
 
         logging.warning(f"DOE {doe_index} Step {step_num}의 충격 위치를 찾을 수 없습니다. 기본값(0,0) 사용")
         return {"x": 0.0, "y": 0.0}
+
+    def _get_doe_part_moves(self, doe_index: int, step_num: int) -> Optional[Dict[str, Any]]:
+        """DOE별 파트 이동 조회 (해당 step 에 이동이 없으면 None)
+
+        🔴 이동은 apply_step(기본 1) 에만 등록돼 있다. 누적 step>=2 는 이전 스텝의
+           *_dti.k(이미 이동된 변형 형상)를 입력으로 쓰므로, 여기서 None 이 반환되어
+           재적용되지 않는 것이 정상이다. 경고를 찍지 않는 이유가 이것이다.
+        """
+        doe_part_moves = self.config.get("scenario", {}).get("doe_part_moves", {})
+        if not doe_part_moves:
+            return None
+        entry = doe_part_moves.get(str(doe_index))
+        if not entry:
+            return None
+        return entry.get(str(step_num))
 
     def _condition_to_euler(self, condition: str) -> Dict[str, float]:
         """Condition 코드 → Euler 각도 변환"""

@@ -5,6 +5,8 @@ cumulative와 large-scale 모드에서 동일한 옵션으로 step_config를 생
 접촉 설정, D2R, OptCard 등 모든 최신 기능이 양쪽에 동일하게 적용됩니다.
 """
 
+from typing import Optional, Tuple
+
 
 def build_dynamic_relaxation_lines(sim_params: dict, tFinal: float) -> str:
     """누적 스텝 간 DR 안정화 config 라인 생성 (DROP/IMPACT 공용).
@@ -49,6 +51,39 @@ def build_dtmin_line(dtmin, sim_params: dict) -> str:
     return f"\nDTMIN,{dtmin}" if dtmin is not None else ""
 
 
+def build_part_translate_block(part_moves: Optional[dict], mode_id: int = 1) -> Tuple[str, str]:
+    """파트 이동 DOE → (모드 선언 줄, 옵션 블록) 두 조각을 만든다.
+
+    KMM 은 한 옵션 파일에서 *Mode 다중 선언을 순서대로 실행하므로, 이동 모드를
+    본 모드보다 앞 번호로 선언하면 이동된 형상 위에서 낙하/충격이 구성된다.
+
+    Parameters:
+        part_moves: runner_config 의 doe_part_moves[doe][step] 항목
+                    {"move_name": ..., "moves": [{"pid","dx","dy","dz"}, ...]}
+                    None 이거나 비면 두 조각 모두 빈 문자열 → 기존 출력과 바이트 동일.
+        mode_id: 이 모드에 부여할 번호
+
+    Returns:
+        (mode_decl, option_block) — 각각 개행으로 끝나거나 빈 문자열
+    """
+    if not part_moves:
+        return "", ""
+    moves = part_moves.get("moves") or []
+    if not moves:
+        return "", ""
+
+    lines = []
+    for m in moves:
+        lines.append(f"Translate,{int(m['pid'])},"
+                     f"{m.get('dx', 0.0)},{m.get('dy', 0.0)},{m.get('dz', 0.0)}")
+
+    mode_decl = f"PART_TRANSLATE,{mode_id}\n"
+    option_block = (f"**PartTranslate,{mode_id}\n"
+                    + "\n".join(lines)
+                    + "\n**EndPartTranslate\n")
+    return mode_decl, option_block
+
+
 def build_drop_attitude_config(
     model_file: str,
     output_dir: str,
@@ -61,6 +96,7 @@ def build_drop_attitude_config(
     sim_params: dict,
     run_directory_mode: bool = True,
     preserve_includes: list = None,
+    part_moves: Optional[dict] = None,
 ) -> str:
     """DROP_ATTITUDE step_config 내용 생성
 
@@ -75,6 +111,8 @@ def build_drop_attitude_config(
         euler: {'roll': float, 'pitch': float, 'yaw': float}
         sim_params: simulation_params dict
         run_directory_mode: RunDirectoryMode 활성화 여부
+        part_moves: 파트 이동 DOE 항목 (doe_part_moves[doe][step]).
+                    None 이면 이동 블록 자체가 생성되지 않아 기존 출력과 바이트 동일.
 
     Returns:
         step_config 파일 내용 문자열
@@ -198,6 +236,11 @@ def build_drop_attitude_config(
         if preserve_lines:
             preserve_block = f"*PreserveIncludes\n{preserve_lines}\n"
 
+    # 파트 이동 DOE — 이동 모드를 앞 번호로 선언해 이동 후 낙하 자세가 잡히게 한다.
+    # 이동이 없으면 두 조각 모두 빈 문자열이라 기존 출력과 바이트 동일.
+    pt_decl, pt_block = build_part_translate_block(part_moves, mode_id=1)
+    drop_mode_id = 2 if pt_decl else 1
+
     config_content = f"""*Inputfile
 {model_file}
 {run_dir_line}
@@ -205,8 +248,8 @@ def build_drop_attitude_config(
 *Description,DOE{doe_index:03d} Step{step_num} {mode} {condition}
 *Creator,automation,auto@system.com,CAE,AUTO
 {preserve_block}*Mode
-DROP_ATTITUDE,1
-**DropAttitude,1
+{pt_decl}DROP_ATTITUDE,{drop_mode_id}
+{pt_block}**DropAttitude,{drop_mode_id}
 EulerRolling,{euler['roll']}
 EulerPitching,{euler['pitch']}
 EulerYawing,{euler['yaw']}
