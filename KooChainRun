@@ -340,6 +340,28 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     reprio_parser.add_argument('--top-n', type=int, default=None,
                                help='top 으로 올릴 최대 잡 수(기본 전체)')
 
+    harvest_parser = subparsers.add_parser(
+        'harvest',
+        help='완료 결과에서 취약 조건(각도/위치)을 뽑아 JSON 으로 방출',
+        description='전각도 낙하(sphere_report.json) 또는 전위치 충격(impact_report.json) '
+                    '결과에서 위험도 상위 조건을 추려, scenario.json 의 '
+                    'angle_source.explicit.file / position_source.manual.file 에 '
+                    '그대로 물릴 수 있는 JSON 을 만듭니다. 통합 리포트가 없으면 '
+                    '개별 result.json 을 스캔합니다(각도 결과만 가능).'
+    )
+    harvest_parser.add_argument('test_dir', nargs='?', default='.',
+                                help='테스트 디렉토리 (통합 리포트 또는 result.json 이 있는 곳)')
+    harvest_parser.add_argument('-o', '--out', default=None,
+                                help='출력 JSON 경로 (기본: test_dir/risk_<kind>.json)')
+    harvest_parser.add_argument('--top', type=int, default=None,
+                                help='위험도 상위 N개만 (기본 전체)')
+    harvest_parser.add_argument('--hot-only', action='store_true',
+                                help='핫 판정된 조건만')
+    harvest_parser.add_argument('--z-thr', type=float, default=1.5,
+                                help='핫 판정 z-score 임계(기본 1.5)')
+    harvest_parser.add_argument('--yield-factor', type=float, default=1.0,
+                                help='핫 판정 yield 절대비 임계(기본 1.0)')
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -364,9 +386,64 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         cmd_postprocess(args)
     elif args.command == 'reprioritize':
         cmd_reprioritize(args)
+    elif args.command == 'harvest':
+        cmd_harvest(args)
     else:
         parser.print_help()
         sys.exit(1)
+
+
+def cmd_harvest(args):
+    """완료 결과에서 취약 조건을 뽑아 scenario.json 이 물릴 JSON 으로 방출"""
+    import json
+    from Runner.RiskHarvester import detect_and_harvest, select, to_scenario_json
+
+    test_dir = Path(args.test_dir).resolve()
+    if not test_dir.exists():
+        print(f"❌ 디렉토리가 없습니다: {test_dir}")
+        sys.exit(1)
+
+    print("=" * 80)
+    print("KooChainRun - 취약조건 수확")
+    print("=" * 80)
+
+    try:
+        rows, kind, source = detect_and_harvest(
+            str(test_dir), z_thr=args.z_thr, yield_factor=args.yield_factor)
+    except Exception as e:
+        print(f"❌ 수확 실패: {e}")
+        sys.exit(1)
+
+    n_hot = sum(1 for r in rows if r.get("is_hot"))
+    label = "각도" if kind == "angles" else "위치"
+    print(f"소스     : {source}")
+    print(f"전체 {label} : {len(rows)}건 (핫 {n_hot}건)")
+
+    picked = select(rows, top=args.top, hot_only=args.hot_only)
+    if not picked:
+        print("\n조건에 맞는 케이스가 없습니다. --top 또는 --hot-only 를 완화하세요.")
+        sys.exit(1)
+
+    print(f"선별     : {len(picked)}건 (위험도 내림차순)")
+    for r in picked[:15]:
+        hp = ",".join(f"P{p.get('pid')}" if isinstance(p, dict) else str(p)
+                      for p in (r.get("hot_parts") or [])[:3])
+        loc = (f"roll={r['roll']:7.2f} pitch={r['pitch']:7.2f}"
+               if kind == "angles" else f"x={r['x']:9.3f} y={r['y']:9.3f}")
+        flag = "HOT" if r.get("is_hot") else "   "
+        print(f"  [{flag}] risk={r.get('risk', 0.0):7.3f}  {r['name']:<28s} {loc}  {hp}")
+    if len(picked) > 15:
+        print(f"  ... 외 {len(picked) - 15}건")
+
+    out_path = Path(args.out) if args.out else (test_dir / f"risk_{kind}.json")
+    doc = to_scenario_json(picked, kind)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False, indent=2)
+
+    key = "angle_source.explicit.file" if kind == "angles" else "position_source.manual.file"
+    print(f"\n✅ 방출: {out_path}  ({len(doc[kind])}건)")
+    print(f"   scenario.json 의 {key} 에 이 경로를 넣으면 됩니다.")
+    print(f"   파트이동 DOE 와 곱하려면 같은 시나리오에 part_doe 블록을 추가하세요.")
 
 
 def cmd_reprioritize(args):
