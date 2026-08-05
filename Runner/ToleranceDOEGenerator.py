@@ -106,6 +106,9 @@ def generate_lhs_samples(
     #    CumulativeDesigner 의 doe_count = len(set(doe_index)) 가 base 수만큼 축소돼
     #    러너의 range(1, doe_count+1) 루프에서 대부분의 케이스가 실행되지 않았다.
     #    (예: 꼭짓점 8개 x doe_count 10 = 80 이어야 하는데 doe_count 가 10 으로 기록)
+    # 🔴 0-based 여야 한다. save_runner_config 가 doe_angles 키를 doe_index+1 로 만들고
+    #    러너는 range(1, doe_count+1) 을 조회한다. 1-based 로 두면 키가 2..N+1 이 되어
+    #    DOE 1 이 각도 조회에 실패(_condition_to_euler 폴백)하고 DOE N+1 은 실행되지 않는다.
     result = []
     doe_seq = 0
 
@@ -164,9 +167,9 @@ def generate_lhs_samples(
             new_pitch = base_pitch + pitch_delta
             new_yaw = base_yaw + yaw_delta
 
-            doe_seq += 1
             doe_name = f"{base_name}_DOE{i+1:03d}"
             result.append((doe_name, new_roll, new_pitch, new_yaw, doe_seq))
+            doe_seq += 1
 
     return result
 
@@ -249,9 +252,9 @@ def generate_grid_samples(
         for roll_val in roll_grid:
             for pitch_val in pitch_grid:
                 for yaw_val in yaw_grid:
-                    doe_seq += 1
                     doe_name = f"{base_name}_DOE{doe_idx:03d}"
                     result.append((doe_name, roll_val, pitch_val, yaw_val, doe_seq))
+                    doe_seq += 1
                     doe_idx += 1
 
     return result
@@ -324,9 +327,9 @@ def generate_random_samples(
             new_pitch = base_pitch + pitch_delta
             new_yaw = base_yaw + yaw_delta
 
-            doe_seq += 1
             doe_name = f"{base_name}_DOE{i+1:03d}"
             result.append((doe_name, new_roll, new_pitch, new_yaw, doe_seq))
+            doe_seq += 1
 
     return result
 
