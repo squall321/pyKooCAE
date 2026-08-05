@@ -279,6 +279,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "translation_doe" in svector[0].lower():
                             self.modeList.append("TRANSLATION_DOE")
                             self.modeIDList.append(int(svector[1]))
+                        elif "part_translate" in svector[0].lower():
+                            self.modeList.append("PART_TRANSLATE")
+                            self.modeIDList.append(int(svector[1]))
                         elif "transform" in svector[0].lower():
                             self.modeList.append("TRANSFORM")
                             self.modeIDList.append(int(svector[1]))
@@ -1344,6 +1347,38 @@ class KooMeshModifier(KooSimulationGenerator):
                             curOptions["Translation"][pid]["Z"] = transZList
 
                     self.modeIDOption[curModeID] = curOptions
+
+                elif "**parttranslate" in line.lower():
+                    # 단발 파트 이동 — 적용 후 유지 (TranslationDOE 와 달리 원복하지 않는다).
+                    # 같은 옵션 파일의 다음 모드(DROP_ATTITUDE 등)가 이동된 형상 위에서 동작한다.
+                    #   **PartTranslate,1
+                    #   Translate,<pid>,<dx>,<dy>,<dz>
+                    #   **EndPartTranslate
+                    svector = line.split(",")
+                    curModeID = int(svector[1])
+                    curOptions = {}
+                    curOptions["Translation"] = {}
+                    while True:
+                        line = f.readline().strip()
+                        line = line.replace('\n', '')
+                        if not line:
+                            break
+                        if "**end" in line.lower():
+                            break
+                        if "translate" in line.lower():
+                            svector = line.split(",")
+                            if len(svector) < 5:
+                                raise ValueError(
+                                    f"PartTranslate: 'Translate,<pid>,<dx>,<dy>,<dz>' 형식이어야 합니다 "
+                                    f"(받은 줄: {line})")
+                            pid = int(svector[1])
+                            curOptions["Translation"][pid] = {
+                                "X": KooDynaFloat(svector[2]),
+                                "Y": KooDynaFloat(svector[3]),
+                                "Z": KooDynaFloat(svector[4]),
+                            }
+                    self.modeIDOption[curModeID] = curOptions
+
                 elif "**transform" in line.lower():
                     svector = line.split(",")
                     curModeID= int(svector[1])
@@ -2650,6 +2685,10 @@ class KooMeshModifier(KooSimulationGenerator):
         filePath = filePath.replace(".k","")
         self.advancedModification.TranslationDOE(curOption, filePath)
     
+    def GeneratePartTranslate(self, modeid):
+        curOption = self.modeIDOption[modeid]
+        self.advancedModification.PartTranslate(curOption)
+
     def Transform(self, modeid):
         curOption = self.modeIDOption[modeid]
         self.advancedModification.Transform(curOption)
@@ -2978,6 +3017,9 @@ class KooMeshModifier(KooSimulationGenerator):
             elif mode == "TRANSLATION_DOE":
                 self.GenerateTranslationDOE(modeid)
                 additionalword += "_trans"
+            elif mode == "PART_TRANSLATE":
+                self.GeneratePartTranslate(modeid)
+                additionalword += "_pt"
             elif mode == "TRANSFORM":
                 self.Transform(modeid)
                 additionalword += "_trans"

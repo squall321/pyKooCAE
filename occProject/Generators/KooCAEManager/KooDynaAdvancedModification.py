@@ -6490,6 +6490,41 @@ class KooDynaAdvancedModification:
         jsonFile.write(json.dumps(jsonDict, indent=4))
         jsonFile.close()
 
+    def PartTranslate(self, option):
+        """지정 파트를 이동하고 **그대로 유지**한다 (파일 방출/원복 없음).
+
+        TranslationDOE 와의 차이
+          - TranslationDOE 는 샘플마다 .k 를 쓰고 역이동으로 원복하므로,
+            뒤따르는 모드(DROP_ATTITUDE 등)에 이동이 전달되지 않는다.
+          - 이 모드는 메모리 상 모델을 이동시킨 뒤 유지하여, 같은 옵션 파일의
+            다음 모드가 이동된 형상 위에서 동작하게 한다.
+            (KooChainRun 의 "취약조건 x 파트이동 DOE" 배선이 이 세만틱을 쓴다)
+
+        option["Translation"] = {pid: {"X": dx, "Y": dy, "Z": dz}, ...}
+        """
+        if not option:
+            return
+        translationDict = option.get("Translation") or {}
+        if not translationDict:
+            print("PartTranslate: 이동 대상이 없습니다 (skip)")
+            return
+
+        parts = self.dynaImporter.partManager.parts
+        for pid in translationDict:
+            if pid not in parts:
+                # 조용히 넘기면 이동이 빠진 채로 해석이 돌아간다. 명시적으로 죽인다.
+                raise KeyError(
+                    f"PartTranslate: PID {pid} 가 모델에 없습니다. "
+                    f"사용 가능한 PID 수: {len(parts)}")
+
+        for pid in translationDict:
+            transX = float(translationDict[pid].get("X", 0.0))
+            transY = float(translationDict[pid].get("Y", 0.0))
+            transZ = float(translationDict[pid].get("Z", 0.0))
+            part: KooPart = parts[pid]
+            part.Translate(transX, transY, transZ)
+            print(f"PartTranslate: PID {pid} 이동 ({transX}, {transY}, {transZ})")
+
     def SimulationAutomation(self, jsonOptionList, inputFile, inputObjFile, metaData):
         dynaASScriptGenerator : KooDynaAutomaticSimulationScriptGenerator = KooDynaAutomaticSimulationScriptGenerator(jsonOptionList, metaData)                
         dynaASScriptGenerator.generate_for_all()
