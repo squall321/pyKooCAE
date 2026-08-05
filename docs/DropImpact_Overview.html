@@ -255,17 +255,34 @@ figcaption b{color:var(--ac);font-weight:600}
     </tbody>
   </table></div>
 
-  <h3>고급 옵션 — 이 세 가지가 품질을 가릅니다</h3>
+  <h3>자세가 정말 고르게 퍼지는가</h3>
+  <p>낙하 자세는 <strong>실제 충격 방향</strong>이 고르게 퍼져야 의미가 있습니다.
+  방향들 사이 각거리를 재보면 구성에 따라 결과가 크게 다릅니다. (N=100 기준 실측)</p>
+  <div class="tw"><table>
+    <thead><tr><th>구성</th><th>최소 간격</th><th>중앙</th><th>최대</th><th>최대÷최소</th><th>중복 방향</th></tr></thead>
+    <tbody>
+      <tr><td>구 방식 <span class="opt">(위도·경도 균등)</span></td><td class="req">0.41°</td><td>5.09°</td><td>26.70°</td><td class="req">65.6배</td><td class="req">2쌍</td></tr>
+      <tr><td><strong>기본값</strong> <span class="opt">(실제 낙하 방향 균등)</span></td><td class="auto">17.78°</td><td>19.39°</td><td>19.73°</td><td class="auto">1.1배</td><td class="auto">0</td></tr>
+      <tr><td><strong>표준 26자세 + 채움</strong></td><td class="auto">10.80°</td><td>16.91°</td><td>21.57°</td><td class="auto">2.0배</td><td class="auto">0</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note g"><b>기본값이 이미 균등합니다</b>
+  간격이 <strong>1.1배</strong> 안에서 고르고 중복 방향이 없습니다.
+  구 방식은 간격이 66배까지 벌어지고 <strong>같은 방향이 중복으로 뽑히는</strong> 문제가 있었습니다
+  (첨부한 예제 리포트가 구 방식으로 돌린 것이라 20개 중 1쌍이 중복입니다).</div>
+
+  <h3>고급 옵션</h3>
   <div class="grid g3">
-    <div class="card ac"><h4>sampling_space: "physical"</h4>
-      <p>기본값은 위도·경도 공간 균등이라 <strong>실제 충격 방향으로 보면 한쪽에 쏠립니다.</strong>
-      <code>"physical"</code> 을 주면 실제 낙하 방향 공간에서 균등해집니다. <strong>전각도 낙하에는 권장</strong>합니다.</p></div>
-    <div class="card ac"><h4>principal_directions</h4>
-      <p>면 6개(<code>faces</code>) 또는 26방향(<code>cuboid26</code>)을 <strong>먼저 시드로 심고</strong> 나머지를 그 사이에 채웁니다.
-      표준 시험 자세를 반드시 포함시키면서 밀도를 올릴 때 씁니다.</p></div>
+    <div class="card ac"><h4>principal_directions: "cuboid26"</h4>
+      <p><strong>면 6 · 모서리 12 · 꼭짓점 8 = 표준 26자세를 반드시 포함</strong>시키고,
+      나머지를 균등 분포에서 가져와 채웁니다. 100개면 26 + 74 입니다.
+      표준 낙하 시험과 대조해야 할 때 씁니다.</p></div>
     <div class="card ac"><h4>previous_stages</h4>
       <p>단계적 확장. <code>[120, 500]</code> + <code>num_points: 1000</code> 이면
       <strong>이미 돌린 500개를 재현해 제외하고 신규 500개만</strong> 내보냅니다.</p></div>
+    <div class="card ac"><h4>sampling_space: "latlon"</h4>
+      <p>구 방식으로 되돌립니다. <strong>과거에 돌린 결과와 각도를 맞춰야 할 때만</strong> 쓰십시오.
+      신규 프로젝트에는 권장하지 않습니다.</p></div>
   </div>
 
   <h4>단계적 확장이 왜 유용한가</h4>
@@ -623,8 +640,7 @@ previous_stages: [<span class="n">120</span>, <span class="n">500</span>]</pre>
   <span class="k">"angle_source"</span>: {
     <span class="k">"source_type"</span>: <span class="s">"fibonacci_lattice"</span>,
     <span class="k">"fibonacci_lattice"</span>: {
-      <span class="k">"num_points"</span>: <span class="n">500</span>,           <span class="c">// 검증할 자세 개수</span>
-      <span class="k">"sampling_space"</span>: <span class="s">"physical"</span>  <span class="c">// 권장</span>
+      <span class="k">"num_points"</span>: <span class="n">500</span>   <span class="c">// 검증할 자세 개수 — 이것만 정하면 됩니다</span>
     }
   },
   <span class="k">"cumulative"</span>: { <span class="k">"num_steps"</span>: <span class="n">1</span>, <span class="k">"mode_sequence"</span>: [<span class="s">"DROP"</span>] }
@@ -669,8 +685,8 @@ previous_stages: [<span class="n">120</span>, <span class="n">500</span>]</pre>
     <tbody>
       <tr><td><code>source_type</code></td><td>자세 생성 방식 (2페이지 표 참조)</td><td><code>cuboid_geometry</code> (26방향)</td></tr>
       <tr><td><code>num_points</code></td><td><span class="req">필수</span> 검증할 자세 개수</td><td>26</td></tr>
-      <tr><td><code>sampling_space</code></td><td><code>"physical"</code> 권장 — 실제 충격 방향 균등</td><td>위도·경도 균등</td></tr>
-      <tr><td><code>principal_directions</code></td><td>표준 자세를 먼저 배치 — <code>faces</code>(6) / <code>faces_corners</code>(14) / <code>cuboid26</code>(26)</td><td>사용 안 함</td></tr>
+      <tr><td><code>sampling_space</code></td><td>보통 생략합니다. 과거 결과와 각도를 맞출 때만 <code>"latlon"</code></td><td><strong>실제 충격 방향 균등</strong></td></tr>
+      <tr><td><code>principal_directions</code></td><td>표준 자세를 반드시 포함 — <code>faces</code>(6) / <code>faces_corners</code>(14) / <code>cuboid26</code>(면6+모서리12+꼭짓점8)</td><td>사용 안 함</td></tr>
       <tr><td><code>previous_stages</code></td><td>단계적 확장 — 이미 돌린 누적 개수를 오름차순으로</td><td>사용 안 함</td></tr>
     </tbody>
   </table></div>
