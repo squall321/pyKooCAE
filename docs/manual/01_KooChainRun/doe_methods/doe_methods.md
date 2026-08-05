@@ -42,16 +42,87 @@ KooChainRun의 DOE(Design of Experiments)는 **무엇을 어디에/어떤 자세
 | `include_faces` | `true` | F1–F6 (6 면) 포함 |
 | `include_edges` | `true` | E01–E12 (12 모서리) 포함 |
 | `include_corners` | `true` | C1–C8 (8 꼭짓점) 포함 |
+| `only` | `null` | **특정 자세만 선택.** 설정 시 위 세 플래그를 무시하고 나열 순서대로 방출 |
 
-세 옵션 모두 true면 6+12+8 = **26방향** (`AngleSourceParser.py:132-159`).
+세 옵션 모두 true면 6+12+8 = **26방향**.
+
+`only` 는 짧은 코드(`"C1"`, `"F5"`, `"E01"`)와 전체 이름(`"C1_Back_Right_Top"`)을 모두 받으며
+대소문자를 가리지 않는다. 문자열 하나만 줘도 된다(`"only": "C1"`).
+**알 수 없는 이름은 조용히 무시하지 않고 `ValueError`** 로 막고 사용 가능한 코드를 알려준다.
+
+```json
+"cuboid_geometry": { "only": ["C1", "F5"] }
+```
+
+특정 자세 주변을 집중 조사할 때 `tolerance`(2-B)와 함께 쓰는 것이 표준 사용법이다.
 
 #### (2) `fibonacci_lattice` — 구면 균등 분포
 
 | 키 | 기본값 | 설명 |
 |---|---|---|
-| `num_points` | 26 | 생성할 포인트(케이스) 수 |
-| `num_directions` | — | `num_points` 별칭 (CumulativeDesigner에서 허용, `CumulativeDesigner.py:522`) |
-| `angle_spacing` | `None` | 각도 간격(deg). dataclass에 정의는 있으나 파서에서 사용 안 됨 → "확인 필요" |
+| `num_points` | 26 | 생성할 포인트(케이스) 수. `previous_stages` 사용 시 **최종 누적 총량** |
+| `num_directions` | — | `num_points` 별칭. `num_points` 가 없거나 0일 때만 사용 |
+| `sampling_space` | `"physical"` | 등간격을 잴 공간. `"latlon"` 이면 구 동작(아래 🔴) |
+| `principal_directions` | `null` | 표준 자세를 반드시 포함. `faces`(6) / `faces_corners`(14) / `cuboid26`(26) |
+| `previous_stages` | `null` | 단계별 확장. 이미 돌린 단계들의 **누적 개수**를 오름차순 배열로 |
+| `progressive` | `false` | farthest-point 순서로 재정렬(부분 실행 시 편향 방지). `principal_directions` 설정 시 무의미 |
+| `angle_spacing` | `null` | 정의만 있고 파서가 사용하지 않는 죽은 키. 개수는 `num_points` 로만 제어 |
+
+##### 🔴 `sampling_space` — 기본값이 `physical` 이다 (2026-08-05 변경)
+
+과거 기본이던 lat/lon 파라미터 공간 균등은 **실제 낙하 방향으로 환산하면 심하게 뒤틀린다.**
+낙하 방향 이웃 각거리의 최대÷최소 실측값.
+
+| N | `latlon` (구 기본) | `physical` (현 기본) |
+|---|---|---|
+| 20 | **∞** (같은 방향 중복 발생) | 1.1배 |
+| 100 | **65.6배** | 1.1배 |
+| 500 | **∞** (중복 발생) | 1.1배 |
+
+방향 분포도 적도 부근(−30°~+30°)에 74%가 몰리고 극(위/아래 낙하)은 5%뿐이었다
+(`physical` 은 51% / 13%). N=20 에서는 20개 중 1쌍이 완전히 같은 방향이 되었다.
+
+> 구 동작 재현이 필요한 프로젝트(이미 돌린 결과와 각도를 맞춰야 하는 경우)만
+> `"sampling_space": "latlon"` 을 **명시**한다. 신규 프로젝트에는 권장하지 않는다.
+
+##### `principal_directions` — 표준 자세 + 빈틈 채우기
+
+표준 낙하 자세를 먼저 배치하고(원래 이름·오일러각 보존), 나머지를
+**정규 N세트에서 시드에 가장 가까운 점을 시드 개수만큼 제거한 나머지**로 채운다.
+
+```text
+principal_directions="cuboid26", num_points=100
+  → 표준 26개(면6+모서리12+꼭짓점8) + (정규 100세트 − 최근접 26개) 74개 = 100개
+```
+
+채움 점이 정규 N세트의 **실제 위치**이므로 `previous_stages` 확장과 규칙이 일관된다.
+설정 시 `sampling_space` 는 자동으로 `physical` 이 강제된다.
+`num_points` 가 시드 개수보다 작으면 시드만 잘라서 반환한다.
+
+##### `previous_stages` — 단계별 확장
+
+작게 먼저 돌리고 나중에 채워 넣는 워크플로우. **이전 단계 목록만 선언하면**
+그 위치를 결정론적으로 재현한 뒤 이번 N세트에서 그것들과 가까운 점을 정확히 제거하고
+나머지 신규분만 방출한다. 어느 경로로 확장하든 누적 위치 집합이 항상 동일하다.
+
+```json
+{ "num_points": 1000, "previous_stages": [120, 500] }
+```
+
+→ 재현 누적 500개, **신규 500개만 방출**(`P0501`~`P1000`). 방출 수 = `num_points − previous_stages[-1]`.
+
+검증: 양의 정수·엄격 오름차순·마지막 값 < `num_points`. 위반 시 `ValueError`.
+
+품질 대가(실측): 누적 1000의 최소 간격 3.15°(정규 5.60° 대비 56%), 중앙 4.73°(정규 6.10°).
+중복·뭉침은 0. 최고 균일도가 필요하면 단계를 쓰지 말고 목표 N을 한 번에 돌린다.
+
+> 🔴 **실제로 돌린 단계를 하나도 빠뜨리면 안 된다.** `120 → 500` 을 돌려놓고
+> `previous_stages: [500]` 이라고만 적으면 재현이 어긋나 1000개 중 4개가 1° 이내로 겹친다.
+> 자동 검출이 불가능하므로 생성 시 찍히는 로그로 확인한다.
+> `단계별 각도 생성: 이전 단계 [120] → 재현 누적 120개, 이번 신규 380개, 최종 누적 500개`
+>
+> 또한 단계마다 `sampling_space`/`principal_directions`/`progressive` 가 바뀌면 재현이 깨진다.
+> **`num_points` 외의 설정은 모든 단계에서 동일해야 한다.**
 
 #### (3) `pitching_sweep` — Pitch 스윕 (Roll 고정)
 
@@ -97,11 +168,44 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
 
 | 키 | 기본값 | 설명 |
 |---|---|---|
-| `roll` / `pitch` / `yaw` | 없음 | 각 축 산포. `{ "tolerance": 2.0 }`(±2°) 또는 `{ "min": -2, "max": 2 }` (`CumulativeDesigner.py:581-597`) |
-| `doe_type` | `"lhs"` | `lhs` / `grid` / `random` (`DOEType`, `ToleranceDOEGenerator.py:34-38`) |
-| `doe_count` | 10 | LHS/Random: 샘플 수. **Grid: 축당 분할 수 → 총 `doe_count³`** (`ToleranceDOEGenerator.py:198`, 198-243) |
+| `roll` / `pitch` / `yaw` | 없음 | 각 축 산포. `{ "tolerance": 2.0 }`(±2°) 또는 `{ "min": -2, "max": 2 }` (비대칭) |
+| `doe_type` | `"lhs"` | `lhs` / `grid` / `random` |
+| `doe_count` | 10 | LHS/Random: **base 각도 1개당** 샘플 수. Grid: **축당 분할 수 → base 당 `doe_count³`** |
 
-세 축 모두 미설정이면 산포 없이 원본 그대로(doe_index=0) 반환 (`ToleranceDOEGenerator.py:340-342`).
+세 축 모두 미설정이면 산포 없이 원본 그대로 반환한다.
+
+**총 케이스 수 = base 각도 수 × (base 당 샘플 수).**
+`only: ["C1","F5"]` + `doe_count: 10` → 20 케이스, 꼭짓점 8개 + `doe_count: 10` → 80 케이스.
+`grid` 는 `doe_count: 3` 이 base 당 27개이므로 꼭짓점 8개면 216 케이스가 된다.
+
+#### 특정 자세 집중 조사 (표준 사용법)
+
+`cuboid_geometry.only` 로 기준 자세를 찍고 그 주변을 LHS 로 훑는다.
+
+```json
+"angle_source": {
+  "source_type": "cuboid_geometry",
+  "cuboid_geometry": { "only": ["C1"] }
+},
+"tolerance": {
+  "roll":  { "tolerance": 5.0 },
+  "pitch": { "tolerance": 5.0 },
+  "yaw":   { "tolerance": 5.0 },
+  "doe_type": "lhs",
+  "doe_count": 20
+}
+```
+
+→ C1 꼭짓점 ±5° 안에서 20 케이스. 실측 시 중심으로부터 실제 낙하 방향 편차는
+0.3°~5.7°(평균 3.3°)로 고르게 퍼진다. **극(F5_Top) 기준에서도 왜곡이 없다** —
+`tolerance` 는 기준 각도에 델타를 더하는 방식이라 2-A(2)의 lat/lon 쏠림 문제와 무관하다.
+
+> 🔴 **과거 결함 (2026-08-05 수정)**: `doe_index` 를 base 각도마다 1부터 다시 매겨 충돌했고,
+> `doe_count = len(set(doe_index))` 가 base 수만큼 축소되어 러너의 `range(1, doe_count+1)`
+> 루프에서 **대부분의 케이스가 실행되지 않았다**(꼭짓점 8개 × 10 = 80 → `doe_count` 10 기록,
+> 70개 유실). 에러 없이 조용히 줄어드는 형태였다.
+> 현재는 base 를 관통하는 전역 통번호를 쓴다. **base 각도 2개 이상 + `tolerance`** 조합을
+> 이 수정 이전 버전(v80 미만)에서 돌렸다면 케이스 수를 다시 확인할 것.
 
 ### 2-C. 각도 믹싱 전략 (`cumulative.angle_mixing`, `Runner/AngleMixingStrategy.py`)
 
@@ -234,11 +338,22 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
 
 ### 각도 소스
 - 디스패치: `parse_angle_source` (`AngleSourceParser.py:293-348`)가 `source_type`별 파서 호출.
-- `cuboid_geometry`: 모듈 상수 `CUBOID_FACES`/`CUBOID_EDGES`/`CUBOID_CORNERS`
-  (`AngleSourceParser.py:92-125`)에 (Roll,Pitch,Yaw) 하드코딩. 포함 플래그에 따라 합침
-  (`:132-159`).
-- `fibonacci_lattice`: 황금각(`golden_angle = π(3-√5)`)으로 구면 균등점 (x,y,z) 생성 후
-  위/경도 → Euler 변환 (`:179-205`). 이름 `P0001…`.
+- `cuboid_geometry`: 모듈 상수 `CUBOID_FACES`/`CUBOID_EDGES`/`CUBOID_CORNERS` 에
+  (Roll,Pitch,Yaw) 하드코딩. `only` 가 있으면 짧은 코드/전체 이름을 대문자 키로 정규화해
+  조회하고(미매칭은 `ValueError`) 그것만 반환, 없으면 포함 플래그에 따라 합침.
+- `fibonacci_lattice`: 황금각(`golden_angle = π(3−√5)`)으로 구면 균등점 (x,y,z) 생성.
+  - **`physical`(기본)**: `_physical_lattice` — 후보를 `_dir_to_euler` 로 정규형 Euler 로 바꾼다.
+    거리는 항상 `_physical_drop_dir`(DropAttitude 회전으로 얻는 실제 낙하 방향) 사이 각거리로 잰다.
+  - `latlon`(명시 시): 구 경로 — (x,y,z)를 위/경도 → Euler 로 직접 변환. 파라미터 공간 균등.
+  - `principal_directions`: 표준 시드를 물리 방향 기준으로 중복 제거(1° 이내)한 뒤,
+    정규 N세트에 `_remove_nearest` 를 적용해 시드 개수만큼 제거하고 남은 것으로 채운다.
+  - `previous_stages`: `_staged_lattice` — 같은 설정에 `num_points` 만 바꿔 각 단계를 재현하며
+    누적하고, 마지막에 이번 N세트에서 누적분 최근접을 제거해 신규분만 방출한다.
+  - `_remove_nearest(cands, prev, k)`: `prev` 를 순서대로 훑으며 각자 가장 가까운 미제거 후보를
+    하나씩 가져가 정확히 `k` 개를 제거한다. O(P·N) 시간 / **O(N) 메모리**.
+    전역 그리디 매칭과 품질이 같음을 실측 확인(누적 500 기준 둘 다 최소 간격 4.59°)했고,
+    메모리가 선형이라 큰 N 에서도 안전해 이쪽을 택했다.
+  - 이름: 채움/일반 점은 `P0001…`, 표준 시드는 원래 이름(`F1_Back` 등)을 유지한다.
 - `pitching_sweep`/`rolling_sweep`: `while` 루프로 min→max를 step 간격 누적, `+1e-6` 오차 허용으로
   끝값 포함 (`:227`, `:253`).
 - `case_txt_file`: `CaseTxtParser.parse_case_txt_file`로 전체 파싱 후 `selected_indices`로 부분 선택
@@ -250,7 +365,11 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
 - LHS: 각 변수를 `n_samples` 구간으로 나눠 구간별 1점씩 무작위 추출 후 셔플,
   [0,1]→실제 범위 매핑 (`:133-162`). `random` 모듈 사용(시드 미고정 → "확인 필요" 참고).
 - Grid: 각 축을 `np.linspace(base+min, base+max, doe_count)`로 분할, 3중 곱집합 →
-  총 `doe_count³` (`:198-243`).
+  base 당 `doe_count³`.
+- 세 방식 모두 `doe_index` 를 **base 각도를 관통하는 전역 통번호**(`doe_seq`)로 매긴다.
+  케이스 이름의 `_DOE###` 접미어는 base 내 순번을 유지한다(가독성).
+  `CumulativeDesigner` 의 `doe_count = len(set(doe_index))` 가 총 케이스 수와 일치해야
+  러너의 `range(1, doe_count+1)` 루프가 전부 실행한다.
 - Random: 각 축 범위에서 `random.uniform` (`:246-310`).
 
 ### 믹싱
@@ -286,7 +405,12 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
   (`CumulativeDesigner`)에서, `locations`(B)는 낙하추 충격 워크플로우에서만 동작한다.
   키 이름·모드 이름이 다르므로 모드(`mode`)에 맞는 시스템을 써야 한다.
 - **Grid DOE 폭증**: `tolerance.doe_type="grid"`는 `doe_count`가 축당 분할 수라
-  총 `doe_count³` 케이스가 된다(예: 5 → 125). `lhs`/`random`은 총 `doe_count` 개.
+  **base 당** `doe_count³` 케이스가 된다(예: 5 → 125). base 각도가 여러 개면 그만큼 곱해진다.
+  `lhs`/`random`은 base 당 `doe_count` 개.
+- **각도 샘플링 기본 공간이 `physical` 로 바뀌었다(2026-08-05).** `sampling_space` 미지정
+  프로젝트는 각도 집합이 이전과 달라진다. 과거 결과와 각도를 맞춰야 하면 `"latlon"` 을 명시할 것.
+- **`previous_stages` 는 실제로 돌린 단계를 빠짐없이 적어야 한다.** 누락 시 재현이 어긋나
+  중복 각도가 섞인다(자동 검출 불가, 생성 로그로만 확인).
 - **LHS 재현성**: `ToleranceDOEGenerator`의 LHS/Random은 `random` 모듈을 시드 고정 없이 사용한다.
   매 실행 결과가 달라질 수 있음 — 재현 필요 시 "확인 필요"(외부에서 시드 설정 경로 미확인).
 - **bbox 자동계산은 X-Y 평면 기준**(낙하/충격면이 XY). 모델 좌표계가 다르면 위치가 어긋날 수 있다.
@@ -305,7 +429,10 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
 scenario.json 파일이 동봉됨).
 
 - 각도 소스 5종: `Runner/AngleSourceParser.py` (cuboid/fibonacci/pitching/rolling/case_txt) +
-  스키마 매핑 `Runner/CumulativeDesigner.py:503-569`.
+  스키마 매핑 `Runner/CumulativeDesigner.py`.
+- 각도 소스 확장(2026-08): `cuboid_geometry.only`(특정 자세 선택),
+  `fibonacci_lattice` 의 `sampling_space`(기본 physical) / `principal_directions`(표준 시드 +
+  최근접 제거 채움) / `previous_stages`(단계별 확장).
 - 산포 DOE 3종: `Runner/ToleranceDOEGenerator.py` (lhs/grid/random) +
   매핑 `CumulativeDesigner.py:571-608`.
 - 믹싱 5종: `Runner/AngleMixingStrategy.py` + 매핑 `CumulativeDesigner.py:627-642`.
@@ -314,10 +441,13 @@ scenario.json 파일이 동봉됨).
 - 위치 (B) 4종: `Runner/DropWeightImpactWorkflow.py` (grid/list/part_center/lhs),
   실제 예제 `Examples/drop_weight_impact/scenario_{grid_auto,grid_spacing,lhs,list,part_center}.json`.
 
+**수정 이력**:
+- 2026-08-05 `tolerance` 의 `doe_index` 가 base 각도마다 재시작해 충돌 → 대부분의 케이스가
+  실행되지 않던 결함 수정(전역 통번호). base 2개 이상 + tolerance 조합에만 해당.
+- 2026-08-05 `sampling_space` 기본값 `latlon` → `physical`.
+
 **부분구현/확인 필요**:
 - `fibonacci_lattice.angle_spacing` (정의만 있고 미사용).
 - LHS/Random DOE 시드 고정 경로(재현성).
 - `position_source`(A)는 코드/테스트 블록 기준 검증, `Examples/`에 단독 scenario.json 동봉 여부
   미확인(주로 `locations`(B) 예제만 확인됨).
-</content>
-</invoke>
