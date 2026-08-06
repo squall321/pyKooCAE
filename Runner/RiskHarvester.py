@@ -37,16 +37,70 @@ def _find_report(test_dir: str, basename: str) -> Optional[str]:
     return max(hits, key=os.path.getmtime)
 
 
-def _risk_from_parts(parts: Dict[str, dict], z_thr: float, yield_factor: float) -> List[dict]:
-    """{조건키: {pid: {peak_stress, stress_limit}}} 형태를 compute_risk 입력으로 변환."""
+def _risk_from_parts(parts: Dict[str, dict], z_thr: float, yield_factor: float,
+                     parts_filter: Optional[set] = None) -> List[dict]:
+    """{조건키: {pid: {peak_stress, stress_limit}}} 형태를 compute_risk 입력으로 변환.
+
+    parts_filter 를 주면 그 파트만으로 위험도를 계산한다. 파트이동 DOE 로 옮길
+    파트가 정해졌을 때, 그 파트가 가혹한 조건을 골라내기 위한 용도.
+    (전 파트 max 로 뽑으면 옮길 파트와 무관하게 뜨거운 조건이 섞인다)
+    """
+    if parts_filter:
+        # 🔴 필터가 하나도 안 맞으면 compute_risk 가 전 조건 risk=0 을 조용히 반환해
+        #    "위험한 조건이 없다"로 오독된다. 여기서 끊는다.
+        available = set()
+        for pinfo in parts.values():
+            available.update(pinfo.keys())
+        missing = parts_filter - available
+        if missing == parts_filter:
+            raise ValueError(
+                f"지정한 파트 {sorted(parts_filter)} 가 리포트에 없습니다. "
+                f"리포트에 있는 파트: {sorted(available)[:20]}"
+                + (" ..." if len(available) > 20 else ""))
+        if missing:
+            print(f"  ⚠️  리포트에 없는 파트는 제외: {sorted(missing)}")
+            parts_filter = parts_filter - missing
+
     samples = [{"run_id": key, "parts": pinfo, "orientation": None, "vec": None}
                for key, pinfo in parts.items()]
-    compute_risk(samples, z_thr=z_thr, yield_factor=yield_factor)
+    compute_risk(samples, z_thr=z_thr, yield_factor=yield_factor,
+                 parts_filter=parts_filter)
     return samples
 
 
+def parts_from_scenario(scenario_path: str) -> List[str]:
+    """scenario.json 의 part_doe 에서 옮길 파트 ID 를 뽑는다.
+
+    "DOE 로 옮길 파트를 정했으면 그 파트 기준으로 취약 조건을 뽑는다"는 흐름을
+    손으로 PID 를 옮겨 적지 않고 잇기 위한 것.
+    """
+    with open(scenario_path, encoding="utf-8") as f:
+        doc = json.load(f)
+
+    pids = []
+    for scen in doc.get("scenarios") or []:
+        pd = scen.get("part_doe") or {}
+        if not pd or not pd.get("enabled", True):
+            continue
+        for p in pd.get("parts") or []:
+            if "pid" in p:
+                pids.append(str(p["pid"]))
+        for c in pd.get("cases") or []:
+            for m in c.get("moves") or []:
+                if "pid" in m:
+                    pids.append(str(m["pid"]))
+
+    if not pids:
+        raise ValueError(
+            f"{scenario_path} 에서 part_doe 의 파트를 찾지 못했습니다. "
+            f"part_doe.parts[].pid 또는 part_doe.cases[].moves[].pid 가 필요합니다.")
+    # 순서 보존 중복 제거
+    return list(dict.fromkeys(pids))
+
+
 def harvest_from_sphere(report_path: str, z_thr: float = 1.5,
-                        yield_factor: float = 1.0) -> List[dict]:
+                        yield_factor: float = 1.0,
+                        parts_filter: Optional[set] = None) -> List[dict]:
     """sphere_report.json → [{name, roll, pitch, yaw, risk, is_hot, hot_parts}, ...]"""
     with open(report_path, encoding="utf-8") as f:
         doc = json.load(f)
@@ -86,7 +140,7 @@ def harvest_from_sphere(report_path: str, z_thr: float = 1.5,
             f"sphere_report 에서 peak_stress 를 가진 케이스를 찾지 못했습니다: {report_path}")
 
     out = []
-    for s in _risk_from_parts(parts_by_key, z_thr, yield_factor):
+    for s in _risk_from_parts(parts_by_key, z_thr, yield_factor, parts_filter):
         m = meta.get(s["run_id"])
         if not m:
             continue
@@ -97,7 +151,8 @@ def harvest_from_sphere(report_path: str, z_thr: float = 1.5,
 
 
 def harvest_from_impact(report_path: str, z_thr: float = 1.5,
-                        yield_factor: float = 1.0) -> List[dict]:
+                        yield_factor: float = 1.0,
+                        parts_filter: Optional[set] = None) -> List[dict]:
     """impact_report.json → [{name, x, y, risk, is_hot, hot_parts}, ...]
 
     impact_report 의 results 는 (위치 x 파트) 평탄 리스트라 위치 단위로 다시 묶는다.
@@ -144,7 +199,7 @@ def harvest_from_impact(report_path: str, z_thr: float = 1.5,
             f"impact_report 에서 peak_stress 를 가진 위치를 찾지 못했습니다: {report_path}")
 
     out = []
-    for s in _risk_from_parts(parts_by_key, z_thr, yield_factor):
+    for s in _risk_from_parts(parts_by_key, z_thr, yield_factor, parts_filter):
         m = meta.get(s["run_id"])
         if not m:
             continue
@@ -155,7 +210,8 @@ def harvest_from_impact(report_path: str, z_thr: float = 1.5,
 
 
 def harvest_from_results(test_dir: str, runner_config: Optional[dict],
-                         z_thr: float = 1.5, yield_factor: float = 1.0) -> List[dict]:
+                         z_thr: float = 1.5, yield_factor: float = 1.0,
+                         parts_filter: Optional[set] = None) -> List[dict]:
     """개별 result.json 스캔 폴백 (통합 리포트가 아직 없을 때).
 
     runner_config 가 있으면 각도가 붙어 DROP 조건으로 방출할 수 있다.
@@ -165,7 +221,8 @@ def harvest_from_results(test_dir: str, runner_config: Optional[dict],
         raise ValueError(
             f"result.json 을 찾지 못했습니다: {test_dir}\n"
             f"deep_report 가 아직 돌지 않았을 수 있습니다.")
-    compute_risk(samples, z_thr=z_thr, yield_factor=yield_factor)
+    compute_risk(samples, z_thr=z_thr, yield_factor=yield_factor,
+                 parts_filter=parts_filter)
 
     out = []
     for s in samples:
@@ -213,7 +270,8 @@ def to_scenario_json(rows: List[dict], kind: str) -> dict:
 
 
 def detect_and_harvest(test_dir: str, z_thr: float = 1.5,
-                       yield_factor: float = 1.0) -> Tuple[List[dict], str, str]:
+                       yield_factor: float = 1.0,
+                       parts_filter: Optional[set] = None) -> Tuple[List[dict], str, str]:
     """소스를 자동 판별해 수확한다.
 
     Returns:
@@ -230,9 +288,9 @@ def detect_and_harvest(test_dir: str, z_thr: float = 1.5,
             impact = None
 
     if sphere:
-        return harvest_from_sphere(sphere, z_thr, yield_factor), "angles", sphere
+        return harvest_from_sphere(sphere, z_thr, yield_factor, parts_filter), "angles", sphere
     if impact:
-        return harvest_from_impact(impact, z_thr, yield_factor), "positions", impact
+        return harvest_from_impact(impact, z_thr, yield_factor, parts_filter), "positions", impact
 
     # 폴백: 개별 result.json + runner_config 의 각도
     rc = None
@@ -240,7 +298,7 @@ def detect_and_harvest(test_dir: str, z_thr: float = 1.5,
     if os.path.exists(rc_path):
         with open(rc_path, encoding="utf-8") as f:
             rc = json.load(f)
-    rows = harvest_from_results(test_dir, rc, z_thr, yield_factor)
+    rows = harvest_from_results(test_dir, rc, z_thr, yield_factor, parts_filter)
     kind = "angles" if any("roll" in r for r in rows) else "positions"
     if kind == "positions":
         raise ValueError(

@@ -336,6 +336,28 @@ KooChainRun harvest <test_dir> --top 10 [--hot-only] [-o risk_angles.json]
 | `--hot-only` | off | 핫 판정된 조건만 |
 | `--z-thr` | 1.5 | 핫 판정 z-score 임계 |
 | `--yield-factor` | 1.0 | 핫 판정 yield 절대비 임계 |
+| `--parts` | (전 파트) | 이 파트 기준으로만 위험도 계산 (`12,15`) |
+| `--from-scenario` | — | scenario.json 의 `part_doe` 에서 파트 자동 추출 |
+
+**🔴 파트이동 DOE 를 할 거면 `--parts` 를 쓰는 게 맞다.** 기본 동작은
+`max_p`(전 파트 최대)라 **옮길 파트와 무관하게 뜨거운 조건**이 섞여 나온다.
+옮길 파트로 필터하면 μ·s 도 그 파트 분포로 계산돼 선정이 정확해진다.
+
+```bash
+# 옮길 파트를 손으로 지정
+KooChainRun harvest <dir> --parts 12,15 --top 10
+
+# scenario.json 의 part_doe 에서 자동 추출 (손으로 PID 옮겨 적지 않음)
+KooChainRun harvest <dir> --from-scenario scenario.json --top 10
+```
+
+지정한 파트가 리포트에 하나도 없으면 조용히 0건이 되지 않고 `ValueError` 로
+막는다("위험한 조건이 없다"로 오독되는 것을 방지). 일부만 없으면 경고 후 제외.
+
+**⚠️ 절대 기준(항복비)은 통합 리포트 경로에서 비작동이다.** `sphere_report.json`
+과 `impact_report.json` 이 파트별 항복강도를 직렬화하지 않아 `a_p = 0` 이 되고
+상대 기준(z-score)만 판정에 쓰인다. `result.json` 스캔 폴백 경로는 `stress_limit`
+을 담고 있어 두 기준 모두 작동한다.
 
 소스는 자동 판별한다.
 

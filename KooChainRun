@@ -361,6 +361,13 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
                                 help='핫 판정 z-score 임계(기본 1.5)')
     harvest_parser.add_argument('--yield-factor', type=float, default=1.0,
                                 help='핫 판정 yield 절대비 임계(기본 1.0)')
+    harvest_parser.add_argument('--parts', default=None,
+                                help='이 파트 기준으로만 위험도 계산 (콤마 구분 PID, 예: 12,15). '
+                                     '파트이동 DOE 로 옮길 파트가 정해졌을 때 사용. '
+                                     '미지정 시 전 파트 최대값')
+    harvest_parser.add_argument('--from-scenario', default=None,
+                                help='scenario.json 의 part_doe 에서 파트를 자동 추출 '
+                                     '(--parts 를 손으로 적는 대신)')
 
     # Parse arguments
     args = parser.parse_args()
@@ -396,7 +403,8 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
 def cmd_harvest(args):
     """완료 결과에서 취약 조건을 뽑아 scenario.json 이 물릴 JSON 으로 방출"""
     import json
-    from Runner.RiskHarvester import detect_and_harvest, select, to_scenario_json
+    from Runner.RiskHarvester import (detect_and_harvest, select,
+                                      to_scenario_json, parts_from_scenario)
 
     test_dir = Path(args.test_dir).resolve()
     if not test_dir.exists():
@@ -407,9 +415,29 @@ def cmd_harvest(args):
     print("KooChainRun - 취약조건 수확")
     print("=" * 80)
 
+    # 파트 기준 지정 — 옮길 파트가 정해졌으면 그 파트가 가혹한 조건만 뽑는다
+    if args.parts and args.from_scenario:
+        print("❌ --parts 와 --from-scenario 는 함께 쓸 수 없습니다")
+        sys.exit(1)
+    pid_list = None
+    if args.parts:
+        pid_list = [p.strip() for p in args.parts.split(',') if p.strip()]
+    elif args.from_scenario:
+        try:
+            pid_list = parts_from_scenario(args.from_scenario)
+        except Exception as e:
+            print(f"❌ 파트 추출 실패: {e}")
+            sys.exit(1)
+        print(f"파트 기준 : {args.from_scenario} 의 part_doe → PID {','.join(pid_list)}")
+    if pid_list and not args.from_scenario:
+        print(f"파트 기준 : PID {','.join(pid_list)}")
+    if not pid_list:
+        print("파트 기준 : 전 파트 (최대값)")
+
     try:
         rows, kind, source = detect_and_harvest(
-            str(test_dir), z_thr=args.z_thr, yield_factor=args.yield_factor)
+            str(test_dir), z_thr=args.z_thr, yield_factor=args.yield_factor,
+            parts_filter=set(pid_list) if pid_list else None)
     except Exception as e:
         print(f"❌ 수확 실패: {e}")
         sys.exit(1)
