@@ -64,10 +64,31 @@ class ToleranceConfig:
     yaw: Optional[ToleranceRange] = None
     doe_type: DOEType = DOEType.LHS
     doe_count: int = 10
+    include_nominal: bool = False   # base 각도 자체(무섭동)를 케이스로 추가.
+                                    # 산포 n 개에 **더해서** 1 개가 붙는다 (면당 n+1).
+                                    # LHS 층화를 n 구간 그대로 두기 위해 n 을 깎지 않는다.
 
     def has_tolerance(self) -> bool:
         """Tolerance 설정 여부 확인"""
         return self.roll is not None or self.pitch is not None or self.yaw is not None
+
+
+def _emit_nominal(result: list, doe_seq: int, base_name: str,
+                  base_roll: float, base_pitch: float, base_yaw: float,
+                  tolerance_config: ToleranceConfig) -> int:
+    """include_nominal 이면 base 각도 자체를 케이스로 추가하고 다음 doe_seq 를 반환.
+
+    산포 샘플보다 **앞에** 놓아 결과 정렬 시 기준 케이스가 먼저 오게 한다.
+
+    🔴 이름에 `_DOE000` 을 넣는 이유. Designer 는 base 그룹을
+       `name.split('_DOE')[0]` 로 뽑는다. `{base}_NOM` 으로 두면 `_DOE` 가 없어
+       그룹이 `{base}_NOM` 이 되어 산포 샘플과 **다른 그룹**으로 쪼개지고,
+       cyclic/random 믹싱의 base 각도 목록이 2배로 부풀어 오른다.
+    """
+    if not tolerance_config.include_nominal:
+        return doe_seq
+    result.append((f"{base_name}_DOE000_NOM", base_roll, base_pitch, base_yaw, doe_seq))
+    return doe_seq + 1
 
 
 def generate_lhs_samples(
@@ -114,6 +135,9 @@ def generate_lhs_samples(
 
     # 각 base 각도에 대해 DOE 샘플 생성
     for base_name, base_roll, base_pitch, base_yaw in base_angles:
+        doe_seq = _emit_nominal(result, doe_seq, base_name,
+                                base_roll, base_pitch, base_yaw, tolerance_config)
+
         # Tolerance 범위 확인
         ranges = []
         base_values = []
@@ -215,6 +239,9 @@ def generate_grid_samples(
     doe_seq = 0
 
     for base_name, base_roll, base_pitch, base_yaw in base_angles:
+        doe_seq = _emit_nominal(result, doe_seq, base_name,
+                                base_roll, base_pitch, base_yaw, tolerance_config)
+
         # Grid 생성
         roll_grid = []
         pitch_grid = []
@@ -299,6 +326,9 @@ def generate_random_samples(
     doe_seq = 0
 
     for base_name, base_roll, base_pitch, base_yaw in base_angles:
+        doe_seq = _emit_nominal(result, doe_seq, base_name,
+                                base_roll, base_pitch, base_yaw, tolerance_config)
+
         for i in range(n_samples):
             # Random delta 생성
             roll_delta = 0.0

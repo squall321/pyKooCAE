@@ -190,8 +190,13 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
 | `roll` / `pitch` / `yaw` | 없음 | 각 축 산포. `{ "tolerance": 2.0 }`(±2°) 또는 `{ "min": -2, "max": 2 }` (비대칭) |
 | `doe_type` | `"lhs"` | `lhs` / `grid` / `random` |
 | `doe_count` | 10 | LHS/Random: **base 각도 1개당** 샘플 수. Grid: **축당 분할 수 → base 당 `doe_count³`** |
+| `include_nominal` | `false` | base 각도 자체(무섭동)를 케이스로 **추가**. base 당 `doe_count + 1` |
 
 세 축 모두 미설정이면 산포 없이 원본 그대로 반환한다.
+
+`include_nominal` 은 산포 n 개에 **더해서** 1 개를 붙인다(n 을 깎지 않는다).
+LHS 층화를 n 구간 그대로 두기 위해서다. 케이스 이름은 `{base}_DOE000_NOM`
+이고 doe_index 는 그 base 그룹의 맨 앞에 온다.
 
 **총 케이스 수 = base 각도 수 × (base 당 샘플 수).**
 `only: ["C1","F5"]` + `doe_count: 10` → 20 케이스, 꼭짓점 8개 + `doe_count: 10` → 80 케이스.
@@ -225,6 +230,32 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
 > 70개 유실). 에러 없이 조용히 줄어드는 형태였다.
 > 현재는 base 를 관통하는 전역 통번호를 쓴다. **base 각도 2개 이상 + `tolerance`** 조합을
 > 이 수정 이전 버전(v80 미만)에서 돌렸다면 케이스 수를 다시 확인할 것.
+
+#### 6면 낙하 ± n° 산포 (정각도 포함)
+
+정면 6방향 각각에 대해 주변 ±5° 를 LHS 로 훑되, **기준이 되는 정각도도 함께** 던진다.
+
+```json
+"angle_source": {
+  "source_type": "cuboid_geometry",
+  "cuboid_geometry": { "only": ["F1", "F2", "F3", "F4", "F5", "F6"] }
+},
+"tolerance": {
+  "roll":  { "tolerance": 5.0 },
+  "pitch": { "tolerance": 5.0 },
+  "doe_type": "lhs",
+  "doe_count": 10,
+  "include_nominal": true
+}
+```
+
+→ 면당 11 케이스(정각도 1 + LHS 10) × 6면 = **66 케이스**.
+정각도는 `F1_Back_DOE000_NOM` 처럼 이름에 `_NOM` 이 붙고 값은 base 그대로다
+(F1=0/0, F2=180/0, F3=0/-90, F4=0/90, F5=90/0, F6=-90/0).
+
+`only` 를 바꾸면 그대로 다른 기준에도 쓸 수 있다 — 꼭짓점 8개, 26방향 전체,
+또는 `angle_source.source_type="explicit"` 으로 물린 **harvest 취약각도 주변**
+정밀 조사에도 동일하게 동작한다.
 
 ### 2-C. 각도 믹싱 전략 (`cumulative.angle_mixing`, `Runner/AngleMixingStrategy.py`)
 
