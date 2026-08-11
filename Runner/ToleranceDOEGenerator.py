@@ -31,6 +31,13 @@ import random
 import numpy as np
 
 
+# 🔴 시드 미지정 시 쓰는 고정값. 기본이 "재현 가능"이어야 한다.
+#    시드 없이 전역 random 을 쓰던 시절엔 같은 scenario.json 을 두 번 prepare 하면
+#    다른 각도가 나왔다 — 결과 비교도 재실행도 불가능했다.
+#    다른 산포 세트가 필요하면 tolerance.seed 값을 바꾸면 된다.
+DEFAULT_DOE_SEED = 42
+
+
 class DOEType(Enum):
     """DOE 타입"""
     LHS = "lhs"              # Latin Hypercube Sampling
@@ -67,6 +74,17 @@ class ToleranceConfig:
     include_nominal: bool = False   # base 각도 자체(무섭동)를 케이스로 추가.
                                     # 산포 n 개에 **더해서** 1 개가 붙는다 (면당 n+1).
                                     # LHS 층화를 n 구간 그대로 두기 위해 n 을 깎지 않는다.
+    seed: Optional[int] = None      # None 이면 DEFAULT_DOE_SEED(42) 사용 → 항상 재현된다.
+                                    # 값을 바꾸면 다른 산포 세트가 나오되 그 값으로 고정된다.
+                                    # grid 는 난수를 안 쓰므로 무관.
+
+    def make_rng(self) -> random.Random:
+        """이 설정 전용 난수기. 전역 random 을 건드리지 않는다.
+
+        🔴 random.seed() 로 전역 시드를 박으면 같은 프로세스의 다른 컴포넌트
+           (파트이동 LHS 등) 난수까지 바뀐다. 반드시 로컬 인스턴스를 쓴다.
+        """
+        return random.Random(DEFAULT_DOE_SEED if self.seed is None else self.seed)
 
     def has_tolerance(self) -> bool:
         """Tolerance 설정 여부 확인"""
@@ -122,6 +140,7 @@ def generate_lhs_samples(
         10
     """
     n_samples = tolerance_config.doe_count
+    rng = tolerance_config.make_rng()   # 시드 고정 로컬 RNG (전역 random 미오염)
     # 🔴 doe_index 는 base 각도 전체를 관통하는 전역 통번호여야 한다.
     #    과거에는 base 마다 1 부터 다시 시작해 인덱스가 충돌했고,
     #    CumulativeDesigner 의 doe_count = len(set(doe_index)) 가 base 수만큼 축소돼
@@ -175,10 +194,10 @@ def generate_lhs_samples(
             for j in range(n_samples):
                 lower = intervals[j]
                 upper = intervals[j + 1]
-                sample = random.uniform(lower, upper)
+                sample = rng.uniform(lower, upper)
                 samples.append(sample)
             # 구간 순서 섞기
-            random.shuffle(samples)
+            rng.shuffle(samples)
             lhs_samples[:, i] = samples
 
         # [0, 1] 범위를 실제 Tolerance 범위로 변환
@@ -317,6 +336,7 @@ def generate_random_samples(
         10
     """
     n_samples = tolerance_config.doe_count
+    rng = tolerance_config.make_rng()   # 시드 고정 로컬 RNG (전역 random 미오염)
     # 🔴 doe_index 는 base 각도 전체를 관통하는 전역 통번호여야 한다.
     #    과거에는 base 마다 1 부터 다시 시작해 인덱스가 충돌했고,
     #    CumulativeDesigner 의 doe_count = len(set(doe_index)) 가 base 수만큼 축소돼
@@ -336,19 +356,19 @@ def generate_random_samples(
             yaw_delta = 0.0
 
             if tolerance_config.roll is not None:
-                roll_delta = random.uniform(
+                roll_delta = rng.uniform(
                     tolerance_config.roll.min_value,
                     tolerance_config.roll.max_value
                 )
 
             if tolerance_config.pitch is not None:
-                pitch_delta = random.uniform(
+                pitch_delta = rng.uniform(
                     tolerance_config.pitch.min_value,
                     tolerance_config.pitch.max_value
                 )
 
             if tolerance_config.yaw is not None:
-                yaw_delta = random.uniform(
+                yaw_delta = rng.uniform(
                     tolerance_config.yaw.min_value,
                     tolerance_config.yaw.max_value
                 )

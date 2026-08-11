@@ -720,7 +720,8 @@ class CumulativeDesigner:
             yaw=yaw_range,
             doe_type=doe_type,
             doe_count=tolerance_cfg.get("doe_count", 10),
-            include_nominal=bool(tolerance_cfg.get("include_nominal", False))
+            include_nominal=bool(tolerance_cfg.get("include_nominal", False)),
+            seed=tolerance_cfg.get("seed")
         )
 
     def _parse_mode_sequence(self, cumulative_cfg: Dict[str, Any], num_steps: int) -> List[SimulationMode]:

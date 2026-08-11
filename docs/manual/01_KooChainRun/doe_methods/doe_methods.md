@@ -191,12 +191,20 @@ txt 파일 포맷은 `*Mode`, `EulerRolling/Pitching/Yawing`, 콤마 구분 case
 | `doe_type` | `"lhs"` | `lhs` / `grid` / `random` |
 | `doe_count` | 10 | LHS/Random: **base 각도 1개당** 샘플 수. Grid: **축당 분할 수 → base 당 `doe_count³`** |
 | `include_nominal` | `false` | base 각도 자체(무섭동)를 케이스로 **추가**. base 당 `doe_count + 1` |
+| `seed` | 42 | 난수 시드. **미지정도 고정값** — 같은 scenario.json 은 항상 같은 산포를 낸다 |
 
 세 축 모두 미설정이면 산포 없이 원본 그대로 반환한다.
 
 `include_nominal` 은 산포 n 개에 **더해서** 1 개를 붙인다(n 을 깎지 않는다).
 LHS 층화를 n 구간 그대로 두기 위해서다. 케이스 이름은 `{base}_DOE000_NOM`
 이고 doe_index 는 그 base 그룹의 맨 앞에 온다.
+
+> 🔴 **재현성 (2026-08-06 수정)**: 이전에는 시드 없이 전역 `random` 을 써서
+> **같은 scenario.json 을 두 번 `prepare` 하면 다른 각도가 나왔다.** 결과 비교도
+> 재실행도 불가능한 상태였다. 지금은 `seed` 미지정도 고정값(42)을 쓰는 로컬
+> 난수기라 항상 같은 산포가 나온다. 다른 세트가 필요하면 `seed` 값을 바꾸면
+> 되고, 그 값으로 다시 고정된다. `grid` 는 난수를 안 쓰므로 원래 결정적이었다.
+> **v83 미만에서 `tolerance` 를 돌렸다면 각도가 그때그때 달랐다는 점에 유의할 것.**
 
 **총 케이스 수 = base 각도 수 × (base 당 샘플 수).**
 `only: ["C1","F5"]` + `doe_count: 10` → 20 케이스, 꼭짓점 8개 + `doe_count: 10` → 80 케이스.
@@ -329,7 +337,7 @@ condition = "{조건명}__{이동명}"        예: C1_Back_Right_Top__M0003
 | `apply_step` | `1` | 이동을 적용할 스텝 번호 |
 | `sampling.method` | `lhs` | `lhs` \| `grid` \| `explicit` |
 | `sampling.num_samples` | 10 | (`lhs`) 샘플 수 |
-| `sampling.seed` | `None` | (`lhs`) 시드. 같은 시드 → 같은 이동량 |
+| `sampling.seed` | 42 | (`lhs`) 시드. **미지정도 고정값** — 같은 설정은 항상 같은 이동량 |
 | `sampling.nx`/`ny`/`nz` | 1 | (`grid`) 축별 분할 수. 총 조합 = nx·ny·nz |
 | `parts` | (필수) | (`lhs`/`grid`) `[{pid, dx, dy, dz}, ...]` |
 | `cases` | (필수) | (`explicit`) `[{name, moves:[{pid,dx,dy,dz}]}, ...]` |

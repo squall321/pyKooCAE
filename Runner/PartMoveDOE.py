@@ -30,6 +30,12 @@ from dataclasses import dataclass, field
 # 1e-9 는 어떤 메시 크기에서도 무의미한 값이라 KMM 호출을 아낀다.
 ZERO_MOVE_EPS = 1e-9
 
+# 🔴 시드 미지정 시 쓰는 고정값. 기본이 "재현 가능"이어야 한다 —
+#    같은 scenario.json 을 두 번 prepare 하면 같은 이동량이 나와야 결과를 비교할 수 있다.
+#    ToleranceDOEGenerator.DEFAULT_DOE_SEED 와 같은 값이지만 모듈 간 결합을 피해 따로 둔다.
+#    다른 이동 세트가 필요하면 sampling.seed 값을 바꾼다.
+DEFAULT_MOVE_SEED = 42
+
 
 @dataclass
 class PartMove:
@@ -111,7 +117,8 @@ def _sample_lhs(parts: List[Tuple[int, dict]], num_samples: int,
     if num_samples < 1:
         raise ValueError(f"part_doe.sampling.num_samples 는 1 이상이어야 합니다 (받은 값: {num_samples})")
 
-    rng = random.Random(seed)
+    # seed 미지정도 고정값으로 — 매 prepare 마다 이동량이 바뀌면 결과 비교가 불가능하다
+    rng = random.Random(DEFAULT_MOVE_SEED if seed is None else seed)
 
     # 축별로 [0,1) 층화 순열을 만든다
     axis_keys = [(pid, ax) for pid, _ in parts for ax in ("dx", "dy", "dz")]
