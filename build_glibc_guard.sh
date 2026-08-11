@@ -32,6 +32,21 @@ assert_glibc_max() {
     [ -n "$req" ] && echo "  ✅ ${req} <= ${GLIBC_MAX}: 계산노드(2.35)·운영서버(2.39) 호환."
 }
 
+# ── 컨테이너 안: sudo 를 무해한 no-op 으로 ────────────────────────────────────
+# 🔴 컨테이너에는 sudo 가 없다. 빌드 스크립트들은 set -e 를 켠 채 호스트 배포에
+#    sudo 를 쓰므로, 그대로 두면 "sudo: command not found"(127) 로 스크립트가
+#    **빌드 성공 직후 중단**된다. 그 rc 가 바깥으로 새어나가 가드의 호스트 배포까지
+#    막았다 (v81~v83 동안 /data 가 구버전으로 방치된 실제 원인).
+#    이 함수는 sourced 되므로 호출 스크립트의 sudo 호출을 전부 대체한다.
+#    컨테이너 안에서 호스트 배포는 어차피 불가능하니 건너뛰는 것이 맞고,
+#    실제 배포는 컨테이너 종료 후 가드가 밖에서 수행한다.
+if [ -n "${KCR_IN_BUILD_SANDBOX:-}" ]; then
+    sudo() {
+        echo "   (컨테이너: sudo 생략) sudo $*"
+        return 0
+    }
+fi
+
 if [ "$GLIBC_GUARD" = "1" ] && [ -z "${KCR_IN_BUILD_SANDBOX:-}" ]; then
     HOST_GLIBC="$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$')"
     echo "빌드 환경 glibc: ${HOST_GLIBC} (허용 최대: ${GLIBC_MAX})"
@@ -47,8 +62,36 @@ if [ "$GLIBC_GUARD" = "1" ] && [ -z "${KCR_IN_BUILD_SANDBOX:-}" ]; then
         fi
         if [ -n "$_CONTAINER" ]; then
             echo "→ 2.35 컨테이너에서 재실행: $_CONTAINER"
-            exec env KCR_IN_BUILD_SANDBOX=1 apptainer exec -B /home -B /data "$_CONTAINER" \
-                bash "$GUARD_SELF" "${GUARD_ARGS[@]}"
+            echo "   ℹ️  컨테이너 안에는 sudo 가 없어 스크립트 내부 호스트 배포는 생략된다."
+            echo "       빌드가 끝나면 이 가드가 컨테이너 밖에서 호스트 배포를 수행한다."
+            # 🔴 exec 를 쓰면 안 된다. exec 는 바깥 셸을 대체해버려서 컨테이너 종료 후
+            #    아무것도 실행되지 않는다. 그 탓에 호스트 배포(/data, SIF 소스트리)가
+            #    v81 이후 계속 누락됐다 (SIF·계산노드는 최신, 헤드 호스트 CLI 만 구버전).
+            # 🔴 `|| _BUILD_RC=$?` 로 받아야 한다. 호출 스크립트가 set -e 를 켠 상태라
+            #    맨몸으로 호출하면 컨테이너가 0 이 아닌 값을 낼 때 바깥 셸이 즉시 죽어
+            #    아래 호스트 배포까지 못 간다 (다음 줄의 $? 대입은 이미 늦다).
+            _BUILD_RC=0
+            env KCR_IN_BUILD_SANDBOX=1 apptainer exec -B /home -B /data "$_CONTAINER" \
+                bash "$GUARD_SELF" "${GUARD_ARGS[@]}" || _BUILD_RC=$?
+
+            if [ $_BUILD_RC -ne 0 ]; then
+                echo "❌ 컨테이너 빌드 실패 (rc=$_BUILD_RC) — 호스트 배포 생략."
+                exit $_BUILD_RC
+            fi
+
+            _DEPLOY="$SCRIPT_DIR/deploy_build_dist.sh"
+            if [ -f "$_DEPLOY" ]; then
+                echo
+                echo "→ 호스트 배포 (컨테이너 밖, sudo 사용 가능)"
+                bash "$_DEPLOY" "$SCRIPT_DIR/build_dist" || {
+                    echo "❌ 호스트 배포 실패 — 빌드 산출물은 build_dist 에 있다."
+                    exit 1
+                }
+            else
+                echo "⚠️  $_DEPLOY 없음 — 호스트 배포를 건너뛴다."
+                echo "    /data/SmartTwinPreprocessor 가 구버전으로 남을 수 있다."
+            fi
+            exit 0
         fi
         echo "❌ 2.35 빌드 컨테이너를 못 찾음($BUILD_SANDBOX / $BUILD_SIF)."
         echo "   glibc<=2.35 환경에서 빌드하거나, GLIBC_GUARD=0 으로 강제 진행(계산노드 비호환 위험)."
