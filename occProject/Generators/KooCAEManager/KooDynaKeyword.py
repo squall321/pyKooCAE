@@ -6096,6 +6096,47 @@ class ElementSolid(DynaKeyword):
     
     
     @staticmethod
+    def _split_header(line):
+        """2-카드 Card 1(EID, PID) 을 (필드2개, 폭) 으로 분해. 아니면 (None, 0).
+
+        🔴 공백 분리만 믿으면 안 된다. 고정폭 덱에서 EID·PID 가 필드를 꽉 채우면
+           둘 사이에 공백이 사라진다.
+             8칸: EID/PID 가 8자리  → '1000000110000002'  → split() 이 1토큰
+            10칸: EID/PID 가 10자리 → 20자 붙음            → 동일
+           한쪽만 꽉 차도 마찬가지다 ('       110000002').
+           이 경우 예전에는 헤더로 인정되지 않아 **요소가 통째로 소실**됐다
+           (경고만 찍고 라인 무시). 대형 모델의 8자리 ID 에서 실제로 발생.
+
+        공백 분리가 2필드면 그대로 쓰고(기존 동작 보존), 실패했을 때만
+        원문 길이 16/20 을 2등분해 정수 2개인지 확인하고 채택한다.
+        """
+        raw = str(line).rstrip('\r\n').rstrip()
+        stripped = raw.strip()
+        if not stripped:
+            return None, 0
+
+        def _ok(f):
+            try:
+                int(f)
+                return True
+            except (TypeError, ValueError):
+                return False
+
+        toks = stripped.split()
+        if len(toks) == 2 and _ok(toks[0]) and _ok(toks[1]):
+            # 폭 재감지: 정확한 2필드 고정폭 길이(16/20)일 때만, 아니면 토큰 모드(0)
+            return toks, (10 if len(raw) == 20 else (8 if len(raw) == 16 else 0))
+
+        # 공백이 사라진 고정폭 헤더 — 길이가 정확히 16/20 일 때만 2등반 시도.
+        # (표준 1줄 솔리드는 EID/PID+노드로 80/100자라 여기 걸리지 않는다)
+        for w in (8, 10):
+            if len(raw) == w * 2:
+                a, b = raw[:w].strip(), raw[w:].strip()
+                if a and b and _ok(a) and _ok(b):
+                    return [a, b], w
+        return None, 0
+
+    @staticmethod
     def _parse_ten_nodes_block(block, expect=10):
         # *ELEMENT_SOLID 2-카드 블록 → [헤더(EID,PID), 노드10필드] 쌍 리스트.
         # 🔴 expect = Card 2 의 절점 개수. 키워드 선언이 진실이다.
@@ -6138,14 +6179,14 @@ class ElementSolid(DynaKeyword):
             if not stripped or stripped.startswith('$'):
                 continue
             if header is None:
-                toks = stripped.split()
-                if len(toks) != 2 or not (_int_ok(toks[0]) and _int_ok(toks[1])):
+                # 공백 분리 우선, 실패 시 고정폭(16/20) 2등분 — 8자리 ID 가 붙어
+                # 공백이 사라진 헤더도 인식한다 (_split_header 주석 참조)
+                toks, width = ElementSolid._split_header(s)
+                if toks is None:
                     if warn_cnt < 5:
                         print("  Warning: ELEMENT_SOLID ten-nodes 헤더 형식 이상 — 라인 무시:", s[:40])
                     warn_cnt += 1
                     continue
-                # 헤더마다 폭 재감지: 정확한 2필드 고정폭 길이(16/20)일 때만, 아니면 토큰 모드
-                width = 10 if len(s) == 20 else (8 if len(s) == 16 else 0)
                 if width == 10:
                     saw_i10 = True
                 header = toks
@@ -6187,17 +6228,21 @@ class ElementSolid(DynaKeyword):
             # 필드 폭이 8칸이 아닐 수 있어(예: I10) 폭 감지 + 상태머신 그룹핑으로 파싱.
             # 표준 1줄 솔리드는 첫 줄에 최소 6토큰(EID PID + 노드≥4)이라 절대 걸리지 않음 → 기존 경로 불변.
             probe = None
+            probe_raw = None
             for line in block:
                 s = str(line).strip()
                 if not s or s.startswith('$'):
                     continue
                 probe = s
+                # 🔴 고정폭 판정에는 원문 길이(16/20)가 필요하다. strip() 하면
+                #    앞쪽 공백이 날아가 '       110000002' 같은 헤더를 못 알아본다.
+                probe_raw = str(line)
                 break
             fmts = getattr(self, 'block_formats', [])
             fmt_i10 = (i < len(fmts) and fmts[i] == 'i10')
             if fmt_i10:
                 self.has_i10 = True
-            if probe is not None and len(probe.split()) == 2:
+            if probe is not None and ElementSolid._split_header(probe_raw)[0] is not None:
                 _tn = getattr(self, 'block_tennodes', [])
                 _is_ten = bool(_tn[i]) if i < len(_tn) else False
                 params_tn, saw_i10 = self._parse_ten_nodes_block(block, 10 if _is_ten else 8)
