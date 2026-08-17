@@ -8716,11 +8716,52 @@ class MatCompositeDamageTitle(DynaKeyword):
             formatted_elements = f"{str(parameter[5][0]):>10}{str(parameter[5][1]):>10}{str(parameter[5][2]):>10}{str(parameter[5][3]):>10}{str(parameter[5][4]):>10}{str(parameter[5][5]):>10}{str(parameter[5][6]):>10}{str(parameter[5][7]):>10}\n"
             stream.write(formatted_elements)          
 # Mat 24 
+def _assert_mat_cards(mat_keywords, need, kw_name, title_offset=0):
+    """재질 블록마다 필요한 카드 줄 수를 검사하고, 부족하면 무엇이 왜 부족한지 알린다.
+
+    🔴 예전에는 mat_keywords[i][3] 접근이 그대로 IndexError 로 터졌다.
+       스택트레이스만 나와서 "어느 재질이 왜" 인지 알 수 없었고, 실제로 엉뚱한
+       키워드(MAT_GENERAL_VISCOELASTIC)를 원인으로 의심하게 만들었다.
+       *MAT_PIECEWISE_LINEAR_PLASTICITY 는 LS-DYNA 규격상 카드 4장이다
+       (1: MID..TDEL / 2: C..VP / 3: EPS1~8 / 4: ES1~8).
+       카드 3·4 를 빠뜨린 덱이 흔한데, 그 덱은 LS-DYNA 도 다음 키워드 줄을
+       카드3 으로 삼켜서 오독한다 — 즉 입력을 고쳐야 하는 상황이다.
+       그래서 관대하게 채워 넘기지 않고, 고칠 지점을 정확히 알려주고 멈춘다.
+    """
+    bad = []
+    for i in range(len(mat_keywords)):
+        blk = mat_keywords[i]
+        if len(blk) < need:
+            title = ""
+            if title_offset and len(blk) > 0:
+                title = str(blk[0]).strip()[:40]
+            mid = ""
+            j = title_offset
+            if len(blk) > j:
+                tok = str(blk[j]).split()
+                if tok:
+                    mid = tok[0]
+            bad.append((i + 1, title, mid, len(blk)))
+    if not bad:
+        return
+    lines = [f"*{kw_name}: 카드 줄 수 부족 — {len(bad)}개 블록",
+             f"  필요 {need}줄" + (" (제목 + 카드1~4)" if title_offset else " (카드1~4)")
+             + " / LS-DYNA 규격: 1=MID..TDEL, 2=C..VP, 3=EPS1~8, 4=ES1~8"]
+    for n, title, mid, got in bad[:10]:
+        lines.append(f"    #{n} {('제목='+title+' ') if title else ''}MID={mid or '?'} — {got}줄뿐")
+    if len(bad) > 10:
+        lines.append(f"    ... 외 {len(bad) - 10}개")
+    lines.append("  조치: 각 카드 뒤에 EPS1~8 / ES1~8 두 줄을 추가하라(전부 0이면 곡선 미사용).")
+    lines.append("        카드3·4 가 없으면 LS-DYNA 도 다음 키워드를 삼켜 오독한다.")
+    raise ValueError("\n".join(lines))
+
+
 class MatPiecewiseLinearPlasticity(DynaKeyword):
     def __init__(self):
         super(MatPiecewiseLinearPlasticity,self).__init__("MAT_PIECEWISE_LINEAR_PLASTICITY")
 
     def parse(self, mat_keywords):
+        _assert_mat_cards(mat_keywords, 4, "MAT_PIECEWISE_LINEAR_PLASTICITY", title_offset=0)
         for i in range(len(mat_keywords)):
             parameterList = []
             #parameters = mat_keywords[i][0].parse_whole([10, 10, 10, 10, 10, 10, 10, 10])
@@ -8857,6 +8898,7 @@ class MatPiecewiseLinearPlasticityTitle(DynaKeyword):
         super(MatPiecewiseLinearPlasticityTitle,self).__init__("MAT_PIECEWISE_LINEAR_PLASTICITY_TITLE")
 
     def parse(self, mat_keywords):
+        _assert_mat_cards(mat_keywords, 5, "MAT_PIECEWISE_LINEAR_PLASTICITY_TITLE", title_offset=1)
         for i in range(len(mat_keywords)):
             parameterList = []
             #parameterList.append(mat_keywords[i][0].parse_whole([80]))
