@@ -8106,10 +8106,21 @@ class MatGeneralViscoelastic(DynaKeyword):
     def __init__(self):
         super(MatGeneralViscoelastic,self).__init__("MAT_GENERAL_VISCOELASTIC")
 
+    @staticmethod
+    def _card1_widths(line):
+        """Card 1 = MID RO BULK PCF EF TREF A B (최대 8필드).
+        🔴 [10,10,10] 로 3필드만 읽으면 PCF/EF/TREF/A/B 가 출력에서 유실된다.
+           반대로 항상 8필드로 읽으면 3필드짜리 기존 덱의 출력이 빈칸으로 늘어난다.
+           → 원문 길이에서 실제 필드 수를 세어 그대로 보존한다(왕복 바이트 동일).
+        """
+        n = len(str(line).rstrip())
+        return [10] * max(3, min(8, -(-n // 10)))
+
     def parse(self, mat_keywords):
         for i in range(len(mat_keywords)):
             parameterList = []
-            parameters = self.parse_whole(mat_keywords[i][0], [10, 10, 10])
+            parameters = self.parse_whole(mat_keywords[i][0],
+                                          MatGeneralViscoelastic._card1_widths(mat_keywords[i][0]))
             parameterList.append(parameters)
             for j in range(1,len(mat_keywords[i])):
                 parameters = self.parse_whole(mat_keywords[i][j], [10, 10, 10, 10])
@@ -8136,6 +8147,59 @@ class MatGeneralViscoelastic(DynaKeyword):
                     formatted_elements = f"{str(parameter[j][k]):>10}"
                     stream.write(formatted_elements)
                 stream.write("\n")
+
+class MatGeneralViscoelasticTitle(DynaKeyword):
+    # MAT_GENERAL_VISCOELASTIC_TITLE 리더 — MatGeneralViscoelastic 과 동일하되 제목 줄이 앞에 하나 더.
+    # 🔴 이 클래스가 없던 동안 *MAT_GENERAL_VISCOELASTIC_TITLE 은 "not parsed" 로만
+    #    분류되고 **출력에서 통째로 사라졌다**. 에러도 경고도 없이 재질이 유실되므로
+    #    점탄성 테이프가 빠진 채로 해석이 도는 사고가 난다.
+    #    (_TITLE 없는 변형은 정상 보존됐다 — 접미어만의 문제였다)
+    def __init__(self):
+        super(MatGeneralViscoelasticTitle,self).__init__("MAT_GENERAL_VISCOELASTIC_TITLE")
+
+    def parse(self, mat_keywords):
+        for i in range(len(mat_keywords)):
+            parameterList = []
+            parameterList.append(self.parse_whole(mat_keywords[i][0], [80]))   # 제목
+            parameters = self.parse_whole(mat_keywords[i][1],
+                                          MatGeneralViscoelastic._card1_widths(mat_keywords[i][1]))
+            parameterList.append(parameters)
+            for j in range(2, len(mat_keywords[i])):
+                parameters = self.parse_whole(mat_keywords[i][j], [10, 10, 10, 10])
+                parameterList.append(parameters)
+            self.parameters.append(parameterList)
+
+    def TITLE(self, ith):
+        return self.parameters[ith][0][0]
+
+    def SET_TITLE(self, ith, title):
+        self.parameters[ith][0][0] = title
+
+    def MID(self, ith):
+        return self.parameters[ith][1][0]
+
+    def getMatList(self):
+        matList = []
+        for i in range(len(self.parameters)):
+            parameter = self.parameters[i]
+            curMat = []
+            curMat.append("*MAT_GENERAL_VISCOELASTIC_TITLE")
+            for j in range(len(parameter)):
+                curMat.append(parameter[j])
+            matList.append(curMat)
+        return matList
+
+    def write(self, stream):
+        for i in range(len(self.parameters)):
+            stream.write("*MAT_GENERAL_VISCOELASTIC_TITLE\n")
+            parameter = self.parameters[i]
+            # 제목 줄은 좌측정렬 원문 그대로 (10칸 우측정렬하면 제목이 잘린다)
+            stream.write(f"{str(parameter[0][0])}\n")
+            for j in range(1, len(parameter)):
+                for k in range(0, len(parameter[j])):
+                    stream.write(f"{str(parameter[j][k]):>10}")
+                stream.write("\n")
+
 
 #Mat 6
 class MatViscoelasticTitle(DynaKeyword):
@@ -14823,6 +14887,14 @@ class DynaManager():
                 dynaKeywordMan.addKeyword(general_viscoelastic)
                 while "MAT_GENERAL_VISCOELASTIC" in lines_with_asterisk:
                     lines_with_asterisk.remove("MAT_GENERAL_VISCOELASTIC")
+            if "MAT_GENERAL_VISCOELASTIC_TITLE" in lines_with_asterisk:
+                mat_general_viscoelastic_title = keyword_dict["MAT_GENERAL_VISCOELASTIC_TITLE"]
+                general_viscoelastic_title = MatGeneralViscoelasticTitle()
+                general_viscoelastic_title.parse(mat_general_viscoelastic_title)
+                general_viscoelastic_title.write(file)
+                dynaKeywordMan.addKeyword(general_viscoelastic_title)
+                while "MAT_GENERAL_VISCOELASTIC_TITLE" in lines_with_asterisk:
+                    lines_with_asterisk.remove("MAT_GENERAL_VISCOELASTIC_TITLE")
             if "MAT_VISCOELASTIC_TITLE" in lines_with_asterisk:
                 mat_viscoelastic_title = keyword_dict["MAT_VISCOELASTIC_TITLE"]
                 viscoelastic_title = MatViscoelasticTitle()
