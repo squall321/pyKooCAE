@@ -377,6 +377,8 @@ KooChainRun harvest <test_dir> --top 10 [--hot-only] [-o risk_angles.json]
 | `--yield-factor` | 1.0 | 핫 판정 yield 절대비 임계 |
 | `--parts` | (전 파트) | 이 파트 기준으로만 위험도 계산 (`12,15`) |
 | `--from-scenario` | — | scenario.json 의 `part_doe` 에서 파트 자동 추출 |
+| `--yield` | — | 전 파트 공통 항복강도(MPa). 절대 기준을 켠다 |
+| `--yield-by-part` | — | 파트별 항복강도 `3:350,7:120`. `--yield` 보다 우선 |
 
 **🔴 파트이동 DOE 를 할 거면 `--parts` 를 쓰는 게 맞다.** 기본 동작은
 `max_p`(전 파트 최대)라 **옮길 파트와 무관하게 뜨거운 조건**이 섞여 나온다.
@@ -393,10 +395,19 @@ KooChainRun harvest <dir> --from-scenario scenario.json --top 10
 지정한 파트가 리포트에 하나도 없으면 조용히 0건이 되지 않고 `ValueError` 로
 막는다("위험한 조건이 없다"로 오독되는 것을 방지). 일부만 없으면 경고 후 제외.
 
-**⚠️ 절대 기준(항복비)은 통합 리포트 경로에서 비작동이다.** `sphere_report.json`
-과 `impact_report.json` 이 파트별 항복강도를 직렬화하지 않아 `a_p = 0` 이 되고
-상대 기준(z-score)만 판정에 쓰인다. `result.json` 스캔 폴백 경로는 `stress_limit`
-을 담고 있어 두 기준 모두 작동한다.
+**⚠️ 통합 리포트에는 파트별 항복강도가 없다.** `sphere_report.json` /
+`impact_report.json` 이 그 값을 직렬화하지 않아, 그냥 두면 `a_p = 0` 이 되어
+상대 기준(z-score)만으로 판정된다. `--yield` 또는 `--yield-by-part` 로 값을
+주면 절대 기준이 켜진다(`result.json` 스캔 폴백은 원래부터 작동).
+
+```bash
+KooChainRun harvest <dir> --yield 350                  # 전 파트 공통
+KooChainRun harvest <dir> --yield-by-part 3:350,7:120  # 파트별
+```
+
+**왜 중요한가.** 전 조건이 고르게 위험하면 평균이 같이 올라가 z-score 가 튀지
+않아 **한 건도 안 잡힌다**. 실측: 전 조건 응력 400~405 인 리포트에서
+미지정이면 핫 0건, `--yield 350` 이면 10건 전부 핫.
 
 소스는 자동 판별한다.
 

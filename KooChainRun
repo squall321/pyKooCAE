@@ -368,6 +368,12 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     harvest_parser.add_argument('--from-scenario', default=None,
                                 help='scenario.json 의 part_doe 에서 파트를 자동 추출 '
                                      '(--parts 를 손으로 적는 대신)')
+    harvest_parser.add_argument('--yield', dest='yield_uniform', type=float, default=None,
+                                help='전 파트 공통 항복강도(MPa). 통합 리포트에는 항복강도가 '
+                                     '없어 이걸 줘야 절대 기준(sigma/yield)이 동작한다')
+    harvest_parser.add_argument('--yield-by-part', default=None,
+                                help='파트별 항복강도. "3:350,7:120" 형식. '
+                                     '--yield 보다 우선(개별 지정이 더 구체적)')
 
     # Parse arguments
     args = parser.parse_args()
@@ -404,7 +410,8 @@ def cmd_harvest(args):
     """완료 결과에서 취약 조건을 뽑아 scenario.json 이 물릴 JSON 으로 방출"""
     import json
     from Runner.RiskHarvester import (detect_and_harvest, select,
-                                      to_scenario_json, parts_from_scenario)
+                                      to_scenario_json, parts_from_scenario,
+                                      parse_yield_spec)
 
     test_dir = Path(args.test_dir).resolve()
     if not test_dir.exists():
@@ -435,9 +442,19 @@ def cmd_harvest(args):
         print("파트 기준 : 전 파트 (최대값)")
 
     try:
+        yields = parse_yield_spec(args.yield_uniform, args.yield_by_part)
+    except ValueError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
+    if not yields:
+        print("항복강도 : 미지정 — 상대 기준(z-score)만 사용 "
+              "(통합 리포트에 항복강도가 없다. --yield 로 주면 절대 기준도 켜진다)")
+
+    try:
         rows, kind, source = detect_and_harvest(
             str(test_dir), z_thr=args.z_thr, yield_factor=args.yield_factor,
-            parts_filter=set(pid_list) if pid_list else None)
+            parts_filter=set(pid_list) if pid_list else None,
+            yields=yields)
     except Exception as e:
         print(f"❌ 수확 실패: {e}")
         sys.exit(1)
