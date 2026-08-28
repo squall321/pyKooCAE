@@ -213,7 +213,9 @@ Step 2 (DROP_ATTITUDE)
 - F6 (Bottom): Roll=-90°, Pitch=0°, Yaw=0°
 
 **Edge 조건 (12개)**: 45° 조합 (예: E1 Back-Right: Roll=0°, Pitch=-45°)
-**Corner 조건 (8개)**: ±45° 조합 (예: C1 Back-Right-Top: Roll=45°, Pitch=-45°)
+**Corner 조건 (8개)**: Roll=±35.264°(Back) / ±144.736°(Front) × Pitch=±45°
+(예: C1 Back-Right-Top: Roll=35.264°, Pitch=-45°). 45°/45° 는 면 대각선이라
+참 꼭짓점에서 9.74° 벗어난다.
 
 자세한 정의는 [DROP_MODE_V2_PLAN.md](../DROP_MODE_V2_PLAN.md) 참조
 

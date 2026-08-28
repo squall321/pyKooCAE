@@ -122,15 +122,24 @@ CUBOID_EDGES = {
     "E12_Left_Bottom":   (-45.0,   90.0, 0.0),
 }
 
+# 정확한 꼭짓점 방향 roll.
+#   충격방향 d = Rᵀ·(0,0,-1) = (cos r·sin p, -sin r, -cos r·cos p)   (_physical_drop_dir 와 동일)
+#   d = (±1,±1,±1)/√3 를 풀면  r = ±asin(1/√3) = ±35.264390°, p = ±45°
+#   Front 계열은 cos r 부호가 반대라  r = ±(180 - 35.264390) = ±144.735610°
+#   45/135 를 쓰면 d = (±0.5, ±0.7071, ±0.5) 라 참 꼭짓점에서 9.736° 벗어난다
+#   (Top 성분 1.22배 과대, X·Z 0.87배 과소).
+_CORNER_ROLL   = math.degrees(math.asin(1.0 / math.sqrt(3.0)))   # 35.2643896828
+_CORNER_ROLL_F = 180.0 - _CORNER_ROLL                            # 144.7356103172
+
 CUBOID_CORNERS = {
-    "C1_Back_Right_Top":      (45.0,   -45.0, 0.0),
-    "C2_Back_Right_Bottom":   (-45.0,  -45.0, 0.0),
-    "C3_Back_Left_Top":       (45.0,    45.0, 0.0),
-    "C4_Back_Left_Bottom":    (-45.0,   45.0, 0.0),
-    "C5_Front_Right_Top":     (135.0,   45.0, 0.0),
-    "C6_Front_Right_Bottom":  (-135.0,  45.0, 0.0),
-    "C7_Front_Left_Top":      (135.0,  -45.0, 0.0),
-    "C8_Front_Left_Bottom":   (-135.0, -45.0, 0.0),
+    "C1_Back_Right_Top":      ( _CORNER_ROLL,   -45.0, 0.0),
+    "C2_Back_Right_Bottom":   (-_CORNER_ROLL,   -45.0, 0.0),
+    "C3_Back_Left_Top":       ( _CORNER_ROLL,    45.0, 0.0),
+    "C4_Back_Left_Bottom":    (-_CORNER_ROLL,    45.0, 0.0),
+    "C5_Front_Right_Top":     ( _CORNER_ROLL_F,  45.0, 0.0),
+    "C6_Front_Right_Bottom":  (-_CORNER_ROLL_F,  45.0, 0.0),
+    "C7_Front_Left_Top":      ( _CORNER_ROLL_F, -45.0, 0.0),
+    "C8_Front_Left_Bottom":   (-_CORNER_ROLL_F, -45.0, 0.0),
 }
 
 

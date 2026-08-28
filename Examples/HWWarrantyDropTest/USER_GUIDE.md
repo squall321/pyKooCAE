@@ -86,7 +86,7 @@ Face 6: Right   (Roll=0,   Pitch=-90, Yaw=0)
 **각도 구성**:
 - **Face 6개**: Top, Bottom, Front, Back, Left, Right
 - **Edge 12개**: 예) Top-Front (Roll=45, Pitch=0, Yaw=0)
-- **Corner 8개**: 예) Top-Front-Left (Roll=45, Pitch=45, Yaw=0)
+- **Corner 8개**: 예) Top-Front-Left (Roll=35.264, Pitch=45, Yaw=0)  ← 꼭짓점 각 asin(1/√3)=35.264390°
 
 **scenario.json 설정**:
 ```json

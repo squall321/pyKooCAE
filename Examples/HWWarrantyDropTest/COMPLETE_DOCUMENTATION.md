@@ -295,7 +295,7 @@ Edge:
   E2_Top_Back  = (Roll=-45°, Pitch=0°, Yaw=0°)
 
 Corner:
-  C1_Top_Front_Left = (Roll=45°, Pitch=45°, Yaw=0°)
+  C1_Top_Front_Left = (Roll=35.264°, Pitch=45°, Yaw=0°)   # 꼭짓점 각 asin(1/√3)
 ```
 
 ### 2. Fibonacci Lattice (균일분포)
