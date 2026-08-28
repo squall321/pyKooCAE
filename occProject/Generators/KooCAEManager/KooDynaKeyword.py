@@ -5901,6 +5901,19 @@ class ElementShell(DynaKeyword):
                     cls._is_int_field(r[k:k + 10]) for k in range(0, L, 10)):
                 return 10
             return 8  # 오늘도 깨지는데 10칸 증거도 없음 → 레거시 유지(기존과 동일 크래시)
+
+        # 🔴 추가 신호 — "레거시가 안 깨진다"만으로는 10칸 덱을 놓친다.
+        #    ID 가 10자리로 필드를 꽉 채우면 8칸 조각도 전부 숫자라 위 게이트를
+        #    통과해버리고, 8칸으로 잘려 **조용히 오염**된다(에러 없음).
+        #    판별: 8칸으로는 줄이 정수 개로 나눠떨어지지 않는데 10칸으로는 딱
+        #    떨어지고 전 필드가 정수 → 10칸이 확실하다.
+        #    L%8==0 인 덱은 이 분기에 아예 들어오지 않으므로 기존 8칸 덱에는
+        #    구조적으로 영향이 없다(회귀 0). 첫 데이터 줄로만 판정해 결정적이다.
+        r0 = first.rstrip('\r\n').rstrip()
+        L0 = len(r0)
+        if L0 >= 50 and L0 % 8 != 0 and L0 % 10 == 0 and all(
+                cls._is_int_field(r0[k:k + 10]) for k in range(0, L0, 10)):
+            return 10
         return 8
 
     def parse(self, elementShellKeywords):
