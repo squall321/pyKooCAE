@@ -6630,7 +6630,12 @@ class KooDynaAdvancedModification:
                         'output_file': config['output_file'],
                         'element_edge_length': config['element_edge_length'],
                         'bbox_offset_ratio': config['bbox_offset_ratio'],
-                        'integration_rule': config['integration_rule']
+                        'integration_rule': config['integration_rule'],
+                        # 🔴 옵션을 명시적으로 나열하는 구조라, 새 키를 여기에 추가하지
+                        #    않으면 파서가 읽어도 조용히 버려진다. nurbs_params(차수)는
+                        #    지정됐을 때만 넘겨 기존 디폴트(1차)를 건드리지 않는다.
+                        **({'nurbs_params': config['nurbs_params']}
+                           if config.get('nurbs_params') else {})
                     }
                 )
 

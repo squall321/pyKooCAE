@@ -264,8 +264,25 @@ class KooIGAPart:
         s += f"Rtollg    {self.stabilization['tollg']:10.3e}\n"
         return s
 
+    # 축별 (파라미터 접두사, 최소, 최대, 제어점 개수 키)
+    _AXES = (('x', 'xminn', 'xmaxx', 'nr'),
+             ('y', 'yminn', 'ymaxx', 'ns'),
+             ('z', 'zminn', 'zmaxx', 'nt'))
+
+    def _AxisCPNames(self, axis, lo, hi, n):
+        """한 축의 제어점 좌표 파라미터 이름 n개. 양 끝은 기존 &xminn/&xmaxx 재사용."""
+        if n <= 2:
+            return [lo, hi]
+        return [lo] + [f"{axis}c{i}" for i in range(1, n - 1)] + [hi]
+
     def _GenerateParameterExpressionLocal(self):
-        """*PARAMETER_EXPRESSION_LOCAL 생성"""
+        """*PARAMETER_EXPRESSION_LOCAL 생성
+
+        🔴 차수가 1보다 크면 제어점이 nr x ns x nt 격자로 필요하다. 중간 제어점
+           좌표를 여기서 표현식으로 만들어 둔다(카드 필드에는 인라인 사칙연산을
+           쓸 수 없어 파라미터로 빼야 한다). n<=2 인 축은 한 줄도 늘지 않으므로
+           기존(1차) 출력은 바이트 동일하다.
+        """
         s = "*PARAMETER_EXPRESSION_LOCAL\n"
         s += "rxminn, &xmin-&rr\n"
         s += "rxmaxx, &xmax+&rr\n"
@@ -273,6 +290,12 @@ class KooIGAPart:
         s += "rymaxx, &ymax+&rs\n"
         s += "rzminn, &zmin-&rt\n"
         s += "rzmaxx, &zmax+&rt\n"
+        np_ = self.nurbs_params
+        for axis, lo, hi, nkey in self._AXES:
+            n = int(np_[nkey])
+            for i in range(1, max(0, n - 1)):
+                # lo + i/(n-1) * (hi-lo) — 균등 분할
+                s += f"r{axis}c{i}, &{lo}+({i}.0/{n - 1}.0)*(&{hi}-&{lo})\n"
         return s
 
     def _GenerateIGAStabilization(self):
@@ -335,15 +358,19 @@ class KooIGAPart:
         s += "              &zminn              &zmaxx\n"
         s += "$#                 x                   y                   z                 wgt\n"
 
-        # 8개 제어점 (박스 코너)
-        s += "              &xminn              &yminn              &zminn                 1.0\n"
-        s += "              &xmaxx              &yminn              &zminn                 1.0\n"
-        s += "              &xminn              &ymaxx              &zminn                 1.0\n"
-        s += "              &xmaxx              &ymaxx              &zminn                 1.0\n"
-        s += "              &xminn              &yminn              &zmaxx                 1.0\n"
-        s += "              &xmaxx              &yminn              &zmaxx                 1.0\n"
-        s += "              &xminn              &ymaxx              &zmaxx                 1.0\n"
-        s += "              &xmaxx              &ymaxx              &zmaxx                 1.0\n"
+        # 제어점 nr x ns x nt 격자 (t 최외곽 → s → r 순서, LS-DYNA 규약)
+        # 🔴 예전에는 박스 꼭짓점 8개를 하드코딩했다. 차수를 올려 nr/ns/nt 가 2를
+        #    넘으면 제어점이 모자라 LS-DYNA 가 패치를 만들지 못한다.
+        #    nr=ns=nt=2(1차)면 아래 루프가 정확히 그 8줄을 같은 순서로 낸다 → 회귀 0.
+        xs = self._AxisCPNames('x', 'xminn', 'xmaxx', np['nr'])
+        ys = self._AxisCPNames('y', 'yminn', 'ymaxx', np['ns'])
+        zs = self._AxisCPNames('z', 'zminn', 'zmaxx', np['nt'])
+        for z in zs:
+            for y in ys:
+                for x in xs:
+                    # 🔴 20칸 우측정렬. 파라미터 이름 길이가 제각각(&xminn 6자 vs &xc1 4자)
+                    #    이라 고정 공백으로 이어붙이면 필드 경계가 밀린다.
+                    s += (f"{'&' + x:>20}{'&' + y:>20}{'&' + z:>20}{'1.0':>20}\n")
 
         return s
 

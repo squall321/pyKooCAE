@@ -2290,6 +2290,17 @@ class KooMeshModifier(KooSimulationGenerator):
                             rt = float(svector[6]) if len(svector) > 6 else 0.6
                             ratio = float(svector[7]) if len(svector) > 7 else 1.1
                             ir = int(svector[8]) if len(svector) > 8 else 0
+                            # NURBS 다항식 차수 (r/s/t). 미지정이면 1차 = 기존 동작 그대로.
+                            # 🔴 nr(=knot 개수)은 pr+1 이상이어야 한다. 차수만 올리고 nr 을
+                            #    2로 두면 제어점이 모자라 LS-DYNA 가 패치를 못 만든다.
+                            #    그래서 nr = max(2, pr+1) 로 함께 올린다.
+                            pr = int(svector[9]) if len(svector) > 9 else 1
+                            ps = int(svector[10]) if len(svector) > 10 else pr
+                            pt = int(svector[11]) if len(svector) > 11 else pr
+                            for _nm, _v in (('pr', pr), ('ps', ps), ('pt', pt)):
+                                if _v < 1:
+                                    print(f"Invalid option in FEMtoIGA: {_nm}={_v} (1 이상이어야 한다)")
+                                    exit()
 
                             iga_config = {
                                 'source_pid': source_pid,
@@ -2297,7 +2308,12 @@ class KooMeshModifier(KooSimulationGenerator):
                                 'output_file': output_file,
                                 'element_edge_length': {'rr': rr, 'rs': rs, 'rt': rt},
                                 'bbox_offset_ratio': ratio,
-                                'integration_rule': ir
+                                'integration_rule': ir,
+                                'nurbs_params': {
+                                    'nr': max(2, pr + 1), 'ns': max(2, ps + 1), 'nt': max(2, pt + 1),
+                                    'pr': pr, 'ps': ps, 'pt': pt,
+                                    'unir': 1, 'unis': 1, 'unit': 1
+                                }
                             }
 
                             curOptions["IGAParts"].append(iga_config)
