@@ -377,9 +377,10 @@ E03_Front_Right: Roll=180°, Pitch=-45°
 
 **Corner (8개)**: 8개 꼭짓점
 ```
-C1_Back_Right_Top:    Roll=45°,  Pitch=-45°
-C2_Back_Right_Bottom: Roll=-45°, Pitch=-45°
-C3_Back_Left_Top:     Roll=45°,  Pitch=45°
+C1_Back_Right_Top:    Roll=35.264°,  Pitch=-45°
+C2_Back_Right_Bottom: Roll=-35.264°, Pitch=-45°
+C3_Back_Left_Top:     Roll=35.264°,  Pitch=45°
+(Front 계열 C5~C8 은 Roll=±144.736°. 꼭짓점 각 asin(1/√3)=35.264390°)
 ...
 ```
 
