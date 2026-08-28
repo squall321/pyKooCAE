@@ -6635,7 +6635,9 @@ class KooDynaAdvancedModification:
                         #    않으면 파서가 읽어도 조용히 버려진다. nurbs_params(차수)는
                         #    지정됐을 때만 넘겨 기존 디폴트(1차)를 건드리지 않는다.
                         **({'nurbs_params': config['nurbs_params']}
-                           if config.get('nurbs_params') else {})
+                           if config.get('nurbs_params') else {}),
+                        **({'iga_solid_params': config['iga_solid_params']}
+                           if config.get('iga_solid_params') else {})
                     }
                 )
 

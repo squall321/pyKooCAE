@@ -2301,6 +2301,17 @@ class KooMeshModifier(KooSimulationGenerator):
                                 if _v < 1:
                                     print(f"Invalid option in FEMtoIGA: {_nm}={_v} (1 이상이어야 한다)")
                                     exit()
+                            # 방향별 Gauss 적분점 수. 1=reduced(기본), 2=정밀(고차 권장)
+                            nisr = int(svector[12]) if len(svector) > 12 else 1
+                            niss = int(svector[13]) if len(svector) > 13 else nisr
+                            nist = int(svector[14]) if len(svector) > 14 else nisr
+                            for _nm, _v in (('nisr', nisr), ('niss', niss), ('nist', nist)):
+                                if _v < 1:
+                                    print(f"Invalid option in FEMtoIGA: {_nm}={_v} (1 이상이어야 한다)")
+                                    exit()
+                            if max(pr, ps, pt) > 1 and max(nisr, niss, nist) < 2:
+                                print(f"  Note: PID {source_pid} 차수 {pr}/{ps}/{pt} 인데 적분점이 1 이다. "
+                                      f"고차 NURBS 는 2 를 권장한다(*IGA 12~14번째 인자).")
 
                             iga_config = {
                                 'source_pid': source_pid,
@@ -2313,6 +2324,9 @@ class KooMeshModifier(KooSimulationGenerator):
                                     'nr': max(2, pr + 1), 'ns': max(2, ps + 1), 'nt': max(2, pt + 1),
                                     'pr': pr, 'ps': ps, 'pt': pt,
                                     'unir': 1, 'unis': 1, 'unit': 1
+                                },
+                                'iga_solid_params': {
+                                    'nisr': nisr, 'niss': niss, 'nist': nist
                                 }
                             }
 
