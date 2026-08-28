@@ -1299,6 +1299,12 @@ class KooMeshModifier(KooSimulationGenerator):
                             svector = line.split(",")
                             meshSize = KooDynaFloat(svector[1])
                             curOptions["MeshSize"] = meshSize
+                        else:
+                            # 🔴 말단 else 가 없어 인식 못 한 줄이 경고 없이 사라졌다.
+                            #    오타 하나로 재질/치수 지정이 통째로 무시되고, 그 값은
+                            #    내장 폴백(SI 단위)으로 대체돼 단위가 10^12 배 어긋난
+                            #    덱이 조용히 나온다. 무시했다는 사실만이라도 알린다.
+                            print(f"  ⚠️  DropWeightImpactTest: 인식하지 못한 옵션 줄 — 무시됨: {line[:60]}")
                     self.modeIDOption[curModeID] = curOptions
 
                 elif "**translation_doe" in line.lower():

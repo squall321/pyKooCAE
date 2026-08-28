@@ -3220,6 +3220,35 @@ class KooDynaAdvancedModification:
                 trsf.SetRotation(ax, angleBetweenVector1Vector2)
                 nodeMan.Transform(trsf)                
                 
+    # 낙하추 충격(DWI) 재질 폴백 감시 — 세 DWI 함수 공용
+    # 🔴 폴백값이 SI(E=2.07e11 Pa, rho=7800 kg/m^3)인데 이 프로젝트의 모델은
+    #    ton-mm-s(E=2.07e5 MPa, rho=7.85e-9 ton/mm^3)다. 재질 키를 빠뜨린 옵션
+    #    파일로 돌리면 **한 덱 안에서 단위가 10^12 배 어긋난 채 경고 없이** 나온다.
+    #    실증: /data/koopark/Test_dtmin_e2e/out_imp/Run_20260711_091016_89548b
+    #          모델 MAT 23~27 은 2.330e-09 인데 Impactor MAT 30 은 7.800e+03.
+    #    값을 바꾸면 이 폴백에 의존하던 기존 덱의 결과가 조용히 달라지므로,
+    #    동작은 유지하고 **어느 키가 빠져 어떤 값이 쓰였는지** 알린다.
+    _DWI_SI_FALLBACK_HINT = {
+        "YoungsModulus": "ton-mm-s 라면 2.07e5 (MPa)",
+        "PoissonRatio": "",
+        "Density": "ton-mm-s 라면 7.85e-9 (ton/mm^3)",
+    }
+
+    def _warn_dwi_fallback(self, option, keys, where):
+        """재질 키 누락 시 어떤 폴백이 쓰였는지 경고. keys = [(키, 폴백값), ...]"""
+        missing = [(k, v) for k, v in keys if k not in option]
+        if not missing:
+            return
+        print(f"  ⚠️  {where}: 재질 키 {len(missing)}개 누락 — 내장 폴백값(SI 단위)을 씁니다.")
+        for k, v in missing:
+            hint = ""
+            for pre, h in self._DWI_SI_FALLBACK_HINT.items():
+                if k.startswith(pre) and h:
+                    hint = f"  ← {h}"
+                    break
+            print(f"       {k} = {v}{hint}")
+        print("       모델이 ton-mm-s 라면 단위가 10^12 배 어긋납니다. 옵션 파일에 명시하세요.")
+
     def DropWeightImpactTestwithPartialRigid(self, option, filePath):
         if "TFinal" in option:
             tfinal = option["TFinal"]
@@ -3266,6 +3295,8 @@ class KooDynaAdvancedModification:
             matIDWall = 0
         
             
+        self._warn_dwi_fallback(option, [("YoungsModulusImpactorFront", "2.07e11"), ("DensityImpactorFront", "7800.0"), ("YoungsModulusWall", "1.0e10"), ("DensityWall", "1000.0"), ("YoungsModulusImpactor", "2.07e11"), ("DensityImpactor", "7800.0")], "DropWeightImpactTestwithPartialRigid")
+        
         if "YoungsModulusImpactorFront" in option:
             EImpactorFront = option["YoungsModulusImpactorFront"]
         else:
@@ -3678,6 +3709,8 @@ class KooDynaAdvancedModification:
             matIDWall = 0
         
             
+        self._warn_dwi_fallback(option, [("YoungsModulusImpactorFront", "2.07e11"), ("DensityImpactorFront", "7800.0"), ("YoungsModulusDamper", "1.0e10"), ("DensityDamper", "1000.0"), ("YoungsModulusWall", "1.0e10"), ("DensityWall", "1000.0"), ("YoungsModulusImpactor", "2.07e11"), ("DensityImpactor", "7800.0")], "DropWeightImpactTest")
+        
         if "YoungsModulusImpactorFront" in option:
             EImpactorFront = option["YoungsModulusImpactorFront"]
         else:
@@ -4494,6 +4527,8 @@ class KooDynaAdvancedModification:
         else:
             matIDDamp = 0
      
+        self._warn_dwi_fallback(option, [("YoungsModulusDamper", "1.0e10"), ("DensityDamper", "1000.0")], "DropWeightImpactTestbyPart")
+        
         if "YoungsModulusDamper" in option:
             EDamp = option["YoungsModulusDamper"]
         else:
