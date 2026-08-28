@@ -1390,11 +1390,35 @@ class CumulativeScenarioRunner:
         lines = "\n".join(valid)
         return f"*PreserveIncludes\n{lines}\n"
 
+    def _resolve_doe_condition(self, doe_index: int, step_num: int,
+                               condition: str) -> str:
+        """DOE별 실제 condition(angle_name / position_name) 해석 — 라벨 단일 사실원천.
+
+        _get_doe_euler / _get_doe_position 은 doe_angles / doe_positions 에서
+        각도·위치를 DOE 별로 꺼내 쓰는데, 라벨(condition)만 시나리오 템플릿의
+        steps[*].condition 값에 고정돼 있었다. 그 결과 *Description 과
+        DropSet.json.description 의 각도/위치 이름 토큰이 전 런 동일해져
+        어느 런이 어느 자세인지 산출물만으로는 알 수 없었다 (물리량은 정상).
+
+        같은 테이블에서 이름도 함께 꺼내 맞춘다. 테이블이 없으면 입력을 그대로
+        돌려줘 기존 동작을 보존한다.
+        """
+        scenario = self.config.get("scenario", {})
+        doe_key, step_key = str(doe_index), str(step_num)
+        for table_name, name_key in (("doe_angles", "angle_name"),
+                                     ("doe_positions", "position_name")):
+            table = scenario.get(table_name) or {}
+            entry = (table.get(doe_key) or {}).get(step_key)
+            if isinstance(entry, dict) and entry.get(name_key):
+                return str(entry[name_key])
+        return condition
+
     def _create_step_config(self, doe_index: int, step_config: Dict[str, Any]) -> Optional[str]:
         """Step별 KooMeshModifier 설정 파일 생성 (output_dir에 저장)"""
         step_num = step_config["step"]
         mode = step_config["mode"]
-        condition = step_config["condition"]
+        condition = self._resolve_doe_condition(doe_index, step_num,
+                                                step_config["condition"])
         params = step_config.get("params", {})
 
         # 이전 step의 결과 경로 (있다면)
@@ -1778,7 +1802,15 @@ DefaultCTE,{default_cte}{dtmin_block}
         return {"x": 0.0, "y": 0.0}
 
     def _condition_to_euler(self, condition: str) -> Dict[str, float]:
-        """Condition 코드 → Euler 각도 변환"""
+        """Condition 코드 → Euler 각도 변환 (하위호환 폴백)
+
+        정식 경로는 doe_angles 테이블(AngleSourceParser 생성)이다. 이 함수는
+        doe_angles 가 없는 옛 시나리오를 위한 폴백이며, 코너는
+        AngleSourceParser.CUBOID_CORNERS 를 단일 출처로 참조한다.
+        """
+        # 파일 전체가 함수 내부 지연 import 관례를 쓴다 (순환 import 회피)
+        from Runner.AngleSourceParser import CUBOID_CORNERS
+
         # Face 매핑
         face_map = {
             "F1": {"roll": 0, "pitch": 0, "yaw": 0},        # Back
@@ -1789,7 +1821,13 @@ DefaultCTE,{default_cte}{dtmin_block}
             "F6": {"roll": -90, "pitch": 0, "yaw": 0},      # Bottom
         }
 
-        # Edge 매핑 (대표적인 모서리들)
+        # Edge 매핑 (하위호환 전용 — 정식 경로는 doe_angles/AngleSourceParser)
+        # 주의: 이 표의 E5~E8 은 모서리가 아니라 **코너** 방향이고(각각
+        # C3/C4/C1/C2 에 해당, 참 꼭짓점에서 9.74° 벗어남), 반대로 정식
+        # E09~E12(Right_Top/Right_Bottom/Left_Top/Left_Bottom)는 여기 없다.
+        # 값을 바꾸면 이 표에 의존하는 기존 시나리오의 자세가 조용히 달라지므로
+        # 본 PR 에서는 동작을 유지하고 사실만 기록한다. 신규 시나리오는
+        # AngleSourceParser 의 정식 26케이스를 쓸 것.
         edge_map = {
             "E1": {"roll": 45, "pitch": 0, "yaw": 0},
             "E2": {"roll": -45, "pitch": 0, "yaw": 0},
@@ -1805,16 +1843,14 @@ DefaultCTE,{default_cte}{dtmin_block}
             "E12": {"roll": 0, "pitch": -135, "yaw": 0},
         }
 
-        # Corner 매핑
+        # Corner 매핑 — AngleSourceParser 의 CUBOID_CORNERS 를 단일 출처로 쓴다.
+        # 종전에는 여기 별도 표가 있었는데 크기(35.264)는 맞았지만 Back 계열의
+        # pitch 부호가 뒤집혀 C1↔C3, C2↔C4 가 서로의 꼭짓점을 가리켰다.
+        # (CSR C1(35.264,+45) 은 실제로 C3_Back_Left_Top 방향)
         corner_map = {
-            "C1": {"roll": 35.264, "pitch": 45, "yaw": 0},
-            "C2": {"roll": -35.264, "pitch": 45, "yaw": 0},
-            "C3": {"roll": 35.264, "pitch": -45, "yaw": 0},
-            "C4": {"roll": -35.264, "pitch": -45, "yaw": 0},
-            "C5": {"roll": 144.736, "pitch": 45, "yaw": 0},
-            "C6": {"roll": -144.736, "pitch": 45, "yaw": 0},
-            "C7": {"roll": 144.736, "pitch": -45, "yaw": 0},
-            "C8": {"roll": -144.736, "pitch": -45, "yaw": 0},
+            code: {"roll": rpy[0], "pitch": rpy[1], "yaw": rpy[2]}
+            for name, rpy in CUBOID_CORNERS.items()
+            for code in (name.split("_", 1)[0],)
         }
 
         if condition in face_map:
