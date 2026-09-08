@@ -33,6 +33,14 @@ DEFAULT_UA_THREADS = 8
 DEFAULT_SV_THREADS = 8
 DEFAULT_YIELD_STRESS = 350
 
+# 핫스팟 군집 기본값 — koo_deep_report 의 argparse 기본값과 같은 값을 둔다.
+# 값이 기본과 같으면 플래그를 방출하지 않아, 기존 시나리오의 생성물이
+# 바이트 단위로 그대로 유지된다(회귀 0).
+DEFAULT_HOTSPOT_TOP_PERCENT = 5.0
+DEFAULT_HOTSPOT_DISTANCE_FACTOR = 1.5
+DEFAULT_HOTSPOT_MIN_ELEMENTS = 5
+DEFAULT_HOTSPOT_MAX_CLUSTERS = 20
+
 
 def _extra_args_str(options, key):
     """postprocess[key] (list 또는 str) → 셸에 안전한 한 줄 문자열.
@@ -54,6 +62,48 @@ def _extra_args_str(options, key):
     return " ".join(shlex.quote(p) for p in parts)
 
 
+def _hotspot_args_str(options):
+    """postprocess 의 hotspot_* 전용 키 → koo_deep_report 플래그 문자열.
+
+    CLI 이름과 1:1 로 대응한다(`--hotspot-top-percent` ↔ `hotspot_top_percent`).
+    기존 `section_view_mode` ↔ `--section-view-mode` 와 같은 관례다.
+
+    · `hotspot_clusters` 가 참이 아니면 **아무것도 방출하지 않는다** →
+      기존 시나리오의 생성 스크립트가 바이트 단위로 그대로 유지된다.
+    · 값이 기본값과 같으면 그 플래그도 생략한다(명령줄을 짧게 유지).
+    · `deep_extra_args` 는 이 뒤에 붙으므로, 둘 다 주면 **extra_args 가 이긴다**
+      (고정 플래그를 뒤에서 덮는 기존 규약과 동일).
+    """
+    opts = options or {}
+    if not opts.get("hotspot_clusters"):
+        return ""
+
+    parts = ["--hotspot-clusters"]
+
+    def add(key, flag, default, cast):
+        if key not in opts:
+            return
+        try:
+            v = cast(opts[key])
+        except (TypeError, ValueError):
+            print(f"  ⚠️  postprocess.{key} 값을 해석할 수 없어 무시합니다: {opts[key]!r}")
+            return
+        if v == default:
+            return                      # 기본값이면 생략
+        parts.extend([flag, repr(v) if isinstance(v, float) else str(v)])
+
+    add("hotspot_top_percent", "--hotspot-top-percent",
+        DEFAULT_HOTSPOT_TOP_PERCENT, float)
+    add("hotspot_distance_factor", "--hotspot-distance-factor",
+        DEFAULT_HOTSPOT_DISTANCE_FACTOR, float)
+    add("hotspot_min_elements", "--hotspot-min-elements",
+        DEFAULT_HOTSPOT_MIN_ELEMENTS, int)
+    add("hotspot_max_clusters", "--hotspot-max-clusters",
+        DEFAULT_HOTSPOT_MAX_CLUSTERS, int)
+
+    return " ".join(shlex.quote(x) for x in parts)
+
+
 def build_deep_report_sh(run_dir, sif_path=None, options=None):
     """단일 시뮬용 deep_report.sh 텍스트 생성.
 
@@ -66,8 +116,15 @@ def build_deep_report_sh(run_dir, sif_path=None, options=None):
             - section_view_mode: "section" | "section_3d" | "iso_surface"
             - ua_threads: int (unified_analyzer)
             - sv_threads: int (section view)
+            - hotspot_clusters: bool — 핫스팟 군집 활성화 (기본 False)
+            - hotspot_top_percent: float (기본 5.0)
+            - hotspot_distance_factor: float (기본 1.5)
+            - hotspot_min_elements: int (기본 5)
+            - hotspot_max_clusters: int (기본 20)
+              → CLI 이름과 1:1. hotspot_clusters 가 꺼져 있으면 아무것도 방출 안 함.
             - deep_extra_args: list|str — 임의 koo_deep_report 인자 pass-through
-              (고정 플래그 뒤에 추가. 예: ["--per-part-render","--element-quality"])
+              (고정 플래그·핫스팟 플래그 **뒤에** 추가되므로 둘 다 주면 이쪽이 이긴다.
+               예: ["--per-part-render","--element-quality"])
 
     Returns:
         sh 스크립트 문자열 (실행 가능, chmod +x 후 bash 실행)
@@ -82,7 +139,12 @@ def build_deep_report_sh(run_dir, sif_path=None, options=None):
 
     axes_str = " ".join(axes)
     fields_str = " ".join(fields)
-    # 임의 koo_deep_report 인자 pass-through (고정 플래그 뒤 → override 가능)
+    # 핫스팟 군집 — 전용 키(hotspot_*) 에서 플래그 생성.
+    # 비활성이면 빈 문자열이라 기존 생성물이 그대로 유지된다.
+    hotspot = _hotspot_args_str(opts)
+    hotspot_line = f" \\\n    {hotspot}" if hotspot else ""
+    # 임의 koo_deep_report 인자 pass-through (고정 플래그 뒤 → override 가능).
+    # 🔴 전용 키보다 **뒤에** 붙는다 — 둘 다 주면 extra_args 가 이긴다.
     extra = _extra_args_str(opts, "deep_extra_args")
     extra_line = f" \\\n    {extra}" if extra else ""
     # deep_report 성공 후 d3plot 삭제 여부 (디스크 절약, 기본 OFF).
@@ -125,7 +187,7 @@ apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \\
     --section-view-axes {axes_str} \\
     --section-view-fields {fields_str} \\
     --ua-threads {ua} \\
-    --sv-threads {sv}{extra_line}
+    --sv-threads {sv}{hotspot_line}{extra_line}
 
 echo "[deep_report] done: $REPORT_DIR"
 {cleanup_block}"""

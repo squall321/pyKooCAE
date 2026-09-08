@@ -41,9 +41,10 @@ argparse 가 `unrecognized arguments` 로 exit 2 를 내고, `deep_report.sh` �
   "section_view_axes": ["z"],
   "section_view_fields": ["von_mises", "strain"],
 
+  "hotspot_clusters": true,
+  "hotspot_top_percent": 3.0,
+
   "deep_extra_args": [
-    "--hotspot-clusters",
-    "--hotspot-top-percent", "3.0",
     "--section-view-target-patterns", "*interposer*", "*pcb*",
     "--section-view-fade", "2.0"
   ],
@@ -70,15 +71,16 @@ apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \
     --section-view-fields von_mises strain \
     --ua-threads 8 \
     --sv-threads 8 \
-    --hotspot-clusters --hotspot-top-percent 3.0 --section-view-target-patterns '*interposer*' '*pcb*' --section-view-fade 2.0
+    --hotspot-clusters --hotspot-top-percent 3.0 \
+    --section-view-target-patterns '*interposer*' '*pcb*' --section-view-fade 2.0
 ```
 
-통과 인자(`deep_extra_args`)가 **맨 뒤**에 붙는 것을 확인할 수 있다 —
-그래서 앞의 고정 플래그를 덮어쓸 수 있다.
+방출 순서가 **고정 플래그 → 전용 키(hotspot_*) → `deep_extra_args`** 다.
+뒤에 오는 것이 앞을 덮으므로, `deep_extra_args` 로 무엇이든 override 할 수 있다.
 
 ---
 
-## 2. 전용 키 (21개)
+## 2. 전용 키 (26개)
 
 `postprocess` 블록에 바로 쓰는 키. 나머지는 §3 통과 인자로 넣는다.
 
@@ -102,6 +104,11 @@ apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \
 | `sv_threads` | 8 | 단면 뷰 렌더 스레드 |
 | `delete_d3plot_after_deep` | `false` | deep 성공 후 d3plot 삭제 (디스크 절약) |
 | `deep_timeout_seconds` | 7200 | deep 실행 상한 |
+
+### 핫스팟 군집 (전용 키)
+
+`hotspot_clusters` `hotspot_top_percent` `hotspot_distance_factor`
+`hotspot_min_elements` `hotspot_max_clusters` — 상세는 §4.
 
 ### 단면 뷰
 
@@ -210,13 +217,46 @@ apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \
 파트별로 상위 X% 요소를 공간 군집화해 **덩어리 단위**로 보고한다.
 "집중이 한 곳에 뭉쳤나 여러 군데 흩어졌나", "어디에 얼마나 큰 범위로 있나"를 답한다.
 
-| 옵션 | 기본 | 뜻 |
+### 지정 방법 두 가지 — 둘 다 된다
+
+**① `postprocess` 전용 키 (권장)** — CLI 이름과 1:1 (하이픈 → 밑줄)
+
+| `scenario.json` 키 | 기본 | 뜻 |
 |---|---|---|
-| `--hotspot-clusters` | 꺼짐 | 활성화 |
-| `--hotspot-top-percent` | 5.0 | 파트별 상위 백분위 (%) |
-| `--hotspot-distance-factor` | 1.5 | 거리 임계 = 이 값 × 파트 대표 요소 크기 |
-| `--hotspot-min-elements` | 5 | 이 개수 미만 덩어리는 노이즈로 버림 |
-| `--hotspot-max-clusters` | 20 | 파트당 보고 최대 덩어리 (0=무제한) |
+| `hotspot_clusters` | `false` | 활성화. **이 키가 마스터** — 꺼져 있으면 나머지 값은 무시된다 |
+| `hotspot_top_percent` | 5.0 | 파트별 상위 백분위 (%) |
+| `hotspot_distance_factor` | 1.5 | 거리 임계 = 이 값 × 파트 대표 요소 크기 |
+| `hotspot_min_elements` | 5 | 이 개수 미만 덩어리는 노이즈로 버림 |
+| `hotspot_max_clusters` | 20 | 파트당 보고 최대 덩어리 (0=무제한) |
+
+```json
+"hotspot_clusters": true,
+"hotspot_top_percent": 3.0,
+"hotspot_min_elements": 8
+```
+
+값이 기본과 같으면 플래그를 방출하지 않아 명령줄이 짧게 유지된다.
+해석할 수 없는 값(예: 문자열)은 **경고를 찍고 무시**한다 — 조용히 잘못된
+플래그를 만들지 않는다.
+
+**② `deep_extra_args` 통과 (기존 방법, 계속 동작)** — CLI 이름 그대로
+
+```json
+"deep_extra_args": ["--hotspot-clusters", "--hotspot-top-percent", "3.0"]
+```
+
+**둘 다 주면 `deep_extra_args` 가 이긴다** — 전용 키 플래그 뒤에 붙기 때문이고,
+고정 플래그를 뒤에서 덮는 기존 규약과 동일하다.
+
+### 옵션 대응표
+
+| `scenario.json` 전용 키 | CLI (`deep_extra_args`) | `--config` YAML |
+|---|---|---|
+| `hotspot_clusters` | `--hotspot-clusters` | `enabled` |
+| `hotspot_top_percent` | `--hotspot-top-percent` | `top_percent` |
+| `hotspot_distance_factor` | `--hotspot-distance-factor` | `distance_factor` |
+| `hotspot_min_elements` | `--hotspot-min-elements` | `min_elements` |
+| `hotspot_max_clusters` | `--hotspot-max-clusters` | `max_clusters` |
 
 `analysis_result.json` 의 `hotspot_clusters` 에 나온다.
 
@@ -321,6 +361,8 @@ N 이 진짜 집중된 요소 수보다 크면 **배경 요소가 딸려 들어�
 | 덩어리가 잘게 쪼개짐 | `distance_factor` 를 키운다 |
 | sphere 가 안 돔 | 시나리오가 IMPACT다. §6 |
 | 노드마다 결과가 다름 | `/opt/apptainers` 는 노드 로컬. SIF 버전 확인 |
+| 전용 키를 줬는데 안 먹음 | `hotspot_clusters: true` 가 빠졌다. 그게 마스터 스위치다 |
+| 전용 키와 `deep_extra_args` 값이 다름 | `deep_extra_args` 가 뒤에 붙어 이긴다. 한쪽만 쓸 것 |
 
 **로그 위치**
 
