@@ -1,5 +1,9 @@
 # 후처리 자동화 (deep / sphere / impact)
 
+> 📌 **실제 노드에서 바로 쓰실 분은 [postprocess_field_guide.md](postprocess_field_guide.md) 를 보십시오.**
+> 배포된 SIF 기준 옵션 전수, 그대로 복사해 쓰는 블록, 함정과 문제 해결이 정리돼 있습니다.
+> 이 문서는 설계 배경과 코드 근거를 다룹니다.
+
 ## 1. 목적 / 개요
 
 KooChainRun 의 후처리 파이프라인은 LS-DYNA 시뮬레이션 결과(`d3plot`)를 KooD3plotReader 기반 SIF(`SmartTwinPostprocessor.sif`)로 분석하여 리포트를 생성한다. `scenario.json` 의 `postprocess` 블록 하나로 다음 3단계가 자동화된다.
