@@ -262,6 +262,39 @@ check("lock 없이 index 직접 읽기 폴백 제거", "lock 없이 index 직접
 check("lock 없이 직접 쓰기 폴백 제거", "lock 없이 직접 쓰기" not in csr_src)
 
 
+# ─────────────────────────────────────────────────────────────────────
+# [7] 셸 스크립트를 만드는 모든 템플릿이 로케일 전문을 갖는가
+#     (run_doe_NNN.sh 누락을 실제로 놓쳤던 검사 — 소스 전수로 막는다)
+# ─────────────────────────────────────────────────────────────────────
+print("\n[7] 셸 템플릿 전수 — 로케일 전문 누락")
+
+SHEBANG = "#!/bin/bash"
+PREAMBLE_MARK = "export LC_ALL=C.UTF-8"
+missing = []
+for rel in py_files():
+    lines = (ROOT / rel).read_text(encoding="utf-8").splitlines()
+    for i, l in enumerate(lines):
+        if SHEBANG not in l:
+            continue
+        # 이 템플릿/블록이 끝나기 전(최대 60줄)에 전문이 나와야 한다
+        window = "\n".join(lines[i:i + 60])
+        # 리터럴 전문 또는 공용 상수 둘 중 하나면 된다
+        if PREAMBLE_MARK not in window and "SHELL_LOCALE_PREAMBLE" not in window:
+            missing.append("%s:%d" % (rel, i + 1))
+check("셸 스크립트 템플릿 전부 전문 보유", not missing, str(missing))
+
+# 증분 f.write 로 shebang 을 쓰는 생성부도 같은 검사
+incr = []
+for rel in py_files():
+    lines = (ROOT / rel).read_text(encoding="utf-8").splitlines()
+    for i, l in enumerate(lines):
+        if 'f.write("#!/bin/bash' not in l:
+            continue
+        if "SHELL_LOCALE_PREAMBLE" not in "\n".join(lines[i:i + 60]):
+            incr.append("%s:%d" % (rel, i + 1))
+check("증분 생성부 전부 전문 보유", not incr, str(incr))
+
+
 print("\n" + "=" * 72)
 if FAILS:
     print("실패 %d건" % len(FAILS))

@@ -631,6 +631,11 @@ def _generate_helper_scripts(script_dir: Path, runner_config: dict = None):
     }
     header = (
         '#!/bin/bash\n'
+        # 로케일 고정 — 컴파일 바이너리는 utf8_mode=0 이라 LANG 없으면 ascii 로 뜬다
+        'export LANG=C.UTF-8\n'
+        'export LC_ALL=C.UTF-8\n'
+        'export PYTHONUTF8=1\n'
+        'export PYTHONIOENCODING=utf-8\n'
         'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
         'KOOCR=$(python3 -c "import json; print(json.load(open(\'$SCRIPT_DIR/scenario.json\'))[\'environment\'][\'koochainrun_path\'])")\n'
     )
@@ -647,6 +652,11 @@ def _generate_helper_scripts(script_dir: Path, runner_config: dict = None):
     output_dir = str(script_dir / "output")
 
     copy_script = f'''#!/bin/bash
+# ── 로케일 고정 (컴파일 바이너리의 ascii 기동 방지) ──
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
 # copy.sh - 로컬 scratch에서 NFS Output으로 결과 동기화
 # 기본: 이 프로젝트의 job만 복사 (jobs.json 기반)
 # --all: 모든 scratch 결과 복사
@@ -769,6 +779,11 @@ echo "========================================"
 
     # clean.sh 생성 (로컬 scratch 정리)
     clean_script = f'''#!/bin/bash
+# ── 로케일 고정 (컴파일 바이너리의 ascii 기동 방지) ──
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
 # clean.sh - 로컬 scratch 정리 (병렬)
 # 기본: 이 프로젝트의 job만 정리 (jobs.json 기반)
 # --all: 모든 apptainer_job_* 정리
@@ -850,6 +865,11 @@ echo "정리 완료"
 
     # copylog.sh 생성 (로그 파일만 빠르게 동기화)
     copylog_script = f'''#!/bin/bash
+# ── 로케일 고정 (컴파일 바이너리의 ascii 기동 방지) ──
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
 # copylog.sh - 로컬 scratch에서 로그 파일만 NFS로 동기화
 # lsdyna_stdout.log, d3hsp, status.out 등 경량 파일만 가져옴
 set -e
@@ -935,6 +955,11 @@ echo "로그 동기화 완료"
     # 그래야 프로젝트마다 다른 라이선스 서버가 그대로 반영되고, 기존 프로젝트의
     # 낡은 kill_dyna.sh 도 이 파일을 덮어쓰기만 하면 갱신된다(재생성 불필요).
     kill_dyna_body = r'''#!/bin/bash
+# ── 로케일 고정 (컴파일 바이너리의 ascii 기동 방지) ──
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
 # kill_dyna.sh - 취소한 잡의 LSTC 라이선스 홀드 회수 + 계산노드 잔여 프로세스 정리
 # stop.sh에서 자동 호출됨. 단독 실행도 가능. --dry-run 으로 대상만 확인 가능.
 #
@@ -2013,6 +2038,11 @@ def _submit_cumulative(args, config_path):
 #SBATCH --requeue
 {exclusive_line}
 {exclude_line}
+# ── 로케일 고정 (컴파일 바이너리의 ascii 기동 방지) ──
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
 """
 
         if scratch_enabled:
@@ -2403,6 +2433,11 @@ exit $EXIT_CODE
 #SBATCH --requeue
 {exclusive_line}
 {exclude_line}
+# ── 로케일 고정 (컴파일 바이너리의 ascii 기동 방지) ──
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
 """
             # DOE 실행 명령 목록 생성
             doe_run_cmds = ""
@@ -2864,6 +2899,11 @@ def _rerun_sequential(manager, target_does, exclude_list, args):
 #SBATCH --requeue
 {exclusive_line}
 {exclude_line}
+# ── 로케일 고정 (컴파일 바이너리의 ascii 기동 방지) ──
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
 """
 
         doe_cmds = ""
