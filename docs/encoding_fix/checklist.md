@@ -41,4 +41,4 @@
 - [x] 커밋 (의미 단위 분할)
 - [x] 빌드 → 배포 바이너리 e2e (잡 1137~1140, D1·D2 경로 실증)
 - [x] 🔴 KooChainRun 자체 템플릿 8곳 누락 발견·수정 (run_doe_NNN.sh 포함)
-- [ ] SIF 갱신 → node001 배포
+- [x] SIF 갱신 → node001 배포 (v91, SIF 내 바이너리 mtime 확인 + env -i 실행 검증)
