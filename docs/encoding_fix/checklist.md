@@ -36,8 +36,9 @@
 - [x] 락 없는 폴백 제거
 
 ## 7. 마감
-- [x] 회귀 테스트 (기존 스위트)
-- [x] 신규 회귀 테스트 `tests/test_encoding_guard.py`
+- [x] 회귀 테스트 (기존 스위트 — hotspot 12체크 통과)
+- [x] 신규 회귀 테스트 `tests/test_encoding_guard.py` (35체크)
 - [x] 커밋 (의미 단위 분할)
-- [x] 빌드 → 배포 바이너리 e2e
-- [x] SIF 갱신 → node001 배포
+- [x] 빌드 → 배포 바이너리 e2e (잡 1137~1140, D1·D2 경로 실증)
+- [x] 🔴 KooChainRun 자체 템플릿 8곳 누락 발견·수정 (run_doe_NNN.sh 포함)
+- [ ] SIF 갱신 → node001 배포

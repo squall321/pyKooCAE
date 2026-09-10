@@ -39,3 +39,42 @@ glibc 2.35 는 내장이라 계산노드는 안전하지만, 컨테이너 내부
 ## D5 락 없는 폴백을 남기지 않는 이유
 동시 186 잡이 index 를 락 없이 읽으면 부분 기록 상태를 읽는다.
 "락 못 잡음" 은 실패로 처리하는 게 맞다. 조용히 깨진 데이터를 읽는 것보다 낫다.
+
+## 실증 결과 (2026-09-10)
+
+### 컴파일 바이너리 가드 ON/OFF (env -i)
+| 경로 | 가드 OFF | 가드 ON |
+|---|---|---|
+| `subprocess text=True` | UnicodeDecodeError | OK |
+| `open(read)` | UnicodeDecodeError | OK |
+| `open(write)` | UnicodeEncodeError | OK |
+| `logging.FileHandler` | UnicodeEncodeError | OK |
+| `print(한글)` | 프로세스 사망 | 정상 출력 |
+
+**호출부를 하나도 안 고친 상태**에서 1층만으로 전부 통과했다.
+
+### 클러스터 e2e (잡 1137~1140, node001)
+`LANG`/`LC_ALL` 제거 상태로 `prepare` → `submit` → 계산노드 실행.
+
+- 계산노드 로그에 `ELEMENT_SOLID 개수 검사: 입력 43657 = 등록 43657 (소실 0)`
+  → **자식(KooMeshModifier) 한글 stdout 이 부모에서 디코딩됨. 사고의 D1 경로 그대로.**
+- `logging.FileHandler` 한글 기록 정상 (D2)
+- 3개 로그 전부 `UnicodeDecodeError`/`UnicodeEncodeError`/`ANSI_X3.4-1968` **0건**
+- `scontrol write batch_script` 로 Slurm 이 읽은 원본 확인 — 지시자 14개 전부 보존,
+  `--dependency=afterany:1137:1138:1139` 등록, `job_env` 가 기본값 뒤에 적용
+
+### ⚠️ 완주는 확인 못 했다
+LS-DYNA 가 `Error 70022` + `Program license has expired` 로 종료했다.
+**라이선스 만료이며 이번 수정과 무관하다.** 따라서 "완주 수" 기준 판정은 미완이다.
+다만 파이프라인은 솔버 실패를 정상 처리했다 — 재시도, stage-out, status 집계,
+체크포인트 모두 동작했고 트레이스백 없이 종료했다.
+
+## 놓쳤다가 잡은 것 — run_doe_NNN.sh
+1차 D3 는 `Runner/*.py` 만 훑어 `KooChainRun` 안의 템플릿 8곳을 통째로 빠뜨렸다.
+그 중 `run_doe_NNN.sh` 는 DOE 잡 본체이자 사고 보고서의 재현 명령이 지목한 스크립트다.
+소스 스캔 범위를 좁게 잡은 것이 원인. 회귀 테스트에 shebang 전수 검사를 추가했다.
+
+또한 `{exclusive_line}{exclude_line}` 처럼 **변수로 주입되는 `#SBATCH`** 앞에
+export 를 넣으면 지시자가 통째로 무효화된다. 리터럴 `#SBATCH` 만 보고 위치를
+잡으면 안 된다 — `PostprocessShellGenerator` 에서 실제로 이 실수를 했고
+생성물 검사가 잡았다.
