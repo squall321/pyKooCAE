@@ -22,6 +22,7 @@ import logging
 import argparse
 import hashlib
 import uuid
+import errno
 import fcntl
 import glob
 import shutil
@@ -50,12 +51,22 @@ def _flock_with_timeout(fd, operation, timeout=120):
         try:
             fcntl.flock(fd, operation | fcntl.LOCK_NB)
             return  # lock 획득 성공
-        except (BlockingIOError, OSError):
-            if time.time() >= deadline:
-                raise TimeoutError(
-                    f"flock 획득 실패 (timeout={timeout}s). "
-                    f"NFS stale lock 가능성 — lock 파일 삭제 후 재시도 필요")
-            time.sleep(1)
+        except BlockingIOError:
+            pass                      # 다른 잡이 점유 중 — 재시도가 맞다
+        except OSError as e:
+            # 🔴 EBADF(9) 는 fd 가 이미 닫힌 것이다. 재시도해도 영원히 안 된다.
+            # 예전에는 이것까지 120초 동안 1초씩 재시도한 뒤 "NFS stale lock" 으로
+            # 보고해서, 코드 결함을 저장소 장애로 오진하게 만들었다.
+            if e.errno not in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES, errno.EINTR):
+                raise OSError(
+                    e.errno,
+                    f"flock 실패 — 재시도해도 복구되지 않는 오류: {e.strerror} "
+                    f"(errno={e.errno}). fd 수명 또는 파일시스템 지원 문제.") from e
+        if time.time() >= deadline:
+            raise TimeoutError(
+                f"flock 획득 실패 (timeout={timeout}s). "
+                f"NFS stale lock 가능성 — lock 파일 삭제 후 재시도 필요")
+        time.sleep(1)
 
 
 def _semaphore_acquire(lock_dir, max_concurrency, timeout=120, poll_interval=1.0):
@@ -310,7 +321,7 @@ class LSDynaSolverRunner:
         try:
             # LS-DYNA 출력을 로그 파일에 실시간 저장
             log_file = os.path.join(working_dir, "lsdyna_stdout.log")
-            with open(log_file, "w") as flog:
+            with open(log_file, "w", encoding='utf-8') as flog:
                 process = subprocess.Popen(
                     cmd,
                     cwd=working_dir,
@@ -452,7 +463,7 @@ class CumulativeScenarioRunner:
             level=logging.INFO,
             format='%(asctime)s [%(levelname)s] %(message)s',
             handlers=[
-                logging.FileHandler(log_file),
+                logging.FileHandler(log_file, encoding='utf-8'),
                 logging.StreamHandler(sys.stdout)
             ]
         )
@@ -538,23 +549,19 @@ class CumulativeScenarioRunner:
                     except OSError:
                         pass
                 else:
-                    logging.error(f"lock 재시도 실패. lock 없이 index 직접 읽기 시도")
-                    # 최후 수단: lock 없이 직접 읽기
-                    if os.path.exists(self.index_file):
-                        try:
-                            with open(self.index_file, 'r', encoding='utf-8') as f:
-                                content = f.read()
-                            if content.strip():
-                                self.index = json.loads(content)
-                                return
-                        except (json.JSONDecodeError, OSError):
-                            pass
-                    self.index = self._init_index()
+                    # 🔴 락 없이 읽지 않는다. 동시 수백 잡 환경에서 쓰기 도중 파일을
+                    # 읽으면 JSONDecodeError 가 나고, 예전에는 그때 _init_index() 로
+                    # 빈 index 를 만들어 기존 기록을 통째로 날릴 수 있었다.
+                    # 못 읽으면 못 읽는다고 실패하는 편이 낫다.
+                    raise RuntimeError(
+                        f"simulation_index.json lock 획득 실패: {lock_file}. "
+                        f"stale lock 이면 이 파일을 지우고 재실행하라. "
+                        f"(락 없이 읽으면 부분 기록을 읽어 index 를 손상시킨다)")
 
     def _load_index_locked(self, lock_file):
         """_load_index 내부: flock 사용 읽기"""
         # 1단계: LOCK_SH로 빠른 읽기 시도
-        with open(lock_file, 'a') as lf:
+        with open(lock_file, 'a', encoding='utf-8') as lf:
             _flock_with_timeout(lf, fcntl.LOCK_SH)
             try:
                 if os.path.exists(self.index_file):
@@ -570,7 +577,7 @@ class CumulativeScenarioRunner:
                 _flock_with_timeout(lf, fcntl.LOCK_UN)
 
         # 2단계: 파일 없거나 손상 → LOCK_EX로 단독 초기화/복구
-        with open(lock_file, 'a') as lf:
+        with open(lock_file, 'a', encoding='utf-8') as lf:
             _flock_with_timeout(lf, fcntl.LOCK_EX)
             try:
                 # EX 획득 후 재확인 (다른 잡이 먼저 초기화했을 수 있음)
@@ -641,7 +648,7 @@ class CumulativeScenarioRunner:
     def _save_index(self):
         """simulation_index.json 저장 (파일 잠금 + atomic write)"""
         lock_file = self.index_file + ".lock"
-        with open(lock_file, 'a') as lf:  # 'a': NFS truncate 경합 방지
+        with open(lock_file, 'a', encoding='utf-8') as lf:  # 'a': NFS truncate 경합 방지
             _flock_with_timeout(lf, fcntl.LOCK_EX)
             try:
                 self._save_index_unlocked()
@@ -664,13 +671,16 @@ class CumulativeScenarioRunner:
                     except OSError:
                         pass
                 else:
-                    logging.error(f"_update_index: lock 재시도 실패. lock 없이 직접 쓰기")
-                    self.index["scenarios"][0]["runs"][alias] = run_info
-                    self._save_index_unlocked()
+                    # 🔴 락 없이 쓰지 않는다. 동시 수백 잡이 각자 자기 index 를
+                    # 통째로 덮어쓰면 다른 잡의 기록이 사라진다(lost update).
+                    raise RuntimeError(
+                        f"simulation_index.json lock 획득 실패: {lock_file}. "
+                        f"stale lock 이면 이 파일을 지우고 재실행하라. "
+                        f"(락 없이 쓰면 다른 잡의 기록을 덮어쓴다)")
 
     def _update_index_locked(self, lock_file, alias, run_info):
         """_update_index 내부: flock 사용 업데이트"""
-        with open(lock_file, 'a') as lf:  # 'a': NFS truncate 경합 방지
+        with open(lock_file, 'a', encoding='utf-8') as lf:  # 'a': NFS truncate 경합 방지
             _flock_with_timeout(lf, fcntl.LOCK_EX)
             try:
                 # 최신 파일 재읽기: 다른 DOE 잡이 쓴 내용을 반영
@@ -741,7 +751,7 @@ class CumulativeScenarioRunner:
                 options=pp,
             )
             sh_path = os.path.join(run_dir, "deep_report.sh")
-            with open(sh_path, 'w') as f:
+            with open(sh_path, 'w', encoding='utf-8') as f:
                 f.write(sh_text)
             os.chmod(sh_path, 0o755)
             logging.info(f"deep_report.sh 생성: {sh_path}")
@@ -760,7 +770,7 @@ class CumulativeScenarioRunner:
             try:
                 log_path = os.path.join(run_dir, "deep_report.log")
                 logging.info(f"deep_report 자동 실행 (inline): {sh_path}")
-                with open(log_path, 'w') as logf:
+                with open(log_path, 'w', encoding='utf-8') as logf:
                     result = subprocess.run(
                         ["bash", sh_path],
                         cwd=run_dir,
@@ -791,18 +801,18 @@ class CumulativeScenarioRunner:
                 job_name_suffix=run_id,
             )
             sbatch_path = os.path.join(run_dir, "deep_report.sbatch")
-            with open(sbatch_path, 'w') as f:
+            with open(sbatch_path, 'w', encoding='utf-8') as f:
                 f.write(sbatch_text)
             os.chmod(sbatch_path, 0o755)
             result = subprocess.run(
                 ["sbatch", sbatch_path],
-                capture_output=True, text=True, check=True, timeout=60,
+                capture_output=True, text=True, check=True, timeout=60, encoding='utf-8', errors='replace',
             )
             jid = result.stdout.strip().split()[-1]
             logging.info(f"deep_report sbatch 제출 (separate_job): job={jid}, {sbatch_path}")
             # 잡 ID 기록 (sphere가 나중에 dependent 잡으로 모음에 활용 가능)
             jids_log = os.path.join(os.path.dirname(run_dir), "deep_report_jobs.txt")
-            with open(jids_log, 'a') as f:
+            with open(jids_log, 'a', encoding='utf-8') as f:
                 f.write(f"{jid}\t{run_id}\n")
         except Exception as e:
             logging.warning(f"deep_report sbatch 제출 실패 (skip): {e}")
@@ -853,18 +863,25 @@ class CumulativeScenarioRunner:
                 if step_num < start_step:
                     continue
 
-                success = self.run_single_step(doe, step_config)
+                success, deterministic = self._run_step_classified(doe, step_config)
 
                 if not success:
                     logging.error(f"Step {step_num} failed for DOE {doe}")
                     self.checkpoint["failure_count"] += 1
 
-                    if self.config["execution"]["retry_on_failure"]:
+                    if deterministic:
+                        logging.error(
+                            "결정적 실패이므로 재시도를 생략한다. "
+                            "입력/환경을 고치지 않으면 재시도해도 같은 결과다.")
+                    elif self.config["execution"]["retry_on_failure"]:
                         max_retries = self.config["execution"]["max_retries"]
                         for retry in range(max_retries):
                             logging.info(f"Retry {retry + 1}/{max_retries}")
-                            success = self.run_single_step(doe, step_config)
+                            success, deterministic = self._run_step_classified(doe, step_config)
                             if success:
+                                break
+                            if deterministic:
+                                logging.error("재시도 중 결정적 실패 — 중단한다.")
                                 break
 
                     if not success:
@@ -900,7 +917,7 @@ class CumulativeScenarioRunner:
         """시나리오 status 집계 (lock 내 re-read 후 실제 결과 기반 판정)"""
         lock_file = self.index_file + ".lock"
         try:
-            with open(lock_file, 'a') as lf:
+            with open(lock_file, 'a', encoding='utf-8') as lf:
                 _flock_with_timeout(lf, fcntl.LOCK_EX)
                 try:
                     if os.path.exists(self.index_file):
@@ -991,6 +1008,31 @@ class CumulativeScenarioRunner:
         except Exception as e:
             logging.warning(f"[THERM 2-pass] d3plot 병합 실패({e}) — T=root 사용(패밀리 미추적 위험)")
             return root_d3plot
+
+    #: 재시도해도 같은 결과가 나오는 결정적 실패.
+    #: 재시도하면 시간만 태우고 로그에는 "N회 재시도 후 실패" 로 남아
+    #: 일시적 자원 문제인 것처럼 보이게 만든다 (오진의 원인).
+    DETERMINISTIC_ERRORS = (
+        UnicodeDecodeError, UnicodeEncodeError, LookupError,
+        FileNotFoundError, NotADirectoryError, IsADirectoryError, PermissionError,
+        json.JSONDecodeError,
+    )
+
+    def _run_step_classified(self, doe_index: int, step_config: Dict[str, Any]):
+        """run_single_step 실행 후 (성공여부, 결정적실패여부) 반환.
+
+        예전에는 예외가 run() 밖으로 튀어 프로세스가 통째로 죽었고
+        체크포인트도 남지 않았다. 여기서 잡아 실패로 환원한다.
+        """
+        try:
+            return bool(self.run_single_step(doe_index, step_config)), False
+        except self.DETERMINISTIC_ERRORS as e:
+            logging.error(
+                f"결정적 실패 — 재시도하지 않는다: {type(e).__name__}: {e}")
+            return False, True
+        except Exception as e:
+            logging.error(f"Step 실행 중 예외: {type(e).__name__}: {e}", exc_info=True)
+            return False, False
 
     def run_single_step(self, doe_index: int, step_config: Dict[str, Any]) -> bool:
         """단일 Step 실행"""
@@ -1175,7 +1217,7 @@ class CumulativeScenarioRunner:
                     logging.info(f"Stage-out: {local_work_dir} -> {output_run_dir} (token={os.path.basename(_sem_token)})")
                     rsync_ret = subprocess.run(
                         ["rsync", "-a", "--size-only", local_work_dir + "/", output_run_dir + "/"],
-                        capture_output=True, text=True)
+                        capture_output=True, text=True, encoding='utf-8', errors='replace')
                     if rsync_ret.returncode != 0:
                         logging.warning(f"rsync failed ({rsync_ret.returncode}), fallback to shutil")
                         for fname in os.listdir(local_work_dir):
@@ -1930,7 +1972,7 @@ DefaultCTE,{default_cte}{dtmin_block}
                 cwd=working_dir,
                 capture_output=True,
                 text=True,
-                timeout=koomesh_timeout
+                timeout=koomesh_timeout, encoding='utf-8', errors='replace'
             )
 
             # Apptainer 컨테이너 정리
@@ -2105,7 +2147,7 @@ DefaultCTE,{default_cte}{dtmin_block}
 
         try:
             timeout = self.config["execution"].get("timeout_koomeshmodifier_seconds", 604800)
-            result = subprocess.run(cmd, cwd=out_dir, capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run(cmd, cwd=out_dir, capture_output=True, text=True, timeout=timeout, encoding='utf-8', errors='replace')
             time.sleep(1)
             self.apptainer.cleanup_after_exec()
             if result.stdout:
@@ -2245,4 +2287,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # 스크립트로 직접 실행될 때도 로케일을 고정한다 (Runner/_encoding.py 참조)
+    from Runner._encoding import enforce_utf8_runtime
+    enforce_utf8_runtime()
     main()

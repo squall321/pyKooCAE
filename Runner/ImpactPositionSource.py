@@ -43,7 +43,7 @@ def parse_bbox_from_k_file(k_file_path: str) -> List[float]:
     node_count = 0
     in_node_section = False
 
-    with open(k_file_path, 'r') as f:
+    with open(k_file_path, 'r', encoding='utf-8', errors='replace') as f:
         for line in f:
             if line.startswith('$'):
                 continue

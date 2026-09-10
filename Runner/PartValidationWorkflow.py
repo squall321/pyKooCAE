@@ -75,7 +75,7 @@ def prepare_part_validation(user_config, scenario_path, output_path):
     cmd = [koomeshmodifier, step_config_path]
     print(f"  실행: {' '.join(cmd)}")
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, encoding='utf-8', errors='replace')
     if result.returncode != 0:
         print(f"❌ KooMeshModifier 실행 실패 (exit={result.returncode})")
         print(result.stderr[-500:] if result.stderr else "")
@@ -131,7 +131,7 @@ def submit_part_validation(runner_config_path, args):
     print(f"  run.sh: {run_sh}")
 
     # sbatch 제출
-    result = subprocess.run(["sbatch", run_sh], capture_output=True, text=True)
+    result = subprocess.run(["sbatch", run_sh], capture_output=True, text=True, encoding='utf-8', errors='replace')
     if result.returncode == 0:
         print(f"✅ {result.stdout.strip()}")
     else:
@@ -164,7 +164,7 @@ def collect_part_validation(runner_config_path, output_report=None):
         status_file = os.path.join(output_dir, "results", basename, "status.txt")
 
         if os.path.exists(status_file):
-            with open(status_file, 'r') as f:
+            with open(status_file, 'r', encoding='utf-8') as f:
                 status = f.read().strip()
             if "PASS" in status:
                 pass_count += 1
@@ -245,5 +245,5 @@ def _write_validation_step_config(step_config_path, model_file, output_dir, opti
     lines.append("**EndPartValidationSplit")
     lines.append("*End")
 
-    with open(step_config_path, 'w') as f:
+    with open(step_config_path, 'w', encoding='utf-8') as f:
         f.write("\n".join(lines) + "\n")

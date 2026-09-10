@@ -27,6 +27,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 from datetime import datetime
 import hashlib
+from Runner._encoding import SHELL_LOCALE_PREAMBLE
 
 
 class LargeScaleDOEManager:
@@ -510,7 +511,7 @@ class LargeScaleDOEManager:
         # Slurm 스크립트 생성
         script_path = os.path.join(self.base_dir, f"slurm_{job_name}.sh")
 
-        with open(script_path, 'w') as f:
+        with open(script_path, 'w', encoding='utf-8') as f:
             f.write("#!/bin/bash\n")
             f.write(f"#SBATCH --job-name={job_name}\n")
             f.write(f"#SBATCH --partition={self.partition}\n")
@@ -529,6 +530,8 @@ class LargeScaleDOEManager:
 
             if dependency_job_id:
                 f.write(f"#SBATCH --dependency=afterok:{dependency_job_id}\n")
+            # 로케일 고정 — #SBATCH 지시자 블록 바로 뒤 (Runner/_encoding.py)
+            f.write(SHELL_LOCALE_PREAMBLE)
 
             # APPTAINER_TMPDIR 설정 (job별 격리)
             if self.apptainer_tmpdir:
@@ -869,7 +872,7 @@ class LargeScaleDOEManager:
         result = subprocess.run(
             ["sbatch", "--parsable", script_path],
             capture_output=True,
-            text=True
+            text=True, encoding='utf-8', errors='replace'
         )
 
         if result.returncode != 0:
@@ -1074,4 +1077,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # 스크립트로 직접 실행될 때도 로케일을 고정한다 (Runner/_encoding.py 참조)
+    from Runner._encoding import enforce_utf8_runtime
+    enforce_utf8_runtime()
     main()

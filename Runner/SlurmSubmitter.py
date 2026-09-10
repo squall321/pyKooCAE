@@ -24,6 +24,7 @@ import argparse
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, List
+from Runner._encoding import SHELL_LOCALE_PREAMBLE
 
 
 class SlurmSubmitter:
@@ -154,7 +155,7 @@ class SlurmSubmitter:
             dependency_ids=dep_ids,
         )
         sbatch_path = os.path.join(output_dir, sbatch_name)
-        with open(sbatch_path, 'w') as f:
+        with open(sbatch_path, 'w', encoding='utf-8') as f:
             f.write(sbatch_text)
         os.chmod(sbatch_path, 0o755)
         print(f"\n[{report_label} Postprocess] sbatch 생성: {sbatch_path}")
@@ -167,7 +168,7 @@ class SlurmSubmitter:
         try:
             result = subprocess.run(
                 ["sbatch", sbatch_path],
-                capture_output=True, text=True, check=True
+                capture_output=True, text=True, check=True, encoding='utf-8', errors='replace'
             )
             report_job_id = result.stdout.strip().split()[-1]
             print(f"  → {report_label} Job ID: {report_job_id}")
@@ -188,7 +189,7 @@ class SlurmSubmitter:
         # Slurm 스크립트 생성
         script_path = os.path.join(self.base_dir, f"slurm_{scenario_id}.sh")
 
-        with open(script_path, 'w') as f:
+        with open(script_path, 'w', encoding='utf-8') as f:
             f.write("#!/bin/bash\n")
             f.write(f"#SBATCH --job-name={scenario_id}\n")
             f.write(f"#SBATCH --partition={self.partition}\n")
@@ -199,6 +200,8 @@ class SlurmSubmitter:
             f.write(f"#SBATCH --time={self.time_limit}\n")
             f.write(f"#SBATCH --output={scenario_id}_%j.out\n")
             f.write(f"#SBATCH --error={scenario_id}_%j.err\n")
+            # 로케일 고정 — #SBATCH 지시자 블록 바로 뒤 (Runner/_encoding.py)
+            f.write(SHELL_LOCALE_PREAMBLE)
             f.write("\n")
 
             f.write("# 환경 변수 설정\n")
@@ -229,7 +232,7 @@ class SlurmSubmitter:
         result = subprocess.run(
             ["sbatch", script_path],
             capture_output=True,
-            text=True
+            text=True, encoding='utf-8', errors='replace'
         )
 
         if result.returncode != 0:
@@ -286,7 +289,7 @@ class SlurmSubmitter:
                 f"slurm_{scenario_id}_Step{step_number:03d}.sh"
             )
 
-            with open(script_path, 'w') as f:
+            with open(script_path, 'w', encoding='utf-8') as f:
                 f.write("#!/bin/bash\n")
                 f.write(f"#SBATCH --job-name={scenario_id}_S{step_number:03d}\n")
                 f.write(f"#SBATCH --partition={self.partition}\n")
@@ -301,6 +304,8 @@ class SlurmSubmitter:
                 # Step 2+ → 이전 Step 완료 후 실행
                 if prev_job_id:
                     f.write(f"#SBATCH --dependency=afterok:{prev_job_id}\n")
+                # 로케일 고정 — #SBATCH 지시자 블록 바로 뒤 (Runner/_encoding.py)
+                f.write(SHELL_LOCALE_PREAMBLE)
 
                 f.write("\n")
                 f.write(f"cd {self.base_dir}\n")
@@ -325,7 +330,7 @@ class SlurmSubmitter:
                 result = subprocess.run(
                     ["sbatch", script_path],
                     capture_output=True,
-                    text=True
+                    text=True, encoding='utf-8', errors='replace'
                 )
                 job_id = result.stdout.strip().split()[-1] if result.returncode == 0 else "FAILED"
                 print(f"  Step {step_number}: Job ID {job_id}")

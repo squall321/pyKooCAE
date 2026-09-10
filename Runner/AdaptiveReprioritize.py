@@ -116,7 +116,7 @@ def apply(plan_result: dict, dry_run: bool = True, prefer_top: bool = True) -> L
     top_failed = False
     for c in cmds:
         try:
-            r = subprocess.run(c, capture_output=True, text=True, timeout=30)
+            r = subprocess.run(c, capture_output=True, text=True, timeout=30, encoding='utf-8', errors='replace')
             if r.returncode != 0:
                 if c[1] == "top":
                     top_failed = True

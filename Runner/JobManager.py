@@ -78,7 +78,7 @@ class JobManager:
         try:
             result = subprocess.run(
                 ["sacct", "-j", job_id, "--format=State", "--noheader", "--parsable2"],
-                capture_output=True, text=True, timeout=10
+                capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace'
             )
             if result.returncode == 0 and result.stdout.strip():
                 # sacct는 여러 줄 반환 가능 (batch step 등), 첫 줄 사용
@@ -93,7 +93,7 @@ class JobManager:
         try:
             result = subprocess.run(
                 ["squeue", "-j", job_id, "--noheader", "--format=%T"],
-                capture_output=True, text=True, timeout=10
+                capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace'
             )
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip().split('\n')[0].strip()
@@ -201,7 +201,7 @@ class JobManager:
             "Cannot connect to license server"
         ]
         try:
-            with open(log_file, 'r', errors='ignore') as f:
+            with open(log_file, 'r', errors='ignore', encoding='utf-8') as f:
                 content = f.read()
                 content_lower = content.lower()
                 for pattern in patterns:
@@ -214,7 +214,7 @@ class JobManager:
     def _get_log_error_excerpt(self, log_file: str) -> str:
         """로그 파일에서 에러 관련 부분 발췌"""
         try:
-            with open(log_file, 'r', errors='ignore') as f:
+            with open(log_file, 'r', errors='ignore', encoding='utf-8') as f:
                 lines = f.readlines()
 
             # ERROR 또는 FATAL 포함 줄 찾기
@@ -266,7 +266,7 @@ class JobManager:
             try:
                 result = subprocess.run(
                     ["scancel", job_id],
-                    capture_output=True, text=True, timeout=10
+                    capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace'
                 )
                 if result.returncode == 0:
                     results[doe_idx] = {"job_id": job_id, "cancel_result": "success"}
@@ -431,7 +431,7 @@ class JobManager:
             try:
                 result = subprocess.run(
                     sbatch_cmd,
-                    capture_output=True, text=True
+                    capture_output=True, text=True, encoding='utf-8', errors='replace'
                 )
                 if result.returncode == 0:
                     new_job_id = result.stdout.strip().split()[-1]
@@ -482,7 +482,7 @@ class JobManager:
 
                 # 세부 원인 분류
                 try:
-                    with open(log_file, 'r', errors='ignore') as f:
+                    with open(log_file, 'r', errors='ignore', encoding='utf-8') as f:
                         content = f.read().lower()
 
                     if any(p in content for p in ['lstc_file', 'license', 'license checkout']):

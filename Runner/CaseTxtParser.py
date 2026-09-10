@@ -86,7 +86,7 @@ def parse_case_txt_file(file_path: str) -> List[DropAngle]:
     initial_angular_velocity_y = []
     initial_angular_velocity_z = []
 
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
         lines = f.readlines()
 
     # 파싱 상태

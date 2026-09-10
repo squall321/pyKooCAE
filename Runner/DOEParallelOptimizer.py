@@ -21,6 +21,7 @@ import argparse
 import subprocess
 from typing import Dict, Any, List, Tuple, Optional
 from pathlib import Path
+from Runner._encoding import SHELL_LOCALE_PREAMBLE
 
 
 class DOEParallelOptimizer:
@@ -131,7 +132,7 @@ class DOEParallelOptimizer:
         # Slurm 스크립트 생성
         script_path = os.path.join(self.base_dir, f"slurm_{job_name}.sh")
 
-        with open(script_path, 'w') as f:
+        with open(script_path, 'w', encoding='utf-8') as f:
             f.write("#!/bin/bash\n")
             f.write(f"#SBATCH --job-name={job_name}\n")
             f.write(f"#SBATCH --partition={self.partition}\n")
@@ -146,6 +147,8 @@ class DOEParallelOptimizer:
             # Dependency 설정
             if prev_job_id:
                 f.write(f"#SBATCH --dependency=afterok:{prev_job_id}\n")
+            # 로케일 고정 — #SBATCH 지시자 블록 바로 뒤 (Runner/_encoding.py)
+            f.write(SHELL_LOCALE_PREAMBLE)
 
             f.write("\n")
             f.write(f"cd {self.base_dir}\n")
@@ -172,7 +175,7 @@ class DOEParallelOptimizer:
         result = subprocess.run(
             ["sbatch", script_path],
             capture_output=True,
-            text=True
+            text=True, encoding='utf-8', errors='replace'
         )
 
         if result.returncode != 0:
@@ -282,7 +285,7 @@ class DOEParallelOptimizer:
 
         script_path = os.path.join(self.base_dir, f"slurm_{job_name}.sh")
 
-        with open(script_path, 'w') as f:
+        with open(script_path, 'w', encoding='utf-8') as f:
             f.write("#!/bin/bash\n")
             f.write(f"#SBATCH --job-name={job_name}\n")
             f.write(f"#SBATCH --partition={self.partition}\n")
@@ -291,6 +294,8 @@ class DOEParallelOptimizer:
             f.write(f"#SBATCH --time={self._seconds_to_slurm_time(self.timeout)}\n")
             f.write(f"#SBATCH --output={job_name}_%j.out\n")
             f.write(f"#SBATCH --error={job_name}_%j.err\n")
+            # 로케일 고정 — #SBATCH 지시자 블록 바로 뒤 (Runner/_encoding.py)
+            f.write(SHELL_LOCALE_PREAMBLE)
             f.write("\n")
 
             f.write(f"cd {self.base_dir}\n")
@@ -308,7 +313,7 @@ class DOEParallelOptimizer:
 
         os.chmod(script_path, 0o755)
 
-        result = subprocess.run(["sbatch", script_path], capture_output=True, text=True)
+        result = subprocess.run(["sbatch", script_path], capture_output=True, text=True, encoding='utf-8', errors='replace')
         job_id = result.stdout.strip().split()[-1] if result.returncode == 0 else "FAILED"
         return job_id
 
@@ -329,7 +334,7 @@ class DOEParallelOptimizer:
         job_name = f"{scenario_id}_Poller_S{step_number:03d}"
         script_path = os.path.join(self.base_dir, f"slurm_{job_name}.sh")
 
-        with open(script_path, 'w') as f:
+        with open(script_path, 'w', encoding='utf-8') as f:
             f.write("#!/bin/bash\n")
             f.write(f"#SBATCH --job-name={job_name}\n")
             f.write(f"#SBATCH --partition={self.partition}\n")
@@ -337,6 +342,8 @@ class DOEParallelOptimizer:
             f.write(f"#SBATCH --mem=1G\n")
             f.write(f"#SBATCH --time=24:00:00\n")
             f.write(f"#SBATCH --output={job_name}_%j.out\n")
+            # 로케일 고정 — #SBATCH 지시자 블록 바로 뒤 (Runner/_encoding.py)
+            f.write(SHELL_LOCALE_PREAMBLE)
             f.write("\n")
 
             f.write(f"cd {self.base_dir}\n")
@@ -370,7 +377,7 @@ class DOEParallelOptimizer:
 
         os.chmod(script_path, 0o755)
 
-        result = subprocess.run(["sbatch", script_path], capture_output=True, text=True)
+        result = subprocess.run(["sbatch", script_path], capture_output=True, text=True, encoding='utf-8', errors='replace')
         job_id = result.stdout.strip().split()[-1] if result.returncode == 0 else "FAILED"
         return job_id
 

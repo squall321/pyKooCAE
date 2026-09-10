@@ -1027,7 +1027,7 @@ class CumulativeDesigner:
                     options=runner_config.postprocess,
                 )
                 sh_path = os.path.join(output_dir, "sphere_report.sh")
-                with open(sh_path, 'w') as f:
+                with open(sh_path, 'w', encoding='utf-8') as f:
                     f.write(sh_text)
                 os.chmod(sh_path, 0o755)
                 print(f"sphere_report.sh 생성 (수동 실행 가능): {sh_path}")
@@ -1043,7 +1043,7 @@ class CumulativeDesigner:
                     options=runner_config.postprocess,
                 )
                 impact_sh_path = os.path.join(output_dir, "impact_report.sh")
-                with open(impact_sh_path, 'w') as f:
+                with open(impact_sh_path, 'w', encoding='utf-8') as f:
                     f.write(impact_sh_text)
                 os.chmod(impact_sh_path, 0o755)
                 print(f"impact_report.sh 생성 (수동 실행 가능): {impact_sh_path}")

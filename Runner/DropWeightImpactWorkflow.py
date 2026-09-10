@@ -101,7 +101,7 @@ def prepare_drop_weight_impact(user_config, scenario_path, output_path):
 
     # 4. manifest 저장
     manifest_path = os.path.join(output_dir, "dwi_manifest.json")
-    with open(manifest_path, 'w') as f:
+    with open(manifest_path, 'w', encoding='utf-8') as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
 
     # 5. run.sh 생성
@@ -135,7 +135,7 @@ def prepare_drop_weight_impact(user_config, scenario_path, output_path):
 
 def submit_drop_weight_impact(runner_config_path, args):
     """drop_weight_impact 제출."""
-    with open(runner_config_path, 'r') as f:
+    with open(runner_config_path, 'r', encoding='utf-8') as f:
         rc = json.load(f)
 
     run_sh = rc.get("run_sh", "")
@@ -143,7 +143,7 @@ def submit_drop_weight_impact(runner_config_path, args):
         print(f"❌ Error: run.sh 없음: {run_sh}")
         return
 
-    result = subprocess.run(["sbatch", run_sh], capture_output=True, text=True)
+    result = subprocess.run(["sbatch", run_sh], capture_output=True, text=True, encoding='utf-8', errors='replace')
     if result.returncode == 0:
         print(f"✅ {result.stdout.strip()}")
         # jobs.json 기록 — 부모 드라이버의 잡ID 폴링과 리포트 dependent 제출(jobs.json 기반)이
@@ -164,7 +164,7 @@ def submit_drop_weight_impact(runner_config_path, args):
 
 def collect_drop_weight_impact(runner_config_path):
     """drop_weight_impact 결과 수집."""
-    with open(runner_config_path, 'r') as f:
+    with open(runner_config_path, 'r', encoding='utf-8') as f:
         rc = json.load(f)
 
     output_dir = rc.get("output_dir", "")
@@ -173,7 +173,7 @@ def collect_drop_weight_impact(runner_config_path):
         print(f"❌ Error: manifest 없음")
         return
 
-    with open(manifest_path, 'r') as f:
+    with open(manifest_path, 'r', encoding='utf-8') as f:
         manifest = json.load(f)
 
     pass_count = 0
@@ -187,7 +187,7 @@ def collect_drop_weight_impact(runner_config_path):
         status_file = os.path.join(case_dir, "status.txt")
 
         if os.path.exists(status_file):
-            with open(status_file, 'r') as f:
+            with open(status_file, 'r', encoding='utf-8') as f:
                 status = f.read().strip()
             if "PASS" in status:
                 pass_count += 1
@@ -217,7 +217,7 @@ def collect_drop_weight_impact(runner_config_path):
                 print(f"  #{r['index']} x={r['x']:.2f} y={r['y']:.2f}: {r['status']}")
 
     report_path = os.path.join(output_dir, "dwi_report.json")
-    with open(report_path, 'w') as f:
+    with open(report_path, 'w', encoding='utf-8') as f:
         json.dump({"total": total, "pass": pass_count, "fail": fail_count,
                     "pending": pending_count, "details": results}, f, indent=2)
     print(f"  리포트: {report_path}")
@@ -232,7 +232,7 @@ def _parse_bbox_from_kfile(model_file):
     in_node = False
     count = 0
 
-    with open(model_file, 'r', errors='replace') as f:
+    with open(model_file, 'r', errors='replace', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
             if line.startswith('*'):
@@ -275,7 +275,7 @@ def _parse_part_centers_from_kfile(model_file, pids):
     # 1. 노드 좌표 수집
     nodes = {}  # nid → (x, y, z)
     in_node = False
-    with open(model_file, 'r', errors='replace') as f:
+    with open(model_file, 'r', errors='replace', encoding='utf-8') as f:
         for line in f:
             ls = line.strip()
             if ls.startswith('*'):
@@ -310,7 +310,7 @@ def _parse_part_centers_from_kfile(model_file, pids):
     in_shell = False
     prev_line = None
 
-    with open(model_file, 'r', errors='replace') as f:
+    with open(model_file, 'r', errors='replace', encoding='utf-8') as f:
         for line in f:
             ls = line.strip()
             if ls.startswith('*'):
@@ -576,7 +576,7 @@ def _write_dwi_step_config(config_path, model_file, output_dir,
     lines.append("**EndDropWeightImpactTest")
     lines.append("*End")
 
-    with open(config_path, 'w') as f:
+    with open(config_path, 'w', encoding='utf-8') as f:
         f.write("\n".join(lines) + "\n")
 
 
@@ -607,6 +607,12 @@ def _generate_dwi_run_sh(run_sh_path, output_dir, config_dir, total_cases, envir
 #SBATCH --partition={partition}
 #SBATCH --output={output_dir}/logs/slurm_%A_%a.out
 #SBATCH --error={output_dir}/logs/slurm_%A_%a.err
+# ── 로케일 고정 (컴파일 바이너리의 ascii 기동 방지) ──
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+
 
 mkdir -p {output_dir}/logs
 mkdir -p {output_dir}/results
@@ -674,6 +680,6 @@ fi
 echo "=== Done: $BASENAME (exit=$EXIT_CODE) ==="
 """
 
-    with open(run_sh_path, 'w') as f:
+    with open(run_sh_path, 'w', encoding='utf-8') as f:
         f.write(script)
     os.chmod(run_sh_path, 0o755)

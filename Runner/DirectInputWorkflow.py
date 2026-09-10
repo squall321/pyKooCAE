@@ -222,6 +222,12 @@ class DirectInputWorkflow:
 #SBATCH --partition={resources['partition']}
 #SBATCH --output={step_dir}/slurm_%j.out
 #SBATCH --error={step_dir}/slurm_%j.err
+# ── 로케일 고정 (컴파일 바이너리의 ascii 기동 방지) ──
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+
 
 # ========================================================================
 # Direct Input Workflow - Step {step_number}
@@ -396,7 +402,7 @@ echo "=================================================="
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
-                    text=True
+                    text=True, encoding='utf-8', errors='replace'
                 )
 
                 if result.returncode == 0:
@@ -439,7 +445,7 @@ echo "=================================================="
                 result = subprocess.run(
                     ["scontrol", "show", "job", job_id],
                     capture_output=True,
-                    text=True
+                    text=True, encoding='utf-8', errors='replace'
                 )
 
                 if result.returncode == 0:

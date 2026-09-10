@@ -159,7 +159,7 @@ def test_designer_doe_vibrations_roundtrip_preserves_load_curve():
 
     tmp_path = os.path.join(base_dir, "runner_config.json")
     d.save_runner_config(rc, tmp_path)
-    with open(tmp_path) as f:
+    with open(tmp_path, encoding='utf-8') as f:
         serialized = json.load(f)
 
     dv = serialized.get("scenario", {}).get("doe_vibrations", {})
@@ -193,7 +193,7 @@ def test_runner_create_step_config_vibration_no_raise():
 
     tmp_path = os.path.join(base_dir, "runner_config.json")
     d.save_runner_config(rc, tmp_path)
-    with open(tmp_path) as f:
+    with open(tmp_path, encoding='utf-8') as f:
         runner_config = json.load(f)
 
     # dummy model_file (build_vibration_load_config 가 경로 존재성 미검증이라
