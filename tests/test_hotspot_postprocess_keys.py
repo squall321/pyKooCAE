@@ -66,6 +66,18 @@ c = cmd({**BASE, "hotspot_clusters": True,
          "deep_extra_args": ["--section-view-target-patterns", "*a b*"]})
 chk("따옴표 처리", "'*a b*'" in c)
 
+print("[9] 기준량 키 — 문자열/배열/별칭, 기본값 생략, 모르는 이름 경고")
+c = cmd({**BASE, "hotspot_clusters": True, "hotspot_criterion": "von_mises"})
+chk("기본값 von_mises 는 생략", "--hotspot-criterion" not in c)
+c = cmd({**BASE, "hotspot_clusters": True, "hotspot_criterion": ["max_principal", "min_principal"]})
+chk("배열 → 쉼표 목록", "--hotspot-criterion max_principal,min_principal" in c)
+c = cmd({**BASE, "hotspot_clusters": True, "hotspot_criterion": "VM, Sigma3"})
+chk("별칭·대소문자 정규화", "--hotspot-criterion von_mises,min_principal" in c)
+c = cmd({**BASE, "hotspot_clusters": True, "hotspot_criterion": "tresca"})
+chk("전부 모르는 이름이면 플래그 없음(=von_mises 기본)", "--hotspot-criterion" not in c)
+c = cmd({**BASE, "hotspot_criterion": "min_principal"})
+chk("활성화 없이 기준만 주면 방출 안 함", "--hotspot" not in c)
+
 print()
 if FAILS:
     print(f"[FAIL] 실패 {len(FAILS)} 건: {FAILS}")

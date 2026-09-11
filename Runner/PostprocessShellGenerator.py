@@ -41,6 +41,8 @@ DEFAULT_HOTSPOT_TOP_PERCENT = 5.0
 DEFAULT_HOTSPOT_DISTANCE_FACTOR = 1.5
 DEFAULT_HOTSPOT_MIN_ELEMENTS = 5
 DEFAULT_HOTSPOT_MAX_CLUSTERS = 20
+DEFAULT_HOTSPOT_CRITERION = "von_mises"
+HOTSPOT_CRITERIA = ("von_mises", "max_principal", "min_principal")
 
 
 def _extra_args_str(options, key):
@@ -102,7 +104,35 @@ def _hotspot_args_str(options):
     add("hotspot_max_clusters", "--hotspot-max-clusters",
         DEFAULT_HOTSPOT_MAX_CLUSTERS, int)
 
+    # 기준량 — 문자열("von_mises,min_principal") 또는 배열 둘 다. 모르는 이름은
+    # 여기서 걸러 즉시 알린다(SIF 안에서 걸리면 리포트가 통째로 안 나온 뒤에야 안다).
+    crit = _normalize_hotspot_criterion(opts.get("hotspot_criterion"))
+    if crit and crit != DEFAULT_HOTSPOT_CRITERION:
+        parts.extend(["--hotspot-criterion", crit])
+
     return " ".join(shlex.quote(x) for x in parts)
+
+
+def _normalize_hotspot_criterion(value):
+    """hotspot_criterion 값 → 'a,b' 정규 문자열. 없거나 비면 None."""
+    if value is None:
+        return None
+    items = [str(x) for x in value] if isinstance(value, (list, tuple)) else str(value).split(",")
+    out = []
+    for it in items:
+        k = it.strip().strip('"').strip("'").lower().replace("-", "_").replace(" ", "_")
+        if not k:
+            continue
+        k = {"vm": "von_mises", "vonmises": "von_mises",
+             "sigma1": "max_principal", "s1": "max_principal", "maxprincipal": "max_principal",
+             "sigma3": "min_principal", "s3": "min_principal", "minprincipal": "min_principal"}.get(k, k)
+        if k not in HOTSPOT_CRITERIA:
+            print(f"  ⚠️  postprocess.hotspot_criterion: 알 수 없는 기준량 무시 — {it.strip()!r} "
+                  f"(허용: {', '.join(HOTSPOT_CRITERIA)})")
+            continue
+        if k not in out:
+            out.append(k)
+    return ",".join(out) if out else None
 
 
 def build_deep_report_sh(run_dir, sif_path=None, options=None):

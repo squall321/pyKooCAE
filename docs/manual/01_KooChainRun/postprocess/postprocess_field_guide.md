@@ -80,7 +80,7 @@ apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \
 
 ---
 
-## 2. 전용 키 (26개)
+## 2. 전용 키 (27개)
 
 `postprocess` 블록에 바로 쓰는 키. 나머지는 §3 통과 인자로 넣는다.
 
@@ -108,7 +108,7 @@ apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \
 ### 핫스팟 군집 (전용 키)
 
 `hotspot_clusters` `hotspot_top_percent` `hotspot_distance_factor`
-`hotspot_min_elements` `hotspot_max_clusters` — 상세는 §4.
+`hotspot_min_elements` `hotspot_max_clusters` `hotspot_criterion` — 상세는 §4.
 
 ### 단면 뷰
 
@@ -174,7 +174,7 @@ apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \
 
 ```
 --hotspot-clusters --hotspot-top-percent --hotspot-distance-factor
---hotspot-min-elements --hotspot-max-clusters
+--hotspot-min-elements --hotspot-max-clusters --hotspot-criterion
 --section-view --section-view-backend --section-view-mode --section-view-axes
 --section-view-fields --section-view-target-ids --section-view-target-patterns
 --section-view-fade --section-view-per-part --no-section-view-per-part
@@ -228,11 +228,13 @@ apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \
 | `hotspot_distance_factor` | 1.5 | 거리 임계 = 이 값 × 파트 대표 요소 크기 |
 | `hotspot_min_elements` | 5 | 이 개수 미만 덩어리는 노이즈로 버림 |
 | `hotspot_max_clusters` | 20 | 파트당 보고 최대 덩어리 (0=무제한) |
+| `hotspot_criterion` | `"von_mises"` | 선별 기준량. `von_mises` · `max_principal` · `min_principal`. 문자열(`"a,b"`) 또는 배열. 여러 개면 **파트×기준** 항목이 각각 나온다 |
 
 ```json
 "hotspot_clusters": true,
 "hotspot_top_percent": 3.0,
-"hotspot_min_elements": 8
+"hotspot_min_elements": 8,
+"hotspot_criterion": ["von_mises", "min_principal"]
 ```
 
 값이 기본과 같으면 플래그를 방출하지 않아 명령줄이 짧게 유지된다.
@@ -257,12 +259,30 @@ apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \
 | `hotspot_distance_factor` | `--hotspot-distance-factor` | `distance_factor` |
 | `hotspot_min_elements` | `--hotspot-min-elements` | `min_elements` |
 | `hotspot_max_clusters` | `--hotspot-max-clusters` | `max_clusters` |
+| `hotspot_criterion` | `--hotspot-criterion` | `criterion` |
+
+### 기준량 — 재료·파손 모드에 맞춰 고른다
+
+| `hotspot_criterion` | 무엇을 뽑나 | 쓰는 곳 | `stress_max` 의 뜻 |
+|---|---|---|---|
+| `von_mises` (기본) | 등가응력이 큰 곳 | 연성재 항복 | 최댓값 (≥ 0) |
+| `max_principal` | σ1 이 큰 곳 = **인장** 집중 | 취성재·솔더·세라믹 균열 | 최댓값 (부호 있음) |
+| `min_principal` | σ3 이 작은 곳 = **압축** 집중 | 압축 파손·좌굴·눌림 | **최솟값** (음수) |
+
+🔴 `min_principal` 은 "가장 음수인" 요소를 뽑는다. 결과 항목의 `direction` 이 `"min"` 이고
+`stress_max`·`threshold_value` 가 **최솟값**이다. 변형률도 짝을 맞춘다 —
+`strain_measure` 가 `equivalent` / `max_principal` / `min_principal` 로 나온다.
+
+낙하 덱에서 흔한 모습은 von Mises 와 `min_principal` 의 1위 덩어리가 **같은 자리**
+(압축 지배)이고, `max_principal` 은 **다른 자리**에 더 작은 값으로 나오는 것이다.
+이 둘이 갈리는 곳이 인장 균열 후보다.
 
 `analysis_result.json` 의 `hotspot_clusters` 에 나온다.
 
 ```json
 {
   "part_id": 100, "part_name": "Part_100",
+  "criterion": "von_mises", "direction": "max", "strain_measure": "equivalent",
   "element_count_total": 1152, "element_count_selected": 34,
   "element_count_clustered": 26,
   "element_size_ref": 2.249, "distance_threshold": 3.373,
@@ -280,7 +300,8 @@ apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \
 
 | 필드 | 뜻 |
 |---|---|
-| `center` | 응력×부피 가중 중심. **초기 형상 기준** |
+| `criterion` / `direction` | 기준량과 극값 방향. `direction: "min"` 이면 `stress_max` 는 최솟값 |
+| `center` | 심각도×부피 가중 중심(von Mises 는 응력×부피와 같음). **초기 형상 기준** |
 | `radius_enclosing` | 중심 → 구성 요소의 **최원 절점**. 덩어리 실제 크기 |
 | `radius_rms` | 부피 가중 RMS 반경. **뭉침 정도** — 포함반경보다 훨씬 작으면 한 점 집중 |
 | `stress_mean` | **부피 가중** 평균 (산술평균 아님) |
