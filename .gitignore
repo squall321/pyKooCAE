@@ -60,3 +60,15 @@ build_dist/lib/KooChainRun/KooChainRun.bin
 build_dist/lib/KooMeshModifier/
 build_dist/Library/
 *.tar.gz
+build_dist/lib/KooChainRun/*.so*
+build_dist/lib/KooChainRun/scipy/
+
+# 세션·스크린샷·리다이렉트 찌꺼기 / 루트 재생성 바이너리 (2026-09 정리)
+/KooChainRun.bin
+/--help
+/output.csv
+/overview-top.png
+/slide-target.png
+.playwright-mcp/
+lspost.cfile
+lspost.msg
