@@ -1565,9 +1565,48 @@ class CumulativeScenarioRunner:
             dimension_str = str(impact_params.get("dimension", 0.008))
             mid_material_block = ""
             front_material_block = ""
+
+            def _stage_nu(stage, default):
+                # 단 안은 문서상 `poisson`, 최상위는 `poisson_ratio` 라 섞어 쓰기 쉽다.
+                # 틀린 이름이 조용히 기본값이 되지 않도록 둘 다 받는다.
+                return stage.get("poisson", stage.get("poisson_ratio", default))
+
+            # 충격추 본체 재질 — KMM 은 실린더 back 질량을 'Impactor' 파트로 만들고
+            # DensityImpactor/YoungsModulusImpactor/PoissonRatioImpactor 로 재질을 받는다.
+            # (구 등 단일 형상 충격추도 같은 키)
+            imp_rho = impact_params.get("density", 7.85e-9)
+            imp_E = impact_params.get("youngs_modulus", 2.01e5)
+            imp_nu = impact_params.get("poisson_ratio", impact_params.get("poisson", 0.3))
+
             if cyl_stages and impactor_type.lower() == "cylinder":
                 front = cyl_stages[0]
                 back = cyl_stages[-1]
+
+                # 🔴 back 단 재질. 예전에는 back 에서 지름·높이만 읽고 재질을 버려서, 단에 적은
+                #    density/youngs_modulus/poisson 이 무시되고 최상위 값(없으면 강철 기본값)이
+                #    들어갔다. 공식 예제 impact_cylinder_8pi 에서 충격추 ≈418 g 가 ≈493 g(+18%)로
+                #    생성됐다. back 단 값이 있으면 그것을 쓴다(최상위와 다르면 경고).
+                back_mat = {}
+                if "density" in back:
+                    back_mat["density"] = back["density"]
+                if "youngs_modulus" in back:
+                    back_mat["youngs_modulus"] = back["youngs_modulus"]
+                if "poisson" in back or "poisson_ratio" in back:
+                    back_mat["poisson"] = _stage_nu(back, None)
+                top_mat = {
+                    "density": impact_params.get("density"),
+                    "youngs_modulus": impact_params.get("youngs_modulus"),
+                    "poisson": impact_params.get("poisson_ratio", impact_params.get("poisson")),
+                }
+                for k, v in back_mat.items():
+                    tv = top_mat[k]
+                    if tv is not None and float(tv) != float(v):
+                        logging.warning(
+                            f"IMPACT: cylinder_stages back 단 {k}={v} 와 impact 최상위 값 {tv} 가 다릅니다 "
+                            f"— back 단 값을 씁니다 (충격추 본체 = back 단)")
+                imp_rho = back_mat.get("density", imp_rho)
+                imp_E = back_mat.get("youngs_modulus", imp_E)
+                imp_nu = back_mat.get("poisson", imp_nu)
                 f_dia = front.get("diameter")
                 f_outer = front.get("outer_diameter", f_dia)
                 radius = f_dia / 2.0                  # fillet 평탄부 반경
@@ -1583,7 +1622,7 @@ class CumulativeScenarioRunner:
                     mid_material_block = (
                         f"DensityImpactorMid,{mid.get('density', 7.85e-9)}\n"
                         f"YoungsModulusImpactorMid,{mid.get('youngs_modulus', 2.01e5)}\n"
-                        f"PoissonRatioImpactorMid,{mid.get('poisson', 0.3)}\n"
+                        f"PoissonRatioImpactorMid,{_stage_nu(mid, 0.3)}\n"
                     )
                 else:
                     dim_vals = [radius, outerRadius, hFront, hBack, backRadius]
@@ -1591,7 +1630,7 @@ class CumulativeScenarioRunner:
                 front_material_block = (
                     f"DensityImpactorFront,{front.get('density', 1.18e-9)}\n"
                     f"YoungsModulusImpactorFront,{front.get('youngs_modulus', 7.8)}\n"
-                    f"PoissonRatioImpactorFront,{front.get('poisson', 0.49)}\n"
+                    f"PoissonRatioImpactorFront,{_stage_nu(front, 0.49)}\n"
                 )
 
             # 파트 이동 DOE — 이동 모드를 앞 번호로 선언 (없으면 두 조각 모두 빈 문자열)
@@ -1620,9 +1659,9 @@ Type,{impact_params.get('type', 'Sphere')}
 Dimension,{dimension_str}
 MeshSize,{impact_params.get('mesh_size', 0.001)}
 DimensionDamper,{dim_damper_str}
-DensityImpactor,{impact_params.get('density', 7.85e-9)}
-YoungsModulusImpactor,{impact_params.get('youngs_modulus', 2.01e5)}
-PoissonRatioImpactor,{impact_params.get('poisson_ratio', 0.3)}
+DensityImpactor,{imp_rho}
+YoungsModulusImpactor,{imp_E}
+PoissonRatioImpactor,{imp_nu}
 {front_material_block}{mid_material_block}DensityWall,{wall_params.get('density', 1.0e-9)}
 YoungsModulusWall,{wall_params.get('youngs_modulus', 1.0e4)}
 PoissonRatioWall,{wall_params.get('poisson_ratio', 0.3)}
