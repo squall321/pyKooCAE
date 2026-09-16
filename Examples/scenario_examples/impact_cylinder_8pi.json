@@ -1,5 +1,5 @@
 {
-  "_comment": "8파이 3단 실린더 충격추 (~418g, 목표 400g). 고무팁(충돌 거동) + ⌀20 SUS 중간단 + ⌀44.5 SUS 본체. GenerationMode=DampingSpring (주 경로, 3단 지원). type=cylinder + cylinder_stages.",
+  "_comment": "8파이 3단 실린더 충격추 (목표 400g. KMM 메시 실측 392g — back 하단 R12.25 필렛 반영, 필렛 없는 손계산 ~418g). 고무팁(충돌 거동) + ⌀20 SUS 중간단 + ⌀44.5 SUS 본체. GenerationMode=DampingSpring (주 경로, 3단 지원). type=cylinder + cylinder_stages.",
   "_comment_unit": "ton-mm-s. 직경 mm, 밀도 ton/mm³, E MPa.",
   "project_name": "Impact_Cylinder8pi",
   "base_dir": "/data/koopark/Impact_Cylinder8pi",

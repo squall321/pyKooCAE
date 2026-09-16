@@ -50,6 +50,18 @@ KooMeshModifier 입력 `.k`(텍스트) 블록은 `**DropWeightImpactTest,<modeid
 
 > 참고: 예제 `.txt` 에는 `YoungModulus`/`Density`/`PoissonRatio`(접미사 없는 형태)도 보이지만,
 > 파서가 처리하는 키는 위 표의 접미사 포함 키(`YoungsModulusImpactor` 등)입니다 — `KooMeshModifier.py:1084-1155`.
+
+> **실린더 단 ↔ 재질 슬롯**
+>
+> | 실린더 단 | KMM 파트 | 재질 키 |
+> |---|---|---|
+> | front (고무팁·볼록부) | `ImpactorFront` | `*ImpactorFront` |
+> | mid (3단일 때) | `ImpactorMid` | `*ImpactorMid` (없으면 `*Impactor` 값을 따름) |
+> | **back (본체 질량)** | **`Impactor`** | **`*Impactor`** |
+>
+> `ImpactorBack` 이라는 별도 슬롯은 없다. back 은 `Impactor` 다. 파서가 부분 문자열로 키를 맞추므로
+> `DensityImpactorBack` 처럼 써도 `DensityImpactor` 로 들어간다. back 하단에는 R = backRadius − (mid 또는
+> front 외경 반경) 필렛이 들어가 원기둥보다 체적이 작다(8파이: −6.7%).
 > 접미사 없는 줄은 `*impactor` 등 부분일치로 매칭되거나 무시될 수 있어 **확인 필요**.
 
 ### scenario.json 경유(KooChainRun) 키

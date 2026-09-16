@@ -1,5 +1,5 @@
 {
-  "_comment": "15파이 실린더 충격추 (~500g). 앞⌀15 평탄부+필렛(h15→⌀44.5) + ⌀44.5 본체(h45.01). 전체 SUS ρ6.854e-9. 2단(front+back)으로 표현 — mid 미사용.",
+  "_comment": "15파이 실린더 충격추 (~500g 로 기재됐으나 KMM 메시 실측 600g — front 볼록부 121g + back 479g. ⚠️ 실물 500g 이면 형상/밀도 재확인 필요). 앞⌀15 평탄부+필렛(h15→⌀44.5) + ⌀44.5 본체(h45.01). 전체 SUS ρ6.854e-9. 2단(front+back)으로 표현 — mid 미사용.",
   "_comment_unit": "ton-mm-s.",
   "project_name": "Impact_Cylinder15pi",
   "base_dir": "/data/koopark/Impact_Cylinder15pi",

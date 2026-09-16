@@ -46,7 +46,7 @@ output/impact_report.html + impact_report.json
 | `offset_distance` | float | 충격추 초기 이격거리 → `OffsetDistance` | CumulativeScenarioRunner.py:1277 |
 | `cylinder_stages` | list | 실린더 단(stage) 목록 `[front, (mid), back]`. 2단 또는 3단 | CumulativeScenarioRunner.py:1212,1217 |
 | `dimension_damper` | list | 댐퍼 치수 `[x,y,z]` → `DimensionDamper` (기본 `[0.001,0.001,0.001]`) | CumulativeScenarioRunner.py:1204-1205 |
-| `density` / `youngs_modulus` / `poisson_ratio` | float | 단순 형상(Sphere 등) 충격추 재질 → `DensityImpactor` 등 | CumulativeScenarioRunner.py:1266-1268 |
+| `density` / `youngs_modulus` / `poisson_ratio` | float | 단순 형상(Sphere 등) 충격추 재질 → `DensityImpactor` 등. 실린더는 back 단에 재질이 없을 때만 쓰인다 | CumulativeScenarioRunner.py IMPACT 분기 |
 
 ### `cylinder_stages[]` 각 단(stage)
 
@@ -56,7 +56,16 @@ output/impact_report.html + impact_report.json
 | `diameter` | float | 단 직경. 반경 = 직경/2 로 변환됨 | CumulativeScenarioRunner.py:1220-1222 |
 | `outer_diameter` | float | front 단 전용. 평탄부(`diameter`)→필렛 후 외경. 미지정 시 `diameter` 사용 | CumulativeScenarioRunner.py:1221 |
 | `height` | float | 단 높이 | CumulativeScenarioRunner.py:1224,1226,1230 |
-| `density` / `youngs_modulus` / `poisson` | float | 단별 재질. front/mid 는 별도 카드(`*ImpactorFront`/`*ImpactorMid`)로 직렬화 | CumulativeScenarioRunner.py:1233-1235,1241-1243 |
+| `density` / `youngs_modulus` / `poisson` | float | 단별 재질. front → `*ImpactorFront`, mid → `*ImpactorMid`, **back → `*Impactor`**(충격추 본체). `poisson` 대신 `poisson_ratio` 도 받는다 | CumulativeScenarioRunner.py IMPACT 분기 |
+
+> 🔴 **back 단 재질 = KMM 의 `Impactor` 슬롯.** KMM 에는 `ImpactorBack` 이라는 이름의 슬롯이 따로 없고,
+> 실린더 뒤쪽 질량은 `Impactor` 파트로 만들어져 `DensityImpactor`/`YoungsModulusImpactor`/`PoissonRatioImpactor`
+> 로 재질을 받는다. (KMM 옵션 파일에 `DensityImpactorBack` 을 써도 같은 슬롯으로 들어간다.)
+>
+> 2026-09-16 이전 러너는 back 단의 재질을 **읽지 않고 버렸다** — back 은 `impact` 최상위
+> `density`/`youngs_modulus`/`poisson_ratio` 에서만 왔고, 없으면 강철 기본값(7.85e-9 / 2.01e5)이었다.
+> 공식 예제 8파이 충격추가 392 g → 463 g(+18%), 15파이가 600 g → 670 g(+12%) 로 생성됐다(KMM 메시 실측).
+> 지금은 back 단 값이 있으면 그것을 쓰고, 최상위 값과 다르면 경고 후 back 단 값을 쓴다.
 
 > dimension 직렬화 규칙 (CumulativeScenarioRunner.py:1210, 1231/1238):
 > - **3단**: `[radius, outerRadius, hFront, midRadius, hMid, backRadius, hBack]` (값 7개)
@@ -214,6 +223,7 @@ DOE/step 별로 `mode == "IMPACT"` 분기에서 KooMeshModifier 설정을 만든
 - 3단(len>=3)이면 mid=stages[1] 을 추가하여 dimension 7값 직렬화 + `DensityImpactorMid`/`YoungsModulusImpactorMid`/`PoissonRatioImpactorMid` 라인을 만든다 (1227-1236).
 - 2단이면 dimension 5값으로 직렬화한다 (1237-1238).
 - front 재질은 항상 `DensityImpactorFront`/`YoungsModulusImpactorFront`/`PoissonRatioImpactorFront` 로 별도 직렬화한다 (1240-1244).
+- back 재질은 `DensityImpactor`/`YoungsModulusImpactor`/`PoissonRatioImpactor` 로 직렬화한다 — back 단 값 우선, 없으면 `impact` 최상위, 그것도 없으면 기본값.
 
 직렬화된 `dimension_str` 와 front/mid 재질 블록은 `Dimension,...` 및 그 직후 라인에 삽입된다 (CumulativeScenarioRunner.py:1263, 1269). Wall 파트는 `DensityWall`/`WallNumX/Y/Z` 등으로 함께 생성된다 (1269-1274).
 
