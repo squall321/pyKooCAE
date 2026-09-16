@@ -82,6 +82,11 @@ scenario.json 옵션
       n_samples          샘플 수 (기본 50)
       x_range / y_range  범위 (생략 시 bbox 자동)
 
+      --- part_center 모드 ---
+      pids              대상 파트 ID 리스트 (각 파트 중심 기준 격자)
+      spacing           격자 간격 mm (기본 5)
+      layers            중심에서 확장 단수 (기본 2, layers=2 → 5x5=25개/파트)
+
     generation_mode     "DampingSpring" — 댐퍼 스프링 (기본)
                         "OutsideRigidPart" — 반경 밖 파트 강체화
                         "OutsideRigidElement" — 반경 밖 요소 강체화
@@ -119,6 +124,10 @@ scenario.json 옵션
 
   LHS (랜덤):
     "locations": {"mode": "lhs", "n_samples": 100, "margin": 0.85}
+
+  파트 중심 기준:
+    "locations": {"mode": "part_center", "pids": [4, 5, 6], "spacing": 3.0, "layers": 2}
+    → 각 파트 중심 기준 5x5=25개, 중복 자동 제거
 
 ================================================================================
 출력 구조

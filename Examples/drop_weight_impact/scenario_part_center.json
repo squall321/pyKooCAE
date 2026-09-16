@@ -1,0 +1,38 @@
+{
+    "_comment": "파트 중심 기준 등간격 충격 — 특정 파트 위를 집중 타격",
+    "project_name": "DWI_PartCenter",
+    "mode": "drop_weight_impact",
+    "model_file": "../MinimumModel.k",
+    "output_dir": "dwi_part_center",
+
+    "simulation_params": {
+        "tFinal": 0.001,
+        "dt": 0.000001,
+        "impactor": {
+            "type": "Sphere",
+            "radius": 3.0,
+            "height": 100,
+            "density": 7850,
+            "youngs_modulus": 2.0e11,
+            "poisson_ratio": 0.3
+        },
+        "locations": {
+            "mode": "part_center",
+            "_comment_pids": "대상 파트 ID — 각 파트 중심 기준으로 격자 생성",
+            "pids": [4, 5, 6],
+            "_comment_spacing": "격자 간격 (mm)",
+            "spacing": 3.0,
+            "_comment_layers": "중심에서 확장 단수 (layers=2 → 5x5=25개/파트)",
+            "layers": 2
+        },
+        "generation_mode": "DampingSpring"
+    },
+
+    "environment": {
+        "koomeshmodifier_path": "/data/SmartTwinPreprocessor/bin/KooMeshModifier",
+        "koochainrun_path": "/data/SmartTwinPreprocessor/bin/KooChainRun",
+        "ncpu": 4,
+        "memory": "4G",
+        "partition": "normal"
+    }
+}

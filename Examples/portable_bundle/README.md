@@ -41,7 +41,7 @@ sudo tar xzf SmartTwinPreprocessor_*.tar.gz -C /opt/SmartTwinPreprocessor/  # �
 |---|---|---|
 | `base_dir` | `/data/koopark/Quick_Fib5` | `/data/<your_user>/<your_project>` |
 | `environment.lsdyna_apptainer_env.LSTC_LICENSE_SERVER` | `CHANGE_ME_TO_YOUR_LICENSE_IP` | 새 클러스터의 LSTC 라이센스 서버 IP |
-| `environment.apptainer_bind` | `/data:/data,/shared:/shared` | 새 클러스터에서 마운트할 호스트 경로 |
+| `environment.apptainer_bind` | `/data:/data` | 새 클러스터에서 마운트할 호스트 경로 |
 
 **나머지 환경 옵션(`apptainer_sif`, `lsdyna_apptainer_sif`, `koomeshmodifier_path`, `lsdyna_path` 등)은 클러스터 셋업이 동일하면 그대로 OK.**
 
