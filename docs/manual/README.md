@@ -34,6 +34,7 @@ KooAutomatedModeller        KooMeshModifier            KooChainRun
 |------|------|
 | [pyKooCAE 아키텍처 개요](00_overview/architecture.md) | 3개 도구 구조, 데이터 흐름, 배포 형태 |
 | [빌드 · 배포 가이드](00_overview/install_build.md) | Nuitka 빌드 스크립트, 배포 대상, SIF 패키징 |
+| [통합 조합 가이드](00_overview/composition_guide.md) | 5개 도구를 엮어 시나리오 구성(파이프라인·모드·REMAP·조합 레시피) |
 | [용어집](00_overview/glossary.md) | 핵심 용어 · 약어 정의 |
 
 ### 01 · KooChainRun (오케스트레이션 CLI)

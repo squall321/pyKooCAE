@@ -122,3 +122,22 @@ pyKooCAE 매뉴얼 작성 현황과 후속 보완 대상을 정리한다. 본 �
 2. **P1 — 부분구현 기능 완성 후 문서 갱신** (4절): 특히 WEAK_COUPLING(TypeError 의심), SIMULATION_AUTOMATION(config 미저장), KooAutomatedModeller LSDYNADOE/다중 솔버 export, KooChainRun collect 일반 DOE 경로
 3. **P2 — 실모델 e2e 검증 보강** (5절): 예제 부재·산출물 미확인 다수. 특히 동작 오류 가능성이 있는 항목(submit partition 우선순위, run --resume 미연결, TRANSLATION_DOE KeyError/IndexError, CONVERT_CNRB_TO_SOLID PID 충돌, REMOVE_DUPLICATE_TIED_CONTACTS on/off 미검사) 우선
 4. **미작성 하위 페이지**: 02_KooMeshModifier/modes/ 일부 카테고리 상세, 03_KooAutomatedModeller/generators·examples 하위 일부는 링크만 존재 → 추가 작성 필요
+
+---
+
+## 7. 2026-09-16 보강 — KooRemapper 심화 + 통합 조합 가이드
+
+기존 `04_KooRemapper` 는 README(op 카탈로그) 1장뿐이라 01/02/03 대비 얇았다. 실제 SIF 바이너리
+(`/opt/kooremapper/bin/KooRemapper` v1.8.0)의 전 op를 대조해 op별 레퍼런스로 보강했다.
+
+- **신규 10건**(status=written, dev_status=구현됨).
+  - `04_KooRemapper/ops/` 9개 카테고리 페이지 — 총 47 op + version(48 섹션). op별 용도·호출형태·인자표·예제·주의·개발현황. 호출형태는 바이너리 `Usage` 와 일치 검증.
+    mesh_mapping / mesh_generate / mesh_edit / surface_remesh / deform_prestress / material_assembly / load_bc_contact / solver_setup / info_meta.
+  - `00_overview/composition_guide.md` — 5개 도구(KAM·KMM·KR·KCR·KooDynaPostProcessor)를 엮어 시나리오를 구성하는 통합 가이드(파이프라인·scenario/runner_config 2계층·모드 지도·REMAP 삽입·조합 레시피).
+- **04_KooRemapper/README.md 정정**: "46 op → 47 op", `modelmeta` 누락 보완, 숨은(hidden) op를 정확히 5종(extract-surface·tetremesh·meshfix·merge·strip)으로 정정, 카테고리 페이지 색인화.
+- **정본↔바이너리 불일치 발견(후속 정본 갱신 필요)**: v1.8.0 help·예제가 정본 매뉴얼과 다른 항목이 다수. 각 op 문서에 '확인 필요'로 명시. 대표.
+  - load/boundary/rbe: 정본은 노드/파트 ID 직접 지정, help·예제는 면-선택(part/mode/select) 스키마.
+  - offset connection_mode: help=tied|czm|contact|none vs 정본=shared|tied|czm.
+  - wrap tension 단위: help=[force/length] vs 정본=MPa.
+  - explicit: level 체계 없음. `examples/explicit/levelNN.yaml` 은 실은 `stabilize` op 예제.
+  - ale YAML 키가 정본(parts/preset)과 help·예제(ale_parts/material) 불일치.
