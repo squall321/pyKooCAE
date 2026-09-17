@@ -9,6 +9,7 @@
     "output_dir": "dwi_output",
 
     "simulation_params": {
+        "_comment_units": "[tonne, mm, s, MPa] — 모델(.k)과 같은 단위. 강철 density 7.85e-9, youngs_modulus 2.0e5, height mm",
         "_comment_sim": "해석 시간 설정",
         "tFinal": 0.001,
         "dt": 0.000001,
@@ -18,8 +19,8 @@
             "type": "Sphere",
             "radius": 5.0,
             "height": 100,
-            "density": 7850,
-            "youngs_modulus": 2.0e11,
+            "density": 7.85e-9,
+            "youngs_modulus": 2.0e5,
             "poisson_ratio": 0.3
         },
 
@@ -47,9 +48,9 @@
 
         "_comment_wall": "바닥판 물성",
         "wall": {
-            "youngs_modulus": 2.0e11,
+            "youngs_modulus": 2.0e5,
             "poisson_ratio": 0.3,
-            "density": 7850
+            "density": 7.85e-9
         }
     },
 

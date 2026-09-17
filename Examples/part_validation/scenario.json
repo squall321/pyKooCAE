@@ -3,7 +3,7 @@
     "mode": "part_validation",
     "description": "파트별 낙하 검증 시뮬레이션 — 각 파트를 독립적으로 0도 낙하시켜 해석 가능 여부 사전 확인",
 
-    "model_file": "../HWWarrantyDropTest/Tests/Test_001/model.k",
+    "model_file": "../MinimumModel.k",
 
     "output_dir": "validation_output",
 

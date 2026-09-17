@@ -57,7 +57,7 @@ TranslationZ,<PID>,<Z0>,<Z1>,...,<Zn>
 - 같은 PID에 대해 처음 들어온 축은 나머지 두 축을 `[0.0]*len(리스트)` 로 채운다(KooMeshModifier.py:1271-1294). 즉 한 축만 주어도 나머지 축은 0 이동으로 자동 채워짐.
 - 샘플 개수는 **첫 PID의 X 리스트 길이**로 결정된다: `numofSamples = len(firstpidTransXList)` (KooDynaAdvancedModification.py:6334-6336).
 
-> 확인 필요(코드상 버그 가능성): 옵션 블록 파서의 자동 0-채움 로직은 `if pid not in curOptions["Translation"]:` 인 분기에서 `curOptions["Translation"][pid]["Y"] = ...` 를 수행하는데(KooMeshModifier.py:1271-1274 등), `curOptions["Translation"][pid]` 를 `{}` 로 먼저 초기화하는 코드가 없어 `KeyError` 가 발생할 수 있다. 즉 "한 PID에 대해 X/Y/Z 를 모두 명시"하지 않고 일부 축만 주는 사용은 현재 코드에서 실패할 소지가 있다. 안전하게는 **각 PID에 X/Y/Z 세 줄을 모두 기재**하는 것을 권장한다. (정밀 검증 필요)
+> (2026-09-17 파서로 확인) 한 PID 에 한 축만 줘도 나머지 두 축이 같은 길이의 0 리스트로 채워지고 KeyError 는 나지 않는다 (예: `TranslationX,100,0.0,5.0` 만 → Y·Z 는 `[0.0, 0.0]`).
 
 ---
 
@@ -72,8 +72,6 @@ TranslationZ,<PID>,<Z0>,<Z1>,...,<Zn>
 MinimumModel.k
 *Mode
 translation_doe,1
-*End
-
 **Translation_DOE,1
 TranslationX,100,0.0,5.0
 TranslationY,100,0.0,0.0
@@ -82,7 +80,10 @@ TranslationX,200,0.0,-3.0
 TranslationY,200,0.0,2.0
 TranslationZ,200,0.0,0.0
 **End
+*End
 ```
+
+> 🔴 (2026-09-17 정정) 예전 예제는 `*End` 를 옵션 블록보다 앞에 둬서 블록을 아예 읽지 않았다. 옵션 블록은 `*Mode` 목록 뒤, 파일 끝 `*End` 앞에 둔다. 위 예제는 파서로 읽어 확인했다(`KooMeshModifier --help TRANSLATION_DOE` 사례와 같은 형식).
 
 위 입력은 다음을 생성한다(샘플 수 = 첫 PID X 리스트 길이 = 2):
 
