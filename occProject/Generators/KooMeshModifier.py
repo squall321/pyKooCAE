@@ -1579,7 +1579,9 @@ class KooMeshModifier(KooSimulationGenerator):
                                 curOptions["ControlHourglass"][key] = float(val)
                             except ValueError:
                                 curOptions["ControlHourglass"][key] = val
-                        elif "dt" in line.lower():
+                        elif line.split(",")[0].strip().lower() == "dt":
+                            # 키 완전일치. 부분 문자열이면 RigidifySmallDtThreshold,
+                            # DropContact.DTSTIF/DTPCHK 가 dt 로 오인돼 DT 를 덮고 소실됨.
                             svector = line.split(",")
                             dt = KooDynaFloat(svector[1])
                             curOptions["DT"] = dt
