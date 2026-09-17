@@ -21,7 +21,7 @@ TOPICS = [
         "  - 입력 파일은 `키,값` 줄 형식 (AIRMESH 만 JSON). `#` 로 시작하는 줄은 주석.",
         "  - 블록 헤더는 `*` 로 시작 (*Layer, *Capacitor, *PCB, *ODB ...). 키 이름은 대소문자 구분·접두 일치.",
         "  - 파일 끝에 *End 를 둘 것 — PCB/ArrayPCB 파서는 *End 가 없으면 EOF 에서 멈추지 않는다.",
-        "  - 라이선스 게이트·입력 키워드 오류·Evolver 없음은 종료 코드 1. 그 밖의 생성 실패는 0 으로 끝나는 경로가 남아 있어 로그의 Complete/FAILED 와 산출물로 확인할 것.",
+        "  - 모르는 모드 이름·입력 파일 없음·라이선스 게이트·최상위 키워드 오류·Evolver 실패는 종료 코드 1. *Layer 안의 모르는 키는 조용히 무시되므로 로그의 Complete/FAILED 와 산출물도 확인할 것 (AIRMESH 는 항상 0, report.json 의 status 로 판단).",
         "  - 실행 시 등록 IP·사용 기한(2027-12-31)을 확인한다. `Access denied` 면 그 머신에서는 실행되지 않는다 (종료 코드 1). 계산 노드 대역 192.168.122.x 는 허용.",
     ]),
     Topic("outputs", "모드별 산출물", aliases=["출력", "산출물", "output"], body=[
