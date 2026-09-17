@@ -29,11 +29,16 @@ def check(name, cond, detail=""):
         FAILS.append("%s %s" % (name, detail))
 
 
-def fake_evolver(dirpath):
+def fake_evolver(dirpath, support=False):
     os.makedirs(dirpath, exist_ok=True)
     p = os.path.join(dirpath, "evolver")
     Path(p).write_text("#!/bin/sh\n")
     os.chmod(p, 0o755)
+    if support:
+        Path(dirpath, "stl.cmd").write_text("// stl\n")
+        Path(dirpath, "xyztorque.cmd").write_text("// t\n")
+        Path(dirpath, "leftSolder.stl").write_text("old output\n")
+        os.makedirs(os.path.join(dirpath, "fe"), exist_ok=True)
     return p
 
 
@@ -55,7 +60,7 @@ def main():
 
         w = tempfile.mkdtemp(prefix="evo_install_")
         inst = tempfile.mkdtemp(prefix="evo_inst_")
-        exe = fake_evolver(os.path.join(inst, "Library", "Evolver"))
+        exe = fake_evolver(os.path.join(inst, "Library", "Evolver"), support=True)
         EL._install_dirs = lambda: [os.path.join(inst, "Library", "Evolver")]
         with contextlib.redirect_stdout(io.StringIO()):
             got = EL.find_linux_evolver(w)
@@ -64,6 +69,20 @@ def main():
             check("작업 폴더에 없으면 설치본을 찾음", got == exe, got)
         check("작업 폴더 Library/Evolver/evolver 를 만들어 둠", os.path.exists(link))
         check("  설치본을 가리키는 링크", os.path.islink(link) and os.path.realpath(link) == os.path.realpath(got))
+        wd = os.path.join(w, "Library", "Evolver")
+        check("  스크립트가 읽는 *.cmd·fe/ 도 연결 (read \"stl.cmd\")",
+              all(os.path.exists(os.path.join(wd, n)) for n in ("stl.cmd", "xyztorque.cmd", "fe")))
+        check("  옛 산출물(.stl)은 연결하지 않음 (읽기 전용 설치본에 쓰기 방지)",
+              not os.path.lexists(os.path.join(wd, "leftSolder.stl")))
+
+        # 앞선 배포본(v96)이 evolver 링크만 만든 폴더 — 빠진 보조 파일을 채운다
+        w2 = tempfile.mkdtemp(prefix="evo_partial_")
+        os.makedirs(os.path.join(w2, "Library", "Evolver"))
+        os.symlink(exe, os.path.join(w2, "Library", "Evolver", "evolver"))
+        with contextlib.redirect_stdout(io.StringIO()):
+            EL.find_linux_evolver(w2)
+        check("  evolver 링크만 있는 폴더에 보조 파일 보충",
+              os.path.exists(os.path.join(w2, "Library", "Evolver", "stl.cmd")))
 
         w = tempfile.mkdtemp(prefix="evo_parent_")
         sub = os.path.join(w, "a", "b")
