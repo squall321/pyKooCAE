@@ -84,7 +84,7 @@ TOPICS = [
         "  KMM 은 값을 변환하지 않는다. 표준 낙하 모델은 [tonne, mm, s, MPa] (강철 ρ 7.85e-9, E 2.0e5).",
         "  낙하 속도 √(2gh) 의 g 는 simulation_params.gravity (IMPACT 는 impact.gravity 도) 로 지정한다.",
         "  없으면 KMM 이 모델 재질 밀도로 단위계를 판정한다 (ton-mm-s → 9810, kg-m-s → 9.81).",
-        "  kg-mm-ms 처럼 판정이 안 되는 단위계는 반드시 gravity 를 줄 것 (로그에 WARNING).",
+        "  kg-mm-ms·g-cm-s 처럼 판정이 안 되는 단위계는 반드시 gravity 를 줄 것 (로그에 WARNING).",
     ]),
 ]
 

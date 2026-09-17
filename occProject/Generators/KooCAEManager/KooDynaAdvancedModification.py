@@ -2073,10 +2073,12 @@ class KooDynaAdvancedModification:
             if med < 1.0e-7:
                 print(f"{context}: 재질 밀도 중앙값 {med:.3e} → ton-mm-s, g = 9810")
                 return lambda h: 9810.0
-            if 1.0 <= med <= 1.0e5:
+            # 100 미만은 판정하지 않는다: g-cm-s·g-cm-μs 의 g/cm³(강철 7.85)와 겹치고, 그 둘은 g 가 서로 다르다
+            if 100.0 <= med <= 1.0e5:
                 print(f"{context}: 재질 밀도 중앙값 {med:.3e} → kg-m-s, g = 9.81")
                 return lambda h: 9.81
-        print(f"WARNING {context}: 단위계 판정 불가 (재질 밀도 중앙값 {med}) — Gravity 키로 g 를 지정할 것. "
+        print(f"WARNING {context}: 단위계 판정 불가 (재질 밀도 중앙값 {med}) — Gravity 키로 g 를 지정할 것 "
+              f"(ton-mm-s < 1e-7, kg-m-s 100~1e5 만 자동 판정). "
               f"옛 추정(height > 100 → mm g=9810, 이하 → m g=9.81) 사용")
         return lambda h: 9810.0 if h > 100 else 9.81
 

@@ -92,6 +92,8 @@ def main():
     check("Gravity 키가 밀도 판정보다 우선", f(50) == 9.81e-3)
     f, out = resolve([7.85e-6, 2.7e-6])
     check("kg-mm-ms 처럼 판정 불가 → 옛 추정 + 경고", f(150) == 9810.0 and f(50) == 9.81 and "WARNING" in out)
+    f, out = resolve([7.85, 2.7, 1.2])
+    check("g-cm-s(g/cm³ 7.85) → kg-m-s 로 오판하지 않고 경고", "WARNING" in out and "→ kg-m-s" not in out)
     f, out = resolve([])
     check("재질 없음 → 옛 추정 + 경고", f(50) == 9.81 and "WARNING" in out)
     f, _ = resolve([7.85e-9, 7.85e-9, 7850.0])
