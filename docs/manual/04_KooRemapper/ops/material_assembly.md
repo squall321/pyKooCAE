@@ -296,17 +296,17 @@ operations:
         material_card: |
           *MAT_ELASTIC
           $#     mid        ro         e        pr
-               MID001  7.85E-09  2.10E+05       0.3
+              MID001  7.85E-09  2.10E+05       0.3
       - thickness: 0.4
         material_card: |
           *MAT_ELASTIC
           $#     mid        ro         e        pr
-               MID002  7.85E-09  1.50E+05      0.25
-      - thickness: 0.3       # MID001 재사용 → MAT 카드 1회만 출력
+              MID002  7.85E-09  1.50E+05      0.25
+      - thickness: 0.3       # 라벨·내용이 1층과 같음 → MID 공유, MAT 카드 1회만 출력
         material_card: |
           *MAT_ELASTIC
           $#     mid        ro         e        pr
-               MID001  7.85E-09  2.10E+05       0.3
+              MID001  7.85E-09  2.10E+05       0.3
 
 material:
   E: 210000.0

@@ -73,7 +73,7 @@ KooRemapper prestress [options] <ref_mesh> <def_mesh> <output>
 |---|---|---|---|
 | `<ref_mesh>` | positional | 기준(미변형) 메시 k-파일 | — |
 | `<def_mesh>` | positional | 변형 메시 k-파일(동일 토폴로지) | — |
-| `<output>` | positional | 출력 파일(dynain 또는 CSV) | — |
+| `<output>` | positional | dynain 파일 경로(재료가 없으면 CSV) | — |
 | `--E <value>` | option | 영률(K-파일 재료 오버라이드) | K-파일 값 |
 | `--nu <value>` | option | 푸아송 비(K-파일 재료 오버라이드) | K-파일 값 |
 | `--strain <type>` | option | 변형률 유형 `engineering`/`green` | `green` |
@@ -90,6 +90,13 @@ KooRemapper prestress [options] <ref_mesh> <def_mesh> <output>
 apptainer exec SmartTwinPreprocessor.sif \
   /opt/kooremapper/bin/KooRemapper prestress --E 210000 --nu 0.3 --csv ref.k def.k prestress_out
 ```
+
+### 출력 (바이너리 동작)
+- `<output>`: `*INITIAL_STRESS_SOLID`(dynain). `pre.k` 처럼 `.k` 로 끝나면 `pre.dynain` 으로 쓴다(메시 사본과 같은 파일이 되어 dynain 이 덮어써지고 자기 자신을 `*INCLUDE` 하던 결함 수정).
+- `<output 에서 확장자를 뗀 이름>.k`: 변형 메시 사본 + dynain `*INCLUDE`.
+- `<output 에서 확장자를 뗀 이름>.csv`: `--csv` 일 때. 재료를 못 찾으면 dynain 대신 `<output>` 에 CSV 만 쓴다.
+
+위 예제(`prestress_out`)는 `prestress_out`(dynain) + `prestress_out.k` + `prestress_out.csv` 를 만든다. 알아보기 쉬운 이름을 원하면 `prestress_out.dynain` 을 준다.
 
 ### REMAP 스텝
 positional 계열이므로 `params.op: prestress` + `params.argv: ["ref.k", "def.k", "prestress_out", "--E", "210000", "--nu", "0.3", "--csv"]`.
@@ -168,12 +175,18 @@ KooRemapper warpage <config.yaml>
 | `output` | top | 출력 접두 |
 | `operations[].type` | op | `warpage` |
 | `operations[].target_pid` | op | 대상 파트 |
-| `operations[].source` | op | `dat_file` 또는 `formula` |
-| `operations[].dat_file` | op | 측정 변형 데이터 파일 |
-| `operations[].dat_top` / `dat_bottom` | op | 상/하면 컬럼명 |
-| `operations[].x_min`/`x_max`/`y_min`/`y_max` | op | 데이터 바운딩 박스(선택) |
+| `operations[].dat_file` | op | 처짐값 격자 파일(필수, YAML 폴더 기준 상대 경로) |
+| `operations[].plane` | op | `xy`(기본) / `yz` / `zx` |
+| `operations[].deflection_axis` | op | `+z`(기본 `z`) / `-z` / `±x` / `±y` |
+| `operations[].unit` | op | 격자 값 단위 `um`(기본) / `mm` / `m` |
+| `operations[].mode` | op | `prestress`(기본, 초기응력만) / `deform`(노드 이동) |
+| `operations[].morph_factor` | op | 처짐 배율(> 0, 기본 1.0) |
+| `operations[].finite_strain` | op | `true`(기본, von Kármán) / `false`(Kirchhoff) |
+| `operations[].outside_behavior` | op | 격자 범위 밖 노드 `zero`(기본) / `clamp` / `extrapolate` |
+| `operations[].mask_value` / `noise_threshold` | op | 결측 값(기본 9999, 주변 보간) / 노이즈 임계값(기본 1e-10) |
+| `operations[].data_bbox.{x_min,x_max,y_min,y_max}` | op | 격자가 덮는 평면 범위(생략 시 파트 bbox) |
 
-정본 §21 은 추가로 `mode`(curvature/raw), `morph_factor`(변형 배율, 기본 1.0), `deflection_axis`, `plane`(투영 평면), `noise_threshold`(기본 0.001), `finite_strain`(기본 false), `outside_behavior`(clamp/zero, 기본 clamp), `mask_value`(무효 데이터 마커) 파라미터를 문서화한다. 다만 v1.8.0 help 예시의 `operations:` 스키마 내 정확한 배치는 help에 나타나지 않으므로 사용 전 실제 스키마 확인이 필요하다.
+이전 help 와 이 문서가 적었던 `source`·`dat_top`·`dat_bottom`·op 바로 아래 `x_min~y_max` 는 warpage 파서가 읽지 않는 키였다(오류 없이 무시, 바이너리 help 도 정정됨). `mode` 는 `curvature/raw` 가 아니라 `prestress/deform` 이다.
 
 ### 예제
 ```yaml
@@ -182,25 +195,29 @@ output: warped
 operations:
   - type: warpage
     target_pid: 1
-    source: dat_file
     dat_file: warpage.dat
-    dat_top: top
-    dat_bottom: bottom
-    x_min: 0.0
-    x_max: 100.0
-    y_min: 0.0
-    y_max: 100.0
+    plane: xy
+    deflection_axis: +z
+    unit: um
+    mode: prestress
+```
+
+`warpage.dat` 은 공백 구분 처짐값 행렬이다(아래는 가운데가 100 um 솟은 3×5 격자). 빈 폴더 실행 사례는 `KooRemapper help warpage` 에 있다.
+```
+0  0   0   0  0
+0 50 100  50  0
+0  0   0   0  0
 ```
 
 ### 동작원리
-dat 파일(탭/공백 구분 x, y, z 컬럼)에서 격자 변형 데이터를 로드하고, 중간 절점 위치는 바이리니어 보간으로 변형량을 산정해 메시를 변형한다. curvature 모드는 유한 차분으로 곡률을 구해 굽힘 응력을, raw 모드는 직접 절점 변위만 적용한다(정본 §21).
+처짐값 행렬을 `data_bbox`(생략 시 파트 bbox)에 펼친다. **열 0 = 평면 1축 최소, 행 0 = 2축 최소**다(bend 의 dat 는 행 0 = x2 최대로 반대). 노드 위치의 처짐은 바이리니어 보간으로 구하고, prestress 모드는 유한 차분 곡률 → Kirchhoff/von Kármán 굽힘 변형률 → 초기응력을, deform 모드는 노드를 처짐만큼 이동한다(정본 §21).
 
 ### REMAP 스텝
 yaml-config 계열이므로 `params.op: warpage` + `params.config: {base_model, output, operations: [...]}`.
 
 ### 주의
-- dat 파일은 탭/공백 구분의 x, y, z 컬럼 형식이어야 한다(help).
-- 정본 §21 문서화 파라미터(mode, morph_factor 등)의 help 스키마 내 배치는 미확인이므로 확인 필요.
+- dat 파일은 x y z 열이 아니라 처짐값 행렬이다(값 단위는 `unit`, 기본 um).
+- YAML 이 작업 폴더에 있을 때 `dat_file` 을 루트(`/파일`)에서 찾던 결함은 수정됐다(REMAP 스텝처럼 작업 폴더에서 실행하는 경우).
 
 ### 개발현황
 구현됨(v1.8.0 바이너리 내장, help 확인).
@@ -224,12 +241,14 @@ KooRemapper bend <config.yaml>
 | `output` | top | 출력 접두 |
 | `operations[].type` | op | `bend` |
 | `operations[].target_pid` | op | 대상 파트 |
-| `operations[].plane` | op | 굽힘 평면 `xy`/`xz`/`yz` |
-| `operations[].mode` | op | `formula` 또는 `dat` |
-| `operations[].expression` | op | 처짐 w(x1) 수식(formula 모드) |
-| `operations[].source`/`dat_file`/`dat_top`/`dat_bottom` | op | dat 모드 입력 |
+| `operations[].plane` | op | 굽힘 평면 `xy` / `yz` / `zx` (x1,x2 = X,Y / Y,Z / Z,X) |
+| `operations[].mode` | op | `deform`(노드 이동 + 역응력) / `stress`(노드 그대로, 정응력) |
+| `operations[].source` | op | `formula` / `dat` / `dat_pair` (필수) |
+| `operations[].expression` | op | 처짐 w(x1, x2) 수식(`source: formula`) |
+| `operations[].dat_file` / `dat_top`·`dat_bottom` | op | `source: dat` 격자 / `dat_pair` 상·하면 격자 |
+| `material.E`·`material.nu` | top | 선택(생략 시 대상 파트의 `*MAT_ELASTIC`) |
 
-수식 변수(help; 정본 §13). `x1`, `x2`(바운딩 박스 최소값 기준 상대 좌표), `L1`, `L2`(바운딩 박스 치수), `pi`. 정본 §13 은 추가로 `material`(E, nu), `mode: deform|stress`, `source: dat_pair`(dat_top/dat_bottom 쌍), 지원 함수 sin/cos/tan/sqrt/exp/log/abs/pow 를 문서화한다.
+수식 변수: `x1`, `x2`(바운딩 박스 최소값 기준 상대 좌표), `L1`, `L2`(바운딩 박스 치수), `pi`. 지원 함수 sin/cos/tan/sqrt/exp/log/abs/pow. dat 격자는 파트 평면 bbox 에 펼치며 행 0 = x2 최대, 열 0 = x1 최소다.
 
 ### 예제
 ```yaml
@@ -238,8 +257,9 @@ output: bent
 operations:
   - type: bend
     target_pid: 1
-    plane: xz
-    mode: formula
+    plane: xy
+    mode: deform
+    source: formula
     expression: "0.001*x1"
 ```
 
@@ -251,7 +271,7 @@ yaml-config 계열이므로 `params.op: bend` + `params.config: {base_model, out
 
 ### 주의
 - 응력은 노드 변위 적용 전에 계산된다(중립면 보존, 정본 §13).
-- `plane` 은 help 기준 `xy`/`xz`/`yz` 다(정본 §13 본문의 `zx` 표기와 차이가 있으므로 v1.8.0 바이너리 기준을 따른다).
+- `plane` 은 `xy`/`yz`/`zx` 다. 이전 help 와 이 문서의 `xz`·`mode: formula` 는 설정 검사에서 거부되는 값이었다(바이너리 help 도 정정됨). 단독 `bend` 는 예전엔 검사 없이 `source` 가 없으면 비정상 종료(SIGSEGV)했으나 이제 assemble 과 같은 오류를 낸다.
 
 ### 개발현황
 구현됨(v1.8.0 바이너리 내장, help 확인).
@@ -261,7 +281,7 @@ yaml-config 계열이므로 `params.op: bend` + `params.config: {base_model, out
 ## indent
 
 ### 용도
-폐곡선(원 또는 다각형 펀치) 안쪽 영역에 필렛 프로파일로 압입(depth > 0) 또는 엠보싱(depth < 0)을 적용하고 선택적으로 초기 응력을 계산한다(정본 §14; help).
+폐곡선(다각형 또는 스플라인 펀치 윤곽) 안쪽 영역에 필렛 프로파일로 압입(depth > 0) 또는 엠보싱(depth < 0)을 적용하고 선택적으로 초기 응력을 계산한다(정본 §14; help).
 
 ### 사용법
 ```
@@ -275,16 +295,16 @@ KooRemapper indent <config.yaml>
 | `output` | top | 출력 접두 |
 | `operations[].type` | op | `indent` |
 | `operations[].target_pid` | op | 대상 파트 |
-| `operations[].plane` | op | 압입 평면 |
-| `operations[].direction` | op | 펀치 방향(예: `-z`) |
-| `operations[].depth` | op | 압입 깊이(음수 = 엠보싱) |
-| `operations[].r1` | op | 펀치(바닥) 반경 |
-| `operations[].r2` | op | 필렛 반경 |
-| `operations[].stress` | op | 초기 응력 계산 여부 |
-| `operations[].shape.type` | op | `circle` 또는 `polygon` |
-| `operations[].shape.points` | op | polygon 꼭짓점 리스트 |
-
-정본 §14 는 추가로 `bottom_ratio`(두께 방향 관통 비율, 기본 0.5), `shell_thickness`(셸 요소 응력에 필요), `shape.type: spline`, `material`(E, nu) 을 문서화한다.
+| `operations[].plane` | op | 압입 평면 `xy` / `yz` / `zx` |
+| `operations[].direction` | op | 펀치 방향 `+z`/`-z`/`+x`/`-x`/`+y`/`-y` |
+| `operations[].depth` | op | 압입 깊이(> 0 압입, < 0 엠보싱, 0 불가) |
+| `operations[].r1` | op | 바닥 쪽 전이 호 반경(> 0, 윤곽 바깥 0~r1) |
+| `operations[].r2` | op | 표면 쪽 전이 호 반경(> 0, 윤곽 바깥 r1~r1+r2) |
+| `operations[].bottom_ratio` | op | 반대 면 변위 비율(기본 0 = 반대 면 고정) |
+| `operations[].stress` | op | 초기 응력 계산 여부(기본 false) |
+| `operations[].shell_thickness` | op | 셸 응력 두께(기본 0 = `*SECTION_SHELL`) |
+| `operations[].shape.type` | op | `polygon` / `spline` |
+| `operations[].shape.points` | op | 평평한 바닥 윤곽 `- [x1, x2]` 3점 이상(모델 좌표) |
 
 ### 예제
 ```yaml
@@ -300,18 +320,24 @@ operations:
     r2: 0.5
     stress: true
     shape:
-      type: circle
+      type: polygon
+      points:
+        - [6, 3]
+        - [12, 3]
+        - [12, 7]
+        - [6, 7]
 ```
 
 ### 동작원리
-부호 있는 거리 d 에 대해 quarter-arc 필렛 프로파일 h(d) 로 절점을 이동한다. r1 구역·평탄 구역·r2 구역으로 나뉘며, depth < 0 이면 바깥으로 당기는 엠보싱이 된다. 응력은 절점 변위 전에 계산하고, h''(d) 특이점은 상한으로 제한한다(정본 §14).
+윤곽 안쪽은 depth 만큼 평평하게 누르고, 윤곽 바깥 거리 d 에서 r1 호(0 ≤ d < r1) → r2 호(r1 ≤ d < r1+r2) 로 표면까지 되돌린다(k = depth/(r1+r2)). 두께 방향으로는 눌리는 면 h → 반대 면 bottom_ratio·h 로 선형 보간하며, depth < 0 이면 바깥으로 당기는 엠보싱이 된다. 응력은 절점 변위 전에 계산하고, h''(d) 특이점은 상한으로 제한한다(정본 §14).
 
 ### REMAP 스텝
 yaml-config 계열이므로 `params.op: indent` + `params.config: {base_model, output, operations: [...]}`.
 
 ### 주의
 - depth < 0 은 엠보싱(바깥으로 돌출)이다(help; 정본 §14).
-- 셸 요소 응력 계산에는 `shell_thickness` 가 필요하다(help).
+- `shape.type: circle` 은 없다(이전 help 표기 오류, 바이너리 help 정정됨). 단독 `indent` 는 예전엔 points·r1/r2 가 없으면 비정상 종료(abort)했으나 이제 assemble 과 같은 오류를 낸다.
+- 셸 요소 응력 두께는 `shell_thickness`(0 이면 `*SECTION_SHELL` 값)다.
 
 ### 개발현황
 구현됨(v1.8.0 바이너리 내장, help 확인).
@@ -328,7 +354,7 @@ yaml-config 계열이므로 `params.op: indent` + `params.config: {base_model, o
 KooRemapper squeeze <mesh.k> <config.yaml> <output_prefix>
 ```
 
-positional 로 입력 메시·config·출력 접두를 받지만, config 는 파트별 변형 조건을 담는 yaml-config 계열이다. 출력은 `<prefix>.k`(압축 메시 + `*INCLUDE` dynain)와 `<prefix>_dynain.dat`(역방향 `*INITIAL_STRESS_SOLID`)이다(help).
+positional 로 입력 메시·config·출력 접두를 받지만, config 는 파트별 변형 조건을 담는 yaml-config 계열이다. 출력은 `<prefix>.k`(압축 메시 + `*INCLUDE` dynain)와 `<prefix>.dynain`(역방향 `*INITIAL_STRESS_SOLID`)이다. 접두어 끝의 `.k` 는 뗀다(예전엔 `out.k.k`).
 
 ### config 스키마 (help / examples)
 | 키 | 위치 | 설명 |

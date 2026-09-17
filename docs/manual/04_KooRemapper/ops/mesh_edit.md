@@ -356,13 +356,16 @@ operations:
     part_title: "Basic_Offset"
     use_local_normals: false         # 곡면 노드별 법선(선택)
     thickness_formula: "1.0+0.01*x"  # 가변 두께(선택, x/y/z 변수)
-    material_card: |                 # @MID@ 자동 치환
+    material_card: |                 # MID 칸(@MID@·숫자·라벨)은 새 MID 로 바뀜
       *MAT_ELASTIC
-      $#  mid   ro     e    pr
-           @MID@  2.0  12000  0.25
-    czm_material_card: |             # connection_mode: czm 일 때
+      $#     mid        ro         e        pr
+           @MID@       2.0     12000      0.25
+    czm_material_card: |             # connection_mode: czm 일 때 (@CZM_MID@ 등도 새 MID 로)
       *MAT_COHESIVE_MIXED_MODE
-      ...
+      $#     mid        ro     roflg   intfail        en        et       gic      giic
+       @CZM_MID@       2.0         0       1.0     20000     10000       0.5       0.5
+      $#     xmu         t         s       und       utd     gamma
+             2.0       1.0       1.0
 ```
 
 REMAP 스텝: `params.op=offset`, `params.config`=위 YAML dict.
@@ -377,12 +380,14 @@ REMAP 스텝: `params.op=offset`, `params.config`=위 YAML dict.
 | `thickness_formula` | 아니오 | 가변 두께 수식(x/y/z 변수) | — |
 | `num_layers` | 아니오 | 레이어 수 | 1 |
 | `offset_direction` | 예 | 압출 방향(`+normal` 등) | — |
-| `connection_mode` | 아니오 | 연결 방식(아래 주의 참조) | 정본 §22: `shared` |
+| `connection_mode` | 아니오 | `tied` / `czm` / `contact` / `none` | `tied` |
 | `new_pid` | 아니오 | 새 파트 ID | 자동 |
 | `part_title` | 아니오 | 파트 제목 | — |
 | `use_local_normals` | 아니오 | 곡면 노드별 평균 법선 사용 | `false` |
-| `material_card` | 아니오 | 인라인 재료 카드(`@MID@` 자동 치환) | — |
-| `czm_material_card` | czm | CZM cohesive 재료 카드(`@CZM_MID@` 치환) | — |
+| `material_card` | 아니오 | 인라인 재료 카드. 첫 `*MAT` MID 칸(`@MID@`·숫자·라벨)이 새 MID 로 바뀜 | — |
+| `material_cards` | 아니오 | 층마다 다른 재질 `- \|` 목록(단독·assemble 모두) | — |
+| `czm_material_card` | czm | CZM cohesive 재료 카드(MID 칸 `@CZM_MID@` 등이 새 MID 로) | — |
+| `new_secid` / `new_mid` | 아니오 | 새 SECID·MID 지정(이후 자동 발급 ID 와 겹치지 않음) | 자동 |
 
 품질 검증 (정본 §22): Aspect Ratio warn>10 / error>20, Jacobian warn<0.1 / error<-1e-10, Warping warn>30° / error>45°.
 
@@ -403,10 +408,14 @@ operations:
     new_pid: 10
     material_card: |
       *MAT_ELASTIC
-           @MID@  2.0  12000  0.25
+      $#     mid        ro         e        pr
+           @MID@       2.0     12000      0.25
     czm_material_card: |
       *MAT_COHESIVE_MIXED_MODE
-      ...
+      $#     mid        ro     roflg   intfail        en        et       gic      giic
+       @CZM_MID@       2.0         0       1.0     20000     10000       0.5       0.5
+      $#     xmu         t         s       und       utd     gamma
+             2.0       1.0       1.0
 ```
 
 `examples/offset/01_basic_solid_tied.yaml`은 tied + `+z` 최소 예제다.
@@ -417,7 +426,9 @@ operations:
 
 ### 주의사항
 
-- `connection_mode` 값 집합이 근거마다 다르다. help는 `tied | czm | contact | none`(예제는 `tied`), 정본 §22는 `shared | tied | czm`(기본 `shared`)로 기술한다. 사용하는 버전에서 수용 값을 확인해야 한다. (정본 §22, help)
+- `connection_mode` 는 `tied`(기본) / `czm` / `contact` / `none` 이며 단독·assemble 모두 같은 값만 받는다(정본 §22 정정, 구버전 `shared` 아님). 다른 값·`element_type: hex` 등은 단독 `offset` 에서도 오류로 거부된다.
+- 재료 카드 값은 LS-DYNA 고정 폭 10열 칸 안에 둔다. 예전 예시(`@MID@  2.0  12000  0.25`)처럼 칸을 벗어나면 LS-DYNA 가 다른 칸으로 읽는다. CZM 카드는 MAT_138 배치(1행 MID·RO·ROFLG·INTFAIL·EN·ET·GIC·GIIC, 2행 XMU·T·S·UND·UTD·GAMMA)를 따른다.
+- 예전 결함(수정됨): MID 칸이 5열 밀림, 카드 끝 줄바꿈 누락으로 `0.25*END` 붙음, CZM 파트가 기존 PID·SECID 와 충돌, `@CZM_MID@` 미치환, assemble 의 `connection_mode: none` 거부, 단독 offset 의 `material_cards` 누락.
 - 소스 표면의 일부만 처리하려면 region 필터(bbox / nodeId / elementId)를 쓴다. (help; 정본 §22의 `bbox_*`/`node_id_*`/`element_id_*` 필드)
 - 전체 예제는 `examples/offset/README.md` 참조. (help)
 
@@ -593,7 +604,8 @@ operations:
 
 ### 주의사항
 
-- `MID001`/`MID002` 등의 플레이스홀더가 실제 MID로 자동 치환된다. (정본 §12)
+- 층 `material_card` 의 첫 `*MAT` MID 칸(1~10열, `_TITLE` 이면 제목 다음 줄) 값은 라벨이다. `MID001`·`MAT01`·`14` 무엇이든 새 MID 로 바뀌며, 라벨과 카드 내용이 같은 층끼리만 MID 를 공유한다(라벨이 같아도 물성이 다르면 따로 발급). 같은 MID 를 가리키는 `*MAT_ADD_…` 도 함께 바뀐다. (정본 §12)
+- 예전 결함(수정됨): MID 칸에 숫자를 쓰면 층 PART mid 가 0 이 되고 카드가 빠짐, 단독 restack 에서 제목에 `:` 가 있으면 카드가 잘림, 마지막 층 카드 뒤 빈 줄 때문에 같은 카드가 MID 를 따로 받음.
 - `disconnect` op을 restack 뒤에 이어 붙여 CZM/Peri 분리에 쓸 수 있다. (help, examples/disconnect/restack_czm.yaml)
 
 ### 개발 현황
