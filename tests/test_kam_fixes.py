@@ -118,6 +118,15 @@ def main():
                 bare.append(f"{p.name}:{n}")
     check("KAM 소스에 bare exit( 없음", not bare, str(bare))
 
+    print("[Evolver 대기]")
+    calls = []
+    for name in ("Capacitor.py", "WarpageSolderJoint.py"):
+        for n, line in enumerate((GEN / "KooODBCADManager" / name).read_text(encoding="utf-8").splitlines(), 1):
+            if "subprocess.run(" in line and "volver" in line:
+                calls.append((f"{name}:{n}", "stdin=subprocess.DEVNULL" in line))
+    check(f"Evolver 호출 {len(calls)}곳 모두 stdin 닫음 (오류 뒤 입력 대기 무한 정지 방지)",
+          len(calls) == 4 and all(ok for _, ok in calls), str(calls))
+
     print("[IP]")
     src = (GEN / "KooAutomatedModeller.py").read_text(encoding="utf-8")
     check("192.168.122.x 계산 노드 대역 허용", '"192.168.122."+str(i)' in src)

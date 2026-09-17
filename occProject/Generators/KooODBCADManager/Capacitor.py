@@ -1283,7 +1283,14 @@ class Capacitor():
         with open(scriptName, "w") as f:
             f.write(script)
         
-        result = subprocess.run([evolverExe,"tmpScript.txt"],cwd=cwd, stdout=subprocess.PIPE)
+        # stdin 를 닫는다: 스크립트 오류 뒤 Evolver 가 "Enter command:" 입력을 기다리며 무한 대기하던 것 방지
+        if os.path.exists(os.path.join(cwd, fileName)):
+            os.remove(os.path.join(cwd, fileName))  # 이전 실행 산출물로 실패가 가려지지 않게
+        result = subprocess.run([evolverExe,"tmpScript.txt"],cwd=cwd, stdout=subprocess.PIPE, stdin=subprocess.DEVNULL)
+        if not os.path.exists(os.path.join(cwd, fileName)):
+            print("Evolver failed: {0} not created (see {1})".format(fileName, os.path.join(cwd, "tmpScript.txt")))
+            print(result.stdout.decode(errors="replace")[-1500:])
+            sys.exit(1)
 
         fileNameOutput = fileName.replace(".stl",".step")
         filePath = os.path.join(cwd,fileName)
@@ -1313,7 +1320,14 @@ class Capacitor():
         with open(scriptName, "w") as f:
             f.write(script)
         
-        result = subprocess.run([evolverExe,"tmpScript.txt"],cwd=cwd, stdout=subprocess.PIPE)
+        # stdin 를 닫는다: 스크립트 오류 뒤 Evolver 가 "Enter command:" 입력을 기다리며 무한 대기하던 것 방지
+        if os.path.exists(os.path.join(cwd, fileName)):
+            os.remove(os.path.join(cwd, fileName))  # 이전 실행 산출물로 실패가 가려지지 않게
+        result = subprocess.run([evolverExe,"tmpScript.txt"],cwd=cwd, stdout=subprocess.PIPE, stdin=subprocess.DEVNULL)
+        if not os.path.exists(os.path.join(cwd, fileName)):
+            print("Evolver failed: {0} not created (see {1})".format(fileName, os.path.join(cwd, "tmpScript.txt")))
+            print(result.stdout.decode(errors="replace")[-1500:])
+            sys.exit(1)
    
         fileNameOutput = fileName.replace(".stl",".step")
         filePath = os.path.join(cwd,fileName)

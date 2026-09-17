@@ -188,7 +188,7 @@ class SolderJoint():
         if os.path.exists(heightOptimizedPath):
             os.remove(heightOptimizedPath)
         
-        result = subprocess.run([self.evolverExe, self.scriptName], cwd=cwd, stdout=subprocess.PIPE)
+        result = subprocess.run([self.evolverExe, self.scriptName], cwd=cwd, stdout=subprocess.PIPE, stdin=subprocess.DEVNULL)
         fileNameOutput = self.stlFileName.replace(".stl", ".step")
         filePath = os.path.join(cwd, self.stlFileName)
         filePathOutput = os.path.join(self.folderPath, fileNameOutput)
@@ -224,7 +224,7 @@ class SolderJoint():
         filePath = os.path.join(cwd, self.stlFileName)
         filePathOutput = os.path.join(self.folderPath, fileNameOutput)                 
         try:
-            result = subprocess.run([self.evolverExe, self.scriptName], cwd=cwd, stdout=subprocess.PIPE, timeout=5) # wait for the process to terminate 10s
+            result = subprocess.run([self.evolverExe, self.scriptName], cwd=cwd, stdout=subprocess.PIPE, stdin=subprocess.DEVNULL, timeout=5) # wait for the process to terminate 10s
             
         except:
             print("Evolver Error")
