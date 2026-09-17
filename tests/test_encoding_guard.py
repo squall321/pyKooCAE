@@ -295,6 +295,49 @@ for rel in py_files():
 check("증분 생성부 전부 전문 보유", not incr, str(incr))
 
 
+# ─────────────────────────────────────────────────────────────────────
+# [7] KMM·KAM 진입점 가드 — 컴파일 바이너리는 Runner 패키지를 못 찾아 사본을 쓴다
+# ─────────────────────────────────────────────────────────────────────
+print("\n[7] KMM·KAM UTF-8 가드")
+GEN = ROOT / "occProject" / "Generators"
+check("koo_encoding.py == Runner/_encoding.py (바이트 동일)",
+      (GEN / "koo_encoding.py").read_bytes() == (ROOT / "Runner" / "_encoding.py").read_bytes())
+kmm_src = (GEN / "KooMeshModifier.py").read_text(encoding="utf-8")
+kam_src = (GEN / "KooAutomatedModeller.py").read_text(encoding="utf-8")
+for nm, src, heavy in (("KooMeshModifier", kmm_src, "from KooSimulationGenerator"),
+                       ("KooAutomatedModeller", kam_src, "from KooODBCADManager.ODBCADManager")):
+    g = src.find("_enforce_utf8_runtime()")
+    check(f"{nm}: 가드 호출이 무거운 import 보다 앞", 0 < g < src.find(heavy))
+check("KooMeshModifier: 로그 DualOutput 이 ascii 원본(sys.__stdout__) 대신 가드된 콘솔 사용",
+      "DualOutput(sys.__stdout__" not in kmm_src and "DualOutput(_console, logFile)" in kmm_src)
+check("KooMeshModifier: 로그 파일 utf-8", 'open(logfileName, "w", encoding="utf-8")' in kmm_src)
+
+# 실제 실행: 인터프리터를 ascii·utf8_mode=0 으로 띄워 컴파일 바이너리 기동 상태를 모사한다
+import subprocess as _sp, tempfile as _tf                                   # noqa: E402
+sys.path.insert(0, str(ROOT / "tests"))
+from test_fall_gravity import box_model                                     # noqa: E402
+from Runner.StepConfigBuilder import build_drop_attitude_config             # noqa: E402
+w = _tf.mkdtemp(prefix="enc_kmm_")
+box_model(os.path.join(w, "box.k"), "7.85e-9")
+t = build_drop_attitude_config(model_file="box.k", output_dir=w, project="P", doe_index=1, step_num=1, mode="DROP",
+                               condition="c", euler={"roll": 0, "pitch": 0, "yaw": 0},
+                               sim_params={"height": 50, "tFinal": 0.001, "dt": 1e-4}, run_directory_mode=False)
+pathlib.Path(w, "opt.txt").write_text(t, encoding="utf-8")
+env = {k: v for k, v in os.environ.items()
+       if not k.startswith(("LANG", "LC_")) and k not in ("PYTHONUTF8", "PYTHONIOENCODING")}
+env["PYTHONCOERCECLOCALE"] = "0"
+code = ("import sys; print('ENC', sys.stdout.encoding, sys.flags.utf8_mode, flush=True); "
+        f"sys.argv=['KooMeshModifier.py','opt.txt',{w!r}]; "
+        "import runpy; runpy.run_path('KooMeshModifier.py', run_name='__main__')")
+r = _sp.run([sys.executable, "-X", "utf8=0", "-c", code], cwd=str(GEN), env=env, capture_output=True, timeout=900)
+out = r.stdout.decode("utf-8", "replace") + r.stderr.decode("utf-8", "replace")
+check("모사 기동 상태가 ascii (시험 전제)", "ENC ascii 0" in out, out[:200])
+check("ascii 기동에서도 KMM 완주 (한글 로그 포함)", r.returncode == 0 and "UnicodeEncodeError" not in out
+      and os.path.exists(os.path.join(w, "box_drop.k")), out[-400:])
+log = pathlib.Path(w, "opt.log").read_text(encoding="utf-8") if os.path.exists(os.path.join(w, "opt.log")) else ""
+check("로그 파일에 한글 기록", "재질 밀도" in log)
+
+
 print("\n" + "=" * 72)
 if FAILS:
     print("실패 %d건" % len(FAILS))

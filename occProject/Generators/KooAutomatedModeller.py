@@ -22,6 +22,9 @@ if __name__ == "__main__":
     from KooCLIHelp.kam_catalog import CATALOG as _HELP_CATALOG
     if _handle_help(sys.argv, _HELP_CATALOG, no_args_is_help="__compiled__" in globals()):
         sys.exit(0)
+    # 컴파일 바이너리는 utf8_mode=0 으로 기동해 LANG 없는 환경에서 한글 출력이 ascii 로 죽는다 (koo_encoding = Runner/_encoding 사본)
+    from koo_encoding import enforce_utf8_runtime as _enforce_utf8_runtime
+    _enforce_utf8_runtime()
 
 # --- Qt 라이브러리 충돌 방지: PyQt5 번들 Qt를 우선 로드 ---
 # LD_LIBRARY_PATH는 프로세스 시작 시 동적 링커가 읽으므로,
@@ -132,8 +135,8 @@ def GeneratePackage(fileName,displayMode):
     inputFilePath = os.path.join(curPath,fileName)
     print("Current Path : {curPath}".format(curPath=inputFilePath))
     if os.path.exists(inputFilePath) == False:
-        print("File not exist")
-        return
+        print("File not exist: " + inputFilePath)
+        sys.exit(1)
     
     package = PackageUserdefined()
     outFileName = fileName.replace(".txt",".step")
@@ -219,8 +222,8 @@ def GenerateCapacitor(fileName):
     inputFilePath = os.path.join(curPath, fileName)
     print("Current Path : {curPath}".format(curPath = inputFilePath))
     if os.path.exists(inputFilePath) == False:
-        print("File not exist")
-        return
+        print("File not exist: " + inputFilePath)
+        sys.exit(1)
     capMan = CapacitorManager()
     print("Set Folder Path : {curPath}".format(curPath=curPath))    
     capMan.SetFolderPath(curPath)
@@ -827,4 +830,7 @@ COPYRIGHT NOTICE: Copyright © 2025 Koo. All rights reserved.
         GenerateAirMesh(fileName)
     elif mode == "LSDYNADOE":
         pass
+    else:
+        print("Unknown mode: {0} (PKG, CAPACITOR/CAP, PCB, ArrayPCB, PBA, AIRMESH - case sensitive). See: KooAutomatedModeller --help".format(mode))
+        sys.exit(1)
 
