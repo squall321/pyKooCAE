@@ -106,23 +106,9 @@ from KooCAEManager.KooMeshImporter import KooDynaImporter
 class Capacitor():
     @staticmethod
     def _find_linux_evolver(basePath=None):
-        """리눅스에서 evolver 경로를 찾는다. /opt/Evolver → Library fallback → which evolver"""
-        candidates = ["/opt/Evolver/evolver"]
-        if basePath is not None:
-            for i in range(5):
-                prefix = os.path.join(basePath, *(['..'] * i)) if i > 0 else basePath
-                candidates.append(os.path.join(prefix, "Library", "Evolver", "evolver"))
-        else:
-            candidates.append(os.path.join(".", "Library", "Evolver", "evolver"))
-        for c in candidates:
-            if os.path.exists(c):
-                return c
-        import shutil
-        found = shutil.which("evolver")
-        if found:
-            return found
-        print("evolver not found")
-        sys.exit()
+        """evolver 경로 + 작업 폴더 준비 (EvolverLocator 공용)"""
+        from KooODBCADManager.EvolverLocator import find_linux_evolver
+        return find_linux_evolver(basePath)
 
     def __init__(self, id = 0, name = "Capacitor", matMan : KooMaterialManager = None, secMan : KooSectionManager = None, nodeSetMan : NodeSetManager = None, bndMan : KooBoundaryNodeManager = None, loadMan : KooLoadManager = None, defineMan : KooDefineManager = None, contactMan : KooContactManager = None, segMan : KooSegmentSetManager = None):
         self.id = id
