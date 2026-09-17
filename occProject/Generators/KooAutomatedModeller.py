@@ -367,6 +367,9 @@ COPYRIGHT NOTICE: Copyright © 2025 Koo. All rights reserved.
         registered_ips.append("10.254.236."+str(i))
     for i in range(1,250):
         registered_ips.append("192.168.0."+str(i))
+    # 사내 Slurm 클러스터 계산 노드 대역 (node001 = 192.168.122.90)
+    for i in range(1,250):
+        registered_ips.append("192.168.122."+str(i))
 
     # Get the current IP address
     ip = get_ip_address()
@@ -378,7 +381,7 @@ COPYRIGHT NOTICE: Copyright © 2025 Koo. All rights reserved.
         # Continue running the application
     else:
         print("Access denied. IP address:", ip)
-        exit(0)
+        sys.exit(1)
         # Terminate the application or perform any desired action
     
     
@@ -402,12 +405,12 @@ COPYRIGHT NOTICE: Copyright © 2025 Koo. All rights reserved.
         if current_time > threshold_date:
             print("Terminating the application. Threshold date exceeded.")
             # Terminate the application or perform any other desired action
-            exit()
+            sys.exit(1)
         else:
             print("Threshold date not exceeded. Continuing with the application.")
             # Continue running the application
     else:
-        exit()
+        sys.exit(1)
     
     
     #display, start_display, add_menu, add_function_to_menu = init_display()

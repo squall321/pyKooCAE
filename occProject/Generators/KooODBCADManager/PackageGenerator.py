@@ -645,7 +645,7 @@ class PackageUserdefined:
                             elif "nodeset" in svector[0].lower():
                                 if len(svector) < 5:
                                     print("NodeSet Error")                                
-                                    exit(0) 
+                                    sys.exit(1) 
                                     
                                 if "#" in svector[0]:
                                     svectorsub = svector[0].split("#")
@@ -1722,7 +1722,7 @@ class PackageUserdefined:
                         
                 else:
                     print("Keyword Error : {0} is not supported".format(svector[0]))
-                    exit(0)
+                    sys.exit(1)
                 
             else:
                 line = f.readline()
@@ -2110,7 +2110,7 @@ class PackageUserdefined:
                 self.CreateLoadSegmentSetforPackage(loadOption)
             else:
                 print("Error : Load Type is not supported")
-                exit(0)
+                sys.exit(1)
     
     def CreateLoadSegmentNodeDistributedforPackage(self, loadOption):   
         lid = loadOption["LID"]
@@ -2259,7 +2259,7 @@ class PackageUserdefined:
                     load.AddSegmentSet(segmentSet,lcid,sf,at)
                 else:
                     print("Error : Segment Set ID {0} is not found".format(ssid))
-                    exit(0)
+                    sys.exit(1)
             
         
         pass 
@@ -2270,7 +2270,7 @@ class PackageUserdefined:
                 self.CreateSPCSETforPackage(boundaryOption)
             else:
                 print("Error : Boundary Type is not supported")
-                exit(0)
+                sys.exit(1)
                 
     def CreateSPCSETforPackage(self, boundaryOption):
         nskeyList = boundaryOption["NSIDS"]
@@ -2298,7 +2298,7 @@ class PackageUserdefined:
                 self.CreateCurveforPackage(defineOption)
             else:
                 print("Error : Define Type is not supported")
-                exit(0)
+                sys.exit(1)
                 
     def CreateCurveFunctionforPackage(self, defineOption):
         LCID = defineOption["LCID"]
@@ -2363,7 +2363,7 @@ class PackageUserdefined:
                 self.CreateNodeSettoNodeSetContactforPackage(contactOption)
             else:
                 print("Error : Contact Type is not supported")
-                exit(0)
+                sys.exit(1)
                 
             
                 
@@ -3303,7 +3303,7 @@ if __name__ == '__main__':
         # Continue running the application
     else:
         print("Access denied. IP address:", ip)
-        exit(0)
+        sys.exit(1)
         # Terminate the application or perform any desired action
   
 
@@ -3326,12 +3326,12 @@ if __name__ == '__main__':
         if current_time > threshold_date:
             print("Terminating the application. Threshold date exceeded.")
             # Terminate the application or perform any other desired action
-            exit(0)
+            sys.exit(1)
         else:
             print("Threshold date not exceeded. Continuing with the application.")
             # Continue running the application
     else:
-        exit(0)
+        sys.exit(1)
     
     if len(sys.argv)<2:
         #print("Usage: PackageGenerator.exe [input file path] [output file path]")

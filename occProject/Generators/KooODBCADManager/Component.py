@@ -320,7 +320,7 @@ class PackageComponent(Component):
                         jth = jth + 1
                 else:
                     print("Unknown Type")
-                    exit()
+                    sys.exit(1)
             ith = ith + 1 
         
         if hasSolderShape == True:
@@ -376,7 +376,7 @@ class PackageComponent(Component):
                         jth = jth + 1
                 else:
                     print("Unknown Type")
-                    exit()
+                    sys.exit(1)
             ith = ith + 1    
             
         file.write("*Layer,PackageWarpage,Defined\n")
@@ -545,7 +545,7 @@ class PackageComponent(Component):
                     file.write("Box,{x},{y},{delX},{delY}\n".format(x=xmin,y=ymin,delX=delX,delY=delY))                                    
                 else:
                     print("Unknown Type")
-                    exit()
+                    sys.exit(1)
 
             ith = ith + 1 
             '''
