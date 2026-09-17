@@ -16,6 +16,13 @@ Group: CAE
 import os
 import sys
 
+# --help 는 re-exec·Qt/OCC import·라이선스 게이트 전에 처리한다 (인자 없음도 help — 기존엔 개발용 예제 경로로 빠졌다)
+if __name__ == "__main__":
+    from KooCLIHelp.engine import handle_help as _handle_help
+    from KooCLIHelp.kam_catalog import CATALOG as _HELP_CATALOG
+    if _handle_help(sys.argv, _HELP_CATALOG, no_args_is_help="__compiled__" in globals()):
+        sys.exit(0)
+
 # --- Qt 라이브러리 충돌 방지: PyQt5 번들 Qt를 우선 로드 ---
 # LD_LIBRARY_PATH는 프로세스 시작 시 동적 링커가 읽으므로,
 # Python 내에서 설정 후 자기 자신을 재실행(re-exec)해야 적용됨.

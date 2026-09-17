@@ -5,6 +5,7 @@
   [엔진]  검색·렌더·argv 가로채기·ascii 스트림
   [사본]  Runner/cli_help_engine.py == occProject/Generators/KooCLIHelp/engine.py (바이트 동일)
   [KMM]   32 모드 전부 카탈로그에 있음 + 각 사례를 ImportOption 으로 파싱해 verify 기대치 확인
+  [KAM]   디스패치 모드 전부 카탈로그에 있음 + 사례를 PKG·CAP·ODB·AIRMESH 파서로 읽어 확인
 """
 import contextlib
 import io
@@ -88,9 +89,23 @@ def test_copy():
 _MISSING = object()
 
 
+def _same(a, b):
+    import math
+    if isinstance(a, float) or isinstance(b, float):
+        return isinstance(a, (int, float)) and isinstance(b, (int, float)) and math.isclose(a, b, rel_tol=1e-9, abs_tol=0.0)
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same(a[k], b[k]) for k in a)
+    return a == b
+
+
 def _get(obj, path):
     cur = obj
     for seg in path.split("."):
+        if not isinstance(cur, (dict, list, tuple)) and hasattr(cur, seg):
+            cur = getattr(cur, seg)
+            continue
         if isinstance(cur, dict):
             if seg in cur:
                 cur = cur[seg]
@@ -118,7 +133,7 @@ def verify_expect(label, opt, expect):
             got = len(v) if v is not _MISSING else _MISSING
         else:
             got = _get(opt, key)
-        check(f"{label} {key}", got == want, f"기대 {want!r} / 실제 {got!r}")
+        check(f"{label} {key}", _same(got, want), f"기대 {want!r} / 실제 {got!r}")
 
 
 def test_kmm():
@@ -166,10 +181,59 @@ def test_kmm():
         check(f"주제 {t.name} 렌더", t.body[0] in E.render_query(CATALOG, t.name))
 
 
+def test_kam():
+    print("[KAM]")
+    import shutil
+    from KooCLIHelp.kam_catalog import CATALOG
+    src = (GEN / "KooAutomatedModeller.py").read_text(encoding="utf-8")
+    dispatch = set(re.findall(r'mode == "([A-Za-z]+)"', src)) - {"LSDYNADOE", "CAP"}
+    names = {m.name for m in CATALOG.modes}
+    check(f"디스패치 모드 {sorted(dispatch)} 전부 카탈로그에 있음", dispatch <= names, str(dispatch - names))
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    with contextlib.redirect_stdout(io.StringIO()):
+        from KooODBCADManager.PackageGenerator import PackageUserdefined
+        from KooODBCADManager.Capacitor import CapacitorManager
+        from KooODBCADManager.ODBCADManager import ODBCADManager
+        from KooAirMesh.AirMeshGenerator import load_config
+    golden = ROOT / "Examples" / "automatedmodeller" / "airmesh_sphere" / "sphere_cyl.stp"
+    for m in CATALOG.modes:
+        for i, ex in enumerate(m.examples, 1):
+            label = f"{m.name}#{i}"
+            v = ex.verify
+            d = tempfile.mkdtemp(prefix="clihelp_kam_")
+            name = "airmesh.json" if v["parser"] == "airmesh" else "input.txt"
+            fn = os.path.join(d, name)
+            Path(fn).write_text(ex.text + "\n", encoding="utf-8")
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    if v["parser"] == "pkg":
+                        obj = PackageUserdefined()
+                        obj.ImportPackage(fn)
+                    elif v["parser"] == "cap":
+                        obj = CapacitorManager()
+                        obj.SetFolderPath(d)
+                        obj.ImportCapacitor(fn)
+                    elif v["parser"] == "odb":
+                        obj = ODBCADManager()
+                        obj.ImportModellingOptions(d, name)
+                    elif v["parser"] == "airmesh":
+                        shutil.copy(golden, d)
+                        cfg, errors, warnings = load_config(fn)
+                        obj = {"cfg": cfg, "errors": errors}
+            except Exception as e:  # noqa: BLE001
+                check(f"{label} 파싱", False, f"{type(e).__name__}: {e}")
+                continue
+            verify_expect(label, obj, v["expect"])
+    for m in CATALOG.modes:
+        check(f"{m.name} --help 상세 렌더", E.render_query(CATALOG, m.name).startswith("="))
+    check("CAP 별칭 → CAPACITOR", "CAPACITOR — " in E.render_query(CATALOG, "CAP"))
+
+
 def main():
     test_engine()
     test_copy()
     test_kmm()
+    test_kam()
     print()
     if FAILS:
         print("FAIL %d 건" % len(FAILS))
