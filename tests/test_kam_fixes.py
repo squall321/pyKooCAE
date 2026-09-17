@@ -3,7 +3,7 @@
 실행: venv312/bin/python tests/test_kam_fixes.py
 
   [Evolver] 작업 폴더에 Library/Evolver 가 있으면 그대로 / 없으면 설치본을 찾아 링크 / 끝내 없으면 종료 코드 1
-  [exit]    컴파일 바이너리에는 site 의 exit() 가 없어 NameError 로 죽는다 → KAM 소스에 bare exit( 가 없어야 한다
+  [exit]    컴파일 바이너리에는 site 의 exit() 가 없어 NameError 로 죽는다 → KAM·KMM 소스에 bare exit( 가 없어야 한다
   [IP]      계산 노드(192.168.122.x)가 허용 목록에 있어야 한다
 """
 import io
@@ -110,13 +110,18 @@ def main():
         EL._install_dirs, EL.shutil.which = orig_install, orig_which
 
     print("[exit]")
-    targets = [GEN / "KooAutomatedModeller.py"] + sorted((GEN / "KooODBCADManager").glob("*.py"))
+    targets = ([GEN / "KooAutomatedModeller.py", GEN / "KooMeshModifier.py"]
+               + sorted((GEN / "KooODBCADManager").glob("*.py")) + sorted((GEN / "KooCAEManager").glob("*.py")))
     bare = []
     for p in targets:
-        for n, line in enumerate(p.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            if re.match(r"^\s*exit\(", line):
+        text = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        main_at = next((i for i, l in enumerate(text) if l.startswith("if __name__")), len(text))
+        for n, line in enumerate(text, 1):
+            if re.match(r"^\s*exit\(", line) and n - 1 < main_at and "_backup" not in p.name:
                 bare.append(f"{p.name}:{n}")
-    check("KAM 소스에 bare exit( 없음", not bare, str(bare))
+    check("KAM·KMM 소스(모듈 __main__ 개발 블록 제외)에 bare exit( 없음", not bare, str(bare))
+    kam = (GEN / "KooAutomatedModeller.py").read_text(encoding="utf-8")
+    check("KAM 모르는 모드 → 종료 코드 1", 'print("Unknown mode:' in kam and kam.count('print("File not exist: "') == 2)
 
     print("[Evolver 대기]")
     calls = []

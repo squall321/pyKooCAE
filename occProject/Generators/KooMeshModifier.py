@@ -27,6 +27,10 @@ if __name__ == "__main__":
     from KooCLIHelp.kmm_catalog import CATALOG as _HELP_CATALOG
     if _handle_help(sys.argv, _HELP_CATALOG, no_args_is_help="__compiled__" in globals()):
         sys.exit(0)
+    # 컴파일 바이너리는 utf8_mode=0 으로 기동해 LANG 없는 환경에서 한글 출력·로그가 ascii 로 죽는다.
+    # koo_encoding.py 는 Runner/_encoding.py 의 바이트 동일 사본 (tests/test_encoding_guard.py 가 확인)
+    from koo_encoding import enforce_utf8_runtime as _enforce_utf8_runtime
+    _enforce_utf8_runtime()
 
 getcwd = os.getcwd()
 path = os.path.join(getcwd, "Library", "OCC")
@@ -348,7 +352,7 @@ class KooMeshModifier(KooSimulationGenerator):
                             self.modeIDList.append(int(svector[1]))
                         else:
                             print("Invalid mode")
-                            exit()
+                            sys.exit(1)
                     continue
                 elif "**remove_duplicate_tied_contacts" in line.lower():
                     svector = line.split(",")
@@ -377,7 +381,7 @@ class KooMeshModifier(KooSimulationGenerator):
                                 curOptions["RemoveDuplicateTiedContacts"] = True
                         else:
                             print("Invalid option")
-                            exit()
+                            sys.exit(1)
                     self.modeIDOption[curModeID] = curOptions
 
                 elif "**simulationautomation" in line.lower():
@@ -2158,7 +2162,7 @@ class KooMeshModifier(KooSimulationGenerator):
                             svector = line.split(",")
                             if len(svector) < 6:
                                 print("Invalid desired length statistics")
-                                exit()
+                                sys.exit(1)
                             # number of samples
                             curOption = curOptions["DesiredLengthRatio"]
                             curOption["NumberofSamples"] = KooDynaInt(svector[1])
@@ -2322,7 +2326,7 @@ class KooMeshModifier(KooSimulationGenerator):
                             for _nm, _v in (('pr', pr), ('ps', ps), ('pt', pt)):
                                 if _v < 1:
                                     print(f"Invalid option in FEMtoIGA: {_nm}={_v} (1 이상이어야 한다)")
-                                    exit()
+                                    sys.exit(1)
                             # 방향별 Gauss 적분점 수. 1=reduced(기본), 2=정밀(고차 권장)
                             nisr = int(svector[12]) if len(svector) > 12 else 1
                             niss = int(svector[13]) if len(svector) > 13 else nisr
@@ -2330,7 +2334,7 @@ class KooMeshModifier(KooSimulationGenerator):
                             for _nm, _v in (('nisr', nisr), ('niss', niss), ('nist', nist)):
                                 if _v < 1:
                                     print(f"Invalid option in FEMtoIGA: {_nm}={_v} (1 이상이어야 한다)")
-                                    exit()
+                                    sys.exit(1)
                             if max(pr, ps, pt) > 1 and max(nisr, niss, nist) < 2:
                                 print(f"  Note: PID {source_pid} 차수 {pr}/{ps}/{pt} 인데 적분점이 1 이다. "
                                       f"고차 NURBS 는 2 를 권장한다(*IGA 12~14번째 인자).")
@@ -2355,7 +2359,7 @@ class KooMeshModifier(KooSimulationGenerator):
                             curOptions["IGAParts"].append(iga_config)
                         else:
                             print(f"Invalid option in FEMtoIGA: {line}")
-                            exit()
+                            sys.exit(1)
 
                     self.modeIDOption[curModeID] = curOptions
 
@@ -3399,20 +3403,23 @@ if __name__ == "__main__":
     
     logfileName = optionName.replace(".txt", ".log")
     logfileName = os.path.join(curDir, logfileName)
-    with open(logfileName, "w") as logFile:
-        sys.stdout = DualOutput(sys.__stdout__, logFile)
-        print("Start")
-        print("Current Directory : ", curDir)   
-        print("Option Name : ", optionName)    
-        simGenerator : KooMeshModifier = KooMeshModifier()    
+    with open(logfileName, "w", encoding="utf-8") as logFile:
+        _console = sys.stdout  # UTF-8 가드가 감싼 콘솔 (sys.__stdout__ 은 ascii 원본일 수 있다)
+        sys.stdout = DualOutput(_console, logFile)
+        try:
+            print("Start")
+            print("Current Directory : ", curDir)   
+            print("Option Name : ", optionName)    
+            simGenerator : KooMeshModifier = KooMeshModifier()    
         
-        simGenerator.SetCurrentDirectory(curDir)
-        print("Import Option")
-        simGenerator.ImportOption(optionName)    
-        print("Import Base File")
-        simGenerator.ImportBaseFile()
-        simGenerator.GenerateMetaData()
-        print("Generate Modified File")
-        simGenerator.GenerateModifiedFile()        
-        print("Done")
-        sys.stdout = sys.__stdout__  # stdout 복원
+            simGenerator.SetCurrentDirectory(curDir)
+            print("Import Option")
+            simGenerator.ImportOption(optionName)    
+            print("Import Base File")
+            simGenerator.ImportBaseFile()
+            simGenerator.GenerateMetaData()
+            print("Generate Modified File")
+            simGenerator.GenerateModifiedFile()        
+            print("Done")
+        finally:
+            sys.stdout = _console  # stdout 복원 (sys.exit 로 중간 종료해도 닫힌 로그 파일에 쓰지 않게)

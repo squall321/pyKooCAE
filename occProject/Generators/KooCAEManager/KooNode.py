@@ -1831,7 +1831,7 @@ class NodeManager:
             #self.AddNodewithID(nodeMan.nodes[key].id,nodeMan.nodes[key].x,nodeMan.nodes[key].y,nodeMan.nodes[key].z)
             if key in self.nodes:
                 print("Node ID : ",key," is already exist")
-                exit(0)
+                sys.exit(1)
             self.AddNode(nodeMan.nodes[key])            
     
     def SplitNodes(self):
