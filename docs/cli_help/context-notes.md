@@ -19,3 +19,19 @@ drop_weight_impact 워크플로우는 vz 를 직접 계산해 InitialVelocityZ �
 
 ## 키 표 대신 세로 목록
 긴 키 이름·설명 때문에 표가 180 칸을 넘어 터미널에서 깨졌다. `이름 [형식 · 기본/필수]` + 들여쓴 설명으로 바꿨다.
+
+## KooChainRun 은 사례를 끝단까지 돌린다
+scenario.json 은 prepare 가 통과해도 러너가 만드는 KMM 옵션 파일에서 틀릴 수 있다(예: dt 키 삼킴).
+그래서 [KCR] 시험은 Designer → runner_config → 러너 `_create_step_config` → KMM ImportOption 까지 간다.
+`KooChainRun --help` 만 카탈로그로 가로채고 `<명령> --help` 는 argparse 그대로 둔 이유는 명령별 옵션의 정본이 argparse 이기 때문.
+
+## KooRemapper 는 정본을 Python 에 두고 C++ 를 생성한다
+사례(YAML·명령)를 C++ 문자열로 손으로 옮기면 검증과 출력이 어긋난다. ops_help.py 한 곳에서
+(1) run_help_examples.py 가 사례를 직접 돌려 검증하고 (2) gen_help_cpp.py 가 HelpCatalogData.inc 를 만들고
+(3) --from-help 가 빌드된 바이너리의 help 출력을 다시 파싱해 돌린다. 세 단계가 같은 사례를 본다.
+사례는 `generate box` 로 시작 모델을 만들어 빈 폴더에서 돈다 (저장소 예제 파일이 꼭 필요한 op 만 "필요한 입력" 으로 표기).
+산출물 존재만으로는 부족했다 — restack 이 mid=0 덱을 만들고도 성공해서 *PART mid=0 검사를 추가했다.
+
+## 검색에서 별칭 완전일치를 결정으로 쓰지 않는다 (KooRemapper)
+"초기응력" 같은 일반어가 한 op 의 별칭이면 그 op 로 바로 가버려 다른 후보가 가려졌다. 이름 완전일치만 상세로 가고 별칭은 검색 점수로만 쓴다.
+(Python 엔진은 별칭이 모드 고유어라 완전일치를 유지)

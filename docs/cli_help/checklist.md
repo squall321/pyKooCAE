@@ -20,10 +20,15 @@
 - [x] 사례 검증: prepare(Designer) → runner_config → 러너 step config → KMM 파싱 (DWI·part_validation 포함)
 - [x] `KooChainRun --help [검색어]` 연결, `<명령> --help` 는 argparse 유지
 ## P4 KooRemapper
-- [ ] 검색 · `<명령> --help` · 부족한 사례
+- [x] tools/help/ops_help.py 정본 → HelpCatalogData.inc 생성 (48 op)
+- [x] help 검색·help all·`<op> --help`·인자 없음 개요 (KooRemapper 7981ca1)
+- [x] 사례 46개를 help 출력에서 파싱해 실행 검증 (meshfix·warpage 제외), 단위시험 52/52, 명령 40개 신구 차이 0
+- [ ] compat(glibc≤2.36) 빌드 → opt/kooremapper/bin 반영 — P5
 ## P5 배포
 - [ ] 전체 빌드 · SIF · tar · node001 · 배포본 help e2e
 
 ## 도중 발견
 - [x] DROP_ATTITUDE `dt` 부분일치가 RigidifySmallDtThreshold·DropContact.DTSTIF/DTPCHK 를 삼킴 → 17226d6 수정·회귀시험
 - [ ] drop_weight_impact 워크플로우 충격 속도 이중 가산 (Height + InitialVelocityZ) — 사용자 결정 필요, help 에 경고만 반영
+- [ ] Height ≤ 100 을 m 로 간주하는 g 추정 (DROP/IMPACT) — 사용자 결정 필요, help 에 🔴 경고
+- [ ] KooRemapper restack 숫자 MID → PART mid=0 · matswap 이 generate box 모델에서 PID not found — 보고만
