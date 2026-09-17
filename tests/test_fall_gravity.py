@@ -156,6 +156,54 @@ Type,Sphere
     check("gravity 지정 → Gravity,9810", "\nGravity,9810\n" in t1)
     check("둘의 차이는 Gravity 줄 하나", t1.replace("\nGravity,9810", "") == t0)
 
+    print("[4b] IMPACT 시나리오 impact.gravity → 러너 step config → KMM")
+    import copy
+    import json
+    import logging
+    from Runner.CumulativeDesigner import CumulativeDesigner
+    from Runner.CumulativeScenarioRunner import CumulativeScenarioRunner
+    for label, imp_extra, want in (("미지정", {}, None), ("impact.gravity=9.81", {"gravity": 9.81}, 9.81)):
+        wd = tempfile.mkdtemp(prefix="fallg_imp_")
+        box_model(os.path.join(wd, "model.k"), "7.85e-9")
+        imp = {"type": "Sphere", "dimension": 4, "height": 50, "mesh_size": 1, "tFinal": 0.001, "dt": 1e-5}
+        imp.update(imp_extra)
+        cfg = {"project_name": "G", "base_dir": wd, "environment": {},
+               "simulation_params": {"impact": imp, "wall": {}},
+               "scenarios": [{"scenario_name": "S", "template": "model.k",
+                              "position_source": {"source_type": "grid_nxm",
+                                                  "grid_nxm": {"nx": 1, "ny": 1, "bbox": [0, 0, 10, 10]}},
+                              "cumulative": {"num_steps": 1, "mode_sequence": ["IMPACT"]}}]}
+        with contextlib.redirect_stdout(io.StringIO()):
+            des = CumulativeDesigner(copy.deepcopy(cfg), scenario_dir=wd)
+            rc_path = os.path.join(wd, "runner_config.json")
+            des.save_runner_config(des.parse_user_config(), rc_path)
+        rcfg = json.load(open(rc_path, encoding="utf-8"))
+        out = os.path.join(wd, "out")
+        os.makedirs(out)
+        rcfg["project"]["output_dir"] = out
+        r = CumulativeScenarioRunner.__new__(CumulativeScenarioRunner)
+        r.config, r.output_dir, r.run_id, r.input_dir = rcfg, out, "t", wd
+        r._get_prev_run_dir = lambda doe, step: None
+        r._build_preserve_block = lambda: ""
+        logging.disable(logging.CRITICAL)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                cfg_path = r._create_step_config(1, rcfg["scenario"]["steps"][0])
+        finally:
+            logging.disable(logging.NOTSET)
+        text = Path(cfg_path).read_text(encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            g = K.KooMeshModifier()
+            g.SetCurrentDirectory(os.path.dirname(cfg_path))
+            g.ImportOption(os.path.basename(cfg_path))
+        opt = g.modeIDOption.get(1, {})
+        if want is None:
+            check(f"IMPACT {label}: Gravity 줄 없음 (기존 출력 불변)", "Gravity," not in text and "Gravity" not in opt)
+        else:
+            check(f"IMPACT {label}: step config Gravity 줄 → KMM Gravity={want}", opt.get("Gravity") == want,
+                  str(opt.get("Gravity")))
+        check(f"IMPACT {label}: OffsetDistance·dt 등 뒤 키도 그대로 읽힘", opt.get("DT") == 1e-5, str(opt.get("DT")))
+
     print("[5] 끝단: ton-mm-s 모델 50 mm 낙하 → 초기속도 √(2·9810·50)")
     w = tempfile.mkdtemp(prefix="fallg_e2e_", dir="/tmp")
     box_model(os.path.join(w, "box.k"), "7.85e-9")
