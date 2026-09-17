@@ -1551,6 +1551,9 @@ class CumulativeScenarioRunner:
             dr_block = build_dynamic_relaxation_lines(sim_params, impact_params.get('tFinal', 0.001))
             # DTMIN 발산 자동종료 (DROP 과 동일 — impact_params.dtmin > sim_params.dtmin, DR 게이팅)
             dtmin_block = build_dtmin_line(impact_params.get("dtmin", sim_params.get("dtmin")), sim_params)
+            # 자유낙하 g (모델 단위). 없으면 KMM 이 모델 재질 밀도로 단위계를 판정한다
+            _g = impact_params.get("gravity", sim_params.get("gravity"))
+            gravity_block = f"\nGravity,{_g}" if _g else ""
 
             dim_damper = impact_params.get("dimension_damper", [0.001, 0.001, 0.001])
             dim_damper_str = ",".join(str(v) for v in dim_damper)
@@ -1670,7 +1673,7 @@ WallNumY,{wall_params.get('num_y', 10)}
 WallNumZ,{wall_params.get('num_z', 10)}
 tFinal,{impact_params.get('tFinal', 0.001)}
 dt,{impact_params.get('dt', 1e-6)}
-OffsetDistance,{impact_params.get('offset_distance', 0.00001)}{dr_block}{dtmin_block}
+OffsetDistance,{impact_params.get('offset_distance', 0.00001)}{gravity_block}{dr_block}{dtmin_block}
 **EndDropWeightImpactTest
 *End
 """

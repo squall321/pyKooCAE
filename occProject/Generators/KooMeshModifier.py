@@ -1097,7 +1097,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         if "**end" in line.lower():
                             break
                         
-                        if "stresswavevelocity" in line.lower():
+                        if line.split(",")[0].strip().lower() == "gravity":
+                            curOptions["Gravity"] = KooDynaFloat(line.split(",")[1])
+                        elif "stresswavevelocity" in line.lower():
                             svector = line.split(",")
                             stressWaveVelocity = KooDynaFloat(svector[1])
                             curOptions["StressWaveVelocity"] = stressWaveVelocity
@@ -1490,6 +1492,9 @@ class KooMeshModifier(KooSimulationGenerator):
                                 eulerZ = KooDynaFloat(svector[i])
                                 eulerZList.append(eulerZ)
                             curOptions["EulerYawing"] = eulerZList
+                        elif line.split(",")[0].strip().lower() == "gravity":
+                            # 자유낙하 속도 √(2gh) 의 g (모델 단위). 없으면 재질 밀도로 단위계 판정
+                            curOptions["Gravity"] = KooDynaFloat(line.split(",")[1])
                         elif "height" in line.lower():
                             svector = line.split(",")
                             heightList = [] 

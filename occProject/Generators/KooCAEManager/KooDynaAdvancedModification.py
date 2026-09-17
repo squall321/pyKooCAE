@@ -2045,8 +2045,44 @@ class KooDynaAdvancedModification:
         with open(jsonPath, "w") as f:
             json.dump(self.dynaImporter.metaData, f, ensure_ascii=False, indent=2)
 
+    def _ResolveFallGravity(self, option, context):
+        """자유낙하 속도 √(2gh) 의 g 를 정해 g(height) 함수로 돌려준다.
+        1) option["Gravity"] (모델 단위)  2) 모델 재질 밀도 중앙값으로 단위계 판정
+        3) 판정 불가일 때만 옛 추정(height > 100 이면 mm) + 경고.
+        밀도는 단위계마다 자릿수가 크게 달라(강철 ton/mm³ 7.85e-9, kg/m³ 7850) 높이 값보다 확실하다.
+        반드시 벽·충격추 재질을 만들기 전에 부른다."""
+        g = option.get("Gravity")
+        if g:
+            g = float(g)
+            print(f"{context}: g = {g} (Gravity 지정)")
+            return lambda h: g
+        rhos = []
+        matMan = self.dynaImporter.matManager
+        for coll in (getattr(matMan, "materials", {}), getattr(matMan, "rigidMaterials", {})):
+            for m in coll.values():
+                try:
+                    r = float(m.GetRho())
+                except Exception:
+                    continue
+                if r > 0.0:
+                    rhos.append(r)
+        med = None
+        if rhos:
+            rhos.sort()
+            med = rhos[len(rhos) // 2]
+            if med < 1.0e-7:
+                print(f"{context}: 재질 밀도 중앙값 {med:.3e} → ton-mm-s, g = 9810")
+                return lambda h: 9810.0
+            if 1.0 <= med <= 1.0e5:
+                print(f"{context}: 재질 밀도 중앙값 {med:.3e} → kg-m-s, g = 9.81")
+                return lambda h: 9.81
+        print(f"WARNING {context}: 단위계 판정 불가 (재질 밀도 중앙값 {med}) — Gravity 키로 g 를 지정할 것. "
+              f"옛 추정(height > 100 → mm g=9810, 이하 → m g=9.81) 사용")
+        return lambda h: 9810.0 if h > 100 else 9.81
+
     def DropAttitude(self, option, filePath):
         fileName = os.path.basename(filePath)
+        fall_g = self._ResolveFallGravity(option, "DROP_ATTITUDE")
         RxList = option["EulerRolling"]
         RyList = option["EulerPitching"]
         RzList = option["EulerYawing"]
@@ -2245,10 +2281,7 @@ class KooDynaAdvancedModification:
             velocity = np.dot(RotMat, initial_velocity)
             pure_velocity = velocity
             print("Rotated Velocity : ", velocity)
-            if height > 100:
-                velocity_from_height = [0.0, 0.0, -np.sqrt(2.0*9810.0*height)]
-            else:
-                velocity_from_height = [0.0, 0.0, -np.sqrt(2.0*9.81*height)]
+            velocity_from_height = [0.0, 0.0, -np.sqrt(2.0*fall_g(height)*height)]
             velocity_from_height = np.dot(RotMat, velocity_from_height)
             print("Rotated Velocity from Height", velocity_from_height)
 
@@ -3250,6 +3283,7 @@ class KooDynaAdvancedModification:
         print("       모델이 ton-mm-s 라면 단위가 10^12 배 어긋납니다. 옵션 파일에 명시하세요.")
 
     def DropWeightImpactTestwithPartialRigid(self, option, filePath):
+        fall_g = self._ResolveFallGravity(option, "DROP_WEIGHT_IMPACT_TEST")
         if "TFinal" in option:
             tfinal = option["TFinal"]
         else:
@@ -3503,9 +3537,8 @@ class KooDynaAdvancedModification:
             Vy = VyList[i]
             Vz = VzList[i]
             height = heightList[i]
-            # 자유낙하 속도 v = √(2·g·h) (DROP_ATTITUDE line 2231 결 동일).
-            # height>100이면 mm(g=9810 mm/s²), 이하면 m(g=9.81 m/s²) 자동 추정.
-            g_fall = 9810.0 if height > 100 else 9.81
+            # 자유낙하 속도 v = √(2·g·h). g 는 _ResolveFallGravity (Gravity 키 > 재질 밀도 단위계)
+            g_fall = fall_g(height)
             velocity = [Vx, Vy, Vz - np.sqrt(2.0 * g_fall * height)]
                 
             if i != 0:                
@@ -3663,6 +3696,7 @@ class KooDynaAdvancedModification:
     
             
     def DropWeightImpactTest(self, option, filePath):
+        fall_g = self._ResolveFallGravity(option, "DROP_WEIGHT_IMPACT_TEST")
         
         if "TFinal" in option:
             tfinal = option["TFinal"]
@@ -3993,9 +4027,8 @@ class KooDynaAdvancedModification:
             Vy = VyList[i]
             Vz = VzList[i]
             height = heightList[i]
-            # 자유낙하 속도 v = √(2·g·h) (DROP_ATTITUDE line 2231 결 동일).
-            # height>100이면 mm(g=9810 mm/s²), 이하면 m(g=9.81 m/s²) 자동 추정.
-            g_fall = 9810.0 if height > 100 else 9.81
+            # 자유낙하 속도 v = √(2·g·h). g 는 _ResolveFallGravity (Gravity 키 > 재질 밀도 단위계)
+            g_fall = fall_g(height)
             velocity = [Vx, Vy, Vz - np.sqrt(2.0 * g_fall * height)]
 
             if not use_fast_mode:
@@ -4255,7 +4288,7 @@ class KooDynaAdvancedModification:
             # 2. energy
             speed = np.sqrt(velocity[0]**2 + velocity[1]**2 + velocity[2]**2)
             kinetic_energy = 0.5 * impactor_mass * speed**2
-            g = 9810.0 if height > 100 else 9.81
+            g = fall_g(height)
             equivalent_height = kinetic_energy / (impactor_mass * g) if impactor_mass > 0 else 0.0
             momentum = impactor_mass * speed
             self.dynaImporter.metaData["energy"] = {
@@ -4498,6 +4531,7 @@ class KooDynaAdvancedModification:
                         self.WriteModifiedFile(filePath, modifiedKeyword)
 
     def DropWeightImpactTestbyPart(self, option, filePath):
+        fall_g = self._ResolveFallGravity(option, "DROP_WEIGHT_IMPACT_TEST")
         # 3단 실린더(dimension 7값)는 byPart(GenerationMode=Part) 경로 미지원.
         # 주 경로(DampingSpring/OutsideRigid)를 사용하거나 2단으로 입력할 것.
         _dim = option.get("Dimension", [])
@@ -4706,9 +4740,8 @@ class KooDynaAdvancedModification:
             Vy = VyList[i]
             Vz = VzList[i]
             height = heightList[i]
-            # 자유낙하 속도 v = √(2·g·h) (DROP_ATTITUDE line 2231 결 동일).
-            # height>100이면 mm(g=9810 mm/s²), 이하면 m(g=9.81 m/s²) 자동 추정.
-            g_fall = 9810.0 if height > 100 else 9.81
+            # 자유낙하 속도 v = √(2·g·h). g 는 _ResolveFallGravity (Gravity 키 > 재질 밀도 단위계)
+            g_fall = fall_g(height)
             velocity = [Vx, Vy, Vz - np.sqrt(2.0 * g_fall * height)]
         
             for j in range(len(locX)):
