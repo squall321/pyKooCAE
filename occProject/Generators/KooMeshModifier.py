@@ -19,6 +19,15 @@ import logging
 import json
 from pathlib import Path as PathLibPath
 from typing import Any, Dict, List
+
+# --help 는 무거운 import(OCC 등)·로그 파일 생성 전에 처리한다.
+# 컴파일 바이너리는 인자 없이 실행해도 help (소스 실행의 인자 없음은 기존 개발용 경로 유지).
+if __name__ == "__main__":
+    from KooCLIHelp.engine import handle_help as _handle_help
+    from KooCLIHelp.kmm_catalog import CATALOG as _HELP_CATALOG
+    if _handle_help(sys.argv, _HELP_CATALOG, no_args_is_help="__compiled__" in globals()):
+        sys.exit(0)
+
 getcwd = os.getcwd()
 path = os.path.join(getcwd, "Library", "OCC")
 import sys
