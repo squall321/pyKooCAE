@@ -21,4 +21,4 @@
 - [x] KMM·KAM ascii 기동 가드 (LANG 없는 환경 UnicodeEncodeError rc=120) + KMM 로그 경로 + KAM 모르는 모드·입력 없음 rc=1 (2b52381)
 - [x] KooRemapper meshfix 리눅스 gmsh 탐색 + matdb 기본 DB 실행 파일 기준 (KooRemapper 2418c22)
 - [x] drop_weight_impact 예제 9개 단위, part_validation 모델 경로, TRANSLATION_DOE 매뉴얼 (0b79c68)
-- [ ] 전체 빌드 → KooRemapper compat → SIF v98 → node001 e2e (--cleanenv KMM, meshfix, matdb 기본 DB, KAM 잘못된 모드)
+- [x] 전체 빌드 → KooRemapper compat → SIF v98 → node001 e2e 전 항목 통과: --cleanenv(LANG 없음) KMM 완주·한글 로그, 낙하 -990.5·DWI -3132.0, g-cm-s WARNING, KMM 잘못된 모드 rc=1(NameError 0), KAM PKG·CAP·pkg/입력없음/*Bogus rc=1, KooRemapper meshfix(SIF gmsh) 포함 사례 47 통과·restack/matswap 회귀·matdb DB 생략 525 로드, help 4종
