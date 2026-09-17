@@ -28,6 +28,12 @@ enforce_utf8_runtime()
 
 def main():
     """Main entry point for KooChainRun CLI"""
+    # `KooChainRun --help [검색어]` = 모드·명령 카탈로그 (사례 포함). `KooChainRun <명령> --help` 는 argparse 그대로.
+    from Runner.cli_help_engine import handle_help
+    from Runner.cli_help_kcr import CATALOG as HELP_CATALOG
+    if handle_help(sys.argv, HELP_CATALOG):
+        return
+
     parser = argparse.ArgumentParser(
         prog='KooChainRun',
         description='KooChainRun - Sequential CAE Analysis Workflow Manager',

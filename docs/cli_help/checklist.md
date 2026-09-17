@@ -16,7 +16,9 @@
 - [x] `--help` 를 re-exec·라이선스 게이트 전에 처리
 - [ ] 배포본 기동 불가 해소
 ## P3 KooChainRun
-- [ ] 시나리오 모드·키 주제 · 예제 prepare 검증
+- [x] 시나리오 모드 5 + 워크플로우 2 + 명령 11 카탈로그 (Runner/cli_help_kcr.py)
+- [x] 사례 검증: prepare(Designer) → runner_config → 러너 step config → KMM 파싱 (DWI·part_validation 포함)
+- [x] `KooChainRun --help [검색어]` 연결, `<명령> --help` 는 argparse 유지
 ## P4 KooRemapper
 - [ ] 검색 · `<명령> --help` · 부족한 사례
 ## P5 배포
