@@ -10,4 +10,6 @@
 - [x] 6 Evolver 작업폴더 준비 헬퍼
 - [x] help 문구 갱신 (KMM·KCR·KAM·KooRemapper) + 사례 재검증
 - [x] 회귀 시험 추가·실행
-- [ ] 빌드 → KooRemapper compat → SIF v96 → tar → node001 → 배포본 e2e (속도 실측 포함)
+- [x] 빌드 → KooRemapper compat → SIF v96 → tar → node001 → 배포본 e2e: 낙하 50mm -990.5·DWI 500 -3132.0 (옛 -6264), node001 KAM Access granted·PKG 메시
+- [x] v96 e2e 에서 추가 발견·수정: CAP Evolver 보조 파일(stl.cmd) 미연결 309d8ef, Evolver 오류 뒤 입력 대기 무한 정지 7eb8238
+- [ ] KAM 단독 재빌드 → SIF v97 → node001 → CAP·restack/matswap·help 사례 e2e
