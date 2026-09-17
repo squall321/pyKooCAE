@@ -13,7 +13,6 @@ import os
 import re
 import sys
 import json
-import math
 import subprocess
 import numpy as np
 from pathlib import Path
@@ -503,9 +502,9 @@ def _write_dwi_step_config(config_path, model_file, output_dir,
     imp_E = impactor.get("youngs_modulus", 2.0e5)          # MPa
     imp_nu = impactor.get("poisson_ratio", 0.3)
 
-    # 속도 계산 (자유낙하)
-    g = 9810.0  # mm/s^2
-    vz = -math.sqrt(2.0 * g * imp_height)
+    # 자유낙하 속도는 KMM 이 Height 로 √(2gh) 를 계산한다 — 여기서 InitialVelocityZ 로 또 주면 이중 가산.
+    # 이 워크플로우는 mm 단위를 전제하므로 g 를 명시해 KMM 의 단위 판정에 맡기지 않는다.
+    g = sim_params.get("gravity", impactor.get("gravity", 9810.0))  # mm/s^2
 
     lines = [
         "*Inputfile",
@@ -532,7 +531,8 @@ def _write_dwi_step_config(config_path, model_file, output_dir,
         f"Height,{imp_height}",
         f"InitialVelocityX,0",
         f"InitialVelocityY,0",
-        f"InitialVelocityZ,{vz}",
+        f"InitialVelocityZ,0",
+        f"Gravity,{g}",
         f"ImpactorType,{imp_type}",
     ])
 
