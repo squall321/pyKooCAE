@@ -1,0 +1,13 @@
+# 체크리스트
+- [x] 2 KMM Gravity 키 파싱 (DROP_ATTITUDE, DROP_WEIGHT_IMPACT_TEST)
+- [x] 2 밀도 기반 g 판정 헬퍼 + 4곳(DropAttitude, DWI 3함수) 적용 + 메타데이터
+- [x] 2 러너 simulation_params.gravity → Gravity (DROP·IMPACT)
+- [x] 2 기존 예제 모델 신구 g 비교 (차이는 mm 모델 height≤100 뿐이어야)
+- [x] 1 DWI 워크플로우 InitialVelocityZ,0 + Gravity,9810
+- [x] 3 restack 라벨 MID
+- [x] 4 matswap 3필드 PART
+- [x] 5 KAM sys.exit + IP 대역
+- [x] 6 Evolver 작업폴더 준비 헬퍼
+- [x] help 문구 갱신 (KMM·KCR·KAM·KooRemapper) + 사례 재검증
+- [x] 회귀 시험 추가·실행
+- [ ] 빌드 → KooRemapper compat → SIF v96 → tar → node001 → 배포본 e2e (속도 실측 포함)

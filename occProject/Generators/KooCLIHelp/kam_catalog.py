@@ -21,8 +21,8 @@ TOPICS = [
         "  - 입력 파일은 `키,값` 줄 형식 (AIRMESH 만 JSON). `#` 로 시작하는 줄은 주석.",
         "  - 블록 헤더는 `*` 로 시작 (*Layer, *Capacitor, *PCB, *ODB ...). 키 이름은 대소문자 구분·접두 일치.",
         "  - 파일 끝에 *End 를 둘 것 — PCB/ArrayPCB 파서는 *End 가 없으면 EOF 에서 멈추지 않는다.",
-        "  - 종료 코드로 성패를 판단하지 말 것 (실패해도 0 인 경우가 많다). 로그의 Complete/FAILED 와 산출물 존재로 판단한다.",
-        "  - 실행 시 등록 IP·사용 기한(2027-12-31)을 확인한다. `Access denied` 면 그 머신에서는 실행되지 않는다 (계산 노드 node001 은 미등록 — 헤드노드에서 실행).",
+        "  - 라이선스 게이트·입력 키워드 오류·Evolver 없음은 종료 코드 1. 그 밖의 생성 실패는 0 으로 끝나는 경로가 남아 있어 로그의 Complete/FAILED 와 산출물로 확인할 것.",
+        "  - 실행 시 등록 IP·사용 기한(2027-12-31)을 확인한다. `Access denied` 면 그 머신에서는 실행되지 않는다 (종료 코드 1). 계산 노드 대역 192.168.122.x 는 허용.",
     ]),
     Topic("outputs", "모드별 산출물", aliases=["출력", "산출물", "output"], body=[
         "  PKG       메시 키워드가 없으면 <입력>.step, 첫 *Layer 에 MeshGenerationType 이 있으면 <입력>.k (LS-DYNA)",
@@ -190,8 +190,7 @@ mode("CAPACITOR", "MLCC 칩 커패시터(패드·터미널·솔더·유전체 �
                                 "같은 키를 두 번 쓰면 뒤 값이 이긴다."],
                        verify={"parser": "cap", "expect": {
                            "@len:capacitors": 1, "capacitors.1.name": "C0603", "capacitors.1.meshSize": 40.0}})],
-     notes=["🔴 작업 폴더(또는 상위 4단계 안)에 Library/Evolver/evolver 가 있어야 한다. 없으면 'evolver not found' 만 찍고 아무것도 만들지 않는다.",
-            "SIF 안에서 실행할 때는 먼저: mkdir -p Library && cp -r /opt/SmartTwinPreprocessor/Library/Evolver Library/  (임시 스크립트를 이 폴더에 쓰므로 복사해야 한다)",
+     notes=["Surface Evolver 는 작업 폴더 Library/Evolver → 상위 폴더 → PATH → 설치본(SIF 의 /opt/SmartTwinPreprocessor/Library/Evolver) 순으로 찾고, 작업 폴더에 Library/Evolver/evolver 링크를 만들어 거기서 계산한다. 못 찾으면 종료 코드 1.",
             "산출물: <이름>_detail.step 등 STEP + PackageInfoCap 폴더 메시"],
      related=["PKG"])
 
@@ -342,7 +341,7 @@ CATALOG = Catalog(
     usage=["KooAutomatedModeller <모드> <입력파일> [작업폴더|None] [True|False]",
            "KooAutomatedModeller --help [모드 또는 검색어]"],
     overview=["모드 이름은 대소문자 그대로 (PKG, CAPACITOR/CAP, PCB, ArrayPCB, PBA, AIRMESH).",
-              "종료 코드로 성패를 판단하지 말 것 — 로그와 산출물로 판단 (--help cli)."],
+              "성패는 종료 코드와 함께 로그·산출물로 확인 (--help cli)."],
     modes=MODES, topics=TOPICS,
     footer=["KooAutomatedModeller --help cli                명령 형식·공통 규칙",
             "KooAutomatedModeller --help outputs            모드별 산출물"],

@@ -82,8 +82,9 @@ TOPICS = [
     ]),
     Topic("units", "단위 — 입력은 모델 .k 단위 그대로", aliases=["단위", "unit"], body=[
         "  KMM 은 값을 변환하지 않는다. 표준 낙하 모델은 [tonne, mm, s, MPa] (강철 ρ 7.85e-9, E 2.0e5).",
-        "  🔴 height 는 > 100 이면 mm(g=9810), ≤ 100 이면 m(g=9.81) 로 추정해 낙하 속도를 만든다.",
-        "     mm 모델에서 100 mm 이하 낙하는 틀린 속도가 된다.",
+        "  낙하 속도 √(2gh) 의 g 는 simulation_params.gravity (IMPACT 는 impact.gravity 도) 로 지정한다.",
+        "  없으면 KMM 이 모델 재질 밀도로 단위계를 판정한다 (ton-mm-s → 9810, kg-m-s → 9.81).",
+        "  kg-mm-ms 처럼 판정이 안 되는 단위계는 반드시 gravity 를 줄 것 (로그에 WARNING).",
     ]),
 ]
 
@@ -134,7 +135,8 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
          K("tolerance.roll/pitch/yaw + doe_type/doe_count", "객체", "lhs / 10", "각도 공차 DOE 확장"),
          K("cumulative.num_steps / mode_sequence", "정수 / 배열", "1 / DROP×n", "누적 스텝"),
          K("cumulative.angle_mixing.strategy", "문자", "same_angle", "same_angle | cyclic | random | opposite | custom_mapping"),
-         K("simulation_params.height", "실수", "1500", "낙하 높이 (🔴 ≤100 이면 m 로 간주)"),
+         K("simulation_params.height", "실수", "1500", "낙하 높이 (모델 단위)"),
+         K("simulation_params.gravity", "실수", "재질 밀도로 판정", "자유낙하 g (모델 단위, --help units)"),
          K("simulation_params.tFinal / dt", "실수", "0.005 / 1e-6", "종료 시간 / d3plot 간격"),
          K("simulation_params.density / youngs_modulus / poisson_ratio", "실수", "7.85e-9 / 2e5 / 0.3", "바닥판 재질"),
          K("simulation_params.offset_distance", "실수", "0.05", "바닥판 초기 간격"),
@@ -202,7 +204,8 @@ mode("IMPACT", "충격 시나리오 — 모델 윗면 격자 위치마다 구·�
          K("simulation_params.impact.type", "Sphere | cylinder", "Sphere", "충격추 형상"),
          K("simulation_params.impact.dimension", "실수", "0.008", "구 반지름"),
          K("simulation_params.impact.cylinder_stages", "배열", "-", "[front, back] 또는 [front, mid, back]. 각 role, diameter, outer_diameter(front), height, density, youngs_modulus, poisson"),
-         K("simulation_params.impact.height", "실수", "0.5", "낙하 높이 (🔴 ≤100 이면 m 로 간주 — mm 모델은 100 초과로)"),
+         K("simulation_params.impact.height", "실수", "0.5", "낙하 높이 (모델 단위)"),
+         K("simulation_params.impact.gravity", "실수", "재질 밀도로 판정", "자유낙하 g (모델 단위, --help units)"),
          K("simulation_params.impact.mesh_size / offset_distance", "실수", "0.001 / 1e-5", "충격추 요소 크기 / 초기 간격"),
          K("simulation_params.impact.density / youngs_modulus / poisson_ratio", "실수", "7.85e-9 / 2.01e5 / 0.3", "구 재질 (실린더는 stage 값 우선, back 단 = 본체)"),
          K("simulation_params.impact.tFinal / dt / dtmin", "실수", "0.001 / 1e-6 / -", "시간"),
@@ -350,7 +353,7 @@ mode("drop_weight_impact", "(구) 전위치 부분충격 워크플로우 — IMP
      ],
      examples=[Example("구 충격추 3×3 위치", DWI,
                        verify={"kind": "drop_weight_impact", "expect": {"mode": "drop_weight_impact"}})],
-     notes=["🔴 이 워크플로우는 충격 속도를 InitialVelocityZ 로 직접 주면서 Height 도 함께 넘겨 KMM 이 √(2gh) 를 한 번 더 더한다 (height 500 → 속도 2 배). 결과 해석 시 주의, 새 작업은 IMPACT 모드를 쓸 것."],
+     notes=["이 워크플로우는 mm 단위를 전제해 Gravity,9810 을 넘긴다. 다른 단위계면 simulation_params.gravity 로 바꿀 것."],
      related=["IMPACT"])
 
 CMDS = [

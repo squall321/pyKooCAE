@@ -90,6 +90,8 @@ TOPICS = [
         "사내 낙하 모델 표준은 [tonne, mm, s, MPa] — 강철 ρ=7.85e-9, E=2.0e5, 높이 mm, 시간 s.",
         "SI(kg, m, s, Pa) 모델이면 ρ=7850, E=2.0e11, 높이 m.",
         "예외: WARPED_PART·WARPED_TO_INITIAL_STRESS_PART 의 UnitScale 은 워피지 데이터 단위를 지정한다.",
+        "낙하 속도 √(2gh) 의 g: DROP_ATTITUDE·DROP_WEIGHT_IMPACT_TEST 의 Gravity 키. 없으면 모델 재질 밀도 중앙값으로",
+        "  ton-mm-s(< 1e-7) → 9810, kg-m-s(1~1e5) → 9.81. kg-mm-ms 등은 판정 불가라 Gravity 를 꼭 줄 것 (로그 WARNING).",
     ]),
 ]
 
@@ -149,6 +151,7 @@ DROP_ROBUST = _opt("model.k", "DROP_ATTITUDE,1", """**DropAttitude,1
 EulerRolling,30
 EulerPitching,20
 EulerYawing,10
+Gravity,9810
 Height,1500
 InitialVelocityX,0
 InitialVelocityY,0
@@ -183,7 +186,8 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
          K("EulerRolling", "실수 리스트", "-", "X 축 회전(도). 여러 값 = 여러 케이스", True),
          K("EulerPitching", "실수 리스트", "-", "Y 축 회전(도)", True),
          K("EulerYawing", "실수 리스트", "-", "Z 축 회전(도)", True),
-         K("Height", "실수 리스트", "-", "낙하 높이 → 초기 속도 √(2gh) 가 InitialVelocity 에 더해진다 (모델은 OffsetDistance 간격에 놓임). 🔴 g 는 값으로 추정 — Height > 100 이면 mm(g=9810), 100 이하면 m(g=9.81). mm 모델에서 100 mm 이하 높이는 Height,0 + InitialVelocityZ,-√(2·9810·h) 로 직접 줄 것", True),
+         K("Height", "실수 리스트", "-", "낙하 높이 → 초기 속도 √(2gh) 가 InitialVelocity 에 더해진다 (모델은 OffsetDistance 간격에 놓임). g 는 Gravity 키, 없으면 모델 재질 밀도로 단위계 판정 (ton-mm-s → 9810, kg-m-s → 9.81)", True),
+         K("Gravity", "실수", "모델 재질 밀도로 판정", "자유낙하 g (모델 단위). 재질 밀도 중앙값 < 1e-7 → 9810, 1~1e5 → 9.81. 판정 불가(kg-mm-ms 등)면 WARNING 후 옛 추정 → 그 단위계는 반드시 지정"),
          K("InitialVelocityX/Y/Z", "실수 리스트", "-", "추가 초기 속도 (각 케이스). Height 속도와 합산", True),
          K("InitialAngularVelocityX/Y/Z", "실수 리스트", "-", "초기 각속도 (각 케이스)", True),
          K("OffsetDistance", "실수", "-", "바닥판과의 초기 간격", True),
@@ -234,13 +238,12 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
                           "RigidifySmallDtThreshold·DropContact.DTSTIF 처럼 이름에 dt 가 든 키도 dt 와 섞이지 않는다 (2026-09 수정).",
                           "ControlTimestep.DT2MS 음수 = 질량 스케일링 목표 dt."],
                  verify={"mode": "DROP_ATTITUDE", "id": 1, "expect": {
-                     "DT": 1e-05, "RigidifySmallDtThreshold": 1e-07, "DropContact.DTSTIF": 3e-08,
+                     "DT": 1e-05, "Gravity": 9810.0, "RigidifySmallDtThreshold": 1e-07, "DropContact.DTSTIF": 3e-08,
                      "DropContact.SOFT": 2.0, "RobustContact": True, "RobustContactTolerance": 0.1,
                      "TiedOptions.ConvertToSegment": True, "ControlTimestep.DT2MS": -1e-07, "DTMIN": 0.01,
                      "DropSurface": ["PlaneGraded", 200.0, 200.0, 20.0, 10, 10, 2, 5, 1.5]}}),
      ],
-     notes=["🔴 Height ≤ 100 은 m 로 간주된다 (g=9.81). mm 모델에서 100 mm 이하로 떨어뜨리려면 Height,0 + InitialVelocityZ 로 속도를 직접 줄 것.",
-            "Euler/Height/InitialVelocity/InitialAngularVelocity 10 개 리스트 키와 OffsetDistance·Density·YoungsModulus·PoissonRatio 는 빠지면 KeyError 로 멈춘다.",
+     notes=["Euler/Height/InitialVelocity/InitialAngularVelocity 10 개 리스트 키와 OffsetDistance·Density·YoungsModulus·PoissonRatio 는 빠지면 KeyError 로 멈춘다.",
             "블록 안 빈 줄에서 블록이 끝난다 — 뒤 키는 무시된다.",
             "오일러 회전 순서 R = Rz·Ry·Rx (롤 → 피치 → 요).",
             "누적 낙하·전각도 DOE 는 KooChainRun 시나리오로 돌리는 편이 낫다 (KooChainRun --help drop)."],
@@ -328,7 +331,8 @@ mode("DROP_WEIGHT_IMPACT_TEST", "낙추(충격추) 시험 덱 — 구·다단 �
      syntax=["**DropWeightImpactTest,<ID>", "Key,Value", "**EndDropWeightImpactTest"],
      keys=[
          K("LocationX / LocationY", "실수 리스트", "-", "충격 지점 (케이스별). GenerationMode,Part 면 생략"),
-         K("Height", "실수 리스트", "0.5", "충격추 낙하 높이 → 초기 속도 √(2gh) 가 InitialVelocity 에 더해진다 (모델은 OffsetDistance 간격에 놓임). 🔴 g 는 값으로 추정 — Height > 100 이면 mm(g=9810), 100 이하면 m(g=9.81). mm 모델에서 100 mm 이하 높이는 Height,0 + InitialVelocityZ,-√(2·9810·h) 로 직접 줄 것"),
+         K("Height", "실수 리스트", "0.5", "충격추 낙하 높이 → 초기 속도 √(2gh) 가 InitialVelocity 에 더해진다 (모델은 OffsetDistance 간격에 놓임). g 는 Gravity 키, 없으면 모델 재질 밀도로 단위계 판정 (ton-mm-s → 9810, kg-m-s → 9.81)"),
+         K("Gravity", "실수", "모델 재질 밀도로 판정", "자유낙하 g (모델 단위). 재질 밀도 중앙값 < 1e-7 → 9810, 1~1e5 → 9.81. 판정 불가(kg-mm-ms 등)면 WARNING 후 옛 추정 → 그 단위계는 반드시 지정"),
          K("InitialVelocityX/Y/Z", "실수 리스트", "0", "추가 초기 속도 (케이스별). Height 속도와 합산되므로 둘 다 주면 이중 가산"),
          K("Type", "Sphere|Cylinder", "Sphere", "충격추 형상"),
          K("Dimension", "실수 리스트", "0.008", "Sphere: 반지름. Cylinder 5값(2단): r,외곽r,앞높이,뒤높이,뒤r / 7값(3단): r,외곽r,앞높이,중간r,중간높이,뒤r,뒤높이"),
@@ -367,8 +371,7 @@ mode("DROP_WEIGHT_IMPACT_TEST", "낙추(충격추) 시험 덱 — 구·다단 �
                  verify={"mode": "DROP_WEIGHT_IMPACT_TEST", "id": 1, "expect": {
                      "Mode": "Part", "PartIDs": [3], "LocationMode": ["3X3"]}}),
      ],
-     notes=["🔴 Height ≤ 100 은 m 로 간주된다 (g=9.81). mm 모델의 낮은 높이는 Height,0 과 InitialVelocityZ 로 속도를 직접 줄 것.",
-            "키 이름은 YoungsModulus (s 포함). 옛 예제의 YoungModulus·Density(접미 없음)는 인식되지 않아 기본값이 쓰인다.",
+     notes=["키 이름은 YoungsModulus (s 포함). 옛 예제의 YoungModulus·Density(접미 없음)는 인식되지 않아 기본값이 쓰인다.",
             "Type 줄은 Dimension 줄보다 앞에 둘 것 — Dimension 해석이 Type 에 따라 달라진다.",
             "블록 안 빈 줄에서 블록이 끝난다."],
      related=["DROP_ATTITUDE"])
