@@ -99,3 +99,11 @@ mm 모델에서 2mm 구를 0.001mm 로 메시하려다 gmsh 가 14GB 를 먹었�
 - **KMM 옵션 파서의 조용한 무시**: 모드별 키 화이트리스트가 필요해 전 모드에 영향을 준다. 위험 대비 이득이 낮다.
 - **KAM `*Layer` 블록의 모르는 키**: 970줄 중첩 분기에 `svector[0]` 비교가 109개다. PKG 생성을 깨뜨릴 위험이 크다.
   (최상위 키워드는 이미 `Keyword Error ... is not supported` + exit 1 로 막혀 있다.)
+
+### 2차 마감 (2026-09-18 11:10) — SIF v100
+KMM 재빌드(10:35) → /opt·/data·appt313 소스트리 갱신 → SIF v100(10:55) →
+tar `/data/SmartTwinPreprocessor/SmartTwinPreprocessor_20260918_v100.tar.gz` → node001 배포(11:03).
+node001 e2e 6항목 통과 — SolidComp 중복 0·공유 8, U2S minZ=10 층 경계 10/10.2/10.7/11,
+U2S 2파트 PID 배정, DWI MeshSize 경고 후 완주, ZSlack 종료 코드 1, restack 정상.
+node002·viz 노드 2대는 여전히 SSH 불가(down).
+검증 자산 노드측 `/data/koopark/Test_layersplit_v100`, 호스트측 `work/layersplit/audit`.

@@ -55,6 +55,6 @@
 - [x] SolidStructuredZSlack 미구현 → 조용한 무변환 대신 명시적 실패
 - [x] 신규 시험 tests/test_layer_split.py (21항목) 통과
 - [x] 회귀 — DROP 덱 diff 0, MeshSize 명시 DWI 덱 diff 0, 기존 시험 4종 통과
-- [ ] KMM 재빌드 + 배포 바이너리 확인
-- [ ] SIF v100 + tar + node001 e2e
-- [ ] 커밋·push·메모리 갱신
+- [x] KMM 재빌드 + 배포 바이너리 확인
+- [x] SIF v100 + tar + node001 e2e
+- [x] 커밋·push·메모리 갱신
