@@ -8,6 +8,7 @@ KooRemapper는 `SmartTwinPreprocessor.sif` 안의 C++ CLI `/opt/kooremapper/bin/
 
 - 컨테이너 직접 실행: `apptainer exec <sif> /opt/kooremapper/bin/KooRemapper <op> <config.yaml>`
 - KooChainRun의 `REMAP` 스텝: 아래 각 op의 "REMAP 스텝" 줄 참조.
+- YAML 설정의 BOM·탭·상대 경로 공통 규칙과 새로 거절되는 열거값은 [README §YAML 설정 공통 규칙](../README.md#yaml-설정-공통-규칙) 참조.
 
 이 페이지의 아홉 op은 모두 **yaml-config op**이다(help Usage가 모두 `KooRemapper <op> <config.yaml>` 형태). 따라서 REMAP 스텝에서는 `params.op=<op>` 와 `params.config`(dict — 아래 YAML 내용을 그대로 담음)로 전달한다. positional 인자를 쓰는 op은 이 페이지에 없다.
 
@@ -426,7 +427,7 @@ operations:
 
 ### 주의사항
 
-- `connection_mode` 는 `tied`(기본) / `czm` / `contact` / `none` 이며 단독·assemble 모두 같은 값만 받는다(정본 §22 정정, 구버전 `shared` 아님). 다른 값·`element_type: hex` 등은 단독 `offset` 에서도 오류로 거부된다.
+- `connection_mode` 는 `tied`(기본) / `czm` / `contact` / `none` 이며 단독·assemble 모두 같은 값만 받는다(정본 §22 정정, 구버전 `shared` 아님). 다른 값·`element_type: hex` 등은 단독 `offset` 에서도 오류로 거부된다(`restack` 도 같다).
 - 재료 카드 값은 LS-DYNA 고정 폭 10열 칸 안에 둔다. 예전 예시(`@MID@  2.0  12000  0.25`)처럼 칸을 벗어나면 LS-DYNA 가 다른 칸으로 읽는다. CZM 카드는 MAT_138 배치(1행 MID·RO·ROFLG·INTFAIL·EN·ET·GIC·GIIC, 2행 XMU·T·S·UND·UTD·GAMMA)를 따른다.
 - 예전 결함(수정됨): MID 칸이 5열 밀림, 카드 끝 줄바꿈 누락으로 `0.25*END` 붙음, CZM 파트가 기존 PID·SECID 와 충돌, `@CZM_MID@` 미치환, assemble 의 `connection_mode: none` 거부, 단독 offset 의 `material_cards` 누락.
 - 소스 표면의 일부만 처리하려면 region 필터(bbox / nodeId / elementId)를 쓴다. (help; 정본 §22의 `bbox_*`/`node_id_*`/`element_id_*` 필드)
@@ -531,8 +532,14 @@ KooRemapper restack <config.yaml>
 컨테이너 실행 예.
 
 ```
-apptainer exec <sif> /opt/kooremapper/bin/KooRemapper restack restack_czm.yaml
+# operations 가 하나뿐인 설정만 단독 restack 으로 돌릴 수 있다
+apptainer exec <sif> /opt/kooremapper/bin/KooRemapper restack assemble_restack_test.yaml
 ```
+
+> `examples/disconnect/restack_czm.yaml` 은 `operations` 가 2개(restack + disconnect)라 **단독 `restack` 으로는 돌지 않는다**:
+> `[ERROR] [restack] restack_czm.yaml 에 operations 항목이 2개 있습니다 — 단독 명령은 한 항목만 적용합니다` 뒤에
+> `'KooRemapper assemble restack_czm.yaml' 로 실행하세요` 가 뜨고 rc=1 이다. 여러 op 을 이어 붙인 설정은 `assemble` 로 실행하라.
+> 단독 `restack` 은 `operations` 가 하나인 설정에만 쓴다(예: `examples/replace_test/assemble_restack_test.yaml` — 실행 확인됨).
 
 config 형식 (examples/disconnect/restack_czm.yaml, help).
 
@@ -543,7 +550,7 @@ operations:
   - type: restack
     target_pid: 1          # 소스 셸 파트 ID
     direction: z           # auto | x | y | z (정본), help 예시는 +z
-    element_type: solid    # solid | tshell | shell
+    element_type: solid    # solid | tshell | shell 만 (그 밖은 rc=1)
     layers:
       - thickness: 0.5
         material_card: |
@@ -566,13 +573,15 @@ REMAP 스텝: `params.op=restack`, `params.config`=위 YAML dict.
 | `operations[].type` | 예 | `restack` | — |
 | `operations[].target_pid` | 예 | 소스 셸 파트 ID | — |
 | `operations[].direction` | 아니오 | 적층 방향 `auto`/`x`/`y`/`z` | `auto` (정본 §12) |
-| `operations[].element_type` | 아니오 | `solid`/`tshell`/`shell`(help은 solid/tshell) | `solid` |
+| `operations[].element_type` | 아니오 | `solid` / `tshell` / `shell` **만**. 그 밖의 값(`hex`, 오타, 대문자 `SOLID` 포함)은 rc=1 이고 출력이 안 만들어진다 — 예전에는 전부 조용히 `solid` 였다. 층(`layers[].element_type`)도 같고, 층에서 비우면 op 값을 물려받는다 | `solid` |
 | `operations[].layers[]` | 예 | 레이어 리스트(`thickness` + `material_card`) | — |
 
 ### 예제
 
+이 예제는 `operations` 가 2개이므로 `KooRemapper assemble restack_czm.yaml` 로 실행한다.
+
 ```yaml
-# examples/disconnect/restack_czm.yaml — 3층 스택 후 disconnect(czm) 체이닝
+# examples/disconnect/restack_czm.yaml — 3층 스택 후 disconnect(czm) 체이닝 (assemble 로 실행)
 base_model: three_layer.k
 output: restack_czm_result
 operations:

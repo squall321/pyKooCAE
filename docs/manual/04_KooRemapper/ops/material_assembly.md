@@ -12,6 +12,7 @@ LS-DYNA 데크의 재료 카드를 DB/번들로 일괄 교체하고 여러 파�
 
 - 컨테이너 직접 실행 — `apptainer exec <sif> /opt/kooremapper/bin/KooRemapper <op> <config.yaml>`
 - KooChainRun 의 REMAP 스텝 — 파이프라인 러너가 위 CLI 를 대신 호출
+- YAML 설정의 BOM·탭·상대 경로 공통 규칙과 새로 거절되는 열거값은 [README §YAML 설정 공통 규칙](../README.md#yaml-설정-공통-규칙) 참조.
 
 세 op 는 모두 **yaml-config op** 다. 호출 형태는 help `Usage:` 와 정확히 일치하며 항상 `KooRemapper <op> config.yaml` 한 개의 config 파일만 받는다(matswap 만 하위호환용 레거시 positional 형태를 별도 지원).
 
@@ -49,6 +50,7 @@ KooRemapper matdb config.yaml
 | `database` | str | 재료 DB(JSON) 경로. **생략 시 번들 DB(exe 상대경로 `materials/material_db.json`, SIF 내 `/opt/kooremapper/materials/material_db.json`, 525종) 자동 사용** | help 노트, 정본 §24(525종은 materials/MATERIAL_DB_REPORT.md) |
 | `mat_type` | str | 기본 구조 카드 유형(예: `MAT_ELASTIC`, `MAT_024`) | 정본 §24, help |
 | `thermal` | bool | 열 재료 카드 기본 삽입 여부(기본 `false`) | 정본 §24, help |
+| `damping_preset` | str | 감쇠 프리셋(선택). **`smartphone_drop` / `smartphone_drop_aggressive` / `quasi_static` / `off` 만** 받는다(대소문자 무시). 그 밖의 값은 rc=1 `matdb: unsupported damping_preset '<값>' (allowed: …)` — 옛 문서의 `light`/`moderate`/`heavy`/`custom` 은 이제 오류다. `off` 는 프리셋이 아니라 '감쇠 세기는 그대로 두고 묵은 `*DAMPING_PART_*` 만 지운다' 는 관용구다 | 실행 확인 |
 | `materials` | list | 개별 매칭 규칙 목록(선택). 아래 하위 키 참조 | 정본 §24, help |
 
 `materials[]` 항목 하위 키.
@@ -94,6 +96,8 @@ materials:
 
 - `database` 를 생략하면 exe 상대경로의 번들 DB 를 쓴다. 사용자 지정 DB 를 쓰려면 명시적으로 경로를 넣어야 한다. (근거: help 노트)
 - REMAP 스텝에서는 `model`/`output` 을 러너가 주입하므로 `params.config` 에 직접 적지 않는다.
+- `database` 키만 상대 경로 규칙이 다르다. 슬래시 없는 파일 이름(`mdb.json`)은 YAML 폴더 기준이지만, 폴더가 붙은 상대 경로(`mats/material_db.json`)는 **작업 폴더 기준**이라 다른 폴더에서 실행하면 `Cannot load database from: …` 로 죽는다. `model`/`output` 을 비롯한 나머지 키는 YAML 폴더 기준이다.
+- 매칭된 DB 재료의 감쇠 카드는 `damping_preset` 유무와 상관없이 항상 삽입된다. 묵은 `*DAMPING_PART_*` 제거는 값을 줬을 때만 일어나므로, 프리셋 없이 두 번 돌리면 감쇠 카드가 중복된다.
 
 ### 개발 현황
 
@@ -382,6 +386,8 @@ operations:
 - `output` 은 확장자 없는 접두사다. `.k` 와 `.dynain` 이 각각 생성된다. (근거: help Output)
 - 오퍼레이션 순서가 결과에 영향을 준다(응력 누적·ID 발급이 순차 진행). (근거: 정본 §39)
 - restack 레이어 지정 문법 이원화는 위 표 하단 주석 참조(**확인 필요**).
+- 결과 덱(.k · .dynain · IGA include)에 `nan`/`inf` 가 하나라도 있으면 **파일을 쓰지 않고 rc=1** 이다: `출력 덱에 유한하지 않은 값(nan/inf)이 있습니다: <파일>:<줄> '<토큰>' — 출력 파일을 쓰지 않았습니다: <목록>`. 같은 경로에 있던 지난 실행 결과는 **지우지 않으므로 그 자리에 그대로 남는다** — 덱 날짜를 보고 새 결과로 오해하지 마라. 단독 op 도 같다.
+- 층·오퍼레이션의 `element_type` 은 `solid`/`tshell`/`shell` 만 받는다(대소문자 구분). 그 밖의 값은 rc=1 이고 출력이 없다 — 예전에는 조용히 `solid` 였다.
 
 ### 개발 현황
 

@@ -8,6 +8,7 @@ KooRemapper는 `SmartTwinPreprocessor.sif` 안의 C++ CLI `/opt/kooremapper/bin/
 
 - 컨테이너 직접 실행. `apptainer exec <sif> /opt/kooremapper/bin/KooRemapper <op> <config.yaml>`
 - KooChainRun의 `REMAP` 스텝. 아래 각 op의 "REMAP 스텝" 줄 참조.
+- YAML 설정의 BOM·탭·상대 경로 공통 규칙과 새로 거절되는 열거값은 [README §YAML 설정 공통 규칙](../README.md#yaml-설정-공통-규칙) 참조.
 
 다섯 op 모두 **yaml-config op**이라 `config.yaml`(독립 실행) 또는 REMAP 스텝의 `params.config`(dict)로 인자를 준다. REMAP 스텝에서는 `params.op=<op>` 와 `params.config`(dict)를 지정하며, `model`/`output` 은 러너가 자동 주입하므로 config dict에서 생략한다. (README §호출 규약)
 

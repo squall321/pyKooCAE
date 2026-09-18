@@ -8,6 +8,7 @@ KooRemapper는 `SmartTwinPreprocessor.sif` 안의 C++ CLI `/opt/kooremapper/bin/
 
 - 컨테이너 직접 실행: `apptainer exec <sif> /opt/kooremapper/bin/KooRemapper <op> <config.yaml>`
 - KooChainRun의 `REMAP` 스텝: 아래 각 op의 "REMAP 스텝" 줄 참조.
+- YAML 설정의 BOM·탭·상대 경로 공통 규칙과 새로 거절되는 열거값은 [README §YAML 설정 공통 규칙](../README.md#yaml-설정-공통-규칙) 참조.
 
 이 페이지의 여덟 op는 모두 **YAML-config op**다. 인자로 설정 파일 경로 하나만 받으며, `model`(입력 k-file)과 `output`(출력 k-file)을 config 안에 지정한다. 따라서 REMAP 스텝에서는 `params.op=<op>` 와 함께 설정을 `params.config`(dict, 곧 YAML 내용)로 전달한다.
 
@@ -45,7 +46,7 @@ loads:
     mode: pressure          # pressure | force | gravity
     value: 1.0              # 하중 크기
     direction: [0, 0, 1]    # 하중 방향 벡터
-    select: tied            # direction | tied | all
+    select: tied            # direction | set | tied  ('all' 은 없다)
     angle: 45.0             # 면 선택 각도 허용치(°)
     curve:                  # 선택. 시간-하중 곡선 → *DEFINE_CURVE
       - [0.0, 0.0]
@@ -59,7 +60,7 @@ loads:
 | `mode` | `pressure` / `force` / `gravity` |
 | `value` | 하중 크기 |
 | `direction` | 하중 방향 벡터 `[x, y, z]` |
-| `select` | 면 선택 방식. `direction`(방향벡터 각도 내 법선 면) / `tied`(tied 접촉 참여 면) / `all`(파트 노출면 전체) |
+| `select` | 면 선택 방식. `direction`(방향벡터 각도 내 법선 면) / `set`(기존 `*SET_SEGMENT`, `set_id` 필요) / `tied`(tied 접촉 참여 면). **`all` 은 `load` 에 없다** — 주면 rc=1 `[load] loads[0]: unsupported select 'all' (allowed: direction, set, tied)` |
 | `angle` | 면 선택 각도 허용치(°) |
 | `curve` | 선택. `[[t, f], ...]` 시간-하중 곡선 |
 
@@ -112,7 +113,7 @@ boundaries:
   - part: 9
     dof: all                 # all | x | y | z | xy | xz | yz
     direction: [0, 0, -1]    # 면 선택 방향
-    select: direction        # direction | all
+    select: direction        # direction | all | set  (set 은 set_id 필수)
     angle: 45.0              # 면 선택 각도 허용치(°)
 ```
 
@@ -121,7 +122,7 @@ boundaries:
 | `part` | 경계 대상 파트 ID |
 | `dof` | 구속 자유도. `all`(6 DOF 전체) / `x`·`y`·`z`(단일 병진) / `xy`·`xz`·`yz`(두 병진) |
 | `direction` | 면 선택 방향 벡터 |
-| `select` | `direction`(방향 면) / `all`(파트 노출면 전체) |
+| `select` | `direction`(방향 면) / `all`(파트 노출면 전체 — 이때 `direction` 은 무시된다) / `set`(기존 `*SET_NODE`, `set_id` 필요). 그 밖의 값은 rc=1 `boundary: boundaries[i]: unsupported select '<값>' (allowed: direction, all, set)` |
 | `angle` | 면 선택 각도 허용치(°) |
 
 근거: help, `examples/boundary/boundary_fixed.yaml`, `examples/boundary/boundary_partial.yaml`.
@@ -138,6 +139,8 @@ PID 9 하단면(z-)은 z 방향만 구속하고, PID 11 상단면(z+)은 `xyz` �
 
 - help의 `dof` 목록은 `all|x|y|z|xy|xz|yz`이나, 예제는 세 방향 병진 구속에 `xyz`도 사용한다(`boundary_partial.yaml`).
 - 정본 §27 본문 표는 `type: spc/prescribed_motion` + `nid` + `dofx~dofrz` 형태의 노드 ID 기반 구버전 스키마를 보여주나, v1.8.0 help·예제는 위 `part/dof/select` 면-선택 스키마를 사용한다.
+- 바이너리의 `boundary` help 는 아직 `select: direction  # direction | all` 만 찍는데, 실제 허용값은 `direction`/`all`/`set` 이다. 위 표를 따르라.
+- `rbe` 와 허용값이 다르다: `boundary` 는 `set` 을 받고 `rbe` 는 받지 않는다.
 
 ### 개발 현황
 
@@ -172,7 +175,7 @@ model: mesh.k
 output: mesh_rbe.k
 rbe:
   - part: 9
-    select: direction        # direction | all
+    select: direction        # direction | all  (set 은 없다)
     direction: [0, 0, -1]
     angle: 45.0
     type: rbe3               # rbe2 | rbe3
@@ -182,7 +185,7 @@ rbe:
 | 키 | 설명 |
 |---|---|
 | `part` | 대상 파트 ID |
-| `select` | `direction`(방향 면) / `all` |
+| `select` | `direction`(방향 면) / `all`(면 전체). 이 둘뿐이다 — `set` 이나 오타는 rc=1 `rbe: constraints[i]: unsupported select '<값>' (allowed: direction, all)` 이고, 예전처럼 조용히 `all` 로 떨어지지 않는다 |
 | `direction` | 면 선택 방향 벡터 |
 | `angle` | 면 선택 각도 허용치(°) |
 | `type` | `rbe2`(강체: 슬레이브가 마스터와 정확히 동일 이동) / `rbe3`(보간: 마스터 이동이 슬레이브 가중 평균) |
@@ -256,7 +259,7 @@ contacts:
 | 형태 | 결과 (SSTYP/MSTYP) |
 |---|---|
 | `{ pid: N }` | 파트 ID 직접 (SSTYP=3) |
-| `{ pids: [a, b, ...] }` | `*SET_PART` 자동 생성 (SSTYP=2) |
+| `{ pids: [a, b, ...] }` | `*SET_PART` 자동 생성 (SSTYP=2). 인라인 목록과 블록 목록(`pids:` 다음 줄부터 `- a` / `- b`)은 같은 덱을 만든다 — 예전에는 블록 목록이 조용히 무시돼 `*SET_PART` 가 안 생겼다 |
 | `{ pid: N, as_segment: true }` | 외곽면 추출 → `*SET_SEGMENT` (SSTYP=0) |
 | `{ pid: N, as_segment: true, facing: true }` | 세그먼트 중 마주보는 면만 추출(얇은 파트에서 반대면 포함 방지) |
 
@@ -264,11 +267,32 @@ contacts:
 
 ### type 값 (create)
 
-`automatic_surface_to_surface`, `tied_surface_to_surface`, `automatic_single_surface`, `eroding_surface_to_surface`, `forming_surface_to_surface`, `tiebreak`(→ `*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_TIEBREAK`), `tied_thermal`(→ `*CONTACT_TIED_SURFACE_TO_SURFACE_THERMAL`). 약칭에 없는 값은 대문자로 변환해 `*CONTACT_<값>`로 삽입한다. (정본 §25.2, `examples/contact/16_create_tiebreak.yaml`, `15_create_thermal.yaml`)
+단독 `contact` 명령의 약칭 표(assemble 과 다르다 — 아래 주의 참조).
+
+| 약칭 | 만들어지는 키워드 |
+|---|---|
+| `auto` / `automatic` / **키 생략** | `*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE` |
+| `tied` | `*CONTACT_TIED_SURFACE_TO_SURFACE` |
+| `tied_thermal` / `thermal` | `*CONTACT_TIED_SURFACE_TO_SURFACE_THERMAL` |
+| `tiebreak` | `*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_TIEBREAK` |
+| `mortar` | `*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_MORTAR` |
+| `tied_mortar` | `*CONTACT_TIED_SURFACE_TO_SURFACE_MORTAR` |
+| `single` | `*CONTACT_AUTOMATIC_SINGLE_SURFACE` |
+| `eroding` | `*CONTACT_ERODING_SURFACE_TO_SURFACE` |
+| `forming` | `*CONTACT_FORMING_SURFACE_TO_SURFACE` |
+
+약칭에 없는 값은 대문자로 바꿔 `*CONTACT_<값>` 으로 그대로 삽입한다(rc=0). 그래서 전체 키워드를
+직접 써도 된다 — `automatic_nodes_to_surface`, `automatic_general`,
+`forming_one_way_surface_to_surface`, `tied_shell_edge_to_surface` 등. 다만 KooRemapper 가 아는
+키워드 목록에 없으면 경고를 함께 찍는다:
+`[WARN] [contact] create: type '<값>' is not a known contact keyword — writing *CONTACT_<값> as-is`.
+쓰는 카드는 언제나 Card 1·2 (+선택 THERMAL/TIEBREAK)이므로 다른 카드 구성을 요구하는 키워드는
+LS-DYNA 쪽에서 거절된다. 예전에는 키를 생략하면 이름 없는 `*CONTACT_` 가, `type: auto` 는 실재하지
+않는 `*CONTACT_AUTO` 가 나왔다. (정본 §25.2, `examples/contact/15_create_thermal.yaml`, `16_create_tiebreak.yaml`)
 
 ### contact_type 프리셋 (detect)
 
-`auto` / `tied` / `mortar` / `tied_mortar` / `single` / `eroding` / `forming`. (help, `examples/contact/README.md`)
+`auto` / `automatic` / `tied` / `tied_thermal` / `thermal` / `tiebreak` / `mortar` / `tied_mortar` / `single` / `eroding` / `forming` — `create` 의 `type` 과 같은 값 공간이다(위 표). (help, `examples/contact/README.md`)
 
 ### detect 옵션
 
@@ -343,6 +367,8 @@ contacts:
 
 - convert/modify/remove의 `contact_index`는 먼저 `analyze`로 확인한 번호를 써야 한다. (정본 §25, help Workflow)
 - tied 변환에는 마주보는 면만 남기는 `facing: true`가 사실상 필수다(얇은 파트에서 반대면이 tied에 포함되는 문제 방지). (`examples/contact/04, 05`)
+- **`assemble` 안의 contact create 는 약칭 표가 더 좁다.** `auto`/`automatic`/`tied`/`mortar`/`tied_mortar`/`single`/`eroding`/`forming` 과 키 생략만 풀리고, `tied_thermal`·`thermal`·`tiebreak` 는 약칭이 아니라 그대로 대문자로 나간다(`*CONTACT_TIED_THERMAL`·`*CONTACT_THERMAL`·`*CONTACT_TIEBREAK` + 경고). assemble 에서는 전체 키워드를 직접 적어라 — `type: tied_surface_to_surface_thermal`, `type: automatic_surface_to_surface_tiebreak`.
+- 모르는 `type` 은 단독·assemble 모두 rc=0 이고 경고만 찍는다(단독은 `[WARN] `, assemble 은 `[WARNING] ` 접두). 출력 덱은 만들어지므로 오타를 눈치채려면 로그를 봐야 한다.
 
 ### 개발 현황
 

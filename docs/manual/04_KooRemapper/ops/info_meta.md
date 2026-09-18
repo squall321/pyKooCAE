@@ -8,6 +8,7 @@ KooRemapper 는 `SmartTwinPreprocessor.sif` 안 `/opt/kooremapper/bin/KooRemappe
 
 - 직접 실행: `apptainer exec <sif> /opt/kooremapper/bin/KooRemapper <op> ...`
 - 체인 실행: KooChainRun 의 `REMAP` 스텝. `params.op` 에 op 이름을 지정하고, positional op 는 `params.argv`(리스트), yaml-config op 는 `params.config`(dict)로 인자를 넘긴다.
+- YAML 설정의 BOM·탭·상대 경로 공통 규칙과 새로 거절되는 열거값은 [README §YAML 설정 공통 규칙](../README.md#yaml-설정-공통-규칙) 참조.
 
 이 페이지의 세 op 는 모두 정보 출력·메타 추출용이며, `info` 와 `version` 은 체인 산출 파일(다음 스텝으로 넘길 .k 등)을 만들지 않는다. `modelmeta` 만 JSON 파일을 남긴다.
 

@@ -3,6 +3,7 @@
 KooRemapper(SmartTwinPreprocessor.sif 내 `/opt/kooremapper/bin/KooRemapper`, C++ CLI v1.8.0)의 메시 생성 계열 op 4종 레퍼런스다. 각 op은 `apptainer exec <sif> /opt/kooremapper/bin/KooRemapper <op> ...` 로 직접 실행하거나 KooChainRun 의 REMAP 스텝으로 실행한다.
 
 - REMAP 스텝 매핑 규칙 — positional op(`generate`, `generate-var`)은 `params.op` + `params.argv`(리스트), yaml-config op(`battery`, `cclip`)은 `params.op` + `params.config`(dict)로 넘긴다. 각 op 절에 다시 표기한다.
+- YAML 설정의 BOM·탭·상대 경로 공통 규칙과 새로 거절되는 열거값은 [README §YAML 설정 공통 규칙](../README.md#yaml-설정-공통-규칙) 참조.
 
 ---
 
@@ -19,7 +20,7 @@ KooRemapper generate [options] <type> <output_prefix>
 KooRemapper generate box <config.yaml>
 ```
 
-- REMAP 스텝: `params.op: generate` + `params.argv: [<type>, <output_prefix>, ...]`(positional op, 리스트).
+- REMAP 스텝: `params.op: generate` + `params.argv: [<type>, <output_prefix>, ...]`(positional op, 리스트). box 하위명령은 `params.argv: ["box", "<config.yaml>"]`.
 
 ### 인자 (표)
 
@@ -36,7 +37,7 @@ KooRemapper generate box <config.yaml>
 
 | 키 | 설명 |
 |---|---|
-| `output` | 출력 파일 경로 (예: `box.k`) |
+| `output` | 출력 파일 경로 (예: `box.k`). `.k` 가 없으면 붙는다. **상대 경로는 이 YAML 파일이 있는 폴더 기준**이다 — 작업 폴더 기준이 아니다 |
 | `lx` / `ly` / `lz` | X/Y/Z 길이 [mm] |
 | `nx` / `ny` / `nz` | X/Y/Z 방향 요소 수 |
 | `rho` | 밀도 [t/mm3] |
@@ -66,6 +67,7 @@ apptainer exec SmartTwinPreprocessor.sif \
 ### 주의
 
 - 호출형태는 help `Usage:` 기준(`<type> <output_prefix>`, box 하위명령, `bendtwist` 타입, `--dim-*` 옵션)이다. 정본 §8 은 `generate <type> [options] <output.k>` 형태와 `bendtwist`·box 하위명령이 빠진 예전 목록을 보여주므로 v1.8.0 은 help 를 따른다.
+- `generate box` 의 YAML 은 [YAML 설정 공통 규칙](../README.md#yaml-설정-공통-규칙)을 따른다: BOM 은 무시하고, 들여쓰기에 탭이 있으면 rc=1 (`[ERROR] [generate] YAML 들여쓰기에 탭을 쓸 수 없습니다 …`), `output` 의 상대 경로는 YAML 폴더 기준이다. `type` 모드는 YAML 을 받지 않는다.
 
 ### 개발 현황
 

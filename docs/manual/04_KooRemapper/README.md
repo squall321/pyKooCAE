@@ -27,6 +27,50 @@ LS-DYNA 키워드(`.k`) 모델의 **메쉬·재료를 변환·리매핑**하는 
 
 ---
 
+## YAML 설정 공통 규칙
+
+`config.yaml` 을 받는 op 40종(load · boundary · rbe · strip · merge · contact · relax · explicit ·
+implicit · modal · ale · database · optimize · stabilize · matdb · cclip · convert · refine · elform ·
+restack · bend · indent · formstrain · disconnect · iga · warpage · offset · wrap · update · cnrb2solid ·
+hfdamp · battery · modelmeta · assemble · matswap · tetremesh · meshfix · `generate box` · squeeze ·
+generate-var)이 같은 리더를 쓴다. 아래는 그 공통 규칙이다.
+
+| 규칙 | 내용 |
+|---|---|
+| UTF-8 BOM | 파일 앞 BOM 은 무시한다. 윈도우 편집기(메모장 등)로 저장한 설정도 그대로 쓸 수 있다. |
+| 탭 들여쓰기 | 들여쓰기에 탭이 있으면 **rc=1** 로 거절한다 — `[ERROR] [<op>] YAML 들여쓰기에 탭을 쓸 수 없습니다 (공백을 쓰세요): <n>번째 줄: <줄 내용>`. 파일 전체를 훑으므로 그 op 이 읽지도 않는 키 아래의 탭도 걸린다(예전에는 rc=0 으로 통과하던 설정이 지금은 실패한다). 따옴표 값 안의 탭은 그대로 값이지만, `\|`/`>` 리터럴 블록(`material_card`·`czm_material_card`·`material_cards`) 안에서 탭으로 시작한 줄은 거절한다 — 예전에는 그 카드 줄이 조용히 사라졌다. |
+| 상대 경로 | 명령줄에 준 경로만 작업 폴더(CWD) 기준이다. **YAML 안의 상대 경로는 폴더가 붙어 있든(`../data/box.k`) 없든(`box.k`) 그 YAML 파일이 있는 폴더 기준**이며 작업 폴더로 되돌아가지 않는다. 절대 경로(`/`·`\` 시작, `X:` 드라이브)는 그대로 쓴다. |
+| 예외 | `map <config.yaml>` 은 이 리더를 쓰지 않는다 — BOM 이 있으면 `YAML config missing required keys (bent, flat, output)` 로 죽고, 탭은 거절 대신 조용히 잘못 읽힌다. `squeeze <mesh> <config> <prefix>` 는 탭은 거절하지만 BOM 은 못 걸러 `No parts defined in squeeze config` 가 된다. `matdb` 의 `database` 키만 경로 규칙이 다르다(슬래시 없는 파일 이름은 YAML 폴더 기준, 폴더가 붙으면 작업 폴더 기준). |
+| 파이프 입력 | 파이프·프로세스 치환·`/dev/stdin` 으로 설정을 넘기면 탭 검사를 건너뛴다(되감을 수 없는 스트림). |
+
+### 단독 op 의 `output` 은 필수다
+
+`wrap` · `update` · `restack` · `bend` · `indent` · `formstrain` · `convert` · `refine` · `elform` ·
+`disconnect` · `iga` · `warpage` · `offset` 13종은 `output` 이 비어 있으면 rc=1 로 거절한다.
+예전에는 입력 모델 파일을 그대로 덮어썼다.
+
+### 모르는 값은 조용히 넘어가지 않는다
+
+예전에 '기본값으로 조용히 떨어지던' 열거값들이 이제 rc=1 이고 출력 파일도 만들지 않는다.
+단독 명령과 `assemble` 안 양쪽에 같은 검사가 걸린다.
+
+| op / 키 | 허용값 | 예전 동작 |
+|---|---|---|
+| `restack` 의 `element_type`(층별 포함) | `solid` \| `tshell` \| `shell` (대소문자 구분 — `SOLID` 도 거절) | 그 밖의 값은 전부 조용히 `solid` |
+| `matdb` 의 `damping_preset` | `smartphone_drop` \| `smartphone_drop_aggressive` \| `quasi_static` \| `off` (대소문자 무시, 키 생략은 그대로 허용) | `light`/`moderate`/`heavy`/`custom` 같은 옛 문서 값도 통과 |
+| `boundary` 의 `select` | `direction` \| `all` \| `set`(`set` 은 `set_id` 필수) | 오타가 `direction` 으로 |
+| `rbe` 의 `select` | `direction` \| `all` (여기엔 `set` 이 없다) | 오타·`set` 이 조용히 `all` 로 |
+| `load` 의 `select` | `direction` \| `set` \| `tied` (여기엔 `all` 이 없다) | — |
+
+거절 메시지 형식: `<op>: [<컨테이너>[i]: ]unsupported <키> '<값>' (allowed: a, b, c)`.
+`assemble` 에서는 앞에 `[ERROR] ` 가 붙는다.
+
+> `boundary` 와 `rbe` 의 허용값이 서로 다르다. `boundary` 에는 `set` 이 있고 `all` 도 있지만,
+> `rbe` 에는 `set` 이 없다. 두 op 의 help 가 오랫동안 같은 `direction | all` 을 찍어 혼동을 키웠다
+> (바이너리의 `boundary` help 는 아직 `direction | all` 만 적어 실제와 다르다 — 위 표를 따르라).
+
+---
+
 ## op 레퍼런스 (카테고리별)
 
 47개 op를 9개 카테고리 페이지로 나눠 op별(용도·호출·인자·예제·주의)로 문서화했다.

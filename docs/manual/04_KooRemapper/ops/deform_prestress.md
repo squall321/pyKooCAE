@@ -6,6 +6,7 @@ SmartTwinPreprocessor.sif 안 `/opt/kooremapper/bin/KooRemapper`(C++ CLI, v1.8.0
 
 - 직접 실행: `apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper <op> ...`
 - REMAP 스텝: `params.op` 로 op를 선택하고, positional 계열은 `params.argv`(리스트), yaml-config 계열은 `params.config`(dict)로 인자를 전달한다. `squeeze` 는 positional 3인자(`<mesh.k> <config.yaml> <output_prefix>`)라 `params.argv` 로 전달하며, config.yaml 은 파일 경로로 준다.
+- YAML 설정의 BOM·탭·상대 경로 공통 규칙과 새로 거절되는 열거값은 [README §YAML 설정 공통 규칙](../README.md#yaml-설정-공통-규칙) 참조.
 
 호출형태 분류(help `Usage:` 기준).
 
@@ -397,6 +398,7 @@ positional 3인자 계열이므로 `params.op: squeeze` + `params.argv: ["mesh.k
 ### 주의
 - `swelling` 과 `eps_x/y/z` 는 같은 파트에 동시 사용할 수 없다(정본 §7).
 - `swelling` 파트는 K-파일에 해당 파트의 `*MAT_*` 카드가 반드시 있어야 한다(MID 연결, examples/squeeze/ex04_swelling.yaml).
+- `squeeze` 의 config 리더는 파일 앞의 UTF-8 BOM 을 못 걸러낸다. 윈도우 편집기가 붙인 BOM 이 있으면 첫 키가 깨져 `[ERROR] Failed to read config: No parts defined in squeeze config` 로 끝난다 — BOM 없이 저장하라. 들여쓰기 탭은 다른 op 처럼 rc=1 로 거절한다.
 
 ### 개발현황
-구현됨(v1.8.0 바이너리 내장, help 확인). 동작 예제 `examples/squeeze/`(ex01~ex05: 응력/재료/무재료/swelling/혼합) 제공.
+구현됨(v1.8.0 바이너리 내장, help 확인). 동작 예제 `examples/squeeze/`(ex01~ex05: 응력/재료/무재료/swelling/혼합) 제공. 입력 덱 `examples/squeeze/squeeze_box.k`(2파트 HEX8, PID 1 강철 / PID 2 알루미늄)와 러너 `examples/squeeze/run.sh` 가 같은 폴더에 있어 `bash run.sh` 로 바로 돌릴 수 있다.
