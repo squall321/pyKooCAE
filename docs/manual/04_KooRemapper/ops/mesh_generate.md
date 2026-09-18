@@ -168,7 +168,8 @@ config 필드는 예제 관찰 기반이다(examples/battery/swell/stacked/stack
 
 | 키 | 설명 |
 |---|---|
-| `output` | 출력 접두사/경로 |
+| `output` | 출력 접두사/경로. **상대 경로는 이 YAML 파일이 있는 폴더 기준**이다(2026-09-18 실행 확인 — 예전에는 작업 폴더 기준이었다). 가리키는 폴더는 미리 있어야 한다. 실제 파일 이름은 여기에 tier·phase 접미사와 `.k` 가 붙는다 |
+| `use_dynain` / `dynain_file` | 이전 페이즈 상태를 `*INCLUDE_DYNAIN` 으로 물려받는다. **`dynain_file` 은 경로로 풀지 않는다** — 적힌 문자열이 덱에 그대로 찍히고 KooRemapper 는 그 파일을 열지 않는다(아래 주의 참조) |
 | `model_type` | `stacked` 또는 `wound` |
 | `tier` / `phase` | 티어·페이즈 지정 |
 | `mode` | `swell` |
@@ -204,6 +205,8 @@ apptainer exec SmartTwinPreprocessor.sif \
 
 - 정본에 없는 op 이므로 필드 정의는 예제 YAML 관찰에 근거한다. 예제에 등장하지 않는 추가 필드·기본값·검증 규칙은 **확인 필요**.
 - help 는 config 파일 경로를 인자로 요구하며, 파일을 못 열면 `[ERROR] Cannot open battery config: ...` 로 실패한다(help).
+- **`output` 의 상대 경로는 YAML 폴더 기준이다**(2026-09-18 실행 확인). `KooRemapper battery cfg/b.yaml` 의 `output: bat_out` 은 `cfg/bat_out_tier0_phase1.k` 로 나간다 — 예전에는 작업 폴더에 떨어졌다.
+- **`dynain_file` 만은 경로 해석 대상이 아니다.** `*INCLUDE_DYNAIN` 다음 줄에 **적힌 문자열 그대로** 찍히고 KooRemapper 는 그 파일을 열지 않는다. 솔버가 산출 덱이 있는 폴더 기준으로 읽으므로, `dynain_file: ../state/my.dynain` 은 덱에도 `../state/my.dynain` 이 그대로 들어간다(2026-09-18 실행 확인). **산출 덱 옆에서 솔버가 찾을 이름**으로 적어라. 배치 체이닝(`use_dynain: true` + `batch.phases: [1, 2]`)에서 자동 계산되는 값도 같은 규칙이다.
 
 ### 개발 현황
 

@@ -94,9 +94,13 @@ materials:
 
 ### 주의사항
 
-- `database` 를 생략하면 exe 상대경로의 번들 DB 를 쓴다. 사용자 지정 DB 를 쓰려면 명시적으로 경로를 넣어야 한다. (근거: help 노트)
+- `database` 를 생략하면 번들 DB 를 쓴다 — 작업 폴더 `materials/material_db.json` → `<exe>/materials/` → `<exe>/../materials/` 순. SIF 안에서는 `<exe>/../materials/` 가 `/opt/kooremapper/materials/material_db.json` 으로 걸리므로 **생략이 가장 이식성 있다**. 사용자 지정 DB 를 쓰려면 경로를 명시한다.
 - REMAP 스텝에서는 `model`/`output` 을 러너가 주입하므로 `params.config` 에 직접 적지 않는다.
-- `database` 키만 상대 경로 규칙이 다르다. 슬래시 없는 파일 이름(`mdb.json`)은 YAML 폴더 기준이지만, 폴더가 붙은 상대 경로(`mats/material_db.json`)는 **작업 폴더 기준**이라 다른 폴더에서 실행하면 `Cannot load database from: …` 로 죽는다. `model`/`output` 을 비롯한 나머지 키는 YAML 폴더 기준이다.
+- `database` 도 이제 `model`/`output` 과 같은 경로 규칙이다(2026-09-18 실행 확인). 폴더가 붙었든(`mats/material_db.json`) 홑이름이든(`mdb.json`) **YAML 폴더 기준**으로 풀린다.
+  - 그 자리에 파일이 없고 값이 **홑이름**이면, 같은 파일 이름을 번들 DB 자리(작업 폴더 `materials/` → `<exe>/materials/` → `<exe>/../materials/`)에서 한 번 더 찾는다. `database: material_db.json` 처럼 번들 이름만 적던 사용법을 지키려는 단계이고, 폴백이 일어나면 `[matdb] WARNING: '<YAML폴더>/material_db.json' not found - using bundled '<경로>'` 를 남긴다.
+  - **폴더가 붙은 상대 경로는 번들로 넘어가지 않는다.** 오타 난 경로를 조용히 다른 DB 로 바꿔치기하지 않고 `[ERROR] [matdb] ERROR: Cannot load database from: <YAML폴더>/<값>` 으로 rc=1 이다.
+  - 절대 경로는 적은 자리 그대로 쓰고 번들 폴백이 없다.
+  - 어느 파일을 실제로 읽었는지 `[matdb] Loaded N materials from <경로>` 로 항상 남는다(예전 문구는 경로 없는 `… from DB` 였다 — 이 줄을 긁는 도구가 있으면 고쳐야 한다).
 - 매칭된 DB 재료의 감쇠 카드는 `damping_preset` 유무와 상관없이 항상 삽입된다. 묵은 `*DAMPING_PART_*` 제거는 값을 줬을 때만 일어나므로, 프리셋 없이 두 번 돌리면 감쇠 카드가 중복된다.
 
 ### 개발 현황

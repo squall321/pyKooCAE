@@ -97,15 +97,17 @@ KooRemapper modelmeta <config.yaml>
 | `model` | (필수) | 분석 대상 K-파일. 읽기 전용, `*INCLUDE` 1단계 추적 |
 | `detect` | `true`(예제값) | `*CONTACT` 없이도 기하학적으로 닿는 파트쌍 탐지 |
 | `gap_tol` | `0.2`(예제값) | 탐지 갭 허용치(모델 길이 단위) |
-| `output` | 생략 시 `model` 이름에서 유도 → `<model>_modelmeta.json` | 출력 JSON 이름 |
-| `material_db` | 생략 시 실행파일 옆 번들 DB | 재료 DB 경로 |
+| `output` | 생략 시 `model` 이름에서 유도 → `<model>_modelmeta.json` | 출력 JSON 의 **접두사** — 뒤에 `_modelmeta.json` 이 항상 붙는다(확장자까지 적으면 `meta.json_modelmeta.json` 이 된다) |
+| `material_db` | 생략 시 실행파일 옆 번들 DB | 재료 DB 경로. 상대 경로는 YAML 폴더 기준이지만 **번들 폴백이 없다**(matdb 의 `database` 와 다르다) |
 | `db_mid_fallback` | `false`(opt-in) | MID 일치 폴백. 로컬 MID 충돌 위험이 있어 명시적으로 켤 때만 사용 |
 
 `detect`/`gap_tol` 의 값은 예제에 설정된 값이며, 실제 내장 기본값 여부는 확인 필요. 그 밖의 키 존재 여부도 확인 필요.
 
 ### 출력
 
-`output` 을 생략하면 `model` 이름에서 유도한 `<model>_modelmeta.json` 파일로 파트별 기하·재료·connectivity 메타가 기록된다. JSON 스키마의 상세 필드 구성은 확인 필요.
+`output` 은 파일 이름이 아니라 **접두사**다(2026-09-18 실행 확인) — 뒤에 `_modelmeta.json` 이 항상 붙는다. `output: meta3` → `meta3_modelmeta.json`, 생략하면 `<model>_modelmeta.json`. **확장자까지 적으면 그대로 접두사가 되어** `output: meta5.json` → `meta5.json_modelmeta.json` 이 나온다. JSON 스키마의 상세 필드 구성은 확인 필요.
+
+`material_db` 의 상대 경로는 [README §YAML 설정 공통 규칙](../README.md#yaml-설정-공통-규칙) 대로 YAML 폴더 기준이지만, **`matdb` 의 `database` 와 달리 번들 DB 폴백이 없다**(2026-09-18 실행 확인). `material_db: material_db.json` 이라고 이름만 적었는데 YAML 폴더에 그 파일이 없으면 번들로 넘어가지 않고 `[INFO] [modelmeta] Material DB: <YAML폴더>/material_db.json (0 entries)` 로 **재료 매칭이 전부 빠진 채 rc=0** 으로 끝난다 — 오류가 안 나므로 알아채기 어렵다. 키를 생략하거나 절대 경로를 써라. 생략하면 `<exe>/materials/` → `<exe>/../materials/` → 작업 폴더 `materials/` 순으로 찾는다(`matdb` 는 작업 폴더를 **먼저** 본다 — 탐색 순서도 다르다).
 
 ### 예제
 

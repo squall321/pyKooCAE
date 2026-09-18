@@ -40,7 +40,10 @@ generate-var)이 같은 리더를 쓴다. 아래는 그 공통 규칙이다.
 | UTF-8 BOM | 파일 앞 BOM 은 무시한다. 윈도우 편집기(메모장 등)로 저장한 설정도 그대로 쓸 수 있다. |
 | 탭 들여쓰기 | 들여쓰기에 탭이 있으면 **rc=1** 로 거절한다 — `[ERROR] [<op>] YAML 들여쓰기에 탭을 쓸 수 없습니다 (공백을 쓰세요): <n>번째 줄: <줄 내용>`. 파일 전체를 훑으므로 그 op 이 읽지도 않는 키 아래의 탭도 걸린다(예전에는 rc=0 으로 통과하던 설정이 지금은 실패한다). 따옴표 값 안의 탭은 그대로 값이지만, `\|`/`>` 리터럴 블록(`material_card`·`czm_material_card`·`material_cards`) 안에서 탭으로 시작한 줄은 거절한다 — 예전에는 그 카드 줄이 조용히 사라졌다. |
 | 상대 경로 | 명령줄에 준 경로만 작업 폴더(CWD) 기준이다. **YAML 안의 상대 경로는 폴더가 붙어 있든(`../data/box.k`) 없든(`box.k`) 그 YAML 파일이 있는 폴더 기준**이며 작업 폴더로 되돌아가지 않는다. 절대 경로(`/`·`\` 시작, `X:` 드라이브)는 그대로 쓴다. |
-| 예외 | `map <config.yaml>` 은 이 리더를 쓰지 않는다 — BOM 이 있으면 `YAML config missing required keys (bent, flat, output)` 로 죽고, 탭은 거절 대신 조용히 잘못 읽힌다. `squeeze <mesh> <config> <prefix>` 는 탭은 거절하지만 BOM 은 못 걸러 `No parts defined in squeeze config` 가 된다. `matdb` 의 `database` 키만 경로 규칙이 다르다(슬래시 없는 파일 이름은 YAML 폴더 기준, 폴더가 붙으면 작업 폴더 기준). |
+| 예외 | **경로 규칙의 예외는 `map <config.yaml>` 하나뿐이다** — `bent`·`flat`·`output` 이 아직 작업 폴더(CWD) 기준이라, `KooRemapper map cfg/map.yaml` 의 `bent: bent.k` 는 `./bent.k` 를 찾고 `Failed to load bent mesh: Cannot open file: bent.k` 로 rc=1 이 된다. **BOM·탭 예외는 이제 없다** — `map` 도 `squeeze <mesh> <config> <prefix>` 도 BOM 을 무시하고 탭을 거절한다(2026-09-18 실행 확인). `matdb` 의 `database` 도 더 이상 예외가 아니다 — 아래 행 참조. |
+| `matdb` 의 `database` | 폴더가 붙었든 홑이름이든 **YAML 폴더 기준**이다. 그 자리에 없고 값이 **홑이름**이면 같은 파일 이름을 번들 DB 자리(작업 폴더 `materials/` → `<exe>/materials/` → `<exe>/../materials/`)에서 한 번 더 찾고 `[matdb] WARNING: … not found - using bundled …` 를 남긴다. **폴더가 붙은 상대 경로는 번들로 넘어가지 않고** `[ERROR] [matdb] ERROR: Cannot load database from: <YAML폴더>/<값>` 으로 rc=1 이다. 절대 경로는 그대로 쓰고 폴백이 없다. 키를 생략하면 번들 DB. 어느 파일을 읽었는지 `[matdb] Loaded N materials from <경로>` 로 항상 남는다. |
+| `modelmeta` 의 `material_db` | 상대 경로는 YAML 폴더 기준이지만 **번들 폴백이 없다**. 이름만 적었는데 그 자리에 없으면 조용히 `Material DB: … (0 entries)` 로 재료 매칭이 전부 빠진 채 rc=0 으로 끝난다 — 키를 생략하거나 절대 경로를 써라. |
+| `battery` 의 `dynain_file` | 경로로 풀지 않는다. `*INCLUDE_DYNAIN` 다음 줄에 **적힌 문자열 그대로** 찍히고 KooRemapper 는 그 파일을 열지 않는다(솔버가 산출 덱 기준으로 읽는다). 산출 덱 옆에서 솔버가 찾을 이름으로 적어라. |
 | 파이프 입력 | 파이프·프로세스 치환·`/dev/stdin` 으로 설정을 넘기면 탭 검사를 건너뛴다(되감을 수 없는 스트림). |
 
 ### 단독 op 의 `output` 은 필수다

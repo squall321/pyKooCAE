@@ -398,7 +398,8 @@ positional 3인자 계열이므로 `params.op: squeeze` + `params.argv: ["mesh.k
 ### 주의
 - `swelling` 과 `eps_x/y/z` 는 같은 파트에 동시 사용할 수 없다(정본 §7).
 - `swelling` 파트는 K-파일에 해당 파트의 `*MAT_*` 카드가 반드시 있어야 한다(MID 연결, examples/squeeze/ex04_swelling.yaml).
-- `squeeze` 의 config 리더는 파일 앞의 UTF-8 BOM 을 못 걸러낸다. 윈도우 편집기가 붙인 BOM 이 있으면 첫 키가 깨져 `[ERROR] Failed to read config: No parts defined in squeeze config` 로 끝난다 — BOM 없이 저장하라. 들여쓰기 탭은 다른 op 처럼 rc=1 로 거절한다.
+- `squeeze` 의 config 리더도 이제 파일 앞의 UTF-8 BOM 을 걸러낸다(2026-09-18 실행 확인 — BOM 을 붙인 config 로 `<prefix>.k`·`<prefix>.dynain` 이 rc=0 으로 나온다). 들여쓰기 탭은 다른 op 처럼 rc=1 로 거절한다.
+  - 다만 바이너리의 `help squeeze` 주의는 아직 "이 op 만은 아직 BOM 이 붙으면 rc=1" 이라고 적고 있다 — **help 문구가 뒤처진 것**이고 위 동작이 실제다.
 
 ### 개발현황
 구현됨(v1.8.0 바이너리 내장, help 확인). 동작 예제 `examples/squeeze/`(ex01~ex05: 응력/재료/무재료/swelling/혼합) 제공. 입력 덱 `examples/squeeze/squeeze_box.k`(2파트 HEX8, PID 1 강철 / PID 2 알루미늄)와 러너 `examples/squeeze/run.sh` 가 같은 폴더에 있어 `bash run.sh` 로 바로 돌릴 수 있다.

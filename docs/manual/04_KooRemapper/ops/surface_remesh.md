@@ -126,6 +126,7 @@ quality:
 
 - `tetgen` 백엔드는 해당 빌드 플래그가 켜진 바이너리에서만 동작한다. 없으면 `localimprove`만 쓸 수 있다. (help)
 - `report_only: true`로 먼저 품질 스캔만 돌려 대상을 파악한 뒤 재메시하는 것이 안전하다. (help)
+- **`model`·`output` 의 상대 경로는 이제 YAML 폴더 기준이다**(2026-09-18 실행 확인). `KooRemapper tetremesh cfg/tet.yaml` 은 `cfg/` 에서 읽고 `cfg/` 에 쓴다 — 예전에는 작업 폴더 기준이었다. `meshfix` 도 같다.
 
 ### 개발 현황
 
@@ -212,11 +213,12 @@ K파일 로드 → TET4 추출 → 메시 분석(`lc_min/max` 자동 계산, geo
 
 ### 주의사항 (정본 §40, help)
 
-- **Gmsh 필수** — `dist/gmsh/gmsh.exe` 또는 `dist/gmsh-<ver>/gmsh.exe`가 있어야 한다.
+- **Gmsh 필수** — 탐색 순서는 (0) `$KOOREMAPPER_GMSH`(실행 파일 전체 경로) → (1) 바이너리 옆 `gmsh/gmsh(.exe)` → (2) 바이너리 옆 `gmsh-<ver>/[bin/]gmsh(.exe)` → (3) `PATH` → (4) `/opt/gmsh-*/bin/gmsh` 다. **작업 폴더의 `dist/gmsh/` 는 탐색 대상이 아니다**(2026-09-18 실행 확인 — 거기에 두기만 하면 `[ERROR] Gmsh not found — set KOOREMAPPER_GMSH, or place gmsh(.exe) in gmsh/ or gmsh-<ver>/[bin/] next to KooRemapper, …` 로 rc=1). SIF 안에서는 (1) 로 걸린다.
 - **TET4 전용** — 입력 파트는 TET4(또는 퇴화 HEX8)여야 한다.
 - **처리 시간** — 10만 요소 이상에서 수 분 걸릴 수 있다.
 - **기하 한계** — 90° 직각 코너 인접 TET4는 기하 구속으로 이론적 최솟값($J_{s,min}^{corner} \approx 0.03{\sim}0.07$)이 있어, 기하 수정(코너 라운딩·필렛) 없이는 개선 불가하다.
 - **polish 제한** — `polish: true`는 실험적 기능이며 90° 코너 구속 형상에서는 자동 스킵된다.
+- **`model`·`output` 의 상대 경로는 이제 YAML 폴더 기준이다**(2026-09-18 실행 확인). `KooRemapper meshfix cfg/meshfix.yaml` 은 `cfg/` 에서 읽고 `cfg/` 에 쓴다 — 예전에는 작업 폴더 기준이었다.
 
 ### 개발 현황
 

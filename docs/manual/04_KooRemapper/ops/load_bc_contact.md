@@ -375,7 +375,7 @@ contacts:
 
 - convert/modify/remove의 `contact_index`는 먼저 `analyze`로 확인한 번호를 써야 한다. (정본 §25, help Workflow)
 - tied 변환에는 마주보는 면만 남기는 `facing: true`가 사실상 필수다(얇은 파트에서 반대면이 tied에 포함되는 문제 방지). (`examples/contact/04, 05`)
-- **`assemble` 안의 contact create 는 약칭 표가 더 좁다.** `auto`/`automatic`/`tied`/`mortar`/`tied_mortar`/`single`/`eroding`/`forming` 과 키 생략만 풀리고, `tied_thermal`·`thermal`·`tiebreak` 는 약칭이 아니라 그대로 대문자로 나간다(`*CONTACT_TIED_THERMAL`·`*CONTACT_THERMAL`·`*CONTACT_TIEBREAK` + 경고). assemble 에서는 전체 키워드를 직접 적어라 — `type: tied_surface_to_surface_thermal`, `type: automatic_surface_to_surface_tiebreak`.
+- **`assemble` 안의 contact create 도 이제 같은 약칭 표를 쓴다**(2026-09-18 실행 확인). 코드에서 표가 한 곳(`ct_getPreset`)으로 합쳐져 단독 `contact` 와 `assemble` 의 `- type: contact` 가 같은 11종 약칭을 받고 같은 키워드를 낸다 — `assemble` 에서 `type: tied_thermal` 은 `*CONTACT_TIED_SURFACE_TO_SURFACE_THERMAL_TITLE`, `type: tiebreak` 는 `*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_TIEBREAK_TITLE` 로 나간다. 대소문자를 가리지 않고 `-` 를 `_` 로 읽는 것도 같다. 예전에는 `assemble` 에만 `tied_thermal`·`thermal`·`tiebreak` 가 없어 LS-DYNA 에 없는 `*CONTACT_TIED_THERMAL`·`*CONTACT_THERMAL`·`*CONTACT_TIEBREAK` 가 나갔다 — 그 우회로 전체 키워드를 적어 둔 기존 설정은 여전히 그대로 동작한다.
 - 모르는 `type` 은 단독·assemble 모두 rc=0 이고 경고만 찍는다(단독은 `[WARN] `, assemble 은 `[WARNING] ` 접두). 출력 덱은 만들어지므로 오타를 눈치채려면 로그를 봐야 한다.
 
 ### 개발 현황
