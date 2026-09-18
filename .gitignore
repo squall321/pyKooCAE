@@ -72,3 +72,6 @@ build_dist/lib/KooChainRun/scipy/
 .playwright-mcp/
 lspost.cfile
 lspost.msg
+
+# 임시 검증 작업 폴더 (프로젝트 내부에서만 작업)
+work/

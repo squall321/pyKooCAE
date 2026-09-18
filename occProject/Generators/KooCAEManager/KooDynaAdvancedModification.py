@@ -1510,6 +1510,19 @@ class KooDynaAdvancedModification:
             posList[i] = posList[i]/posList[-1]
         
         newNodes = {}
+        # 층 경계 노드는 상면 노드 하나당 하나만 만들어 이웃 세그먼트와 공유한다.
+        # 세그먼트마다 만들면 같은 위치에 노드가 겹쳐 층 내부가 평면 방향으로 끊어진다.
+        def GetPlaneNode(planeIndex, topNodeID, nodeMan, ratio):
+            if planeIndex == 0:
+                return nodes[revidDict[topNodeID]]
+            if planeIndex == len(posList)-1:
+                return nodes[topNodeID]
+            if (planeIndex, topNodeID) not in newNodes:
+                nBot = nodes[revidDict[topNodeID]]
+                nTop = nodes[topNodeID]
+                newNodes[(planeIndex, topNodeID)] = nodeMan.CreateNode(nBot.x*(1-ratio)+nTop.x*ratio, nBot.y*(1-ratio)+nTop.y*ratio, nBot.z*(1-ratio)+nTop.z*ratio)
+            return newNodes[(planeIndex, topNodeID)]
+
         for i in range(1,len(posList)):
             botPos = posList[i-1]
             topPos = posList[i]
@@ -1517,39 +1530,16 @@ class KooDynaAdvancedModification:
             nodeMan = curPart.nodeManager
             elemMan = curPart.elementManager
             for j in range(len(segCenter)):
-                segTop = segDir[j] 
-                if len(segTop) == 4:                    
-                    n1 = nodes[revidDict[segTop[0]]]
-                    n2 = nodes[revidDict[segTop[1]]]
-                    n3 = nodes[revidDict[segTop[2]]]
-                    n4 = nodes[revidDict[segTop[3]]]
-                    n5 = nodes[segTop[0]]
-                    n6 = nodes[segTop[1]]
-                    n7 = nodes[segTop[2]]
-                    n8 = nodes[segTop[3]]
-                    if i == 1:
-                        newN1 = n1
-                        newN2 = n2
-                        newN3 = n3
-                        newN4 = n4
-                        newN5 = nodeMan.CreateNode(n1.x*(1-topPos)+n5.x*topPos, n1.y*(1-topPos)+n5.y*topPos, n1.z*(1-topPos)+n5.z*topPos)
-                        newN6 = nodeMan.CreateNode(n2.x*(1-topPos)+n6.x*topPos, n2.y*(1-topPos)+n6.y*topPos, n2.z*(1-topPos)+n6.z*topPos)
-                        newN7 = nodeMan.CreateNode(n3.x*(1-topPos)+n7.x*topPos, n3.y*(1-topPos)+n7.y*topPos, n3.z*(1-topPos)+n7.z*topPos)
-                        newN8 = nodeMan.CreateNode(n4.x*(1-topPos)+n8.x*topPos, n4.y*(1-topPos)+n8.y*topPos, n4.z*(1-topPos)+n8.z*topPos)
-                        newNodes[(i-1)*len(segCenter)+j] = [newN5, newN6, newN7, newN8]
-                    elif i == len(posList)-1:
-                        newN1, newN2, newN3, newN4 = newNodes[(i-2)*len(segCenter)+j]
-                        newN5 = n5
-                        newN6 = n6
-                        newN7 = n7
-                        newN8 = n8    
-                    else:
-                        newN1, newN2, newN3, newN4 = newNodes[(i-2)*len(segCenter)+j]
-                        newN5 = nodeMan.CreateNode(n1.x*(1-topPos)+n5.x*topPos, n1.y*(1-topPos)+n5.y*topPos, n1.z*(1-topPos)+n5.z*topPos)
-                        newN6 = nodeMan.CreateNode(n2.x*(1-topPos)+n6.x*topPos, n2.y*(1-topPos)+n6.y*topPos, n2.z*(1-topPos)+n6.z*topPos)
-                        newN7 = nodeMan.CreateNode(n3.x*(1-topPos)+n7.x*topPos, n3.y*(1-topPos)+n7.y*topPos, n3.z*(1-topPos)+n7.z*topPos)
-                        newN8 = nodeMan.CreateNode(n4.x*(1-topPos)+n8.x*topPos, n4.y*(1-topPos)+n8.y*topPos, n4.z*(1-topPos)+n8.z*topPos)
-                        newNodes[(i-1)*len(segCenter)+j] = [newN5, newN6, newN7, newN8]
+                segTop = segDir[j]
+                if len(segTop) == 4:
+                    newN1 = GetPlaneNode(i-1, segTop[0], nodeMan, botPos)
+                    newN2 = GetPlaneNode(i-1, segTop[1], nodeMan, botPos)
+                    newN3 = GetPlaneNode(i-1, segTop[2], nodeMan, botPos)
+                    newN4 = GetPlaneNode(i-1, segTop[3], nodeMan, botPos)
+                    newN5 = GetPlaneNode(i, segTop[0], nodeMan, topPos)
+                    newN6 = GetPlaneNode(i, segTop[1], nodeMan, topPos)
+                    newN7 = GetPlaneNode(i, segTop[2], nodeMan, topPos)
+                    newN8 = GetPlaneNode(i, segTop[3], nodeMan, topPos)
                     elemMan.CreateHexahedronLinearElement(newN1, newN2, newN3, newN4, newN5, newN6, newN7, newN8)
             self.dynaImporter.SyncronizeMaxID()
         
