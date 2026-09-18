@@ -630,14 +630,19 @@ restack 은 대상 파트를 층으로 나누며 층마다 **새 PID/SECID/MID**
 지금은 도구가 **죽은 PID / 지워진 요소(EID) / 지워진 노드(NODE)** 세 축을 훑어 옮길 수 있는 것은 옮기고,
 나머지는 보고한다.
 
-- 옮기는 것: 체적 의미의 `*SET_PART_LIST/_TITLE/_COLUMN` → 층 PID 전부. tied 계열 접촉
-  (`*CONTACT_*TIED*`/`*TIEBREAK*`/`*SPOTWELD*`/`*CONTACT_CONSTRAINT_*`)은 상대측 기하를 적층 축에 투영해
-  **층이 유일하게 정해질 때만** 그 층으로. 한 세트를 tied 와 체적 소비자가 함께 쓰면 세트를 복제해 가른다.
-  그 밖의 접촉은 모든 층이 solid 일 때 층 전부를 담은 세트로 바꾼다(STYP 3→2).
+- 옮기는 것: 체적 의미의 `*SET_PART_LIST/_TITLE` → 층 PID 전부(한 줄 8 개 규칙을 지켜 줄을 늘린다).
+  `*SET_PART_COLUMN` 은 구성원마다 딸린 칸이 있어 죽은 PID 줄을 층마다 한 줄씩으로 늘린다(딸린 칸은 그대로 복사).
+  tied 계열 접촉(이름에 `TIED`·`TIEBREAK`·`SPOTWELD`·`CONSTRAINT` 가 있는 것)은 상대측 기하를 적층 축에 투영해
+  **층이 유일하게 정해질 때만** 그 층으로. 한 세트를 tied 와 체적 소비자가 함께 쓰면 세트를 복제해 가른다(새 SID 발급).
+  미끄러지는 계열(`AUTOMATIC`·`ERODING`·`SINGLE_SURFACE`·`SLIDING`·`FORMING`·`DRAWBEAD`·`ONE_WAY`·
+  `SURFACE_TO_SURFACE`·`NODES_TO_SURFACE`)은 모든 층이 solid 일 때 층 전부를 담은 세트로 바꾼다(STYP 3→2).
+  두 목록 어디에도 없는 이름은 안전한 쪽인 tied 로 본다 — `*CONTACT_ENTITY`·`*CONTACT_FORCE_TRANSDUCER_PENALTY`
+  처럼 묶지 않는 카드도 한 층으로 붙으니 결과를 확인한다.
 - **restack 이 못 옮기는 것**: 칸 하나에 층 N 개를 담을 수 없는 스칼라 PID 칸
   (`*DAMPING_PART_MASS`/`_STIFFNESS`, `*DATABASE_HISTORY_PART`, `*MAT_ADD_THERMAL_EXPANSION`, `*PART_MOVE`,
-  `*BOUNDARY_PRESCRIBED_MOTION_RIGID`, `*DEFORMABLE_TO_RIGID`, `*INITIAL_VELOCITY_GENERATION`, `*ELEMENT_MASS`)은
-  `manual`(직접 고치세요)로 남는다. 새 PID 가 하나뿐인 `merge` 는 같은 칸들을 실제로 바꿔 준다 — 두 op 의 차이다.
+  `*BOUNDARY_PRESCRIBED_MOTION_RIGID`, `*DEFORMABLE_TO_RIGID`, `*INITIAL_VELOCITY_GENERATION`)은
+  `manual`(직접 고치세요)로 남는다. 새 PID 가 하나뿐인 `merge` 는 이 칸들을 실제로 바꿔 준다 — 두 op 의 차이다.
+  단 `*ELEMENT_MASS`(`_PART` 포함)는 예외로 **두 op 모두** `manual` 이다 — 집중질량은 나눠 주지 않으니 직접 배분한다.
   `*INCLUDE` 가 있는 덱은 세트의 소비자를 다 볼 수 없어 세트를 펴지 않고 보고만 한다.
 - 가리키던 자리를 하나라도 찾으면 산출 덱 머리(`*KEYWORD` 바로 뒤)에 `$ KOOREMAPPER-PIDREF` 블록이 들어간다
   (찾은 것이 없으면 블록도 없다). 등급 `moved` / `left` / `manual` / `unknown` / `maybe`(화이트리스트 밖 —

@@ -367,8 +367,9 @@ merge 는 합친 파트들의 요소를 지우고 **새 PID 하나**를 만든�
 - 체적 의미의 `*SET_PART_LIST/_TITLE/_COLUMN` 은 합친 PID 로 바뀐다.
 - **merge 는 새 PID 가 하나뿐이라 스칼라 PID 칸도 옮긴다** — `*DAMPING_PART_MASS`/`_STIFFNESS`,
   `*DATABASE_HISTORY_PART`, `*MAT_ADD_THERMAL_EXPANSION`, `*PART_MOVE`, `*BOUNDARY_PRESCRIBED_MOTION_RIGID`,
-  `*DEFORMABLE_TO_RIGID`, `*INITIAL_VELOCITY_GENERATION`, `*ELEMENT_MASS` 의 PID 칸.
+  `*DEFORMABLE_TO_RIGID`, `*INITIAL_VELOCITY_GENERATION` 의 PID 칸.
   층이 여럿인 `restack` 은 같은 칸들을 `manual`(직접 고치세요)로 남긴다 — 두 op 의 차이다.
+  단 `*ELEMENT_MASS`(`_PART` 포함)는 예외로 merge 도 옮기지 않고 `manual` 로 남긴다(집중질량은 직접 배분한다).
 - 두 칸이 **모두** 이번 merge 로 사라지는 `*CONSTRAINED_RIGID_BODIES` 는 바꾸면 자기 자신을 가리키게 되므로
   옮기지 않고 보고만 한다(`left`). `*INCLUDE` 가 있는 덱은 세트의 소비자를 다 볼 수 없어 세트를 펴지 않고 보고만 한다.
 - 가리키던 자리를 하나라도 찾으면 산출 덱 머리(`*KEYWORD` 바로 뒤)에 `$ KOOREMAPPER-PIDREF` 블록이 들어간다
