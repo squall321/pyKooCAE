@@ -66,3 +66,36 @@ patch 적용 대신 병합본 위에서 손으로 다시 고쳐 platform 의 10�
   node002·viz-node001·viz-node002 는 down 이라 배포 실패(기존 상태).
 - KooRemapper help 사례 스위트는 SIF 안에서 **건너뜀 0, ALL PASS**. 호스트에서만 matdb 가 실패하는데
   사례가 `/opt/kooremapper/materials/material_db.json`(SIF 내부 경로)을 가리키기 때문이다(meshfix 와 같은 환경 의존).
+
+## 2차 (2026-09-18) — 같은 부류 결함 일괄 수정
+
+감사 워크플로우(6차원)는 세션 종료로 중단돼 결론을 남기지 못했다. 의심 지점이 이미 특정돼 있어
+직접 실행으로 확인했다. 확인된 것만 고쳤고, 근거는 전부 실행 결과다.
+
+### UnstructuredtoStructured + LayerThickness — 원래 동작한 적 없음
+4건이 겹쳐 있었다.
+1. 정규화 분모가 `zLocationList[-1]`(= minZ + 총두께) 이라 minZ ≠ 0 이면 층이 아래로 눌렸다 → 총두께로 나눈다.
+2. 층별 KDTree 선택이 겹침 검사라 경계가 맞닿은 직전 층(k-1)을 먼저 집었다 → k 번째 층은 k 번째 구간.
+3. 구간에 원본 요소 중심이 없으면 `KDTree([])` 가 ValueError → 빈 구간은 None, 전체 KDTree 로 대체.
+4. `cureidnodes = part.elementManager.elements[eid].nodes` 는 **이미 지운 요소**를 조회해 KeyError.
+   대입만 하고 쓰지 않는 죽은 값이라 제거했다(판정에 쓰는 bbox 는 eidtoMinMax 에 이미 있다).
+🔴 4번 때문에 이 경로는 입력과 무관하게 항상 죽었다. 수정 전 코드로 빈 구간이 없는 입력을 돌려 KeyError 를 재현해 확인했다.
+수정 후 flat(minZ=0)·오프셋(minZ=10)·2파트 스택 모두 올바른 층 경계와 PID 배정을 낸다.
+
+### 임팩터 기본값 (DWI 3개 진입점 공통)
+`Dimension` 기본 [0.008], `MeshSize` 기본 0.001 은 SI(m) 기준 — 8mm 임팩터를 8분할한 값이다.
+mm 모델에서 2mm 구를 0.001mm 로 메시하려다 gmsh 가 14GB 를 먹었다.
+`_ResolveImpactorMeshSize` 가 치수 대비 분할 수가 100 을 넘으면 치수/8 로 대체하고 경고한다.
+기본 치수 0.008 은 정확히 0.001 이 나와 기존 SI 입력은 값이 변하지 않는다(시험으로 고정).
+`_ResolveImpactorDimension` 은 값은 그대로 두고 미지정 경고만 남긴다.
+
+### 형제 변환
+`ConvertSolidtoSolidwithSlack` 도 세그먼트마다 CreateNode 하지만 뒤에서 `MergeElementNodeswithTolerance()`
+로 합치므로 결과가 끊기지 않는다 — 수정 불필요.
+`ConvertSolidtoStructuredSolidwithZSlack` 은 격자 인덱싱까지만 있고 모델에 반영이 없어, 조용히 원본을
+그대로 내보냈다(변환된 것으로 오인). 명시적 실패(sys.exit(1))로 바꿨다. 미완성 코드는 주석과 함께 남겼다.
+
+### 손대지 않기로 한 것
+- **KMM 옵션 파서의 조용한 무시**: 모드별 키 화이트리스트가 필요해 전 모드에 영향을 준다. 위험 대비 이득이 낮다.
+- **KAM `*Layer` 블록의 모르는 키**: 970줄 중첩 분기에 `svector[0]` 비교가 109개다. PKG 생성을 깨뜨릴 위험이 크다.
+  (최상위 키워드는 이미 `Keyword Error ... is not supported` + exit 1 로 막혀 있다.)

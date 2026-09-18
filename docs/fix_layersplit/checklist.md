@@ -43,3 +43,18 @@
 - [x] pyKooCAE 커밋·push
 - [x] KooRemapper 커밋·push
 - [x] 메모리 갱신
+
+## 7. 2차 — 같은 부류 결함 일괄 수정 (2026-09-18)
+- [x] 형제 변환 점검 — SolidwithSlack 은 뒤에서 MergeElementNodeswithTolerance 로 합치므로 정상
+- [x] UnstructuredtoStructured 정규화 분모 (minZ ≠ 0 에서 층이 눌리던 것)
+- [x] UnstructuredtoStructured 층 선택 인덱스 (경계가 맞닿아 직전 층을 집던 것)
+- [x] UnstructuredtoStructured 빈 구간 KDTree 예외
+- [x] UnstructuredtoStructured 이미 지운 요소 재조회(KeyError) — 이 경로는 원래 동작한 적이 없었다
+- [x] 임팩터 MeshSize 기본값 가드 (mm 모델 gmsh 폭주)
+- [x] 임팩터 Dimension 미지정 경고 (기본 0.008 은 SI 기준)
+- [x] SolidStructuredZSlack 미구현 → 조용한 무변환 대신 명시적 실패
+- [x] 신규 시험 tests/test_layer_split.py (21항목) 통과
+- [x] 회귀 — DROP 덱 diff 0, MeshSize 명시 DWI 덱 diff 0, 기존 시험 4종 통과
+- [ ] KMM 재빌드 + 배포 바이너리 확인
+- [ ] SIF v100 + tar + node001 e2e
+- [ ] 커밋·push·메모리 갱신

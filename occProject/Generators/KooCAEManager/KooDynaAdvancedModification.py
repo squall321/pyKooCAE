@@ -608,8 +608,13 @@ class KooDynaAdvancedModification:
             for j in range(numberZ):
                 zLocationList.append(zLocationList[len(zLocationList)-1]+thicknessList[i]/float(numberZ))
         #zLocationList is minZ~maxZ
+        # 두께 합으로 정규화한다. zLocationList[-1] 로 나누면 minZ 가 0 이 아닐 때 층이 아래로 눌린다.
+        totalThickness = zLocationList[-1] - minZ
+        if totalThickness <= 0.0:
+            print("Invalid layer thickness: total thickness is zero")
+            sys.exit(1)
         for i in range(len(zLocationList)):
-            zLocationList[i] = (zLocationList[i] - minZ) / zLocationList[-1]
+            zLocationList[i] = (zLocationList[i] - minZ) / totalThickness
         
         for i in range(len(zLocationList)):
             zLocationList[i] = minZ + zLocationList[i]*(maxZ-minZ)
@@ -622,6 +627,8 @@ class KooDynaAdvancedModification:
          
         kdtree = KDTree(list(eidtopoints.values()))
         listelemids = list(eidtopoints.keys())
+        globalKdtree = kdtree
+        globalListelemids = listelemids
         
         print("Remove Old Nodes and Elements from Parts")
         
@@ -664,8 +671,9 @@ class KooDynaAdvancedModification:
             filtered_eidtopoints = list(filtered_points.values())
             filtered_listelemids = list(filtered_points.keys())
             
-            # 필터링된 점들로 새로운 KDTree 생성
-            filtered_kdtree = KDTree(filtered_eidtopoints)
+            # 구간에 원본 요소 중심이 하나도 없으면 KDTree 를 만들 수 없다 (층을 원본보다 촘촘히 나눈 경우).
+            # None 을 두고 아래에서 전체 KDTree 로 되돌린다.
+            filtered_kdtree = KDTree(filtered_eidtopoints) if len(filtered_eidtopoints) > 0 else None
             
             # 리스트에 추가
             filtered_kdtree_list.append(filtered_kdtree)
@@ -679,13 +687,13 @@ class KooDynaAdvancedModification:
         distPixel = (dx*dx + dy*dy + dzMax*dzMax)**0.5
 
         for k in range(numberZ):
-            # 중심점의 z 위치에 맞는 KDTree 선택 (only once per k iteration)
-            z_min, z_max = zLocationList[k], zLocationList[k + 1]
-            for idx, (z_min_val, z_max_val) in enumerate(zip(zLocationList[:-1], zLocationList[1:])):
-                if z_min <= z_max_val and z_max >= z_min_val:
-                    kdtree = filtered_kdtree_list[idx]
-                    listelemids = filtered_listelemids_list[idx]
-                    break
+            # k 번째 층은 k 번째 구간이다. 겹침 검사는 경계가 맞닿아 직전 구간(k-1)을 먼저 집었다.
+            if filtered_kdtree_list[k] is not None:
+                kdtree = filtered_kdtree_list[k]
+                listelemids = filtered_listelemids_list[k]
+            else:
+                kdtree = globalKdtree
+                listelemids = globalListelemids
 
             for j in range(numberY):
                 for i in range(numberX):
@@ -709,9 +717,8 @@ class KooDynaAdvancedModification:
                     curPID = eidtopid[eid]
                     part = partDict[curPID]
                     # 거리가 픽셀 크기보다 작은 경우에만 요소 추가
-                    cureidnodes = part.elementManager.elements[eid].nodes
-                    # check center point is located in the element
-                    # cureidnodes are nodes of the element, tetra or hexa
+                    # (원본 요소는 위에서 이미 지웠으므로 eid 로 다시 조회하지 않는다.
+                    #  판정에 필요한 원본 bbox 는 eidtoMinMax 에 미리 담아 두었다)
                     curMinX = n1.x
                     curMinY = n1.y
                     curMinZ = n1.z
@@ -1009,6 +1016,12 @@ class KooDynaAdvancedModification:
             self.ConvertSolidtoStructuredSolidwithZSlack(part, dirVector, toleranceAngle, curOption, filePath)
     
     def ConvertSolidtoStructuredSolidwithZSlack(self, part, dirVector, toleranceAngle, curOption, filePath):
+        # 이 변환은 격자 인덱싱까지만 있고 결과를 모델에 반영하는 부분이 없다.
+        # 조용히 원본을 그대로 내보내면 변환된 것으로 오인하므로 여기서 멈춘다.
+        print("SolidStructuredZSlack 는 미구현이다 (격자 인덱싱까지만 있고 모델에 반영되지 않는다). "
+              "SolidComp 또는 SolidwithSlack 을 쓸 것")
+        sys.exit(1)
+        # --- 아래는 미완성 구현을 그대로 남겨 둔 것 (위에서 멈추므로 실행되지 않는다) ---
         print("Convert Solid to Structured Solid with Z Slack")
         print("Direction Vector: ", dirVector)
         print("Tolerance Angle: ", toleranceAngle)
@@ -2071,6 +2084,38 @@ class KooDynaAdvancedModification:
               f"(ton-mm-s < 1e-7, kg-m-s 100~1e5 만 자동 판정). "
               f"옛 추정(height > 100 → mm g=9810, 이하 → m g=9.81) 사용")
         return lambda h: 9810.0 if h > 100 else 9.81
+
+    def _ResolveImpactorDimension(self, option, context):
+        """임팩터 치수를 정한다. 기본값 [0.008] 은 SI(m) 기준이라 mm 모델에서는
+        8 마이크론짜리 임팩터가 된다. 값은 바꾸지 않고 경고만 남긴다."""
+        if "Dimension" in option:
+            return option["Dimension"]
+        print(f"WARNING {context}: Dimension 미지정 — 기본값 0.008 (SI 기준) 사용. "
+              f"mm 단위 모델이면 치수를 직접 지정할 것")
+        return [0.008]
+
+    def _ResolveImpactorMeshSize(self, option, dimension, context):
+        """임팩터 메시 크기를 정한다.
+        MeshSize 가 있으면 그대로 쓴다. 없을 때의 기본값 0.001 은 SI(m) 기준이라
+        (기본 치수 0.008 m 를 8 분할) mm 단위 모델에서는 수천 분할이 되어 메시 생성이 폭주한다.
+        치수 대비 분할 수가 과도하면 치수의 1/8 로 대체하고 경고한다."""
+        if "MeshSize" in option:
+            return option["MeshSize"]
+        meshSize = 0.001
+        ref = 0.0
+        if dimension is not None:
+            for v in (dimension if isinstance(dimension, (list, tuple)) else [dimension]):
+                try:
+                    ref = max(ref, abs(float(v)))
+                except (TypeError, ValueError):
+                    continue
+        if ref > 0.0 and ref / meshSize > 100.0:
+            newMeshSize = ref / 8.0
+            print(f"WARNING {context}: MeshSize 미지정 — 기본값 {meshSize} 는 임팩터 치수 {ref:g} 를 "
+                  f"{int(ref / meshSize)} 분할해 메시 생성이 폭주한다. {newMeshSize:g} 로 대체함. "
+                  f"단위계에 맞는 MeshSize 를 옵션 파일에 지정할 것")
+            meshSize = newMeshSize
+        return meshSize
 
     def DropAttitude(self, option, filePath):
         fileName = os.path.basename(filePath)
@@ -3370,15 +3415,9 @@ class KooDynaAdvancedModification:
         else:
             impactorType = "Sphere"
             
-        if "Dimension" in option:
-            dimension = option["Dimension"]
-        else:
-            dimension = [0.008]
+        dimension = self._ResolveImpactorDimension(option, "DROP_WEIGHT_IMPACT_TEST_PARTIAL_RIGID")
             
-        if "MeshSize" in option:
-            meshSize = option["MeshSize"]
-        else:
-            meshSize = 0.001
+        meshSize = self._ResolveImpactorMeshSize(option, dimension, "DROP_WEIGHT_IMPACT_TEST_PARTIAL_RIGID")
             
             
         if "InitialVelocityX" in option:
@@ -3804,15 +3843,9 @@ class KooDynaAdvancedModification:
         else:
             impactorType = "Sphere"
             
-        if "Dimension" in option:
-            dimension = option["Dimension"]
-        else:
-            dimension = [0.008]
+        dimension = self._ResolveImpactorDimension(option, "DROP_WEIGHT_IMPACT_TEST")
             
-        if "MeshSize" in option:
-            meshSize = option["MeshSize"]
-        else:
-            meshSize = 0.001
+        meshSize = self._ResolveImpactorMeshSize(option, dimension, "DROP_WEIGHT_IMPACT_TEST")
             
         if "DimensionDamper" in option:
             dimensionDamper = option["DimensionDamper"]
@@ -4573,15 +4606,9 @@ class KooDynaAdvancedModification:
         else:
             impactorType = "Sphere"
             
-        if "Dimension" in option:
-            dimension = option["Dimension"]
-        else:
-            dimension = [0.008]
+        dimension = self._ResolveImpactorDimension(option, "DROP_WEIGHT_IMPACT_TEST_BY_PART")
             
-        if "MeshSize" in option:
-            meshSize = option["MeshSize"]
-        else:
-            meshSize = 0.001
+        meshSize = self._ResolveImpactorMeshSize(option, dimension, "DROP_WEIGHT_IMPACT_TEST_BY_PART")
             
         '''if "DimensionDamper" in option:
             dimensionDamper = option["DimensionDamper"]
