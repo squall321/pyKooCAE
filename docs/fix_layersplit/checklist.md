@@ -40,6 +40,6 @@
 
 ## 6. 마감
 - [x] context-notes.md 마감 기록
-- [ ] pyKooCAE 커밋·push
-- [ ] KooRemapper 커밋·push
-- [ ] 메모리 갱신
+- [x] pyKooCAE 커밋·push
+- [x] KooRemapper 커밋·push
+- [x] 메모리 갱신
