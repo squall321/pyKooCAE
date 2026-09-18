@@ -142,6 +142,17 @@ generate-var)이 같은 리더를 쓴다. 아래는 그 공통 규칙이다.
 - `params.argv`: positional ops 용 인자 리스트(예: `map` → `["bent.k","flat.k","out.k"]`). `config` 대신 사용.
 - `environment.kooremapper_path`: sif 내부 바이너리 경로. 생략 시 기본값(위 경로)으로 자동 탐색.
 
+### `restack`·`merge` 는 rc=1 이 기본이다 — 체인이 멈출 수 있다
+
+두 op 은 원 파트를 비운다(restack 은 층마다 새 PID, merge 는 합친 PID 하나). 그래서 그 파트·요소·노드를
+가리키던 카드가 붕 뜬다. 지금은 옮길 수 있는 것을 옮기고, **옮기지 못한 자리가 남으면 덱은 쓴 채 rc=1** 로
+끝낸다(기본 `pid_refs: strict`). `Runner/KooRemapperStep.py` 는 `returncode != 0` 에 `RuntimeError` 를 던지고
+`CumulativeScenarioRunner._run_kooremapper_step` 은 스텝을 `failed` 로 적으므로, **예전에 rc=0 으로 조용히
+지나가던 REMAP 스텝이 이제 멈춘다.** 무엇을 못 옮겼는지는 산출 덱 머리(`*KEYWORD` 바로 뒤)의
+`$ KOOREMAPPER-PIDREF` 블록에 있다. 알고도 넘기려면 그 op 의 `params.config` 에 `pid_refs: warn` 을 준다
+(같은 보고, rc=0 — 참조를 고쳐 주지는 않는다). 자세한 내용은
+[ops/mesh_edit.md#restack](ops/mesh_edit.md) · [ops/surface_remesh.md#merge](ops/surface_remesh.md) 참고.
+
 > 경계: `REMAP` 스텝은 `runner_config.json` 의 `scenario.steps` 에 직접 기술한다. `scenario.json` →
 > `runner_config.json` 변환(CumulativeDesigner)의 DOE/각도 자동생성 파이프라인은 낙하/충격/열/진동
 > 전용이며, REMAP(비-DOE 변환)은 이 자동생성 대상이 아니다. 환경 경로 주입(`kooremapper_path`)은 자동 처리된다.

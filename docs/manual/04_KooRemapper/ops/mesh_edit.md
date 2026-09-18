@@ -574,6 +574,7 @@ REMAP 스텝: `params.op=restack`, `params.config`=위 YAML dict.
 | `operations[].target_pid` | 예 | 소스 셸 파트 ID | — |
 | `operations[].direction` | 아니오 | 적층 방향 `auto`/`x`/`y`/`z` | `auto` (정본 §12) |
 | `operations[].element_type` | 아니오 | `solid` / `tshell` / `shell` **만**. 그 밖의 값(`hex`, 오타, 대문자 `SOLID` 포함)은 rc=1 이고 출력이 안 만들어진다 — 예전에는 전부 조용히 `solid` 였다. 층(`layers[].element_type`)도 같고, 층에서 비우면 op 값을 물려받는다 | `solid` |
+| `operations[].pid_refs` | 아니오 | `strict` \| `warn`. 비운 PID·지운 요소·지운 노드를 가리키는 자리를 다 옮기지 못했을 때 `strict` 는 덱을 쓰고 **rc=1**, `warn` 은 같은 보고를 하고 rc=0. 아래 참조 이전 절 참고 | `strict` |
 | `operations[].layers[]` | 예 | 레이어 리스트(`thickness` + `material_card`) | — |
 
 ### 예제
@@ -613,9 +614,68 @@ operations:
 
 ### 주의사항
 
-- 층 `material_card` 의 첫 `*MAT` MID 칸(1~10열, `_TITLE` 이면 제목 다음 줄) 값은 라벨이다. `MID001`·`MAT01`·`14` 무엇이든 새 MID 로 바뀌며, 라벨과 카드 내용이 같은 층끼리만 MID 를 공유한다(라벨이 같아도 물성이 다르면 따로 발급). 같은 MID 를 가리키는 `*MAT_ADD_…` 도 함께 바뀐다. (정본 §12)
+- 층 `material_card` 의 첫 `*MAT` MID 칸(1~10열, `_TITLE` 이면 제목 다음 줄)에 `MID001`·`MAT01` 같은 **자리표시자**를 쓰면 새 MID 로 바뀌고, 라벨과 카드 내용이 같은 층끼리만 MID 를 공유한다(라벨이 같아도 물성이 다르면 따로 발급). 같은 MID 를 가리키는 `*MAT_ADD_…` 도 함께 바뀐다. (정본 §12)
+- **숫자를 직접 적으면 그 번호를 그대로 쓴다**(2026-09-18 실행 확인). 이미 쓰이는 번호면 새 번호를 주고 `Restack layer 2: material MID 90 is already in use -> assigned MID 91` 로 알린다.
+- `*MAT_..._TITLE` 카드에 **제목 줄이 없으면** 데이터 줄을 제대로 읽고 `[WARN] Restack layer N: *MAT_..._TITLE card had no title line -> filled it with '<layers[].title>'` 을 낸 뒤 **빠진 제목 줄을 그 층 제목으로 채워** 내보낸다. 키워드 줄 뒤에 **데이터 줄 자체가 없는** 카드는 rc=1 이다.
+- 대상 파트가 **강체**(`*MAT_RIGID`/`*MAT_020` 또는 `*PART_INERTIA`)면 restack 을 시작하지 않고 rc=1 로 거부한다 (`restack: PID 1 는 *MAT_RIGID(MID 1) 강체 파트입니다 … / cannot restack a rigid part`).
+- 새 층이 원 `*SECTION` 의 **ELFORM** 과 원 `*PART` 의 **HGID·TMID** 를 물려받는다. ELFORM 은 같은 요소 종류끼리만 물려준다(`*SECTION_SOLID` 의 2 와 `*SECTION_SHELL` 의 2 는 다른 정식이다). **EOSID 는 물려주지 않는다.**
 - 예전 결함(수정됨): MID 칸에 숫자를 쓰면 층 PART mid 가 0 이 되고 카드가 빠짐, 단독 restack 에서 제목에 `:` 가 있으면 카드가 잘림, 마지막 층 카드 뒤 빈 줄 때문에 같은 카드가 MID 를 따로 받음.
 - `disconnect` op을 restack 뒤에 이어 붙여 CZM/Peri 분리에 쓸 수 있다. (help, examples/disconnect/restack_czm.yaml)
+
+### 참조 이전과 `pid_refs` — **기본이 rc=1 이다** (2026-09-18 실행 확인)
+
+restack 은 대상 파트를 층으로 나누며 층마다 **새 PID/SECID/MID** 를 준다. 원 `*PART` 카드는 요소 0 개로 남고,
+두께 방향 요소가 2 개 이상이면 원 중간면 노드도 사라진다. 그래서 그것들을 가리키던 카드
+(`*SET_PART_*`·`*CONTACT_*`·`*SET_SOLID`·`*BOUNDARY_SPC_NODE`·`*SET_SEGMENT` …)가 아무 일도 하지 않는 채 남는다.
+지금은 도구가 **죽은 PID / 지워진 요소(EID) / 지워진 노드(NODE)** 세 축을 훑어 옮길 수 있는 것은 옮기고,
+나머지는 보고한다.
+
+- 옮기는 것: 체적 의미의 `*SET_PART_LIST/_TITLE/_COLUMN` → 층 PID 전부. tied 계열 접촉
+  (`*CONTACT_*TIED*`/`*TIEBREAK*`/`*SPOTWELD*`/`*CONTACT_CONSTRAINT_*`)은 상대측 기하를 적층 축에 투영해
+  **층이 유일하게 정해질 때만** 그 층으로. 한 세트를 tied 와 체적 소비자가 함께 쓰면 세트를 복제해 가른다.
+  그 밖의 접촉은 모든 층이 solid 일 때 층 전부를 담은 세트로 바꾼다(STYP 3→2).
+- **restack 이 못 옮기는 것**: 칸 하나에 층 N 개를 담을 수 없는 스칼라 PID 칸
+  (`*DAMPING_PART_MASS`/`_STIFFNESS`, `*DATABASE_HISTORY_PART`, `*MAT_ADD_THERMAL_EXPANSION`, `*PART_MOVE`,
+  `*BOUNDARY_PRESCRIBED_MOTION_RIGID`, `*DEFORMABLE_TO_RIGID`, `*INITIAL_VELOCITY_GENERATION`, `*ELEMENT_MASS`)은
+  `manual`(직접 고치세요)로 남는다. 새 PID 가 하나뿐인 `merge` 는 같은 칸들을 실제로 바꿔 준다 — 두 op 의 차이다.
+  `*INCLUDE` 가 있는 덱은 세트의 소비자를 다 볼 수 없어 세트를 펴지 않고 보고만 한다.
+- 가리키던 자리를 하나라도 찾으면 산출 덱 머리(`*KEYWORD` 바로 뒤)에 `$ KOOREMAPPER-PIDREF` 블록이 들어간다
+  (찾은 것이 없으면 블록도 없다). 등급 `moved` / `left` / `manual` / `unknown` / `maybe`(화이트리스트 밖 —
+  **rc 에 넣지 않는다**). 블록의 줄 번호는 **입력 덱 기준**이다.
+
+| 키 | 값 | 기본 | 뜻 |
+|---|---|---|---|
+| `pid_refs` | `strict` \| `warn` | `strict` | `strict`: 못 옮긴 자리(= `maybe` 제외)가 남으면 **덱은 쓰고 rc=1**. `warn`: 같은 보고를 하고 rc=0. 그 밖의 값은 rc=1 + 산출물 없음 — `invalid pid_refs '<값>' (must be one of strict, warn)` |
+
+쓰는 자리는 단독 YAML 의 op 수준과 `assemble` 의 `operations[]` 항목 두 곳이다.
+
+> ⚠ **기존 REMAP 체인이 여기서 멈출 수 있다.** `Runner/KooRemapperStep.py` 는 `returncode != 0` 이면
+> `RuntimeError(f"KooRemapper {operation} failed (exit {proc.returncode}): …")` 를 던지고,
+> `Runner/CumulativeScenarioRunner.py` 의 `_run_kooremapper_step` 은 `result.returncode != 0` 에
+> 스텝을 `status: "failed"` 로 적고 `False` 를 돌려준다. 어느 쪽도 stdout 경고를 읽지 않으므로,
+> **예전에 rc=0 으로 조용히 지나가던 덱이 이제 체인을 멈춘다.** 산출 덱은 그래도 쓰여 있다.
+> 조치 순서: (1) 산출 덱 머리의 `$ KOOREMAPPER-PIDREF` 블록에서 무엇이 `left`/`manual` 인지 읽고
+> 그 카드를 고친다, (2) 알고도 넘기려면 그 op 에 `pid_refs: warn` 을 준다(같은 보고, rc=0).
+> `warn` 은 참조를 고쳐 주지 않는다 — 덱은 그대로 솔버로 간다.
+
+```json
+{
+  "mode": "REMAP",
+  "params": {
+    "op": "restack",
+    "config": {
+      "target_pid": 1,
+      "direction": "z",
+      "pid_refs": "warn",
+      "layers": ["..."]
+    }
+  }
+}
+```
+
+> `_run_kooremapper_step` 은 `params.config` 에 `model`/`output` 을 자동 주입하므로 위 dict 에는 적지 않는다
+> (`cfg["model"] = "input.k"`, `cfg["output"] = "Remap_dti.k"`). 그래서 체인이 만드는 설정은 `base_model`/`operations`
+> 형태가 아니라 **op 수준 평평한 형태**이고, `pid_refs` 도 그 수준에 둔다.
 
 ### 개발 현황
 

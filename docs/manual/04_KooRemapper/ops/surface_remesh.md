@@ -340,6 +340,7 @@ REMAP 스텝: `params.op=merge`, `params.config={config.yaml 내용을 dict로}`
 | `direction` | `z` | 적층 방향 |
 | `method` | `vrh` | 균질화 방법: `voigt` \| `reuss` \| `vrh`(Voigt-Reuss-Hill 평균) |
 | `merge` | 리스트 | 병합 그룹 목록. 각 항목은 `pids`(합칠 PID 리스트)와 `name`(결과 파트 이름) |
+| `pid_refs` | `strict`(기본) / `warn` | 비운 PID·지운 요소·지운 노드를 가리키는 자리를 다 옮기지 못했을 때 `strict` 는 덱을 쓰고 **rc=1**, `warn` 은 같은 보고를 하고 rc=0. 아래 참조 이전 절 참고 |
 
 > help는 `Usage: KooRemapper merge <config.yaml>` 한 줄만 출력한다. 정본 섹션이 없어 위 스키마는 예제 YAML 한 개에서 확인한 범위이며, `direction`의 다른 값이나 추가 키 여부는 확인 필요.
 
@@ -356,6 +357,54 @@ merge:
   - pids: [1, 2, 3]
     name: "Homogenized_Stack"
 ```
+
+### 참조 이전과 `pid_refs` — **기본이 rc=1 이다** (2026-09-18 실행 확인)
+
+merge 는 합친 파트들의 요소를 지우고 **새 PID 하나**를 만든다. 원 `*PART` 카드는 요소 0 개로 남아,
+그 파트·요소·노드를 가리키던 카드가 아무 일도 하지 않는 채 덱에 남는다. 지금은 도구가
+**죽은 PID / 지워진 요소(EID) / 지워진 노드(NODE)** 세 축을 훑어 옮길 수 있는 것은 옮기고 나머지는 보고한다.
+
+- 체적 의미의 `*SET_PART_LIST/_TITLE/_COLUMN` 은 합친 PID 로 바뀐다.
+- **merge 는 새 PID 가 하나뿐이라 스칼라 PID 칸도 옮긴다** — `*DAMPING_PART_MASS`/`_STIFFNESS`,
+  `*DATABASE_HISTORY_PART`, `*MAT_ADD_THERMAL_EXPANSION`, `*PART_MOVE`, `*BOUNDARY_PRESCRIBED_MOTION_RIGID`,
+  `*DEFORMABLE_TO_RIGID`, `*INITIAL_VELOCITY_GENERATION`, `*ELEMENT_MASS` 의 PID 칸.
+  층이 여럿인 `restack` 은 같은 칸들을 `manual`(직접 고치세요)로 남긴다 — 두 op 의 차이다.
+- 두 칸이 **모두** 이번 merge 로 사라지는 `*CONSTRAINED_RIGID_BODIES` 는 바꾸면 자기 자신을 가리키게 되므로
+  옮기지 않고 보고만 한다(`left`). `*INCLUDE` 가 있는 덱은 세트의 소비자를 다 볼 수 없어 세트를 펴지 않고 보고만 한다.
+- 가리키던 자리를 하나라도 찾으면 산출 덱 머리(`*KEYWORD` 바로 뒤)에 `$ KOOREMAPPER-PIDREF` 블록이 들어간다
+  (찾은 것이 없으면 블록도 없다). 등급 `moved` / `left` / `manual` / `unknown` / `maybe`(화이트리스트 밖 —
+  **rc 에 넣지 않는다**). 블록의 줄 번호는 **입력 덱 기준**이다.
+- `pid_refs` 는 `strict`(기본) 와 `warn` 둘뿐이다. 그 밖의 값은 rc=1 + 산출물 없음 —
+  `invalid pid_refs '<값>' (must be one of strict, warn)`. 단독 YAML 의 op 수준과
+  `assemble` 의 `operations[]` 항목 두 곳에 쓴다.
+
+> ⚠ **기존 REMAP 체인이 여기서 멈출 수 있다.** `Runner/KooRemapperStep.py` 는 `returncode != 0` 이면
+> `RuntimeError(f"KooRemapper {operation} failed (exit {proc.returncode}): …")` 를 던지고,
+> `Runner/CumulativeScenarioRunner.py` 의 `_run_kooremapper_step` 은 `result.returncode != 0` 에
+> 스텝을 `status: "failed"` 로 적고 `False` 를 돌려준다. 어느 쪽도 stdout 경고를 읽지 않으므로,
+> **예전에 rc=0 으로 조용히 지나가던 덱이 이제 체인을 멈춘다.** 산출 덱은 그래도 쓰여 있다.
+> 조치 순서: (1) 산출 덱 머리의 `$ KOOREMAPPER-PIDREF` 블록에서 무엇이 `left`/`manual` 인지 읽고 그 카드를 고친다,
+> (2) 알고도 넘기려면 그 op 에 `pid_refs: warn` 을 준다(같은 보고, rc=0). `warn` 은 참조를 고쳐 주지 않는다.
+>
+> 단독 `merge` 는 rc=1 로 끝낼 때 마지막에 `[ERROR]` 한 줄을 더 찍지 않는다(`restack`·`assemble` 은 찍는다) —
+> 로그에서는 `못 옮긴 자리가 남아 rc=1 로 끝냅니다` 줄을 찾아라.
+
+```json
+{
+  "mode": "REMAP",
+  "params": {
+    "op": "merge",
+    "config": {
+      "direction": "z",
+      "method": "vrh",
+      "pid_refs": "warn",
+      "merge": [{"pids": [1, 2, 3], "name": "Homogenized_Stack"}]
+    }
+  }
+}
+```
+
+> `_run_kooremapper_step` 이 `params.config` 에 `model`/`output` 을 자동 주입하므로 위 dict 에는 적지 않는다.
 
 ### 개발 현황
 
