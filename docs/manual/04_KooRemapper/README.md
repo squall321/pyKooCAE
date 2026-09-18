@@ -62,8 +62,13 @@ generate-var)이 같은 리더를 쓴다. 아래는 그 공통 규칙이다.
 | `rbe` 의 `select` | `direction` \| `all` (여기엔 `set` 이 없다) | 오타·`set` 이 조용히 `all` 로 |
 | `load` 의 `select` | `direction` \| `set` \| `tied` (여기엔 `all` 이 없다) | — |
 
-거절 메시지 형식: `<op>: [<컨테이너>[i]: ]unsupported <키> '<값>' (allowed: a, b, c)`.
-`assemble` 에서는 앞에 `[ERROR] ` 가 붙는다.
+거절 메시지에는 단독·`assemble` 모두 `[ERROR] ` 접두가 붙고, 그 뒤 op 표기는 op 마다 두 갈래다 —
+`<op>: ` 형(`[ERROR] boundary: boundaries[0]: unsupported select 'x' (allowed: direction, all, set)`,
+`rbe: constraints[0]: …`, `matdb: unsupported damping_preset …`, `restack: layers[0]: …`)과
+`[<op>] ` 형(`[ERROR] [load] loads[0]: unsupported select 'all' (allowed: direction, set, tied)`,
+`[ERROR] [contact] unsupported contact_type …`). 같은 값을 `assemble` 안에서 줘도 문구는 똑같다
+(예: `[ERROR] restack: layers[0]: unsupported element_type 'hex' (allowed: solid, tshell, shell)`) —
+`assemble` 이라고 접두가 더 붙지는 않는다. 로그를 grep 할 때는 `unsupported ` 로 잡는 편이 안전하다.
 
 > `boundary` 와 `rbe` 의 허용값이 서로 다르다. `boundary` 에는 `set` 이 있고 `all` 도 있지만,
 > `rbe` 에는 `set` 이 없다. 두 op 의 help 가 오랫동안 같은 `direction | all` 을 찍어 혼동을 키웠다

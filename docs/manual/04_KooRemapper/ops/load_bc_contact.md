@@ -292,7 +292,15 @@ LS-DYNA 쪽에서 거절된다. 예전에는 키를 생략하면 이름 없는 `
 
 ### contact_type 프리셋 (detect)
 
-`auto` / `automatic` / `tied` / `tied_thermal` / `thermal` / `tiebreak` / `mortar` / `tied_mortar` / `single` / `eroding` / `forming` — `create` 의 `type` 과 같은 값 공간이다(위 표). (help, `examples/contact/README.md`)
+`auto` / `automatic` / `tied` / `tied_thermal` / `thermal` / `tiebreak` / `mortar` / `tied_mortar` / `single` / `eroding` / `forming` (대소문자 무시, 빈 값도 허용).
+
+> **`create` 의 `type` 과 같은 값 공간이 아니다.** `detect` 의 `contact_type` 은 위 약칭 11개만 받는 닫힌 목록이라,
+> `create` 라면 그대로 써 주는 전체 LS-DYNA 키워드(`automatic_surface_to_surface`, `automatic_nodes_to_surface` 등)를 여기 주면
+> **rc=1** 로 죽는다: `[ERROR] [contact] unsupported contact_type '<값>' (allowed: auto, tied, tied_thermal, tiebreak, mortar, tied_mortar, single, eroding, forming)`.
+> 찍히는 `allowed` 목록에는 `automatic`·`thermal` 이 빠져 있지만 둘 다 실제로는 통과한다(src/commands/contact.cpp 의 화이트리스트 11개).
+> 정리하면 — `detect` 에는 약칭만, 전체 키워드는 `create` 의 `type` 에만 쓴다.
+
+(help, `examples/contact/README.md`, 실행 확인)
 
 ### detect 옵션
 
