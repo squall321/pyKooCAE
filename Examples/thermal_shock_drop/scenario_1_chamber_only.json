@@ -1,0 +1,79 @@
+{
+  "project_name": "ThermShock_Chamber",
+  "base_dir": "/data/<사용자>/ThermShock_Chamber",
+  "environment": {
+    "koomeshmodifier_path": "/data/SmartTwinPreprocessor/bin/KooMeshModifier",
+    "koochainrun_path": "/data/SmartTwinPreprocessor/bin/KooChainRun",
+    "lsdyna_path": "/opt/ls-dyna/lsdyna_R16.1.1",
+    "apptainer_sif": "/opt/apptainers/SmartTwinPreprocessor.sif",
+    "apptainer_bind": "/data:/data",
+    "lsdyna_apptainer_sif": "/opt/apptainers/LSDynaBasic_aocc420_ompi4.0.5_mpp_d.sif",
+    "lsdyna_apptainer_bind": "/data:/data",
+    "lsdyna_apptainer_env": {
+      "LSTC_LICENSE_SERVER": "192.168.122.1",
+      "FI_PROVIDER": "tcp"
+    },
+    "apptainer_tmpdir": "/data/tmp",
+    "ncpu": 2,
+    "memory": "3G",
+    "partition": "normal",
+    "timeout_per_step_seconds": 3600,
+    "strict_accumulation": true,
+    "lsdyna_memory": "300m",
+    "timeout": 3600,
+    "timeout_dynain_seconds": 600
+  },
+  "simulation_params": {
+    "height": 1000,
+    "tFinal": 0.003,
+    "dt": 1e-06,
+    "density": 1.9e-09,
+    "youngs_modulus": 24000.0,
+    "poisson_ratio": 0.15,
+    "drop_surface": {
+      "type": "Plane",
+      "size": [
+        200,
+        200,
+        20
+      ],
+      "mesh": [
+        20,
+        20,
+        2
+      ]
+    },
+    "thermal": {
+      "thermal_type": "UniformChamber",
+      "base_temp_C": 25,
+      "target_temp_C": -40,
+      "ramp_time_s": 0.002,
+      "dt": 1e-06,
+      "default_cte_1_K": 1.8e-05,
+      "part_cte": {
+        "1": 1.8e-05,
+        "2": 2.6e-06
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "scenario_name": "ThermShock_Chamber",
+      "template": "model.k",
+      "thermal_conditions": [
+        "COLD_m40",
+        "HOT_125"
+      ],
+      "cumulative": {
+        "num_steps": 1,
+        "mode_sequence": [
+          "THERM"
+        ]
+      }
+    }
+  ],
+  "_모델_준비": [
+    "단위계 ton-mm-s. 열 스텝 입력에는 낙하용 카드(*INITIAL_VELOCITY·바닥판 파트·rigidwall)를 남기지 말 것",
+    "전 파트를 담은 *SET_PART_LIST + *INTERFACE_SPRINGBACK_LSDYNA 필수 — 없으면 dynain 이 안 나와 스텝이 실패한다"
+  ]
+}
