@@ -50,7 +50,7 @@ try:
         KooRemapper's line-oriented parser then reads that one line as the card and
         silently emits a deck with mid=0. None of this moves a column.
         """
-        lines = [line.rstrip() for line in data.expandtabs(8).split("\n")]
+        lines = [line.rstrip() for line in data.split("\n")]
         while lines and not lines[0]:
             lines.pop(0)
         while lines and not lines[-1]:
@@ -66,9 +66,41 @@ try:
         return dumper.represent_scalar("tag:yaml.org,2002:str", data)
 
     _IndentDumper.add_representer(str, _represent_str)
+
+    def check_block_cards(cfg):
+        """고정폭 카드에 TAB 이 있으면 거부한다.
+
+        TAB 을 몇 칸으로 펴야 하는지는 카드마다 다르다. 펴서 넘기면 KooRemapper 는
+        카드로 받아들이지만 값이 엉뚱한 칸에 들어가 **조용히 틀린 덱**이 나온다.
+        (펴지 않으면 PyYAML 이 리터럴 블록을 못 쓰고 따옴표 스칼라로 떨어져
+         KooRemapper 가 rc=1 로 거절한다 — 그 전에 여기서 이유를 알려 준다.)"""
+        def walk(node, path):
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    walk(v, f"{path}.{k}" if path else str(k))
+            elif isinstance(node, (list, tuple)):
+                for i, v in enumerate(node):
+                    walk(v, f"{path}[{i}]")
+            elif isinstance(node, str) and "\t" in node and "\n" in node.rstrip("\n"):
+                raise ValueError(
+                    f"KooRemapper config {path}: 여러 줄 카드에 TAB 이 있다. "
+                    f"고정폭 카드의 TAB 은 칸 위치를 보존할 수 없으므로 공백으로 직접 정렬할 것")
+        walk(cfg, "")
+
+    def dump_kooremapper_yaml(cfg):
+        """KooRemapper 가 읽는 YAML 문자열을 만든다 (체인·모듈 공용).
+
+        여러 줄 카드는 `|` 리터럴 블록으로, 비ASCII(한글 제목 등)는 그대로 내보낸다.
+        allow_unicode 가 없으면 PyYAML 이 비ASCII 를 특수문자로 보고 블록 대신
+        따옴표 스칼라로 떨어뜨려 KooRemapper 가 카드를 못 읽는다."""
+        check_block_cards(cfg)
+        return yaml.dump(cfg, Dumper=_IndentDumper, sort_keys=False,
+                         default_flow_style=False, allow_unicode=True)
 except Exception:  # pragma: no cover
     yaml = None
     _IndentDumper = None
+    check_block_cards = None
+    dump_kooremapper_yaml = None
 
 
 class KooRemapperModule:
@@ -110,10 +142,7 @@ class KooRemapperModule:
         if config is not None:
             if yaml is None:
                 raise RuntimeError("PyYAML required for dict config; pass a config.yaml via argv instead")
-            (wd / config_name).write_text(
-                yaml.dump(config, Dumper=_IndentDumper, sort_keys=False, default_flow_style=False),
-                encoding="utf-8",
-            )
+            (wd / config_name).write_text(dump_kooremapper_yaml(config), encoding="utf-8")
             call_argv = [operation, config_name]
         elif argv is not None:
             call_argv = [operation, *argv]

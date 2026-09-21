@@ -2071,19 +2071,17 @@ DefaultCTE,{default_cte}{dtmin_block}
         인식한다(같은 열이면 무시 → 전부 '*' 로 떨어짐). PyYAML 이 있으면 그 규칙을
         강제하는 Dumper 로 쓰고, 프리즈 런타임에 yaml 이 없을 수 있으므로 없으면
         직접 작성한다(스칼라 + '키 아래 딕트 리스트' 지원 — matdb/assemble 등 커버)."""
+        # 여러 줄 material_card 는 '|' 리터럴 블록으로 나가야 KooRemapper 가 카드로 읽는다.
+        # 자체 Dumper 를 두면 규칙이 갈리므로(restack rc=1, offset 은 카드 소실 후 rc=0)
+        # KooRemapperStep 의 공용 방출 함수를 쓴다.
         try:
-            import yaml
-
-            class _KRIndentDumper(yaml.SafeDumper):
-                def increase_indent(self, flow=False, indentless=False):
-                    return super().increase_indent(flow, False)
-
-            with open(path, "w", encoding="utf-8") as f:
-                yaml.dump(cfg, f, Dumper=_KRIndentDumper, sort_keys=False,
-                          default_flow_style=False, allow_unicode=True)
-            return
+            from Runner.KooRemapperStep import dump_kooremapper_yaml
         except Exception:
-            pass
+            dump_kooremapper_yaml = None
+        if dump_kooremapper_yaml is not None:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(dump_kooremapper_yaml(cfg))
+            return
 
         def _fmt(v):
             if isinstance(v, bool):
@@ -2093,6 +2091,20 @@ DefaultCTE,{default_cte}{dtmin_block}
             s = str(v)
             return '"*"' if s == "*" else s
 
+        def _block(key, text, indent):
+            """여러 줄 카드를 '키: |' 리터럴 블록으로 (한 줄로 뭉개면 카드가 소실된다)"""
+            body = [ln.rstrip() for ln in str(text).split("\n")]
+            while body and not body[0]:
+                body.pop(0)
+            while body and not body[-1]:
+                body.pop()
+            out = [f"{indent}{key}: |"]
+            out.extend(f"{indent}  {ln}" for ln in body)
+            return out
+
+        def _is_block(v):
+            return isinstance(v, str) and "\n" in v.rstrip("\n")
+
         lines = []
         for k, v in cfg.items():
             if isinstance(v, list):
@@ -2100,11 +2112,20 @@ DefaultCTE,{default_cte}{dtmin_block}
                 for item in v:
                     if isinstance(item, dict):
                         it = list(item.items())
-                        lines.append(f"  - {it[0][0]}: {_fmt(it[0][1])}")
+                        if _is_block(it[0][1]):
+                            lines.append(f"  - {it[0][0]}: |")
+                            lines.extend(_block(it[0][0], it[0][1], "    ")[1:])
+                        else:
+                            lines.append(f"  - {it[0][0]}: {_fmt(it[0][1])}")
                         for kk, vv in it[1:]:
-                            lines.append(f"    {kk}: {_fmt(vv)}")
+                            if _is_block(vv):
+                                lines.extend(_block(kk, vv, "    "))
+                            else:
+                                lines.append(f"    {kk}: {_fmt(vv)}")
                     else:
                         lines.append(f"  - {_fmt(item)}")
+            elif _is_block(v):
+                lines.extend(_block(k, v, ""))
             else:
                 lines.append(f"{k}: {_fmt(v)}")
         with open(path, "w", encoding="utf-8") as f:
