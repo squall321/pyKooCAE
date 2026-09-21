@@ -107,3 +107,29 @@ node001 e2e 6항목 통과 — SolidComp 중복 0·공유 8, U2S minZ=10 층 경
 U2S 2파트 PID 배정, DWI MeshSize 경고 후 완주, ZSlack 종료 코드 1, restack 정상.
 node002·viz 노드 2대는 여전히 SSH 불가(down).
 검증 자산 노드측 `/data/koopark/Test_layersplit_v100`, 호스트측 `work/layersplit/audit`.
+
+## 3차 (2026-09-21) — 다른 세션 변경 교차검증 + REMAP 체인 수정, SIF v102
+
+### 교차검증에서 드러난 것
+다른 세션 변경을 검증 없이 함께 push 했던 것을 15에이전트로 검증했다. 결론은 셋이다.
+1. 그쪽 코드 수정(1cd84c9, Runner/KooRemapperStep.py)은 **호출자가 0 인 모듈**에 들어갔다.
+   배포 REMAP 체인은 `CumulativeScenarioRunner._dump_kooremapper_config` 의 자체 dumper 를 쓴다.
+   그 결과 여러 줄 material_card 가 따옴표 스칼라로 나가 restack rc=1(체인 정지),
+   **offset 은 rc=0 인데 카드가 조용히 사라져** `*PART mid 2` 에 `*MAT mid 2` 가 없는 덱이 나왔다(실측).
+2. 그쪽 문서 5건은 틀린 게 아니라 **배포가 뒤처진 것**이었다. 문서는 HEAD 기준으로 맞고,
+   SIF v100 의 KooRemapper 가 09-17 빌드라 pid_refs·output 가드·contact_type 화이트리스트가 없었다.
+3. 그쪽 170 커밋은 push 안 된 게 아니라 origin/integrate/defects-20260918 등에 이미 있었다(내 초기 진단 오류).
+
+### 수정 (커밋 ae0674b)
+공용 방출 함수 `dump_kooremapper_yaml` 을 KooRemapperStep 에 두고 체인이 그것을 쓰게 통합.
+allow_unicode 상시(한글 제목 카드), TAB 은 펴지 않고 거부(펴면 칸이 밀려 조용히 물성이 틀린 덱),
+yaml 없는 폴백 작성기도 '|' 블록 지원. 여러 줄 카드가 없는 설정은 출력 바이트 동일.
+시험 tests/test_kooremapper_chain_config.py (15항목).
+
+### 배포 (SIF v102, 2026-09-21)
+그쪽이 09-21 에 KooRemapper 를 main 으로 합치고 스테이징·SIF v101·tar 까지 해 두었으나 노드 배포는 안 된 상태였다.
+내 KooChainRun 수정을 빌드(13:47) → SIF v102(13:53) → tar v102(13:55) → node001(14:02).
+🔴 문서는 고치지 않았다 — 새 바이너리에서 문서 주장 3종(output 가드 rc=1·입력 보존, contact_type 오타 rc=1,
+restack 죽은 PID 참조 rc=1)이 모두 실제로 동작함을 확인했다. 배포 지연이 원인이었고 해소됐다.
+e2e: 호스트 REMAP 스텝(literal block + *MAT mid=2), node001 4항목(REMAP 체인·output 가드·오타 거절·SolidComp 회귀).
+🔴 시험 함정: scenario 의 apptainer_sif 를 호스트 경로(/home/...)로 두면 노드에서 rc=255 로 죽는다. 노드는 /home 을 못 본다.
