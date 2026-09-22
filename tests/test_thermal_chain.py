@@ -10,6 +10,7 @@
   [6] 환경조건  국부 발열과 환경조건(대류·규정온도)을 한 덱에 함께 걸 수 있다                            (P4)
   [7] 프로파일  TempCurveMode(factor|absolute)와 TFinal(dwell) 이 덱에 반영된다                   (P5)
   [8] DOE      열 조건축 x 낙하 각도축 교차 — 각도는 낙하 스텝에만 들어간다                              (P6)
+  [9] 체인      합성 dynain 으로 양방향 누적 체인을 끝까지 — 응력 이월·하중 정리·카드 누적 없음            (P7)
 
 P1·P2 가 구현되기 전에는 [2]·[3] 이 실패한다 — 그게 이 시험의 목적이다.
 """
@@ -507,6 +508,61 @@ EndTempCurve"""
               abs(sc_plain["doe_angles"][d][k]["roll"]) + abs(sc_plain["doe_angles"][d][k]["pitch"]) == 0
               for d in sc_plain["doe_angles"] for k in sc_plain["doe_angles"][d]),
           str(sc_plain["doe_count"]))
+
+    print("[9] 양방향 누적 체인 — 합성 dynain (P7)")
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from thermal_chain_sim import chain as sim_chain
+
+    THERM_TPL = """*Inputfile
+{MODEL}
+*RunDirectoryMode,True,{RUNDIR}
+*Mode
+THERMAL_LOAD,1
+**ThermalLoad,1
+ThermalType,ICPower
+Phase,structural
+UnitSystem,SI
+InitialTemperatureC,25
+RampTimeS,0.002
+TFinal,0.01
+DT,1e-04
+DefaultCTE,1.8e-05
+RemoveCarriedVelocity,True
+**EndThermalLoad
+*End
+"""
+    DROP_TPL = DROP_OPT.format(model="{MODEL}", extra="\nThermalCarry,stress_only").replace(
+        "*Mode", "*RunDirectoryMode,True,{RUNDIR}\n*Mode", 1)
+
+    for case, steps, expect in (
+            ("THERM→DROP", [(THERM_TPL, "ThermalSet"), (DROP_TPL, "DropSet")],
+             [{"INTERFACE_SPRINGBACK_LSDYNA": 1},
+              {"INITIAL_STRESS_SOLID": 1, "INITIAL_VELOCITY": 1, "INTERFACE_SPRINGBACK_LSDYNA": 1,
+               "LOAD_THERMAL_VARIABLE": 0}]),
+            ("DROP→THERM", [(DROP_TPL, "DropSet"), (THERM_TPL, "ThermalSet")],
+             [{"INTERFACE_SPRINGBACK_LSDYNA": 1, "INITIAL_VELOCITY": 1},
+              {"INITIAL_STRESS_SOLID": 1, "INTERFACE_SPRINGBACK_LSDYNA": 1, "INITIAL_VELOCITY": 0}]),
+            ("THERM→DROP→THERM", [(THERM_TPL, "ThermalSet"), (DROP_TPL, "DropSet"), (THERM_TPL, "ThermalSet")],
+             [{"INTERFACE_SPRINGBACK_LSDYNA": 1},
+              {"INITIAL_STRESS_SOLID": 1, "INTERFACE_SPRINGBACK_LSDYNA": 1},
+              {"INITIAL_STRESS_SOLID": 1, "INTERFACE_SPRINGBACK_LSDYNA": 1, "INITIAL_VELOCITY": 0}]),
+            ("DROP→DROP(기존 경로)", [(DROP_TPL, "DropSet"), (DROP_TPL, "DropSet")],
+             [{"INTERFACE_SPRINGBACK_LSDYNA": 1},
+              {"INITIAL_STRESS_SOLID": 1, "INTERFACE_SPRINGBACK_LSDYNA": 1}])):
+        d8 = tempfile.mkdtemp(prefix="thchain_sim_", dir=str(WORK))
+        write_model(os.path.join(d8, "model.k"))
+        recs = sim_chain(d8, steps, verbose=False)
+        check(f"{case}: 전 스텝 생성", len(recs) == len(steps) and all("error" not in r for r in recs),
+              str([r.get("error") for r in recs]))
+        if any("error" in r for r in recs):
+            continue
+        for r, want in zip(recs, expect):
+            c = r["cards"]
+            for k, v in want.items():
+                check(f"  step{r['step']} *{k} = {v}", c.get(k, 0) == v, f"got {c.get(k, 0)}")
+        # 카드가 스텝마다 누적되지 않는지 (springback·CTE)
+        sb = [r["cards"].get("INTERFACE_SPRINGBACK_LSDYNA", 0) for r in recs]
+        check("  springback 이 스텝마다 늘지 않음", max(sb) <= 1, str(sb))
 
     print()
     if FAILS:

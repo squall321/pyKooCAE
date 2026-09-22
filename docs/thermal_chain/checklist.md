@@ -45,9 +45,9 @@
 - [ ] 시험 갱신·통과
 
 ## P7. 통합·배포
-- [ ] 양방향 시나리오 3종 prepare 검증 (THERM→DROP, DROP→THERM, THERM→DROP→THERM)
-- [ ] 기존 스위트 전부 통과 (layer_split·fall_gravity·kooremapper_chain_config·cli_help·kam_fixes)
-- [ ] DROP·IMPACT 덱 바이트 동일 회귀
+- [x] 양방향 시나리오 3종 prepare 검증 (THERM→DROP, DROP→THERM, THERM→DROP→THERM)
+- [x] 기존 스위트 전부 통과 (layer_split·fall_gravity·kooremapper_chain_config·cli_help·kam_fixes)
+- [x] DROP·IMPACT 덱 바이트 동일 회귀
 - [ ] 빌드 → SIF → tar → node001 배포
 - [ ] node001 에서 실제 LS-DYNA 완주 (양방향)
 - [ ] 문서·예제 갱신, 메모리 기록

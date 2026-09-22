@@ -2221,11 +2221,8 @@ class KooDynaAdvancedModification:
 
 
 
-        # Generate Part Set
-        partSet : PartSet = self.dynaImporter.partManager.CreatePartSet(name="Dynamic Relaxation Set")
-        for pid, part in self.dynaImporter.partManager.parts.items():
-            partSet.AddPart(pid)
-        self.dynaImporter.additionalManager.CreateInterfaceSpringbackLSDyna(partSet.psid)
+        # Generate Part Set (+ dynain 요청 카드 — 이월 덱에 이미 있으면 추가하지 않는다)
+        partSet = self._EnsureSpringbackCard("Dynamic Relaxation Set", "DROP/IMPACT")
         outPathListFile = None
         if len(self.metaDirectoryPath) > 0:
             #first character
@@ -3935,11 +3932,8 @@ class KooDynaAdvancedModification:
         opt_SLDTHK = drop_contact.get("SLDTHK", 0.0)
         opt_SLDSTF = drop_contact.get("SLDSTF", 0.0)
 
-        # Generate Part Set
-        partSet : PartSet = self.dynaImporter.partManager.CreatePartSet(name="Dynamic Relaxation Set")
-        for pid, part in self.dynaImporter.partManager.parts.items():
-            partSet.AddPart(pid)
-        self.dynaImporter.additionalManager.CreateInterfaceSpringbackLSDyna(partSet.psid)
+        # Generate Part Set (+ dynain 요청 카드 — 이월 덱에 이미 있으면 추가하지 않는다)
+        partSet = self._EnsureSpringbackCard("Dynamic Relaxation Set", "DROP/IMPACT")
 
         
         if stressWaveDistance == 0.0:
@@ -5267,6 +5261,29 @@ class KooDynaAdvancedModification:
             # runDirectoryMode 비활성: 입력 파일 옆에 _vib.k (standalone 호환)
             self.WriteModifiedFile(filePath, "_vib", False)
 
+    def _EnsureSpringbackCard(self, setName, context):
+        """dynain 을 받기 위한 *INTERFACE_SPRINGBACK_LSDYNA 를 **한 장만** 보장한다.
+
+        누적 해석은 이전 스텝 산출(_dti.k)을 입력으로 받는데 거기에는 이미 이 카드가 들어 있다.
+        그대로 또 만들면 스텝마다 한 장씩 늘어난다(실측: DROP→DROP 2스텝에서 2장).
+        이미 있으면(매니저·raw 어느 쪽이든) 그대로 두고 새로 만들지 않는다."""
+        addMan = self.dynaImporter.additionalManager
+        hasCard = any(type(v).__name__ == "KooInterfaceSpringbackLSDyna"
+                      for v in getattr(addMan, "interfaces", {}).values())
+        if not hasCard:
+            rawDict = getattr(self.dynaImporter.dynaManager, "_raw_keyword_dict", None) or {}
+            hasCard = any("SPRINGBACK" in k for k in rawDict)
+        if hasCard:
+            print(f"  → *INTERFACE_SPRINGBACK_LSDYNA 이미 있음 ({context}) — 추가하지 않는다")
+            return None
+        partSet : PartSet = self.dynaImporter.partManager.CreatePartSet(name=setName)
+        for pid, part in self.dynaImporter.partManager.parts.items():
+            partSet.AddPart(pid)
+        addMan.CreateInterfaceSpringbackLSDyna(partSet.psid)
+        print(f"  → *INTERFACE_SPRINGBACK_LSDYNA PSID={partSet.psid} "
+              f"({len(self.dynaImporter.partManager.parts)} 파트, {context}) — dynain 산출")
+        return partSet
+
     def _ApplyThermalCarryPolicy(self, option, context):
         """이전 열 스텝에서 이월된 열하중을 어떻게 다룰지 정한다 (낙하·충격 스텝 진입 시).
 
@@ -5365,19 +5382,7 @@ class KooDynaAdvancedModification:
         if not isThermalSolvePass:
             # 이미 있으면 더하지 않는다 — 이월 덱(낙하 스텝 산출)에는 springback 카드가 들어 있어
             # 그대로 추가하면 두 장이 되고 LS-DYNA 가 dynain 을 두 번 쓰게 된다.
-            addMan = self.dynaImporter.additionalManager
-            hasSpringback = any(type(v).__name__ == "KooInterfaceSpringbackLSDyna"
-                                for v in getattr(addMan, "interfaces", {}).values())
-            rawDict = getattr(self.dynaImporter.dynaManager, "_raw_keyword_dict", None) or {}
-            hasSpringback = hasSpringback or any("SPRINGBACK" in k for k in rawDict)
-            if hasSpringback:
-                print("  → *INTERFACE_SPRINGBACK_LSDYNA 이미 있음 (이월 덱) — 추가하지 않는다")
-            else:
-                partSet : PartSet = self.dynaImporter.partManager.CreatePartSet(name="Thermal Springback Set")
-                for pid, part in self.dynaImporter.partManager.parts.items():
-                    partSet.AddPart(pid)
-                addMan.CreateInterfaceSpringbackLSDyna(partSet.psid)
-                print(f"  → *INTERFACE_SPRINGBACK_LSDYNA PSID={partSet.psid} ({len(self.dynaImporter.partManager.parts)} 파트) — dynain 산출")
+            self._EnsureSpringbackCard("Thermal Springback Set", "THERMAL_LOAD")
 
         # ② explicit control + database (DROP/IMPACT/VIB 결)
         # ENDTIM — TFinal 을 주면 그 값, 없으면 RampTimeS(기존 동작).

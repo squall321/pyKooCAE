@@ -117,3 +117,17 @@ LS-DYNA 라이선스가 없어 실행 검증을 못 하므로, **Normal terminat
 - DOE 이름은 `조건__각도`(예 COLD__P0001) 로 구분한다.
 - 조건 2 × 각도 3 = DOE 6 실측. 각도 미지정이면 기존 동작(DOE = 조건, 전 스텝 0).
 - 회귀: DROP-only(각도 3 → DOE 3, 각도 살아 있음), THERM-only(조건 2), THERM-only+각도(낙하 스텝 없으면 교차 안 함) 확인.
+
+## P7 통합 — LS-DYNA 없는 체인 검증 (2026-09-22)
+라이선스가 없어 솔버를 못 돌리므로 **합성 dynain**(변형 좌표 + `*INITIAL_STRESS_SOLID`)으로
+스텝 사이를 이어 붙여 체인 전체를 흉내내는 검증기를 만들었다 — `tests/thermal_chain_sim.py`.
+스텝마다 (1) 러너 옵션으로 KMM 실행 → (2) 합성 dynain 을 Output/ 에 배치 → (3) dynaintoinitial.txt 로
+DYNAIN_TO_INITIAL → (4) 나온 `_dti.k` 를 다음 스텝 입력으로 쓴다.
+
+🔴 이 검증에서 **기존 결함**을 하나 더 찾았다 — `*INTERFACE_SPRINGBACK_LSDYNA` 가 스텝마다 한 장씩 는다.
+이월 덱에 이미 있는데 DropAttitude·DropWeightImpactTest 가 조건 없이 또 만들었다(실측: DROP→DROP 2스텝에서 2장,
+스텝이 늘수록 누적). 세 모드를 공통 헬퍼 `_EnsureSpringbackCard` 로 묶어 멱등하게 고쳤다.
+- 단일 스텝 덱은 바이트 동일(추가 경로를 타지 않으므로). 2스텝 이상에서만 중복이 사라진다.
+
+검증 결과(시험 [9]): THERM→DROP / DROP→THERM / THERM→DROP→THERM / DROP→DROP 네 경로 모두
+스텝마다 초기응력 이월 O, 방향별 하중 정리 O(열→낙하 열하중 0, 낙하→열 초기속도 0), springback 1장 유지.
