@@ -3,9 +3,9 @@
 계획은 [PLAN.md](PLAN.md). 중단 시 마지막 체크 지점부터 이어간다. 단계마다 커밋한다.
 
 ## P0. 준비 — 기준선·시험 하네스
-- [ ] 골든 기준선 확보 (UniformChamber / ICPower pass1 / ICPower pass2 덱)
+- [x] 골든 기준선 확보 (UniformChamber / ICPower pass1 / ICPower pass2 덱)
 - [ ] 기존 DROP·IMPACT 덱 골든 확보 (회귀 diff 기준)
-- [ ] tests/test_thermal_chain.py 작성 — 현재 코드에서 통과(기준선 고정)
+- [x] tests/test_thermal_chain.py 작성 — 현재 코드에서 통과(기준선 고정)
 
 ## P1. THERM dynain 산출 (B1)
 - [ ] ThermalLoad 에 전 파트 PartSet + *INTERFACE_SPRINGBACK_LSDYNA (구조 pass 한정)
