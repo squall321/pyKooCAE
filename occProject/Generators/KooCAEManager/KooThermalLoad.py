@@ -47,12 +47,18 @@ def apply_thermal_load(dynaImporter, option):
 
     # 온도 곡선: 직접 입력 우선, 없으면 base→target 램프
     temp_curve = option.get("TempCurve", None)
+    curve_mode = str(option.get("TempCurveMode", "factor")).strip().lower()
     if temp_curve and len(temp_curve) >= 2:
         a1 = [pt[0] for pt in temp_curve]
         o1 = [pt[1] for pt in temp_curve]
-        # 곡선이 factor(0~1)면 base/target로 ts/tb 환산, 절대온도면 그대로
-        ts = target_temp - base_temp
-        tb = base_temp
+        if curve_mode == "absolute":
+            # 커브 종축이 ℃ 절대온도 → T = 0 + 1·f(t) 로 그대로 쓴다 (열충격 프로파일 작성이 자연스럽다)
+            ts = 1.0
+            tb = 0.0
+        else:
+            # factor(0~1) — 기존 동작. T = base + (target-base)·f(t)
+            ts = target_temp - base_temp
+            tb = base_temp
     else:
         # base(t=0) → target(ramp_time) 램프. factor 0→1 곡선 + ts=ΔT, tb=base
         a1 = [0.0, ramp_time]
@@ -63,8 +69,9 @@ def apply_thermal_load(dynaImporter, option):
     part_cte = option.get("PartCTE", {})
     default_cte = float(option.get("DefaultCTE", 1.7e-5))  # 일반 금속 ~17e-6/K
 
+    _mode_note = " (커브 종축=절대온도)" if (temp_curve and curve_mode == "absolute") else ""
     print(f"[THERMAL_LOAD] UniformChamber: {base_temp}°C → {target_temp}°C "
-          f"(ΔT={ts:.1f}, ramp={ramp_time}s)")
+          f"(ΔT={target_temp - base_temp:.1f}, ramp={ramp_time}s){_mode_note}")
 
     # 1. *DEFINE_CURVE (온도 램프)
     defineMan = dynaImporter.defineManager

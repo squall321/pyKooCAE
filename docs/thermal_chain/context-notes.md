@@ -100,3 +100,12 @@ LS-DYNA 라이선스가 없어 실행 검증을 못 하므로, **Normal terminat
 - 🔴 `*SET_SEGMENT` 의 SOLVER 는 **MECH** — 검증된 덱이 쓰는 값이다. 처음에 `THERMAL` 을 줬는데
   그 값은 실제 덱·규격 값 공간에 없다. 노드 세트도 같은 이유로 MECH.
 - 🔴 고정폭이라 값이 붙어 나오는 게 정상이다(`0-4.000e+01`). 시험도 `split()` 대신 10칸 슬라이스로 검사한다.
+
+## P5 완료 — dwell·사이클 프로파일 (2026-09-22)
+- `TempCurveMode` 신설: `factor`(기본, 기존 동작 T=Base+ΔT·f) | `absolute`(커브 종축이 ℃ → ts=1, tb=0 으로 T=f(t)).
+  열충격 프로파일은 절대온도로 적는 게 자연스러워 이 모드를 넣었다. 기존 입력은 factor 기본값이라 불변.
+- `TFinal` 신설: ENDTIM 을 RampTimeS 에서 분리. 미지정이면 RampTimeS(기존 동작).
+  유지(dwell) 구간은 `TFinal > RampTimeS` + 평탄한 커브로 표현한다.
+- 러너: `simulation_params.thermal.temp_curve`·`temp_curve_mode`·`tFinal` → 옵션 파일 블록. 미지정 시 줄 없음.
+- KMM help 카탈로그의 TempCurve 설명을 정정(종축 의미를 TempCurveMode 가 정한다고 명시).
+- 검증: ENDTIM=0.01(dwell 포함), 커브 절대온도 3점, factor 기본 경로 불변. DROP 덱 바이트 동일, ICPower pass1 골든 동일.

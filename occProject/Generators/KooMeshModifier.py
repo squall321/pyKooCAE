@@ -2523,6 +2523,8 @@ class KooMeshModifier(KooSimulationGenerator):
                         "RampTimeS": 1.0e-3,
                         "DT": 1.0e-6,
                         "TempCurve": [],
+                        "TempCurveMode": "factor",   # factor(0~1) | absolute(℃)
+                        "TFinal": 0.0,               # 0 이면 RampTimeS 를 ENDTIM 으로 (기존 동작)
                         "PartCTE": {},
                         "DefaultCTE": 1.7e-5,
                         # ICPower (T2/T3) — apply_thermal_load._apply_ic_power 키와 일치
@@ -2614,6 +2616,12 @@ class KooMeshModifier(KooSimulationGenerator):
                             curOptions["TargetTempC"] = float(line.split(",", 1)[1].strip())
                         elif low.startswith("ramptimes,"):
                             curOptions["RampTimeS"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("tfinal,"):
+                            # ENDTIM. 미지정이면 RampTimeS 를 쓴다(기존 동작) — 유지(dwell) 구간을 주려면 이 값을 크게
+                            curOptions["TFinal"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("tempcurvemode,"):
+                            # factor(기본, 기존 동작) | absolute(커브 종축이 ℃ 절대온도)
+                            curOptions["TempCurveMode"] = line.split(",", 1)[1].strip().lower()
                         elif low.startswith("dt,"):
                             curOptions["DT"] = float(line.split(",", 1)[1].strip())
                         elif low.startswith("dtmin,"):

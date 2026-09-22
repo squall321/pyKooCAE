@@ -5380,7 +5380,9 @@ class KooDynaAdvancedModification:
                 print(f"  → *INTERFACE_SPRINGBACK_LSDYNA PSID={partSet.psid} ({len(self.dynaImporter.partManager.parts)} 파트) — dynain 산출")
 
         # ② explicit control + database (DROP/IMPACT/VIB 결)
-        tFinal = float(option.get("RampTimeS", 1.0e-3))
+        # ENDTIM — TFinal 을 주면 그 값, 없으면 RampTimeS(기존 동작).
+        # 유지(dwell) 구간을 두려면 TFinal > RampTimeS 로 주고 온도 커브를 평탄하게 그린다.
+        tFinal = float(option.get("TFinal", 0.0) or 0.0) or float(option.get("RampTimeS", 1.0e-3))
         dt = float(option.get("DT", 1.0e-6))
         if dt != 0.0 and tFinal != 0.0:
             self.SetControlandDatabaseExplicit(tFinal, dt, dtmin=option.get("DTMIN"))

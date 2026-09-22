@@ -8,6 +8,7 @@
   [4] 중복     왕복(DYNAIN_TO_INITIAL) 후 늘어난 카드가 없다                                    (P3a)
   [5] 양방향   THERM→DROP 은 이월 열하중을 정책대로, DROP→THERM 은 이월 초기속도를 정리한다          (P3b)
   [6] 환경조건  국부 발열과 환경조건(대류·규정온도)을 한 덱에 함께 걸 수 있다                            (P4)
+  [7] 프로파일  TempCurveMode(factor|absolute)와 TFinal(dwell) 이 덱에 반영된다                   (P5)
 
 P1·P2 가 구현되기 전에는 [2]·[3] 이 실패한다 — 그게 이 시험의 목적이다.
 """
@@ -404,6 +405,60 @@ EndAmbient"""
         c4 = cards(out4)
         check("Ambient 미지정 → 경계조건 카드 0 (기존 동작 불변)",
               c4.get("BOUNDARY_CONVECTION_SET", 0) == 0 and c4.get("BOUNDARY_TEMPERATURE_SET", 0) == 0, str(c4))
+
+    print("[7] 온도 프로파일 — 커브 종축·dwell (P5)")
+    PROFILE = """ThermalType,UniformChamber
+BaseTempC,25
+TargetTempC,-40
+RampTimeS,0.002
+TFinal,0.01
+DT,1e-04
+DefaultCTE,1.8e-05
+TempCurveMode,absolute
+TempCurve
+0.0,25.0
+0.002,-40.0
+0.01,-40.0
+EndTempCurve"""
+    d5 = tempfile.mkdtemp(prefix="thchain_prof_", dir=str(WORK))
+    write_model(os.path.join(d5, "model.k"))
+    r7 = run_kmm(d5, "opt.txt", PROFILE)
+    out5 = os.path.join(d5, "model_therm.k")
+    check("절대온도 커브 + dwell: 실행 성공", r7.returncode == 0 and os.path.exists(out5),
+          (r7.stdout[-300:] + r7.stderr[-300:]))
+    if os.path.exists(out5):
+        text5 = Path(out5).read_text(errors="replace")
+        endtim = None
+        for i, ln in enumerate(text5.splitlines()):
+            if ln.startswith("*CONTROL_TERMINATION"):
+                for nxt in text5.splitlines()[i + 1:i + 4]:
+                    if nxt.strip() and not nxt.startswith("$"):
+                        endtim = nxt[:10].strip()
+                        break
+                break
+        check("  ENDTIM 이 TFinal(0.01)", endtim is not None and abs(float(endtim) - 0.01) < 1e-12, str(endtim))
+        check("  절대온도 모드 → T = 0 + 1·f(t) (로그)",
+              "T=0.0+1.0" in r7.stdout, [l for l in r7.stdout.splitlines() if "LOAD_THERMAL_VARIABLE" in l][:1])
+        check("  커브 점 3개가 절대온도로 (25 → -40 → 유지)",
+              text5.count("2.5000000000000e+01") >= 1 and text5.count("-4.0000000000000e+01") >= 2,
+              str((text5.count("2.5000000000000e+01"), text5.count("-4.0000000000000e+01"))))
+    # factor 모드(기본)는 기존 동작 — ts=ΔT, tb=base
+    d6 = tempfile.mkdtemp(prefix="thchain_prof2_", dir=str(WORK))
+    write_model(os.path.join(d6, "model.k"))
+    r8 = run_kmm(d6, "opt.txt", OPTS["uniform"])
+    check("factor 모드(기본): ts=ΔT·tb=base 유지 (기존 동작)",
+          r8.returncode == 0 and "T=25.0+-65.0" in r8.stdout,
+          [l for l in r8.stdout.splitlines() if "LOAD_THERMAL_VARIABLE" in l][:1])
+    if os.path.exists(os.path.join(d6, "model_therm.k")):
+        t6 = Path(os.path.join(d6, "model_therm.k")).read_text(errors="replace")
+        for i, ln in enumerate(t6.splitlines()):
+            if ln.startswith("*CONTROL_TERMINATION"):
+                for nxt in t6.splitlines()[i + 1:i + 4]:
+                    if nxt.strip() and not nxt.startswith("$"):
+                        check("  TFinal 미지정 → ENDTIM = RampTimeS(0.002)",
+                              abs(float(nxt[:10]) - 0.002) < 1e-12, nxt[:10])
+                        break
+                break
 
     print()
     if FAILS:

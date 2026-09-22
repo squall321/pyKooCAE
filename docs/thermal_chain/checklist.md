@@ -24,7 +24,7 @@
 - [x] DROP→THERM: 낙하 카드(INITIAL_VELOCITY·rigidwall·바닥판) 정리 경로 구현
 - [x] 미해석 키워드 raw 블록 2회 출력 여부 확인 → 사실이면 수정
 - [x] 각 방향 _dti.k 카드 불변식 확인 (이전 하중 0, 초기응력 존재)
-- [ ] 시험 갱신·통과
+- [x] 시험 갱신·통과
 
 ## P4. 환경조건 + 국부 발열 동시 (B3·B4)
 - [x] KooBoundary 대류/온도 경계조건을 THERMAL_LOAD 파서·러너에 배선
@@ -34,9 +34,9 @@
 - [ ] 시험 갱신·통과
 
 ## P5. dwell·사이클 (B5)
-- [ ] thermal.temp_curve 직렬화
-- [ ] thermal.tFinal 분리 (미지정 시 기존 동작)
-- [ ] KMM help TempCurve 종축 설명 정정
+- [x] thermal.temp_curve 직렬화
+- [x] thermal.tFinal 분리 (미지정 시 기존 동작)
+- [x] KMM help TempCurve 종축 설명 정정
 - [ ] 시험 갱신·통과
 
 ## P6. 조건축 × 각도축 (B6)

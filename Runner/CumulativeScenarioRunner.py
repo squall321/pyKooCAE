@@ -1748,6 +1748,19 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}{gravity_block}{dr
             _rcv = _therm_get("remove_carried_velocity", None)
             carried_vel_block = "" if _rcv is None else f"\nRemoveCarriedVelocity,{bool(_rcv)}"
 
+            # 온도 프로파일 — temp_curve(+mode)·tFinal. 미지정이면 줄 없음 → 기존 동작
+            _tc_pts = _therm_get("temp_curve", []) or []
+            _tc_mode = _therm_get("temp_curve_mode", None)
+            _tfinal = _therm_get("tFinal", _therm_get("tfinal", None))
+            profile_block = ""
+            if _tfinal:
+                profile_block += f"\nTFinal,{_tfinal}"
+            if _tc_mode:
+                profile_block += f"\nTempCurveMode,{_tc_mode}"
+            if len(_tc_pts) >= 2:
+                profile_block += "\nTempCurve\n" + "\n".join(
+                    f"{pt[0]},{pt[1]}" for pt in _tc_pts) + "\nEndTempCurve"
+
             # 환경조건(대류·규정온도) — 국부 발열(heat_sources)과 함께 걸 수 있다.
             # 미지정이면 블록을 넣지 않는다 → 기존 출력 불변
             _amb = _therm_get("ambient", {}) or {}
@@ -1791,7 +1804,7 @@ BaseTempC,{base_temp}
 TargetTempC,{target_temp}
 RampTimeS,{ramp_time}
 DT,{dt}
-DefaultCTE,{default_cte}{dtmin_block}{ambient_block}
+DefaultCTE,{default_cte}{dtmin_block}{profile_block}{ambient_block}
 {cte_block}{icpower_block}**EndThermalLoad
 *End
 """
