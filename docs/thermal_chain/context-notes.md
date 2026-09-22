@@ -73,3 +73,22 @@ UniformChamber 와 ICPower `Phase=structural` 에만 넣는다. pass1 에 들어
 - 낙하판 파트·접촉 제거는 넣지 않았다. THERMAL_LOAD 가 어느 파트가 바닥판인지 신뢰성 있게 구분할 수 없고
   (제목이 비어 있다), 필요하면 `DYNAIN_TO_INITIAL` 의 기존 옵션 `RemovePartIDList`·`RemoveContactIDList` 로 지정할 수 있다.
   합성 dynain 왕복에서는 바닥판이 이미 빠졌으나 그 동작은 dynain 내용에 의존하므로 실 dynain 으로 재확인이 필요하다(P7 e2e 항목).
+
+## P4 완료 — 환경조건 + 국부 발열 동시 (2026-09-22)
+
+🔴 **조사 결과 정정**: "경계조건 카드 클래스가 이미 있다"는 틀렸다. `KooBoundary.py` 의
+`KooBoundaryConvection`·`KooBoundaryTemperature` 는 CAD 형상용이고 **LS-DYNA writer 도 매니저도 없다**
+(게다가 `super(KooBoundaryConvection).__init__(...)` 오용으로 부모 초기화가 안 된다 — 죽은 코드).
+그래서 카드를 새로 구현했다.
+
+- `KooBoundaryNode.py` — `KooBoundaryConvectionSet`(*BOUNDARY_CONVECTION_SET),
+  `KooBoundaryTemperatureSet`(*BOUNDARY_TEMPERATURE_SET) + 매니저 Create API. 기존 SPC 클래스와 같은 패턴.
+- `KooThermalLoad.apply_ambient_boundary` — 파트별 외피(`GetExternalBoundary(True)`)로 *SET_SEGMENT(THERMAL) 를 만들고
+  대류를 건다. 규정온도 모드는 외피 노드 세트로. UniformChamber·ICPower pass1 양쪽에서 호출(미지정이면 무동작).
+- 🔴 **TMULT 는 곱수다**: 커브를 줄 때 `TMULT=1.0`, 커브가 없을 때만 `TMULT=T∞`. 처음에 T∞ 를 그대로 넣어
+  `T∞ = -40 × 곡선값` 이 되는 오류를 냈다가 카드를 직접 읽어 잡았다.
+- 옵션: `Ambient / mode,convection|temperature / h,… / temp_C,… / pids,… / TempCurve…EndTempCurve / EndAmbient`
+- 시나리오: `simulation_params.thermal.ambient` → 러너가 위 블록으로 직렬화(미지정 시 줄 없음 = 출력 불변).
+
+검증: 대류+커브 / 대류 상수 / 규정온도 3경로 모두 덱에 정확히 실림, 발열 카드와 공존,
+Ambient 미지정 시 경계조건 0, DROP·IMPACT 덱 바이트 동일.

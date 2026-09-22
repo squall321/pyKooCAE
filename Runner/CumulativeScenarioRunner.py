@@ -1748,6 +1748,27 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}{gravity_block}{dr
             _rcv = _therm_get("remove_carried_velocity", None)
             carried_vel_block = "" if _rcv is None else f"\nRemoveCarriedVelocity,{bool(_rcv)}"
 
+            # 환경조건(대류·규정온도) — 국부 발열(heat_sources)과 함께 걸 수 있다.
+            # 미지정이면 블록을 넣지 않는다 → 기존 출력 불변
+            _amb = _therm_get("ambient", {}) or {}
+            ambient_block = ""
+            if _amb:
+                _l = ["Ambient", f"mode,{_amb.get('mode', 'convection')}"]
+                if _amb.get("h") is not None:
+                    _l.append(f"h,{_amb['h']}")
+                if _amb.get("temp_C") is not None:
+                    _l.append(f"temp_C,{_amb['temp_C']}")
+                if _amb.get("pids"):
+                    _l.append("pids," + ",".join(str(p) for p in _amb["pids"]))
+                _curve = _amb.get("temp_curve") or []
+                if len(_curve) >= 2:
+                    _l.append("TempCurve")
+                    for _pt in _curve:
+                        _l.append(f"{_pt[0]},{_pt[1]}")
+                    _l.append("EndTempCurve")
+                _l.append("EndAmbient")
+                ambient_block = "\n" + "\n".join(_l)
+
             # DTMIN 발산 자동종료 — 구조 pass·비-ICPower만. ICPower 열해석 pass1(SOLN=1)은
             # explicit dt 붕괴 개념이 없어 제외(안정화된 thermal 2-pass 보호). 미지정 시 "" (회귀 0)
             from Runner.StepConfigBuilder import build_dtmin_line
@@ -1770,7 +1791,7 @@ BaseTempC,{base_temp}
 TargetTempC,{target_temp}
 RampTimeS,{ramp_time}
 DT,{dt}
-DefaultCTE,{default_cte}{dtmin_block}
+DefaultCTE,{default_cte}{dtmin_block}{ambient_block}
 {cte_block}{icpower_block}**EndThermalLoad
 *End
 """

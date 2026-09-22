@@ -93,6 +93,91 @@ def apply_thermal_load(dynaImporter, option):
         src = "지정" if (pid in part_cte or str(pid) in part_cte) else "default"
         print(f"  → *MAT_ADD_THERMAL_EXPANSION PID={pid}, CTE={cte:.3e} ({src})")
 
+    # 4. 환경조건(대류·규정온도) — 지정 시에만. UniformChamber 는 전 절점 규정온도라
+    #    보통 필요 없지만, 표면 대류를 함께 보고 싶을 때 쓸 수 있다.
+    apply_ambient_boundary(dynaImporter, option)
+
+
+def apply_ambient_boundary(dynaImporter, option):
+    """환경조건(대류·규정온도) 경계조건을 외피에 적용한다 — 국부 발열과 함께 쓸 수 있다.
+
+    국부 발열(ICPower heat_sources)만 있으면 단열체라 온도가 계속 오른다. 환경온도를 유지하려면
+    외피에 대류 경계조건이 필요하고, 열충격의 표면 온도 구배도 여기서 나온다.
+
+    option["Ambient"] = {
+        "mode": "convection" | "temperature",   # 대류(h, T∞) | 규정온도
+        "h": 열전달계수 [ton-mm-s 에서 mW/mm²·K],
+        "temp_C": 환경온도 [℃] (상수),
+        "temp_curve": [[t, T], ...]  # 있으면 시간에 따라 변하는 환경온도(열충격 프로파일)
+        "pids": [pid, ...]           # 없으면 전 파트 외피
+    }
+    반환: 적용한 경계조건 개수 (Ambient 가 없으면 0)
+    """
+    amb = option.get("Ambient") or {}
+    if not amb:
+        return 0
+    mode = str(amb.get("mode", "convection")).strip().lower()
+    partMan = dynaImporter.partManager
+    segMan = dynaImporter.segmentSetManager
+    bndMan = dynaImporter.boundaryNodeManager
+    defineMan = dynaImporter.defineManager
+
+    pids = amb.get("pids") or list(getattr(partMan, "parts", {}).keys())
+    pids = [p for p in pids if p in getattr(partMan, "parts", {})]
+    if not pids:
+        print("WARNING [AMBIENT]: 적용할 파트가 없다 — 건너뛴다")
+        return 0
+
+    # 환경온도 커브 (있으면) — T∞ 를 시간에 따라 바꿔 열충격 프로파일을 만든다
+    tlcid = 0
+    temp_curve = amb.get("temp_curve") or []
+    if len(temp_curve) >= 2:
+        tlcid = _alloc_lcid(defineMan)
+        a1 = [float(pt[0]) for pt in temp_curve]
+        o1 = [float(pt[1]) for pt in temp_curve]
+        defineMan.CreateDefineCurvewithID(LCID=tlcid, A1=a1, O1=o1, name="Ambient_temp_curve")
+        print(f"  → *DEFINE_CURVE LCID={tlcid} (환경온도 {len(a1)}점, {o1[0]}→{o1[-1]}℃)")
+
+    temp_c = float(amb.get("temp_C", 25.0))
+    # 🔴 TMULT(=tinf 인자)는 커브가 있을 때 '곱수'다 — 커브 종축이 절대온도이므로 1.0 을 줘야 한다.
+    #    커브가 없으면 TLCID=0 이고 TMULT 가 상수 T∞ 로 쓰인다.
+    tmult = 1.0 if tlcid else temp_c
+    applied = 0
+    for pid in pids:
+        elemMan = partMan.parts[pid].elementManager
+        segments = elemMan.GetExternalBoundary(True)
+        if not segments:
+            print(f"WARNING [AMBIENT]: PID {pid} 외피 세그먼트가 없다 — 건너뛴다")
+            continue
+        if mode == "temperature":
+            # 규정온도는 노드 세트로 — 외피 노드 전체
+            nodes = {}
+            for seg in segments:
+                for nid in seg:
+                    nodes[nid] = nid
+            nsetMan = dynaImporter.nodeSetManager
+            nset = nsetMan.CreateNodeSetwithNodes(
+                f"Ambient_PID{pid}", 0.0, 0.0, 0.0, 0.0, "THERMAL", 0,
+                [partMan.parts[pid].nodeManager.nodes[nid] for nid in nodes
+                 if nid in partMan.parts[pid].nodeManager.nodes])
+            bndMan.CreateBoundaryTemperatureSet(nset, temp=tmult, lcid=tlcid,
+                                                name=f"AmbientTemp_PID{pid}")
+            print(f"  → *BOUNDARY_TEMPERATURE_SET PID={pid} ({len(nodes)} 노드, "
+                  + (f"T=커브 {tlcid} x {tmult}" if tlcid else f"T={temp_c}℃") + ")")
+        else:
+            h = float(amb.get("h", 0.0))
+            if h <= 0.0:
+                print(f"WARNING [AMBIENT]: PID {pid} 대류 h 가 0 이하 — 건너뛴다 (h 를 지정할 것)")
+                continue
+            segSet = segMan.CreateSegmentSet(solver="THERMAL", name=f"Ambient_PID{pid}")
+            segSet.AddSegments(segments)
+            bndMan.CreateBoundaryConvectionSet(segSet, h=h, tinf=tmult, tlcid=tlcid,
+                                               name=f"AmbientConv_PID{pid}")
+            print(f"  → *BOUNDARY_CONVECTION_SET PID={pid} ({len(segments)} 세그먼트, h={h}, "
+                  + (f"T∞=커브 {tlcid} x {tmult}" if tlcid else f"T∞={temp_c}℃") + ")")
+        applied += 1
+    return applied
+
 
 def _apply_ic_power(dynaImporter, option):
     """T2/T3 — IC 발열 thermal pass(pass1). 검증된 thermal_smoke.k 결(transient ATYPE=1).
@@ -180,6 +265,9 @@ def _apply_ic_power(dynaImporter, option):
         loadMan.CreateLoadHeatGenerationSetSolid(sid=sset.sid, lcid=0, mult=q)
         print(f"  → *SET_SOLID(sid={sset.sid}, {len(eids)} elems) + "
               f"*LOAD_HEAT_GENERATION q'''={q:.3e} mW/mm³ (PID={pid}, {power_W}W/{vol}mm³)")
+
+    # 5. 환경조건(대류·규정온도) — 국부 발열과 함께 걸 수 있다. 없으면 무동작
+    apply_ambient_boundary(dynaImporter, option)
 
 
 def _apply_ic_structural(dynaImporter, option):

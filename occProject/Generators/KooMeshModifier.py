@@ -2535,6 +2535,8 @@ class KooMeshModifier(KooSimulationGenerator):
                         "timestep": {},       # {its,tmax,dtemp}
                         # 이전 낙하 스텝에서 이월된 동적 하중 제거 (열 스텝은 정적)
                         "RemoveCarriedVelocity": True,
+                        # 환경조건 — 국부 발열과 함께 쓸 수 있다 (대류 h·T∞ 또는 규정온도)
+                        "Ambient": {},
                     }
                     in_curve = False
                     in_cte = False
@@ -2619,6 +2621,49 @@ class KooMeshModifier(KooSimulationGenerator):
                             curOptions["DTMIN"] = float(line.split(",", 1)[1].strip())
                         elif low.startswith("defaultcte,"):
                             curOptions["DefaultCTE"] = float(line.split(",", 1)[1].strip())
+                        elif low == "ambient":
+                            # Ambient
+                            #   mode,convection|temperature
+                            #   h,<열전달계수>            (대류)
+                            #   temp_C,<환경온도>
+                            #   pids,1,2                 (없으면 전 파트 외피)
+                            #   TempCurve / "<t>,<T>" 줄들 / EndTempCurve   (환경온도 프로파일)
+                            # EndAmbient
+                            amb = curOptions["Ambient"]
+                            in_amb_curve = False
+                            while True:
+                                line = f.readline()
+                                if not line:
+                                    break
+                                ln = line.strip()
+                                low2 = ln.lower()
+                                if low2.startswith("endambient"):
+                                    break
+                                if not ln or ln.startswith("$"):
+                                    continue
+                                if low2.startswith("endtempcurve"):
+                                    in_amb_curve = False
+                                    continue
+                                if low2 == "tempcurve":
+                                    in_amb_curve = True
+                                    amb["temp_curve"] = []
+                                    continue
+                                if in_amb_curve:
+                                    parts = ln.replace(",", " ").split()
+                                    if len(parts) >= 2:
+                                        amb["temp_curve"].append([float(parts[0]), float(parts[1])])
+                                    continue
+                                if low2.startswith("mode,"):
+                                    amb["mode"] = ln.split(",", 1)[1].strip()
+                                elif low2.startswith("h,"):
+                                    amb["h"] = float(ln.split(",", 1)[1].strip())
+                                elif low2.startswith("temp_c,") or low2.startswith("tempc,"):
+                                    amb["temp_C"] = float(ln.split(",", 1)[1].strip())
+                                elif low2.startswith("pids,"):
+                                    amb["pids"] = [int(x) for x in ln.split(",")[1:] if x.strip()]
+                                else:
+                                    print(f"  Warning: unknown Ambient option line: {ln}")
+                            continue
                         elif low.startswith("removecarriedvelocity,"):
                             # 이월된 초기속도 제거 여부 (열 스텝은 정적)
                             curOptions["RemoveCarriedVelocity"] = line.split(",", 1)[1].strip().lower() != "false"

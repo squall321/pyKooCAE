@@ -636,6 +636,73 @@ class KooBoundarySPCNodeSet(KooBoundaryNode):
         dofrzStr = format(self.dofrz, ">10")
         stream.write(nidStr + cidStr + dofxStr + dofyStr + dofzStr + dofrxStr + dofryStr + dofrzStr + "\n")                                    
 
+class KooBoundaryConvectionSet(KooBoundaryNode):
+    """*BOUNDARY_CONVECTION_SET — 세그먼트 세트에 대류 경계조건 (h, T∞).
+
+    LS-DYNA 카드 (R16 규격):
+      Card 1: SSID
+      Card 2: HLCID  HMULT  TLCID  TMULT  LOC
+    HLCID/TLCID 가 0 이면 HMULT/TMULT 를 상수로 쓴다. 시간에 따라 변하는 환경온도는
+    TLCID 에 *DEFINE_CURVE 를 준다(열충격 프로파일).
+      h  [열전달계수]  ton-mm-s 에서 mW/mm²·K
+      T∞ [환경온도]    ℃ (모델 온도 단위와 같게)
+    """
+    def __init__(self, bid, ssid, h=0.0, tinf=0.0, hlcid=0, tlcid=0, loc=0, name=""):
+        if name == "":
+            name = "ConvectionSet" + str(bid)
+        super(KooBoundaryConvectionSet, self).__init__(bid, name)
+        self.btype = "ConvectionSet"
+        self.ssid = ssid          # 세그먼트 세트 ID 또는 KooSegmentSet
+        self.h = h                # HMULT (HLCID=0 이면 상수 h)
+        self.tinf = tinf          # TMULT (TLCID=0 이면 상수 T∞)
+        self.hlcid = hlcid
+        self.tlcid = tlcid
+        self.loc = loc
+
+    def _ssid(self):
+        return getattr(self.ssid, "sid", self.ssid)
+
+    def GetDynaKeyword(self, startID=0):
+        keywords = "*BOUNDARY_CONVECTION_SET\n"
+        keywords += format(self._ssid(), ">10") + "\n"
+        keywords += (format(self.hlcid, ">10") + format(self.h, ">10.4g")
+                     + format(self.tlcid, ">10") + format(self.tinf, ">10.4g")
+                     + format(self.loc, ">10") + "\n")
+        return keywords
+
+    def WriteStreamDynaKeyword(self, stream, startID=0):
+        stream.write(self.GetDynaKeyword(startID))
+
+
+class KooBoundaryTemperatureSet(KooBoundaryNode):
+    """*BOUNDARY_TEMPERATURE_SET — 노드 세트에 규정 온도 (고정 온도 경계).
+
+    Card 1: NSID  LCID  CMULT  LOC  TDEATH  TBIRTH
+    LCID=0 이면 CMULT 가 상수 온도.
+    """
+    def __init__(self, bid, nsid, temp=0.0, lcid=0, loc=0, name=""):
+        if name == "":
+            name = "TemperatureSet" + str(bid)
+        super(KooBoundaryTemperatureSet, self).__init__(bid, name)
+        self.btype = "TemperatureSet"
+        self.nsid = nsid
+        self.temp = temp
+        self.lcid = lcid
+        self.loc = loc
+
+    def _nsid(self):
+        return getattr(self.nsid, "sid", self.nsid)
+
+    def GetDynaKeyword(self, startID=0):
+        keywords = "*BOUNDARY_TEMPERATURE_SET\n"
+        keywords += (format(self._nsid(), ">10") + format(self.lcid, ">10")
+                     + format(self.temp, ">10.4g") + format(self.loc, ">10") + "\n")
+        return keywords
+
+    def WriteStreamDynaKeyword(self, stream, startID=0):
+        stream.write(self.GetDynaKeyword(startID))
+
+
 class KooBoundaryNodeManager:
     def __init__(self):
         self.maxid = 0 
@@ -667,6 +734,21 @@ class KooBoundaryNodeManager:
             
         return chunks 
     
+    def CreateBoundaryConvectionSet(self, ssid, h=0.0, tinf=0.0, hlcid=0, tlcid=0, loc=0, name=""):
+        """*BOUNDARY_CONVECTION_SET 추가 — 세그먼트 세트에 대류(h, T∞).
+        T∞ 를 시간에 따라 바꾸려면 tlcid 에 커브 LCID 를 준다(열충격 프로파일)."""
+        self.maxid += 1
+        boundary = KooBoundaryConvectionSet(self.maxid, ssid, h, tinf, hlcid, tlcid, loc, name)
+        self.AddBoundary(boundary)
+        return boundary
+
+    def CreateBoundaryTemperatureSet(self, nsid, temp=0.0, lcid=0, loc=0, name=""):
+        """*BOUNDARY_TEMPERATURE_SET 추가 — 노드 세트에 규정 온도."""
+        self.maxid += 1
+        boundary = KooBoundaryTemperatureSet(self.maxid, nsid, temp, lcid, loc, name)
+        self.AddBoundary(boundary)
+        return boundary
+
     def CreatePZEPOT(self, nsid, lcid=0, sf=1.0):
         self.maxid += 1
         boundary = KooBoundaryPZEPOT(self.maxid, nsid, lcid, sf)

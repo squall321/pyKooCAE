@@ -49,9 +49,13 @@ THERM 은 그 입구를 만들지 않는다(생성처는 :3104-3130, :4494-4497 
 그 온도를 **유지**하거나 시간에 따라 바꿀 수단이 없다(단열체 내부 발열 → 온도가 계속 상승. 코드도
 `steady(ATYPE=0)는 heat sink 필요 — 미구현` 을 경고한다).
 
-- 🔵 **좋은 소식**: 필요한 카드 클래스는 이미 있다 — `KooCAEManager/KooBoundary.py` 의
-  `KooBoundaryTemperature`(263), `KooBoundaryHeatFlux`(320), `KooBoundaryConvection`(348), `KooBoundaryRadiation`(383).
-  막힌 것은 **THERMAL_LOAD 옵션 파서·러너에서 여기에 도달할 길이 없다**는 점이다. 새 카드 구현이 아니라 배선 작업이다.
+- 🔴 **정정(2026-09-22)**: 처음에 "카드 클래스가 이미 있다"고 적었으나 틀렸다. `KooCAEManager/KooBoundary.py` 의
+  `KooBoundaryConvection`·`KooBoundaryTemperature` 는 **CAD 형상용 클래스로 LS-DYNA writer 도 매니저도 없다**
+  (초기화도 `super(X).__init__` 오용으로 깨져 있다). 그래서 실제로는 카드 구현이 필요했다.
+- ✅ **구현 완료**: `KooBoundaryNode.py` 에 `KooBoundaryConvectionSet`·`KooBoundaryTemperatureSet` 카드 클래스와
+  매니저 API 를 추가하고, `KooThermalLoad.apply_ambient_boundary` 로 외피 세그먼트에 적용한다.
+  옵션은 `Ambient` 블록(mode/h/temp_C/pids/TempCurve), 시나리오는 `simulation_params.thermal.ambient`.
+  국부 발열(`heat_sources`)과 **동시 사용 가능**하다.
 - 구현안: (1) 옵션 키 `Convection`(h, T∞ 곡선)·`BoundaryTemperature` 를 THERMAL_LOAD 파서에 추가하고
   외피 세그먼트에 적용, (2) `heat_sources` 를 환경조건과 함께 허용(또는 ICPower 에 T∞ 곡선 키 추가).
   이게 들어가면 환경온도 유지·열충격 표면 구배·ICPower steady 가 한 번에 열린다.

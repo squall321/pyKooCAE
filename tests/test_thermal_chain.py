@@ -7,6 +7,7 @@
   [3] 이월     THERM Run 폴더에 DynamicRelaxation/dynaintoinitial.txt 가 있고 KMM 으로 실행 가능하다  (P2)
   [4] 중복     왕복(DYNAIN_TO_INITIAL) 후 늘어난 카드가 없다                                    (P3a)
   [5] 양방향   THERM→DROP 은 이월 열하중을 정책대로, DROP→THERM 은 이월 초기속도를 정리한다          (P3b)
+  [6] 환경조건  국부 발열과 환경조건(대류·규정온도)을 한 덱에 함께 걸 수 있다                            (P4)
 
 P1·P2 가 구현되기 전에는 [2]·[3] 이 실패한다 — 그게 이 시험의 목적이다.
 """
@@ -327,6 +328,74 @@ def main():
             check("    springback 은 1개 (중복 추가 안 함)",
                   c2.get("INTERFACE_SPRINGBACK_LSDYNA", 0) == 1, str(c2.get("INTERFACE_SPRINGBACK_LSDYNA")))
             check("    열하중 적용됨", c2.get("LOAD_THERMAL_VARIABLE", 0) == 1, str(c2.get("LOAD_THERMAL_VARIABLE")))
+
+    print("[6] 환경조건 + 국부 발열 동시 (P4)")
+    AMB_CURVE = OPTS["ic1"] + """
+Ambient
+mode,convection
+h,0.025
+temp_C,-40
+TempCurve
+0.0,25.0
+1.0,-40.0
+30.0,-40.0
+EndTempCurve
+EndAmbient"""
+    AMB_CONST = OPTS["ic1"] + """
+Ambient
+mode,convection
+h,0.025
+temp_C,-40
+EndAmbient"""
+    AMB_TEMP = OPTS["ic1"] + """
+Ambient
+mode,temperature
+temp_C,-40
+EndAmbient"""
+    for label, body, want in (
+            ("대류 + 환경온도 커브", AMB_CURVE, "conv_curve"),
+            ("대류 (상수 T∞)", AMB_CONST, "conv_const"),
+            ("규정온도", AMB_TEMP, "temp")):
+        d3 = tempfile.mkdtemp(prefix="thchain_amb_", dir=str(WORK))
+        write_model(os.path.join(d3, "model.k"))
+        r5 = run_kmm(d3, "opt.txt", body)
+        out3 = os.path.join(d3, "model_therm.k")
+        check(f"{label}: 실행 성공", r5.returncode == 0 and os.path.exists(out3),
+              (r5.stdout[-300:] + r5.stderr[-300:]))
+        if not os.path.exists(out3):
+            continue
+        c3 = cards(out3)
+        text3 = Path(out3).read_text(errors="replace")
+        check("  발열 카드 있음 (국부 발열 유지)", c3.get("LOAD_HEAT_GENERATION_SET_SOLID", 0) == 1, str(c3.get("LOAD_HEAT_GENERATION_SET_SOLID")))
+        check("  Ambient 경고 없음", "unknown Ambient option" not in r5.stdout, r5.stdout[-200:])
+        if want.startswith("conv"):
+            check("  *BOUNDARY_CONVECTION_SET 2개 (파트별)", c3.get("BOUNDARY_CONVECTION_SET", 0) == 2, str(c3.get("BOUNDARY_CONVECTION_SET")))
+            check("  *SET_SEGMENT 2개", c3.get("SET_SEGMENT_TITLE", 0) + c3.get("SET_SEGMENT", 0) == 2, str(c3))
+            card2 = [ln for ln in text3.splitlines()
+                     if ln.strip() and len(ln) >= 50 and ln[:10].strip().isdigit()]
+            seg = text3.split("*BOUNDARY_CONVECTION_SET", 1)[1].splitlines()[1:3]
+            fields = seg[1].split()
+            if want == "conv_curve":
+                check("    커브 지정 시 TLCID != 0 이고 TMULT = 1 (곱수)",
+                      len(fields) >= 4 and fields[2] != "0" and float(fields[3]) == 1.0, str(fields))
+                check("    환경온도 커브가 절대값으로 들어감 (25 → -40)",
+                      "Ambient_temp_curve" in text3 and "2.5000000000000e+01" in text3, "커브 없음")
+            else:
+                check("    상수 T∞ 는 TLCID = 0, TMULT = T∞",
+                      len(fields) >= 4 and fields[2] == "0" and float(fields[3]) == -40.0, str(fields))
+        else:
+            check("  *BOUNDARY_TEMPERATURE_SET 2개", c3.get("BOUNDARY_TEMPERATURE_SET", 0) == 2, str(c3.get("BOUNDARY_TEMPERATURE_SET")))
+            check("  대류 카드는 없음", c3.get("BOUNDARY_CONVECTION_SET", 0) == 0, str(c3.get("BOUNDARY_CONVECTION_SET")))
+
+    # Ambient 미지정 시 아무 것도 추가되지 않는다 (기존 동작 불변)
+    d4 = tempfile.mkdtemp(prefix="thchain_noamb_", dir=str(WORK))
+    write_model(os.path.join(d4, "model.k"))
+    r6 = run_kmm(d4, "opt.txt", OPTS["ic1"])
+    out4 = os.path.join(d4, "model_therm.k")
+    if os.path.exists(out4):
+        c4 = cards(out4)
+        check("Ambient 미지정 → 경계조건 카드 0 (기존 동작 불변)",
+              c4.get("BOUNDARY_CONVECTION_SET", 0) == 0 and c4.get("BOUNDARY_TEMPERATURE_SET", 0) == 0, str(c4))
 
     print()
     if FAILS:

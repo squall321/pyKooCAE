@@ -17,7 +17,7 @@
 - [x] DynamicRelaxation/dynaintoinitial.txt 작성 (ThermalSet.k 기준)
 - [x] KMM DYNAIN_TO_INITIAL 로 실행 가능한 내용인지 직접 실행 확인
 - [ ] 러너 비최종 THERM 스텝이 degraded 없이 _dti.k 생성 (소스 레벨)
-- [ ] 시험 갱신·통과
+- [x] 시험 갱신·통과
 
 ## P3. 이월 정책 — 양방향 (B7 + DROP→THERM)
 - [x] THERM→다음: thermal_carry(stress_only | hold_temperature) 구현
@@ -27,10 +27,10 @@
 - [ ] 시험 갱신·통과
 
 ## P4. 환경조건 + 국부 발열 동시 (B3·B4)
-- [ ] KooBoundary 대류/온도 경계조건을 THERMAL_LOAD 파서·러너에 배선
-- [ ] ambient + heat_sources 공존 허용 (thermal_type 배타 해제)
-- [ ] 외피 세그먼트 선택 규칙 확인 (개수·중복)
-- [ ] 덱에 BOUNDARY_CONVECTION + LOAD_HEAT_GENERATION 공존 확인
+- [x] KooBoundary 대류/온도 경계조건을 THERMAL_LOAD 파서·러너에 배선
+- [x] ambient + heat_sources 공존 허용 (thermal_type 배타 해제)
+- [x] 외피 세그먼트 선택 규칙 확인 (개수·중복)
+- [x] 덱에 BOUNDARY_CONVECTION + LOAD_HEAT_GENERATION 공존 확인
 - [ ] 시험 갱신·통과
 
 ## P5. dwell·사이클 (B5)
