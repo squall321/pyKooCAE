@@ -5,6 +5,8 @@
   [1] 기준선   UniformChamber / ICPower pass1 / ICPower pass2 덱의 카드 구성이 기대대로다
   [2] dynain   구조 pass 는 *INTERFACE_SPRINGBACK_LSDYNA 를 남기고, 열해석 pass1 은 남기지 않는다   (P1)
   [3] 이월     THERM Run 폴더에 DynamicRelaxation/dynaintoinitial.txt 가 있고 KMM 으로 실행 가능하다  (P2)
+  [4] 중복     왕복(DYNAIN_TO_INITIAL) 후 늘어난 카드가 없다                                    (P3a)
+  [5] 양방향   THERM→DROP 은 이월 열하중을 정책대로, DROP→THERM 은 이월 초기속도를 정리한다          (P3b)
 
 P1·P2 가 구현되기 전에는 [2]·[3] 이 실패한다 — 그게 이 시험의 목적이다.
 """
@@ -100,6 +102,32 @@ PartCTE
 2,2.6e-06
 EndPartCTE""",
 }
+
+
+DROP_OPT = """*Inputfile
+{model}
+*Mode
+DROP_ATTITUDE,1
+**DropAttitude,1
+EulerRolling,0
+EulerPitching,0
+EulerYawing,0
+Height,50
+InitialVelocityX,0
+InitialVelocityY,0
+InitialVelocityZ,0
+InitialAngularVelocityX,0
+InitialAngularVelocityY,0
+InitialAngularVelocityZ,0
+OffsetDistance,0.05
+Density,1.9e-09
+YoungsModulus,24000.0
+PoissonRatio,0.15
+tFinal,0.001
+dt,0.0001{extra}
+**EndDropAttitude
+*End
+"""
 
 
 def run_kmm(workdir, optname, body, run_dir_mode=False):
@@ -229,6 +257,76 @@ def main():
             check("  왕복으로 늘어난 카드 없음 (미해석 raw 이중 출력 방지)", not dup, str(dup))
             check("  Uninterpreted 헤더가 한 번만", dti_deck.read_text(errors="replace").count(
                 "Uninterpreted keywords") <= 1, str(dti_deck.read_text(errors="replace").count("Uninterpreted keywords")))
+
+    print("[5] 양방향 이월 정책 (P3b)")
+    # (a) THERM → DROP : 열 덱을 낙하 입력으로
+    d = tempfile.mkdtemp(prefix="thchain_bidir_", dir=str(WORK))
+    write_model(os.path.join(d, "model.k"))
+    r = run_kmm(d, "opt_therm.txt", OPTS["uniform"])
+    thermed = os.path.join(d, "model_therm.k")
+    check("(a) 열 덱 생성", r.returncode == 0 and os.path.exists(thermed), r.stderr[-200:])
+    if os.path.exists(thermed):
+        c0 = cards(thermed)
+        check("  열 덱에 열하중·램프커브 있음",
+              c0.get("LOAD_THERMAL_VARIABLE", 0) == 1 and c0.get("DEFINE_CURVE_TITLE", 0) >= 1, str(c0))
+        for label, extra, want_load, want_curve in (
+                ("stress_only(기본)", "", 0, 0),
+                ("hold_temperature", "\nThermalCarry,hold_temperature", 1, 1)):
+            Path(d, "opt_drop.txt").write_text(DROP_OPT.format(model="model_therm.k", extra=extra))
+            out = os.path.join(d, "model_therm_drop.k")
+            if os.path.exists(out):
+                os.remove(out)
+            r2 = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt_drop.txt"], cwd=d,
+                                capture_output=True, text=True, timeout=900)
+            check(f"  {label}: 낙하 덱 생성", r2.returncode == 0 and os.path.exists(out),
+                  (r2.stdout[-250:] + r2.stderr[-250:]))
+            if not os.path.exists(out):
+                continue
+            c1 = cards(out)
+            body = Path(out).read_text(errors="replace")
+            check(f"    열하중 {want_load}개", c1.get("LOAD_THERMAL_VARIABLE", 0) == want_load,
+                  str(c1.get("LOAD_THERMAL_VARIABLE")))
+            check(f"    ThermLoad 램프커브 {want_curve}개", body.count("ThermLoad_temp_curve") == want_curve,
+                  str(body.count("ThermLoad_temp_curve")))
+            check("    CTE 카드는 그대로 (2개)", c1.get("MAT_ADD_THERMAL_EXPANSION", 0) == 2,
+                  str(c1.get("MAT_ADD_THERMAL_EXPANSION")))
+            check("    낙하 초기속도 있음", c1.get("INITIAL_VELOCITY", 0) == 1, str(c1.get("INITIAL_VELOCITY")))
+            if want_curve:
+                # 제목 다음 줄은 커브 헤더(LCID/SIDR/SFA…)이고 그 뒤가 (시간, 값) 점들이다
+                seg = body.split("ThermLoad_temp_curve", 1)[1].splitlines()[2:6]
+                pts = []
+                for ln in seg:
+                    f = ln.split()
+                    if len(f) == 2 and all(re.match(r"^-?\d+\.\d+e[+-]\d+$", x) for x in f):
+                        pts.append(float(f[1]))
+                check("    커브가 평탄화됨 (값이 모두 같음)", len(pts) >= 2 and len(set(pts)) == 1, str(pts))
+
+    # (b) DROP → THERM : 낙하 덱을 열 입력으로
+    d2 = tempfile.mkdtemp(prefix="thchain_bidir2_", dir=str(WORK))
+    write_model(os.path.join(d2, "model.k"))
+    Path(d2, "opt_drop.txt").write_text(DROP_OPT.format(model="model.k", extra=""))
+    r3 = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt_drop.txt"], cwd=d2,
+                        capture_output=True, text=True, timeout=900)
+    dropped = os.path.join(d2, "model_drop.k")
+    check("(b) 낙하 덱 생성", r3.returncode == 0 and os.path.exists(dropped), r3.stderr[-200:])
+    if os.path.exists(dropped):
+        cd_ = cards(dropped)
+        check("  낙하 덱에 초기속도·springback 있음",
+              cd_.get("INITIAL_VELOCITY", 0) == 1 and cd_.get("INTERFACE_SPRINGBACK_LSDYNA", 0) == 1, str(cd_))
+        body = OPTS["uniform"]
+        Path(d2, "opt_therm.txt").write_text(
+            "\n".join(["*Inputfile", "model_drop.k", "*Mode", "THERMAL_LOAD,1", "**ThermalLoad,1",
+                        body, "**EndThermalLoad", "*End"]) + "\n")
+        r4 = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt_therm.txt"], cwd=d2,
+                            capture_output=True, text=True, timeout=900)
+        out2 = os.path.join(d2, "model_drop_therm.k")
+        check("  열 덱 생성", r4.returncode == 0 and os.path.exists(out2), (r4.stdout[-250:] + r4.stderr[-250:]))
+        if os.path.exists(out2):
+            c2 = cards(out2)
+            check("    이월 초기속도 제거됨", c2.get("INITIAL_VELOCITY", 0) == 0, str(c2.get("INITIAL_VELOCITY")))
+            check("    springback 은 1개 (중복 추가 안 함)",
+                  c2.get("INTERFACE_SPRINGBACK_LSDYNA", 0) == 1, str(c2.get("INTERFACE_SPRINGBACK_LSDYNA")))
+            check("    열하중 적용됨", c2.get("LOAD_THERMAL_VARIABLE", 0) == 1, str(c2.get("LOAD_THERMAL_VARIABLE")))
 
     print()
     if FAILS:

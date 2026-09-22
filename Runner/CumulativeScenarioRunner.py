@@ -1744,6 +1744,10 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}{gravity_block}{dr
                 if "mpp_d" not in _sif and "_d.sif" not in _sif:
                     print(f"⚠ [THERM] thermal solver 는 배정밀 SIF(_mpp_d.sif) 필수 — 현재: {_sif or '(미설정)'}")
 
+            # 이월된 초기속도 제거 여부 (DROP→THERM). 미지정이면 줄 없음 → KMM 기본 True
+            _rcv = _therm_get("remove_carried_velocity", None)
+            carried_vel_block = "" if _rcv is None else f"\nRemoveCarriedVelocity,{bool(_rcv)}"
+
             # DTMIN 발산 자동종료 — 구조 pass·비-ICPower만. ICPower 열해석 pass1(SOLN=1)은
             # explicit dt 붕괴 개념이 없어 제외(안정화된 thermal 2-pass 보호). 미지정 시 "" (회귀 0)
             from Runner.StepConfigBuilder import build_dtmin_line
@@ -1761,7 +1765,7 @@ OffsetDistance,{impact_params.get('offset_distance', 0.00001)}{gravity_block}{dr
 {preserve_block}*Mode
 THERMAL_LOAD,1
 **ThermalLoad,1
-ThermalType,{thermal_type}
+ThermalType,{thermal_type}{carried_vel_block}
 BaseTempC,{base_temp}
 TargetTempC,{target_temp}
 RampTimeS,{ramp_time}

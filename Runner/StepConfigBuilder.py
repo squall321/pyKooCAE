@@ -128,6 +128,9 @@ def build_drop_attitude_config(
     sim_height = sim_params.get("height", 1500)            # mm
     # 자유낙하 g (모델 단위). 없으면 KMM 이 모델 재질 밀도로 단위계를 판정한다
     gravity_line = f"\nGravity,{sim_params['gravity']}" if sim_params.get("gravity") else ""
+    # 이월된 열하중 정책 (THERM→DROP). 미지정이면 줄을 넣지 않는다 → KMM 기본 stress_only
+    _tc = sim_params.get("thermal_carry")
+    thermal_carry_line = f"\nThermalCarry,{_tc}" if _tc else ""
     offset_distance = sim_params.get("offset_distance", 0.05)
 
     # drop_surface 설정
@@ -262,7 +265,7 @@ InitialVelocityZ,0
 InitialAngularVelocityX,0
 InitialAngularVelocityY,0
 InitialAngularVelocityZ,0
-OffsetDistance,{offset_distance}{gravity_line}
+OffsetDistance,{offset_distance}{gravity_line}{thermal_carry_line}
 Density,{density}
 YoungsModulus,{youngs_modulus}
 PoissonRatio,{poisson_ratio}

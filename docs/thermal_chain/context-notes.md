@@ -45,3 +45,31 @@ UniformChamber 와 ICPower `Phase=structural` 에만 넣는다. pass1 에 들어
 - 보강: `KooRawKeywordDedup.filter_duplicate_raw_blocks` 신설 — 매니저가 같은 **내용**을 이미 썼으면 raw 를 건너뛰고,
   내용이 다르면 보존한다. 공유 writer 와 KooKFileMerger 양쪽에 적용(이름이 아니라 내용 기준이라 유실 위험 없음).
 - 회귀: DROP·IMPACT 덱 바이트 동일, 기존 시험 3종 통과, 왕복 후 늘어난 카드 0(시험 [4] 로 고정).
+
+## P3b 완료 — 양방향 이월 정책 (2026-09-22)
+
+### 재임포트 시 카드가 어디로 들어오는지 (실측, 중요)
+| 카드 | 재임포트 위치 | interpreted |
+|---|---|---|
+| `*LOAD_THERMAL_VARIABLE` | **raw 블록만** | False |
+| `*MAT_ADD_THERMAL_EXPANSION` | **raw 블록만** | False |
+| `*DEFINE_CURVE_TITLE` | defineManager (이름 `ThermLoad_temp_curve`) | True |
+| `*INITIAL_VELOCITY` | initialManager.inits | True |
+| `*INTERFACE_SPRINGBACK_LSDYNA` | additionalManager.interfaces | True |
+🔴 그래서 열하중 제거는 **매니저만 보면 안 되고 raw 딕트도 지워야** 한다. 첫 구현이 이것 때문에 무동작이었다.
+
+### 구현
+- `_ApplyThermalCarryPolicy(option, context)` — DropAttitude·DropWeightImpactTest 진입부에서 호출.
+  `ThermalCarry` = `stress_only`(기본, 열하중 raw 블록 + 램프 커브 제거) | `hold_temperature`(커브를 마지막 값으로 평탄화).
+  CTE 카드는 양쪽 모두 남긴다(온도 하중이 없으면 무해하고, 변경을 최소화).
+- `_RemoveCarriedDynamicLoads(option, context)` — ThermalLoad 진입부. `RemoveCarriedVelocity`(기본 True)면
+  `KooInitialVelocity*` 를 전부 제거한다(열 스텝은 준정적이라 초기속도가 남으면 모델이 날아간다).
+- P1 springback 발행을 **멱등**으로 바꿨다. 이월 덱에는 이미 springback 이 있어 그대로 추가하면 두 장이 됐다(실측 PSID 1·3).
+- 러너 배선: `simulation_params.thermal_carry` → DROP/IMPACT 설정의 `ThermalCarry` 줄,
+  `simulation_params.thermal.remove_carried_velocity` → THERM 설정의 `RemoveCarriedVelocity` 줄.
+  🔴 둘 다 **미지정 시 줄을 넣지 않는다** → 기존 출력 바이트 불변(시험으로 고정).
+
+### 안 한 것과 이유
+- 낙하판 파트·접촉 제거는 넣지 않았다. THERMAL_LOAD 가 어느 파트가 바닥판인지 신뢰성 있게 구분할 수 없고
+  (제목이 비어 있다), 필요하면 `DYNAIN_TO_INITIAL` 의 기존 옵션 `RemovePartIDList`·`RemoveContactIDList` 로 지정할 수 있다.
+  합성 dynain 왕복에서는 바닥판이 이미 빠졌으나 그 동작은 dynain 내용에 의존하므로 실 dynain 으로 재확인이 필요하다(P7 e2e 항목).

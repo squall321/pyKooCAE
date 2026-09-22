@@ -1084,6 +1084,8 @@ class KooMeshModifier(KooSimulationGenerator):
                     curOptions["DT"] = 1.0e-6
                     curOptions["TFinal"] = 0.0
                     curOptions["DynainDynamicRelaxation"] = False
+                    # 이전 열 스텝에서 이월된 열하중 처리 — stress_only(기본) | hold_temperature
+                    curOptions["ThermalCarry"] = "stress_only"
                     curOptions["DynainDynamicRelaxationNrcyck"] = 0
                     curOptions["DynainDynamicRelaxationTol"] = 0.0
                     curOptions["DynainDynamicRelaxationFctr"] = 0.0
@@ -1263,6 +1265,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "dynaindynamicrelaxationterm" in line.lower():
                             svector = line.split(",")
                             curOptions["DynainDynamicRelaxationTerm"] = KooDynaFloat(svector[1])
+                        elif line.split(",")[0].strip().lower() == "thermalcarry":
+                            # 이월된 열하중 정책 (stress_only | hold_temperature)
+                            curOptions["ThermalCarry"] = line.split(",")[1].strip().lower()
                         elif "dynaindynamicrelaxation" in line.lower():
                             # 주의: 위 세부키들이 이 generic 브랜치보다 먼저 와야 함(substring)
                             svector = line.split(",")
@@ -1459,6 +1464,8 @@ class KooMeshModifier(KooSimulationGenerator):
                     curOptions["DropSurface"] = ["Plane", 0.0, 0.0, 0.0, 10, 10, 10]
                     curOptions["DeformableToRigid"] = False
                     curOptions["DynainDynamicRelaxation"] = False
+                    # 이전 열 스텝에서 이월된 열하중 처리 — stress_only(기본) | hold_temperature
+                    curOptions["ThermalCarry"] = "stress_only"
                     curOptions["DynainDynamicRelaxationNrcyck"] = 0
                     curOptions["DynainDynamicRelaxationTol"] = 0.0
                     curOptions["DynainDynamicRelaxationFctr"] = 0.0
@@ -1661,6 +1668,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "dynaindynamicrelaxationterm" in line.lower():
                             svector = line.split(",")
                             curOptions["DynainDynamicRelaxationTerm"] = KooDynaFloat(svector[1])
+                        elif line.split(",")[0].strip().lower() == "thermalcarry":
+                            # 이월된 열하중 정책 (stress_only | hold_temperature)
+                            curOptions["ThermalCarry"] = line.split(",")[1].strip().lower()
                         elif "dynaindynamicrelaxation" in line.lower():
                             # 주의: 위 세부키들이 이 generic 브랜치보다 먼저 와야 함(substring)
                             svector = line.split(",")
@@ -2523,6 +2533,8 @@ class KooMeshModifier(KooSimulationGenerator):
                         "materials": {},      # {pid: {rho,hc,tc,(cte)}}
                         "heat_sources": [],   # [{part,power_W,volume_mm3}]
                         "timestep": {},       # {its,tmax,dtemp}
+                        # 이전 낙하 스텝에서 이월된 동적 하중 제거 (열 스텝은 정적)
+                        "RemoveCarriedVelocity": True,
                     }
                     in_curve = False
                     in_cte = False
@@ -2607,6 +2619,9 @@ class KooMeshModifier(KooSimulationGenerator):
                             curOptions["DTMIN"] = float(line.split(",", 1)[1].strip())
                         elif low.startswith("defaultcte,"):
                             curOptions["DefaultCTE"] = float(line.split(",", 1)[1].strip())
+                        elif low.startswith("removecarriedvelocity,"):
+                            # 이월된 초기속도 제거 여부 (열 스텝은 정적)
+                            curOptions["RemoveCarriedVelocity"] = line.split(",", 1)[1].strip().lower() != "false"
                         elif low.startswith("phase,"):
                             curOptions["Phase"] = line.split(",", 1)[1].strip()
                         elif low.startswith("analysistype,"):

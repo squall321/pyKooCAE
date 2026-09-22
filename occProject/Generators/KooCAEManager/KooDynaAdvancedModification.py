@@ -2118,6 +2118,8 @@ class KooDynaAdvancedModification:
         return meshSize
 
     def DropAttitude(self, option, filePath):
+        # 이전 열 스텝에서 이월된 열하중 처리 (THERM→DROP 방향). 열하중이 없으면 무동작
+        self._ApplyThermalCarryPolicy(option, "DROP_ATTITUDE")
         fileName = os.path.basename(filePath)
         fall_g = self._ResolveFallGravity(option, "DROP_ATTITUDE")
         RxList = option["EulerRolling"]
@@ -3727,6 +3729,8 @@ class KooDynaAdvancedModification:
     
             
     def DropWeightImpactTest(self, option, filePath):
+        # 이전 열 스텝에서 이월된 열하중 처리 (THERM→DROP 방향). 열하중이 없으면 무동작
+        self._ApplyThermalCarryPolicy(option, "DROP_WEIGHT_IMPACT_TEST")
         fall_g = self._ResolveFallGravity(option, "DROP_WEIGHT_IMPACT_TEST")
         
         if "TFinal" in option:
@@ -5263,6 +5267,82 @@ class KooDynaAdvancedModification:
             # runDirectoryMode 비활성: 입력 파일 옆에 _vib.k (standalone 호환)
             self.WriteModifiedFile(filePath, "_vib", False)
 
+    def _ApplyThermalCarryPolicy(self, option, context):
+        """이전 열 스텝에서 이월된 열하중을 어떻게 다룰지 정한다 (낙하·충격 스텝 진입 시).
+
+        열 스텝의 _dti.k 는 *LOAD_THERMAL_VARIABLE 과 램프 커브를 그대로 들고 온다. 그대로 두면
+        낙하 t=0 에 기준온도로 되돌아갔다가 다시 승온해 낙하 중에 온도가 스윕된다.
+          stress_only(기본)  : 열하중과 램프 커브를 지운다 → 잔류응력만 이월 (표준)
+          hold_temperature  : 램프 커브를 마지막 값으로 평탄화 → 낙하 내내 그 온도 유지
+
+        🔴 재임포트 시 *LOAD_THERMAL_VARIABLE 은 매니저가 아니라 raw 블록으로 들어온다(실측).
+        커브는 defineManager 에 들어온다. 그래서 양쪽을 함께 다룬다.
+        열하중이 없으면 아무 것도 하지 않는다(기존 낙하 입력 불변)."""
+        THERMAL_LOAD_KEYWORDS = ("LOAD_THERMAL_VARIABLE", "LOAD_THERMAL_D3PLOT")
+        CURVE_NAME = "ThermLoad_temp_curve"
+        policy = str(option.get("ThermalCarry", "stress_only")).strip().lower()
+        loadMan = self.dynaImporter.loadManager
+        defineMan = self.dynaImporter.defineManager
+        rawDict = getattr(self.dynaImporter.dynaManager, "_raw_keyword_dict", None) or {}
+
+        rawKeys = [k for k in THERMAL_LOAD_KEYWORDS if rawDict.get(k)]
+        managerLoads = [l for l in getattr(loadMan, "bodyLoads", [])
+                        if type(l).__name__ in ("KooLoadThermalVariable", "KooLoadThermalD3plot")]
+        if not rawKeys and not managerLoads:
+            return
+
+        curves = [(lcid, d) for lcid, d in getattr(defineMan, "defines", {}).items()
+                  if CURVE_NAME in str(getattr(d, "name", ""))]
+
+        if policy == "hold_temperature":
+            if not curves:
+                print(f"WARNING {context}: hold_temperature — '{CURVE_NAME}' 커브가 없어 이월 열하중을 그대로 둔다")
+                return
+            for lcid, curve in curves:
+                a1 = getattr(curve, "a1", None)
+                o1 = getattr(curve, "o1", None)
+                if not a1 or not o1:
+                    print(f"WARNING {context}: hold_temperature — LCID {lcid} 커브가 비어 건너뛴다")
+                    continue
+                lastVal, lastTime = o1[-1], a1[-1]
+                curve.a1 = [0.0, lastTime]
+                curve.o1 = [lastVal, lastVal]
+                print(f"  → {context}: 이월 열하중 유지 (LCID {lcid} 커브를 {lastVal} 로 평탄화)")
+            return
+
+        # stress_only — 열하중(raw·매니저)과 램프 커브 제거
+        removedLoads = 0
+        for k in rawKeys:
+            removedLoads += len(rawDict[k])
+            del rawDict[k]
+        for l in managerLoads:
+            loadMan.bodyLoads.remove(l)
+            removedLoads += 1
+        removedCurves = 0
+        for lcid, _ in curves:
+            try:
+                defineMan.RemoveDefinebyID(lcid)
+                removedCurves += 1
+            except Exception:
+                pass
+        print(f"  → {context}: 이월 열하중 제거 (하중 {removedLoads}개, 램프 커브 {removedCurves}개) — 잔류응력만 이월")
+
+    def _RemoveCarriedDynamicLoads(self, option, context):
+        """이전 낙하·충격 스텝에서 이월된 동적 하중을 제거한다 (열 스텝 진입 시).
+
+        열 스텝은 준정적이라 초기속도가 남아 있으면 모델이 날아간다.
+        RemoveCarriedVelocity=False 면 건너뛴다. 없으면 아무 것도 하지 않는다."""
+        if not option.get("RemoveCarriedVelocity", True):
+            return
+        initMan = self.dynaImporter.initialManager
+        inits = getattr(initMan, "inits", {})
+        velKeys = [k for k, v in inits.items()
+                   if type(v).__name__.startswith("KooInitialVelocity")]
+        for k in velKeys:
+            del inits[k]
+        if velKeys:
+            print(f"  → {context}: 이월 초기속도 제거 ({len(velKeys)}개) — 열 스텝은 정적")
+
     def ThermalLoad(self, option, filePath):
         """고온 열전달·열응력 하중 (P1 T1: DEFINE_CURVE + LOAD_THERMAL_VARIABLE + CTE).
 
@@ -5270,6 +5350,9 @@ class KooDynaAdvancedModification:
         T1(균일온도)은 explicit 구조해석 (implicit는 MPP_d 빌드 MPI_Comm_dup 결함).
         double precision SIF 필수 (scenario.json environment.lsdyna_apptainer_sif = *_mpp_d.sif).
         """
+        # ①-a 이월된 동적 하중 제거 (DROP→THERM 방향)
+        self._RemoveCarriedDynamicLoads(option, "THERMAL_LOAD")
+
         # ① 열하중 카드 적용 (메모리 모델 수정)
         from KooCAEManager.KooThermalLoad import apply_thermal_load
         apply_thermal_load(self.dynaImporter, option)
@@ -5280,11 +5363,21 @@ class KooDynaAdvancedModification:
         isThermalSolvePass = (str(option.get("ThermalType", "UniformChamber")) == "ICPower"
                               and str(option.get("Phase", "thermal")).lower() != "structural")
         if not isThermalSolvePass:
-            partSet : PartSet = self.dynaImporter.partManager.CreatePartSet(name="Thermal Springback Set")
-            for pid, part in self.dynaImporter.partManager.parts.items():
-                partSet.AddPart(pid)
-            self.dynaImporter.additionalManager.CreateInterfaceSpringbackLSDyna(partSet.psid)
-            print(f"  → *INTERFACE_SPRINGBACK_LSDYNA PSID={partSet.psid} ({len(self.dynaImporter.partManager.parts)} 파트) — dynain 산출")
+            # 이미 있으면 더하지 않는다 — 이월 덱(낙하 스텝 산출)에는 springback 카드가 들어 있어
+            # 그대로 추가하면 두 장이 되고 LS-DYNA 가 dynain 을 두 번 쓰게 된다.
+            addMan = self.dynaImporter.additionalManager
+            hasSpringback = any(type(v).__name__ == "KooInterfaceSpringbackLSDyna"
+                                for v in getattr(addMan, "interfaces", {}).values())
+            rawDict = getattr(self.dynaImporter.dynaManager, "_raw_keyword_dict", None) or {}
+            hasSpringback = hasSpringback or any("SPRINGBACK" in k for k in rawDict)
+            if hasSpringback:
+                print("  → *INTERFACE_SPRINGBACK_LSDYNA 이미 있음 (이월 덱) — 추가하지 않는다")
+            else:
+                partSet : PartSet = self.dynaImporter.partManager.CreatePartSet(name="Thermal Springback Set")
+                for pid, part in self.dynaImporter.partManager.parts.items():
+                    partSet.AddPart(pid)
+                addMan.CreateInterfaceSpringbackLSDyna(partSet.psid)
+                print(f"  → *INTERFACE_SPRINGBACK_LSDYNA PSID={partSet.psid} ({len(self.dynaImporter.partManager.parts)} 파트) — dynain 산출")
 
         # ② explicit control + database (DROP/IMPACT/VIB 결)
         tFinal = float(option.get("RampTimeS", 1.0e-3))
