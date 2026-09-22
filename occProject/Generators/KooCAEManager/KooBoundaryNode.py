@@ -663,10 +663,13 @@ class KooBoundaryConvectionSet(KooBoundaryNode):
         return getattr(self.ssid, "sid", self.ssid)
 
     def GetDynaKeyword(self, startID=0):
+        # 필드폭 10 고정. 실수는 검증된 덱(Test_ICThermal/ThermalSet.k) 관례와 같은 %10.3e
         keywords = "*BOUNDARY_CONVECTION_SET\n"
+        keywords += "$#    ssid\n"
         keywords += format(self._ssid(), ">10") + "\n"
-        keywords += (format(self.hlcid, ">10") + format(self.h, ">10.4g")
-                     + format(self.tlcid, ">10") + format(self.tinf, ">10.4g")
+        keywords += "$#   hlcid     hmult     tlcid     tmult       loc\n"
+        keywords += (format(self.hlcid, ">10") + format(self.h, ">10.3e")
+                     + format(self.tlcid, ">10") + format(self.tinf, ">10.3e")
                      + format(self.loc, ">10") + "\n")
         return keywords
 
@@ -694,9 +697,11 @@ class KooBoundaryTemperatureSet(KooBoundaryNode):
         return getattr(self.nsid, "sid", self.nsid)
 
     def GetDynaKeyword(self, startID=0):
+        # 필드폭 10 고정. 실수는 %10.3e (검증된 덱 관례)
         keywords = "*BOUNDARY_TEMPERATURE_SET\n"
+        keywords += "$#    nsid      lcid     cmult       loc\n"
         keywords += (format(self._nsid(), ">10") + format(self.lcid, ">10")
-                     + format(self.temp, ">10.4g") + format(self.loc, ">10") + "\n")
+                     + format(self.temp, ">10.3e") + format(self.loc, ">10") + "\n")
         return keywords
 
     def WriteStreamDynaKeyword(self, stream, startID=0):

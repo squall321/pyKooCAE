@@ -371,10 +371,18 @@ EndAmbient"""
         if want.startswith("conv"):
             check("  *BOUNDARY_CONVECTION_SET 2개 (파트별)", c3.get("BOUNDARY_CONVECTION_SET", 0) == 2, str(c3.get("BOUNDARY_CONVECTION_SET")))
             check("  *SET_SEGMENT 2개", c3.get("SET_SEGMENT_TITLE", 0) + c3.get("SET_SEGMENT", 0) == 2, str(c3))
-            card2 = [ln for ln in text3.splitlines()
-                     if ln.strip() and len(ln) >= 50 and ln[:10].strip().isdigit()]
-            seg = text3.split("*BOUNDARY_CONVECTION_SET", 1)[1].splitlines()[1:3]
-            fields = seg[1].split()
+            # 주석($#)·빈 줄을 빼고 데이터 줄만 — [0]=SSID, [1]=HLCID/HMULT/TLCID/TMULT/LOC
+            seg = [ln for ln in text3.split("*BOUNDARY_CONVECTION_SET", 1)[1].splitlines()
+                   if ln.strip() and not ln.startswith("$") and not ln.startswith("*")][:2]
+            # 🔴 고정폭 카드다 — 공백으로 자르면 "0-4.000e+01" 처럼 붙어 나온다. 10칸씩 자른다
+            fields = [seg[1][i:i + 10].strip() for i in range(0, 50, 10)]
+            # 포맷 — 검증된 덱(Test_ICThermal) 관례: 필드폭 10 고정, 실수는 %10.3e
+            data = seg[1]
+            widths = [len(data[i:i + 10]) for i in range(0, len(data.rstrip()), 10)]
+            check("    카드 필드폭이 모두 10칸", widths == [10] * 5, str(widths))
+            check("    실수 필드가 %10.3e 형식",
+                  all(re.match(r"^-?\d\.\d{3}e[+-]\d{2}$", fields[i]) for i in (1, 3)), str(fields))
+            check("    SET_SEGMENT solver 가 MECH (검증된 덱 값)", "      MECH" in text3, "MECH 없음")
             if want == "conv_curve":
                 check("    커브 지정 시 TLCID != 0 이고 TMULT = 1 (곱수)",
                       len(fields) >= 4 and fields[2] != "0" and float(fields[3]) == 1.0, str(fields))

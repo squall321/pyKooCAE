@@ -157,7 +157,7 @@ def apply_ambient_boundary(dynaImporter, option):
                     nodes[nid] = nid
             nsetMan = dynaImporter.nodeSetManager
             nset = nsetMan.CreateNodeSetwithNodes(
-                f"Ambient_PID{pid}", 0.0, 0.0, 0.0, 0.0, "THERMAL", 0,
+                f"Ambient_PID{pid}", 0.0, 0.0, 0.0, 0.0, "MECH", 0,
                 [partMan.parts[pid].nodeManager.nodes[nid] for nid in nodes
                  if nid in partMan.parts[pid].nodeManager.nodes])
             bndMan.CreateBoundaryTemperatureSet(nset, temp=tmult, lcid=tlcid,
@@ -169,7 +169,8 @@ def apply_ambient_boundary(dynaImporter, option):
             if h <= 0.0:
                 print(f"WARNING [AMBIENT]: PID {pid} 대류 h 가 0 이하 — 건너뛴다 (h 를 지정할 것)")
                 continue
-            segSet = segMan.CreateSegmentSet(solver="THERMAL", name=f"Ambient_PID{pid}")
+            # solver 는 MECH — 검증된 덱(*SET_SEGMENT)이 쓰는 값이다. THERMAL 은 이 카드의 값 공간에 없다
+            segSet = segMan.CreateSegmentSet(solver="MECH", name=f"Ambient_PID{pid}")
             segSet.AddSegments(segments)
             bndMan.CreateBoundaryConvectionSet(segSet, h=h, tinf=tmult, tlcid=tlcid,
                                                name=f"AmbientConv_PID{pid}")

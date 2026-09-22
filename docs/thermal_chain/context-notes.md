@@ -92,3 +92,11 @@ UniformChamber 와 ICPower `Phase=structural` 에만 넣는다. pass1 에 들어
 
 검증: 대류+커브 / 대류 상수 / 규정온도 3경로 모두 덱에 정확히 실림, 발열 카드와 공존,
 Ambient 미지정 시 경계조건 0, DROP·IMPACT 덱 바이트 동일.
+
+## 포맷 정합 (2026-09-22) — 실제로 돌았던 덱 기준
+LS-DYNA 라이선스가 없어 실행 검증을 못 하므로, **Normal termination 기록이 있는 덱**
+(`/data/koopark/Test_ICThermal/output/Run_20260707_030819_39575c/ThermalSet.k`)의 관례에 맞췄다.
+- 실수는 `%10.3e`(예 ` 2.330e-09`), 정수는 `%10d`, 카드마다 `$#` 헤더 주석.
+- 🔴 `*SET_SEGMENT` 의 SOLVER 는 **MECH** — 검증된 덱이 쓰는 값이다. 처음에 `THERMAL` 을 줬는데
+  그 값은 실제 덱·규격 값 공간에 없다. 노드 세트도 같은 이유로 MECH.
+- 🔴 고정폭이라 값이 붙어 나오는 게 정상이다(`0-4.000e+01`). 시험도 `split()` 대신 10칸 슬라이스로 검사한다.
