@@ -239,6 +239,18 @@ class CumulativeDesigner:
         if not conditions:
             conditions = ["THERM"]
 
+        # 낙하·충격 스텝이 섞여 있고 angle_source 가 있으면 열 조건축 × 낙하 각도축으로 DOE 를 만든다.
+        # (angle_source 가 없으면 기존 동작 — 전 스텝 각도 0/0/0)
+        drop_modes = (SimulationMode.DROP, SimulationMode.IMPACT)
+        has_drop_step = any(m in drop_modes for m in mode_sequence)
+        angle_source_cfg = scenario_cfg.get("angle_source", {}) or {}
+        cross_angles = []
+        if has_drop_step and angle_source_cfg:
+            cross_angles = self._parse_angle_source(angle_source_cfg)
+            if cross_angles:
+                print(f"  [THERM] 낙하 스텝이 있어 각도축과 교차 — 조건 {len(conditions)} x 각도 {len(cross_angles)} "
+                      f"= DOE {len(conditions) * len(cross_angles)}")
+
         # 파트 이동 축과 곱하기 (이동 축 없으면 무변경)
         pairs = self._part_move_pairs(len(conditions))
         if self._part_moves:
@@ -248,20 +260,34 @@ class CumulativeDesigner:
                 self._doe_part_moves[doe_idx] = move
             conditions = expanded
 
+        # DOE 목록 — (조건, 각도) 쌍. 각도가 없으면 조건만 (기존 동작)
+        if cross_angles:
+            doe_list = [(cond, ang) for cond in conditions for ang in cross_angles]
+        else:
+            doe_list = [(cond, None) for cond in conditions]
+
         steps = []
-        for doe_idx, cond in enumerate(conditions):
+        for doe_idx, (cond, ang) in enumerate(doe_list):
+            # ang = (name, roll, pitch, yaw)
             for i in range(num_steps):
                 step_number = i + 1
                 template = templates[i]
                 mode = mode_sequence[i]
+                # 낙하·충격 스텝에만 각도를 준다. 열 스텝은 자세가 뜻이 없으므로 0/0/0
+                if ang is not None and mode in drop_modes:
+                    a_name, a_roll, a_pitch, a_yaw = ang[0], ang[1], ang[2], ang[3]
+                    step_name = f"{cond}__{a_name}"
+                else:
+                    a_roll = a_pitch = a_yaw = 0.0
+                    step_name = f"{cond}__{ang[0]}" if ang is not None else str(cond)
                 step_cfg = StepConfig(
                     step_number=step_number,
                     template=template.value,
                     mode=mode.value,
-                    angle_name=str(cond),       # condition 식별자를 angle_name에 보존
-                    angle_roll=0.0,
-                    angle_pitch=0.0,
-                    angle_yaw=0.0,
+                    angle_name=step_name,       # condition(+각도) 식별자를 angle_name에 보존
+                    angle_roll=a_roll,
+                    angle_pitch=a_pitch,
+                    angle_yaw=a_yaw,
                     input_file=f"Step{step_number:03d}.k",
                     output_dir=f"Step{step_number:03d}",
                     dynain_source=f"Step{step_number-1:03d}/dynain" if step_number > 1 else None,

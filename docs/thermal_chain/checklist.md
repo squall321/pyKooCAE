@@ -31,7 +31,7 @@
 - [x] ambient + heat_sources 공존 허용 (thermal_type 배타 해제)
 - [x] 외피 세그먼트 선택 규칙 확인 (개수·중복)
 - [x] 덱에 BOUNDARY_CONVECTION + LOAD_HEAT_GENERATION 공존 확인
-- [ ] 시험 갱신·통과
+- [x] 시험 갱신·통과
 
 ## P5. dwell·사이클 (B5)
 - [x] thermal.temp_curve 직렬화
@@ -40,8 +40,8 @@
 - [ ] 시험 갱신·통과
 
 ## P6. 조건축 × 각도축 (B6)
-- [ ] Designer 분기 수정 — THERM 은 조건, DROP 은 각도
-- [ ] THERM-only 시나리오 기존 동작 불변 확인
+- [x] Designer 분기 수정 — THERM 은 조건, DROP 은 각도
+- [x] THERM-only 시나리오 기존 동작 불변 확인
 - [ ] 시험 갱신·통과
 
 ## P7. 통합·배포

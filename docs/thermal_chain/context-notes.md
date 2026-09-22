@@ -109,3 +109,11 @@ LS-DYNA 라이선스가 없어 실행 검증을 못 하므로, **Normal terminat
 - 러너: `simulation_params.thermal.temp_curve`·`temp_curve_mode`·`tFinal` → 옵션 파일 블록. 미지정 시 줄 없음.
 - KMM help 카탈로그의 TempCurve 설명을 정정(종축 의미를 TempCurveMode 가 정한다고 명시).
 - 검증: ENDTIM=0.01(dwell 포함), 커브 절대온도 3점, factor 기본 경로 불변. DROP 덱 바이트 동일, ICPower pass1 골든 동일.
+
+## P6 완료 — 열 조건축 × 낙하 각도축 (2026-09-22)
+`_process_thermal_scenario` 가 `angle_source` 를 통째로 버려 낙하 자세가 0/0/0 이던 것을 고쳤다.
+- 낙하·충격 스텝이 시퀀스에 있고 `angle_source` 가 있을 때만 교차한다 → DOE = 조건 × 각도.
+  각도는 **낙하·충격 스텝에만** 넣고 열 스텝은 0/0/0 (열 스텝에서 자세는 뜻이 없다).
+- DOE 이름은 `조건__각도`(예 COLD__P0001) 로 구분한다.
+- 조건 2 × 각도 3 = DOE 6 실측. 각도 미지정이면 기존 동작(DOE = 조건, 전 스텝 0).
+- 회귀: DROP-only(각도 3 → DOE 3, 각도 살아 있음), THERM-only(조건 2), THERM-only+각도(낙하 스텝 없으면 교차 안 함) 확인.

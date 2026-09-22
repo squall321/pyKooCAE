@@ -9,9 +9,12 @@
   [5] 양방향   THERM→DROP 은 이월 열하중을 정책대로, DROP→THERM 은 이월 초기속도를 정리한다          (P3b)
   [6] 환경조건  국부 발열과 환경조건(대류·규정온도)을 한 덱에 함께 걸 수 있다                            (P4)
   [7] 프로파일  TempCurveMode(factor|absolute)와 TFinal(dwell) 이 덱에 반영된다                   (P5)
+  [8] DOE      열 조건축 x 낙하 각도축 교차 — 각도는 낙하 스텝에만 들어간다                              (P6)
 
 P1·P2 가 구현되기 전에는 [2]·[3] 이 실패한다 — 그게 이 시험의 목적이다.
 """
+import io
+import json
 import os
 import re
 import subprocess
@@ -459,6 +462,51 @@ EndTempCurve"""
                               abs(float(nxt[:10]) - 0.002) < 1e-12, nxt[:10])
                         break
                 break
+
+    print("[8] 열 조건축 x 낙하 각도축 (P6)")
+    import contextlib
+    sys.path.insert(0, str(ROOT))          # Runner 패키지 (프로젝트 루트)
+    from Runner.CumulativeDesigner import CumulativeDesigner
+
+    def design(angle_points):
+        d7 = tempfile.mkdtemp(prefix="thchain_doe_", dir=str(WORK))
+        write_model(os.path.join(d7, "model.k"))
+        sc = {
+            "project_name": "P6", "base_dir": d7,
+            "environment": {"koomeshmodifier_path": "/data/SmartTwinPreprocessor/bin/KooMeshModifier"},
+            "simulation_params": {"height": 100, "tFinal": 0.001, "dt": 1e-6,
+                                  "thermal": {"thermal_type": "UniformChamber"}},
+            "scenarios": [{"scenario_name": "S", "template": "model.k",
+                           "thermal_conditions": ["COLD", "HOT"],
+                           "cumulative": {"num_steps": 2, "mode_sequence": ["THERM", "DROP"]}}],
+        }
+        if angle_points:
+            sc["scenarios"][0]["angle_source"] = {"source_type": "fibonacci_lattice",
+                                                  "fibonacci_lattice": {"num_points": angle_points}}
+        out = os.path.join(d7, "rc.json")
+        with contextlib.redirect_stdout(io.StringIO()):
+            des = CumulativeDesigner(sc, scenario_dir=d7)
+            des.save_runner_config(des.parse_user_config(), out)
+        return json.load(open(out, encoding="utf-8"))["scenario"]
+
+    sc_cross = design(3)
+    check("각도 지정 → DOE = 조건 2 x 각도 3 = 6", sc_cross["doe_count"] == 6, str(sc_cross["doe_count"]))
+    ang = sc_cross["doe_angles"]
+    therm_zero = all(abs(ang[d]["1"]["roll"]) + abs(ang[d]["1"]["pitch"]) + abs(ang[d]["1"]["yaw"]) == 0
+                     for d in ang)
+    check("  열 스텝(1) 은 자세 0/0/0", therm_zero, str({d: ang[d]["1"] for d in list(ang)[:2]}))
+    drop_nonzero = sum(1 for d in ang
+                       if abs(ang[d]["2"]["roll"]) + abs(ang[d]["2"]["pitch"]) + abs(ang[d]["2"]["yaw"]) > 0)
+    check("  낙하 스텝(2) 에 자세가 들어감 (0 이 아닌 DOE 다수)", drop_nonzero >= 4, str(drop_nonzero))
+    names = {ang[d]["2"]["angle_name"] for d in ang}
+    check("  DOE 이름이 조건__각도 로 구분됨", all("__" in n for n in names) and len(names) == 6, str(sorted(names)[:3]))
+
+    sc_plain = design(None)
+    check("각도 미지정 → 기존 동작 (DOE = 조건 2, 전 스텝 자세 0)",
+          sc_plain["doe_count"] == 2 and all(
+              abs(sc_plain["doe_angles"][d][k]["roll"]) + abs(sc_plain["doe_angles"][d][k]["pitch"]) == 0
+              for d in sc_plain["doe_angles"] for k in sc_plain["doe_angles"][d]),
+          str(sc_plain["doe_count"]))
 
     print()
     if FAILS:
