@@ -24,8 +24,12 @@ def cards(path):
     return out
 
 
+# 배포 바이너리로 돌리려면 KMM_CMD 를 바꿔 끼운다 (노드 e2e 는 SIF 안 바이너리)
+KMM_CMD = [PY, str(GEN / "KooMeshModifier.py")]
+
+
 def run_kmm(workdir, optname):
-    return subprocess.run([PY, str(GEN / "KooMeshModifier.py"), optname], cwd=workdir,
+    return subprocess.run(KMM_CMD + [optname], cwd=workdir,
                           capture_output=True, text=True, timeout=1800)
 
 
@@ -81,8 +85,7 @@ def chain(workdir, steps, verbose=True):
         synth_dynain(deck, run / "Output" / "dynain")
         dti_cfg = run / "DynamicRelaxation" / "dynaintoinitial.txt"
         if dti_cfg.exists():
-            r2 = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "dynaintoinitial.txt"],
-                                cwd=str(run / "DynamicRelaxation"), capture_output=True, text=True, timeout=1800)
+            r2 = run_kmm(str(run / "DynamicRelaxation"), "dynaintoinitial.txt")
             hits = sorted(glob.glob(str(run / "Output" / "*_dti.k")))
             rec["dti"] = hits[0] if hits else None
             rec["dti_rc"] = r2.returncode

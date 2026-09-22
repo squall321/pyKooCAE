@@ -48,6 +48,6 @@
 - [x] 양방향 시나리오 3종 prepare 검증 (THERM→DROP, DROP→THERM, THERM→DROP→THERM)
 - [x] 기존 스위트 전부 통과 (layer_split·fall_gravity·kooremapper_chain_config·cli_help·kam_fixes)
 - [x] DROP·IMPACT 덱 바이트 동일 회귀
-- [ ] 빌드 → SIF → tar → node001 배포
-- [ ] node001 에서 실제 LS-DYNA 완주 (양방향)
-- [ ] 문서·예제 갱신, 메모리 기록
+- [x] 빌드 → SIF v103 → tar → node001 배포
+- [ ] node001 에서 실제 LS-DYNA 완주 (양방향) — 🔴 라이선스 없어 보류. 합성 dynain 체인 e2e 로 대체 검증
+- [x] 문서·예제 갱신, 메모리 기록

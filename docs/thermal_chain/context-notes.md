@@ -131,3 +131,13 @@ DYNAIN_TO_INITIAL → (4) 나온 `_dti.k` 를 다음 스텝 입력으로 쓴다.
 
 검증 결과(시험 [9]): THERM→DROP / DROP→THERM / THERM→DROP→THERM / DROP→DROP 네 경로 모두
 스텝마다 초기응력 이월 O, 방향별 하중 정리 O(열→낙하 열하중 0, 낙하→열 초기속도 0), springback 1장 유지.
+
+## P7 마감 (2026-09-22) — SIF v103
+- 빌드(KMM 05:11 / KooChainRun 05:19) → SIF v103(05:24) → tar `SmartTwinPreprocessor_20260922_v103.tar.gz` → node001(05:24).
+- 배포 바이너리 마커 확인: `_EnsureSpringbackCard`·`apply_ambient_boundary`·`KooBoundaryConvectionSet`·
+  `TempCurveMode`·`_ApplyThermalCarryPolicy` 모두 KMM 바이너리에 존재.
+- node001 e2e(SIF v103, 합성 dynain): THERM→DROP / DROP→THERM / THERM→DROP→THERM 3경로 전부
+  스텝마다 초기응력 이월 O, 낙하→열 초기속도 0, springback 1장 유지.
+- 🔴 **LS-DYNA 실제 완주는 라이선스가 없어 못 했다.** 덱 생성·카드 구성·이월 배관까지가 검증 범위다.
+  라이선스가 생기면 `Examples/thermal_shock_drop/scenario_3·4` 로 실제 솔브를 돌려 확인할 것.
+- 시뮬레이터는 `KMM_CMD` 만 바꾸면 소스/배포 바이너리 양쪽으로 돌릴 수 있다(노드는 SIF 안 바이너리 사용).
