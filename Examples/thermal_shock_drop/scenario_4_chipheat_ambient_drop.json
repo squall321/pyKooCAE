@@ -1,6 +1,6 @@
 {
-  "project_name": "ThermShock_then_Drop",
-  "base_dir": "/data/<사용자>/ThermShock_then_Drop",
+  "project_name": "ChipHeat_Ambient_then_Drop",
+  "base_dir": "/data/<사용자>/ChipHeat_Ambient_then_Drop",
   "environment": {
     "koomeshmodifier_path": "/data/SmartTwinPreprocessor/bin/KooMeshModifier",
     "koochainrun_path": "/data/SmartTwinPreprocessor/bin/KooChainRun",
@@ -44,80 +44,80 @@
       ]
     },
     "thermal": {
-      "thermal_type": "UniformChamber",
-      "base_temp_C": 25,
-      "target_temp_C": -40,
-      "ramp_time_s": 0.002,
+      "thermal_type": "ICPower",
+      "analysis_type": "transient",
+      "unit_system": "SI",
+      "initial_temperature_C": 25,
       "dt": 1e-06,
+      "tFinal": 30.0,
       "default_cte_1_K": 1.8e-05,
       "part_cte": {
         "1": 1.8e-05,
         "2": 2.6e-06
       },
-      "remove_carried_velocity": true,
-      "temp_curve_mode": "absolute",
-      "tFinal": 0.01
+      "materials": {
+        "1": {
+          "rho": 1900,
+          "hc": 1200,
+          "tc": 0.3,
+          "cte": 1.8e-05
+        },
+        "2": {
+          "rho": 2330,
+          "hc": 700,
+          "tc": 149.0,
+          "cte": 2.6e-06
+        }
+      },
+      "heat_sources": [
+        {
+          "part": 2,
+          "power_W": 2.0,
+          "volume_mm3": 50.0
+        }
+      ],
+      "ambient": {
+        "mode": "convection",
+        "h": 0.025,
+        "temp_C": -40,
+        "temp_curve": [
+          [
+            0.0,
+            25.0
+          ],
+          [
+            1.0,
+            -40.0
+          ],
+          [
+            30.0,
+            -40.0
+          ]
+        ]
+      },
+      "timestep": {
+        "its": 1.0,
+        "tmax": 20.0,
+        "dtemp": 5.0
+      },
+      "remove_carried_velocity": true
     },
     "thermal_carry": "stress_only"
   },
   "scenarios": [
     {
-      "scenario_name": "ThermShock_then_Drop",
+      "scenario_name": "ChipHeat_Ambient_then_Drop",
       "template": "model.k",
       "thermal_conditions": [
-        "SHOCK_1CYCLE"
+        "CHIP2W_AMB_M40"
       ],
       "cumulative": {
-        "num_steps": 3,
+        "num_steps": 2,
         "mode_sequence": [
-          "THERM",
           "THERM",
           "DROP"
         ],
-        "step_params": {
-          "1": {
-            "base_temp_C": 25,
-            "target_temp_C": -40,
-            "ramp_time_s": 0.002,
-            "tFinal": 0.01,
-            "temp_curve_mode": "absolute",
-            "temp_curve": [
-              [
-                0.0,
-                25.0
-              ],
-              [
-                0.002,
-                -40.0
-              ],
-              [
-                0.01,
-                -40.0
-              ]
-            ]
-          },
-          "2": {
-            "base_temp_C": -40,
-            "target_temp_C": 125,
-            "ramp_time_s": 0.002,
-            "tFinal": 0.01,
-            "temp_curve_mode": "absolute",
-            "temp_curve": [
-              [
-                0.0,
-                -40.0
-              ],
-              [
-                0.002,
-                125.0
-              ],
-              [
-                0.01,
-                125.0
-              ]
-            ]
-          }
-        }
+        "step_params": {}
       },
       "angle_source": {
         "source_type": "fibonacci_lattice",
@@ -132,8 +132,8 @@
     "전 파트를 담은 *SET_PART_LIST + *INTERFACE_SPRINGBACK_LSDYNA 필수 — 없으면 dynain 이 안 나와 스텝이 실패한다"
   ],
   "_설명": [
-    "열충격 반쪽사이클 2스텝(-40 유지 → 125 유지) 후 낙하",
-    "DOE = 열조건 1 x 낙하각도 2 = 2. 각도는 낙하 스텝에만 들어간다",
-    "열응력은 dynain 으로 낙하에 이월되고, 낙하 덱에서는 열하중이 제거된다(thermal_carry)"
+    "칩 2W 발열 + 환경온도 25→-40℃ 급랭(대류 h=0.025)을 동시에 건 뒤 낙하",
+    "ICPower 2-pass(열해석→열응력) + *BOUNDARY_CONVECTION_SET",
+    "배정밀 SIF 필수. 전 파트 rho·hc·tc 가 있어야 한다"
   ]
 }
