@@ -5274,6 +5274,18 @@ class KooDynaAdvancedModification:
         from KooCAEManager.KooThermalLoad import apply_thermal_load
         apply_thermal_load(self.dynaImporter, option)
 
+        # ①-b dynain 요청 — 다음 스텝으로 열응력을 이월하려면 LS-DYNA 가 dynain 을 써야 한다.
+        # DropAttitude·DropWeightImpactTest 와 같은 방식(전 파트 PartSet + SPRINGBACK).
+        # 🔴 구조 pass 에만 넣는다. ICPower pass1 은 SOLN=1 열해석이라 dynain 이 의미가 없다.
+        isThermalSolvePass = (str(option.get("ThermalType", "UniformChamber")) == "ICPower"
+                              and str(option.get("Phase", "thermal")).lower() != "structural")
+        if not isThermalSolvePass:
+            partSet : PartSet = self.dynaImporter.partManager.CreatePartSet(name="Thermal Springback Set")
+            for pid, part in self.dynaImporter.partManager.parts.items():
+                partSet.AddPart(pid)
+            self.dynaImporter.additionalManager.CreateInterfaceSpringbackLSDyna(partSet.psid)
+            print(f"  → *INTERFACE_SPRINGBACK_LSDYNA PSID={partSet.psid} ({len(self.dynaImporter.partManager.parts)} 파트) — dynain 산출")
+
         # ② explicit control + database (DROP/IMPACT/VIB 결)
         tFinal = float(option.get("RampTimeS", 1.0e-3))
         dt = float(option.get("DT", 1.0e-6))
@@ -5311,6 +5323,29 @@ class KooDynaAdvancedModification:
                 modifiedKeyword = os.path.join(modifiedKeyword, "ThermalSet")
             modifiedKeyword = modifiedKeyword.strip()
             self.WriteModifiedFile(modifiedKeyword, "", True)
+
+            # 누적 이월 입구 — 러너가 비최종 스텝에서 이 파일로 DYNAIN_TO_INITIAL 을 돌려
+            # 다음 스텝 입력(_dti.k)을 만든다. 없으면 열응력이 다음 스텝으로 넘어가지 않는다.
+            # (DropAttitude 와 같은 형식. 열해석 pass1 은 dynain 이 없으므로 제외)
+            if not isThermalSolvePass:
+                deckName = os.path.basename(modifiedKeyword)
+                if not deckName.endswith(".k"):
+                    deckName = deckName + ".k"
+                dynamicRelaxPath = os.path.join(folderPath, "DynamicRelaxation")
+                if not os.path.exists(dynamicRelaxPath):
+                    os.makedirs(dynamicRelaxPath)
+                dynainPath = os.path.join(outputFolderPath, "dynain")
+                dynaintoinitialPath = os.path.join(dynamicRelaxPath, "dynaintoinitial.txt")
+                with open(dynaintoinitialPath, "w") as f:
+                    f.write("*Inputfile\n")
+                    f.write(deckName + "\n")
+                    f.write("*Mode\n")
+                    f.write("DYNAIN_TO_INITIAL,1\n")
+                    f.write("**DynainToInitial,1\n")
+                    f.write("**DynainPath," + dynainPath + "\n")
+                    f.write("*IncludeStress,True\n")
+                    f.write("*RemoveDynamicRelaxation,True\n")
+                print("  → DynamicRelaxation/dynaintoinitial.txt (누적 이월 입구)")
 
             done_file = os.path.join(folderPath, ".done")
             with open(done_file, "w") as df:

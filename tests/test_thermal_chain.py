@@ -187,6 +187,49 @@ def main():
             check("    dynain 경로가 Output/dynain", re.search(r"DynainPath,.*Output/dynain", body) is not None,
                   body[:300])
 
+    print("[4] 왕복 중복 없음 — 이월 덱은 초기응력만 늘어난다 (P3a)")
+    # dynain 을 합성해 DYNAIN_TO_INITIAL 까지 돌린다 (LS-DYNA 불필요)
+    if runs:
+        run = runs[0]
+        deck = run / "ThermalSet.k"
+        nodes, elems, kw = [], [], None
+        for line in deck.read_text(errors="replace").splitlines():
+            if line.startswith("*"):
+                kw = line.strip().upper()
+                continue
+            if line.startswith("$") or not line.strip():
+                continue
+            if kw == "*NODE" and len(line) > 55:
+                nodes.append(line)
+            elif kw and kw.startswith("*ELEMENT_SOLID") and len(line) >= 80:
+                elems.append(line)
+        out = ["*KEYWORD", "*NODE"]
+        for l in nodes:
+            try:
+                nid = int(l[:8]); x = float(l[8:24]); y = float(l[24:40]); z = float(l[40:56]) * 0.999
+            except ValueError:
+                continue
+            out.append(f"{nid:8d}{x:16.6f}{y:16.6f}{z:16.6f}")
+        out.append("*INITIAL_STRESS_SOLID")
+        for l in elems[:5]:
+            out.append(f"{int(l[:8]):10d}{1:10d}{0:10d}{0:10d}")
+            out.append(f"{12.5:10.3f}{3.1:10.3f}{-4.2:10.3f}{0.5:10.3f}{0.2:10.3f}{0.1:10.3f}{0.0:10.3f}{0.0:10.3f}")
+        out.append("*END")
+        (run / "Output" / "dynain").write_text("\n".join(out) + "\n")
+        r2 = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "dynaintoinitial.txt"],
+                            cwd=str(run / "DynamicRelaxation"), capture_output=True, text=True, timeout=900)
+        dti_deck = run / "Output" / "ThermalSet_dti.k"
+        check("DYNAIN_TO_INITIAL 실행 성공", r2.returncode == 0 and dti_deck.exists(),
+              (r2.stdout[-300:] + r2.stderr[-300:]))
+        if dti_deck.exists():
+            before, after = cards(deck), cards(dti_deck)
+            check("  초기응력 카드가 이월됨", after.get("INITIAL_STRESS_SOLID", 0) >= 1, str(sorted(after)[:12]))
+            dup = {k: (before.get(k), after[k]) for k in after
+                   if k != "INITIAL_STRESS_SOLID" and after[k] > before.get(k, 0)}
+            check("  왕복으로 늘어난 카드 없음 (미해석 raw 이중 출력 방지)", not dup, str(dup))
+            check("  Uninterpreted 헤더가 한 번만", dti_deck.read_text(errors="replace").count(
+                "Uninterpreted keywords") <= 1, str(dti_deck.read_text(errors="replace").count("Uninterpreted keywords")))
+
     print()
     if FAILS:
         print("FAIL %d 건" % len(FAILS))

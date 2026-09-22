@@ -28,3 +28,20 @@ UniformChamber 와 ICPower `Phase=structural` 에만 넣는다. pass1 에 들어
 - DROP→THERM 에서 낙하 카드 제거를 DYNAIN_TO_INITIAL 옵션으로 할지, THERMAL_LOAD 진입 시 할지
 - 미해석 키워드 raw 블록 2회 출력이 실제인지 (조사에서 관측됐다는 보고 — 직접 재현 필요)
 - 외피 세그먼트 자동 선택을 어디서 할지 (GetExternalBoundary 재사용 가능 여부)
+
+## P1·P2 완료 (2026-09-22)
+- P1: `ThermalLoad` 에 전 파트 PartSet + `*INTERFACE_SPRINGBACK_LSDYNA`. 구조 pass 한정
+  (`isThermalSolvePass` 로 ICPower pass1 제외). 골든 대비 추가 카드는 그 2종뿐임을 diff 로 확인.
+- P2: `DynamicRelaxation/dynaintoinitial.txt` 발행. 합성 dynain 으로 DYNAIN_TO_INITIAL 을 실제로 돌려
+  `Output/ThermalSet_dti.k` 에 `*INITIAL_STRESS_SOLID` 가 들어가는 것까지 확인 (러너가 glob 하는 경로와 일치).
+
+## P3a 완료 — 미해석 raw 키워드 이중 출력 (기존 결함, 열 전용 아님)
+🔴 조사에서 보고된 "raw 블록 2회 출력" 은 사실이었고 **열 경로만의 문제가 아니었다.**
+`KooMeshModifier.WriteModifiedFile` 이 공유 writer(`WriteStreamDynaKeyword`, raw 보존 포함)를 부른 뒤
+`self._write_uninterpreted_raw_blocks(f)` 를 또 불렀다. 공유 writer 에 raw 보존이 나중에 추가되면서 생긴 이중 호출이다.
+실측: 왕복 1회에 `*DATABASE_NCFORC` 1→2, `*LOAD_THERMAL_VARIABLE` 1→2, `*MAT_ADD_THERMAL_EXPANSION` 2→4.
+누적은 스텝마다 왕복하므로 스텝을 거듭하면 배로 늘어난다 — **기존 낙하 체인에도 있던 결함**이다.
+- 수정: KMM 쪽 중복 호출 제거(주석으로 사유 남김).
+- 보강: `KooRawKeywordDedup.filter_duplicate_raw_blocks` 신설 — 매니저가 같은 **내용**을 이미 썼으면 raw 를 건너뛰고,
+  내용이 다르면 보존한다. 공유 writer 와 KooKFileMerger 양쪽에 적용(이름이 아니라 내용 기준이라 유실 위험 없음).
+- 회귀: DROP·IMPACT 덱 바이트 동일, 기존 시험 3종 통과, 왕복 후 늘어난 카드 0(시험 [4] 로 고정).

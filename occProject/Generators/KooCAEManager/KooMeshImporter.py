@@ -2162,17 +2162,19 @@ class KooDynaImporter():
             if raw_dict:
                 interpreted = getattr(self, 'keywordInterpreted', {}) or {}
                 SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END", "TITLE"}
+                # 매니저가 같은 내용으로 이미 쓴 카드는 건너뛴다 — 표시(keywordInterpreted)가 빠진
+                # 일반 경로 키워드(DATABASE_NCFORC·LOAD_THERMAL_VARIABLE·MAT_ADD_THERMAL_EXPANSION 등)가
+                # 왕복마다 배로 늘어나던 것을 막는다. 내용이 다르면 그대로 보존(유실 방지 유지).
+                from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks
+                pending = filter_duplicate_raw_blocks(raw_dict, interpreted, stream.getvalue(), SKIP)
                 wrote_header = False
-                for kw_name, blocks in raw_dict.items():
-                    if kw_name in SKIP or interpreted.get(kw_name, False):
-                        continue
+                for kw_name, block in pending:
                     if not wrote_header:
                         stream.write("$\n$--- Uninterpreted keywords (raw, preserved) ---\n$\n")
                         wrote_header = True
-                    for block in blocks:
-                        stream.write(f"*{kw_name}\n")
-                        for line in block:
-                            stream.write(line if line.endswith('\n') else line + '\n')
+                    stream.write(f"*{kw_name}\n")
+                    for line in block:
+                        stream.write(line if line.endswith('\n') else line + '\n')
         except Exception as e:
             print(f"  Warning: uninterpreted raw 보존 실패 (skip): {e}")
 

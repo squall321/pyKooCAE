@@ -3180,8 +3180,10 @@ class KooMeshModifier(KooSimulationGenerator):
                     f.write("*INCLUDE\n")
                     f.write(f" {os.path.basename(inc_file)}\n")
 
-            # 미인터프리트 키워드 raw 보존 (KooDynaImporter가 모르는 키워드도 손실 방지)
-            self._write_uninterpreted_raw_blocks(f)
+            # 미인터프리트 키워드 raw 보존은 공유 writer(WriteStreamDynaKeyword)가 이미 한다.
+            # 여기서 또 부르면 같은 카드가 두 번 나가고, 누적 해석은 스텝마다 왕복하므로
+            # 스텝을 거듭할수록 배로 늘어난다(실측: NCFORC 1→2, CTE 2→4).
+            # self._write_uninterpreted_raw_blocks(f)  ← 중복 출력이라 제거
 
             f.write("*END\n")
 

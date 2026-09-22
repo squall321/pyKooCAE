@@ -150,18 +150,24 @@ def _write_uninterpreted_raw_blocks(f, dynaImporter):
             return
         interpreted = getattr(dynaImporter, 'keywordInterpreted', {}) or {}
         SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END"}
+        # 이미 쓴 내용과 같은 카드는 건너뛴다 (공유 writer 와 같은 규약 — KooRawKeywordDedup)
+        from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks
+        written_so_far = ""
+        try:
+            pos = f.tell()
+            f.flush()
+            with open(f.name, "r", errors="replace") as _rf:
+                written_so_far = _rf.read(pos)
+        except Exception:
+            written_so_far = ""
+        pending = filter_duplicate_raw_blocks(raw_dict, interpreted, written_so_far, SKIP)
         wrote_header = False
-        for kw_name, blocks in raw_dict.items():
-            if kw_name in SKIP:
-                continue
-            if interpreted.get(kw_name, False):
-                continue
+        for kw_name, block in pending:
             if not wrote_header:
                 f.write("$\n$--- Uninterpreted keywords (raw, preserved) ---\n$\n")
                 wrote_header = True
-            for block in blocks:
-                f.write(f"*{kw_name}\n")
-                for line in block:
-                    f.write(line if line.endswith('\n') else line + '\n')
+            f.write(f"*{kw_name}\n")
+            for line in block:
+                f.write(line if line.endswith('\n') else line + '\n')
     except Exception as e:
         print(f"  Warning: uninterpreted raw 출력 실패 (skip): {e}")

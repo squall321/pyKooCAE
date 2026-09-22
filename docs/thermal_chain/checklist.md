@@ -4,25 +4,25 @@
 
 ## P0. 준비 — 기준선·시험 하네스
 - [x] 골든 기준선 확보 (UniformChamber / ICPower pass1 / ICPower pass2 덱)
-- [ ] 기존 DROP·IMPACT 덱 골든 확보 (회귀 diff 기준)
+- [x] 기존 DROP·IMPACT 덱 골든 확보 (회귀 diff 기준)
 - [x] tests/test_thermal_chain.py 작성 — 현재 코드에서 통과(기준선 고정)
 
-## P1. THERM dynain 산출 (B1)
-- [ ] ThermalLoad 에 전 파트 PartSet + *INTERFACE_SPRINGBACK_LSDYNA (구조 pass 한정)
-- [ ] ICPower pass1(SOLN=1)에는 안 들어가는 것 확인
-- [ ] 골든 diff = 추가 카드 2종뿐
+## P1. THERM dynain 산출 (B1) ✅
+- [x] ThermalLoad 에 전 파트 PartSet + *INTERFACE_SPRINGBACK_LSDYNA (구조 pass 한정)
+- [x] ICPower pass1(SOLN=1)에는 안 들어가는 것 확인
+- [x] 골든 diff = 추가 카드 2종뿐
 - [ ] 시험 갱신·통과
 
 ## P2. THERM 이월 입구 (B2)
-- [ ] DynamicRelaxation/dynaintoinitial.txt 작성 (ThermalSet.k 기준)
-- [ ] KMM DYNAIN_TO_INITIAL 로 실행 가능한 내용인지 직접 실행 확인
+- [x] DynamicRelaxation/dynaintoinitial.txt 작성 (ThermalSet.k 기준)
+- [x] KMM DYNAIN_TO_INITIAL 로 실행 가능한 내용인지 직접 실행 확인
 - [ ] 러너 비최종 THERM 스텝이 degraded 없이 _dti.k 생성 (소스 레벨)
 - [ ] 시험 갱신·통과
 
 ## P3. 이월 정책 — 양방향 (B7 + DROP→THERM)
 - [ ] THERM→다음: thermal_carry(stress_only | hold_temperature) 구현
 - [ ] DROP→THERM: 낙하 카드(INITIAL_VELOCITY·rigidwall·바닥판) 정리 경로 구현
-- [ ] 미해석 키워드 raw 블록 2회 출력 여부 확인 → 사실이면 수정
+- [x] 미해석 키워드 raw 블록 2회 출력 여부 확인 → 사실이면 수정
 - [ ] 각 방향 _dti.k 카드 불변식 확인 (이전 하중 0, 초기응력 존재)
 - [ ] 시험 갱신·통과
 
