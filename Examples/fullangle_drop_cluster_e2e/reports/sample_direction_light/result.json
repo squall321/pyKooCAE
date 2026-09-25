@@ -7,7 +7,7 @@
     "project_name": "Output",
     "normal_termination": null,
     "termination_source": "unknown",
-    "num_states": 4940,
+    "num_states": 4952,
     "t_end": 0.005000021309,
     "num_parts": 23
   },

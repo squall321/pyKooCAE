@@ -13,8 +13,11 @@
 | `scenario.json` | 실제로 돈 시나리오 (20방향 피보나치, DROP 1스텝, 자동 후처리 켬) |
 | `scripts/run_all_deep_reports.sh` | 방향별 deep_report 재생성 드라이버 (재개 가능, light/full) |
 | `scripts/regen_sphere_report.sh` | 전각도 집계 리포트 재생성 |
-| `reports/` | 생성된 리포트 실물 (집계 리포트 + 대표 1방향 샘플) |
-| `RESOURCES.md` | 단계별 실측 시간·메모리·용량 |
+| `scripts/verify_reports.py` | 산출물 온전성 검증 (rc=0 만으로는 부족하다) |
+| `scripts/compare_variants.py` | 두 변형 `result.json` 전수 비교 |
+| `scripts/make_resources_md.py` | 실측 TSV → `RESOURCES.md` 생성 |
+| `reports/` | 생성된 리포트 실물 — 집계 리포트(HTML+JSON) + 방향별 샘플 2종 |
+| `RESOURCES.md` | 단계별 실측 시간·메모리·용량, 재현성 조사 결과 |
 
 ## 1. 해석 (LS-DYNA 필요)
 
@@ -68,9 +71,19 @@ TEST_DIR=... bash scripts/run_all_deep_reports.sh light   # 수치만 (--no-rend
 | `full` | `Output/report/` | 렌더·단면뷰 포함 완전판. 보고용 |
 | `light` | `Output/report_norender/` | 수치만. CI·재집계·저사양 환경 |
 
-🔴 **헤드노드에서 돌린다.** 최대 RSS 가 34 GB 라 4 GB 배분 계산노드에서는 OOM(rc=-9)
-된다. 드라이버가 `ulimit -v 40000000` 로 상한을 걸고 **한 번에 하나씩** 돈다.
-동시 2개는 메모리를 넘긴다.
+🔴 **헤드노드에서 돌린다.** 요구 메모리가 32.84 GiB 라 4 GB 배분 계산노드에서는 OOM(rc=-9)
+된다. 드라이버는 **한 번에 하나씩** 돈다. 동시 2개는 메모리를 넘긴다.
+
+🔴 **`ulimit -v` 를 요구량 근처로 조이지 말 것.** 40 GB 로 걸었더니 후처리가 **경고 없이**
+`rc=0` 으로 끝나면서 피크를 최대 3.3% 낮게 보고했다(안전계수 과대평가 방향). 드라이버 기본
+`VMEM_KB` 는 60 GB 다. 근거와 통제 실험은 [RESOURCES.md](RESOURCES.md).
+
+끝나면 검증한다. rc=0 은 산출물이 온전하다는 뜻이 아니다.
+
+```bash
+TEST_DIR=/data/koopark/Test_Postprocess_v14 python3 scripts/verify_reports.py light full
+TEST_DIR=/data/koopark/Test_Postprocess_v14 python3 scripts/compare_variants.py
+```
 
 중단됐으면 같은 명령을 다시 준다. rc=0 인 방향만 `.koo_driver_done` 표식이 있어 건너뛴다.
 진행 상황은 `progress_deep_<변형>.tsv` 에 방향·rc·경과·최대RSS·용량으로 쌓인다.
@@ -94,7 +107,23 @@ TEST_DIR=/data/koopark/Test_Postprocess_v14 bash scripts/regen_sphere_report.sh
 🔴 `--json` 은 `--format` 에 `json` 이 있어야 효력이 있다(`__main__.py:145`).
 없으면 경로만 받고 조용히 아무 파일도 안 만든다.
 
+## 4. d3plot 없이 다시 뜨기
+
+`reports/sphere_report.json.gz` 만 있으면 집계 리포트를 다시 만들 수 있다(실측 49초).
+자세한 것과 주의점은 [reports/README.md](reports/README.md).
+
+## 실측 비용
+
+| 단계 | 1방향 | 20방향 | 최대 RSS |
+|---|---|---|---|
+| deep_report light | 3:06 | 약 1시간 | 32.8 GiB |
+| deep_report full (`--sv-threads 12`) | 39:13 | 약 13시간 | 33.2 GiB |
+| sphere_report | — | 1:17 | 0.7 GiB |
+
+전체는 [RESOURCES.md](RESOURCES.md).
+
 ## 이 예제에 없는 것
 
 - `d3plot` 원본 — 방향당 19 GB, 20방향 363 GB. 원본 경로로만 안내한다
-- full 변형 20방향 전량 산출물 — 방향당 388 MB. 대표 1방향만 동봉한다
+- 방향별 `analysis_result.json` — 각 96 MB. 집계 리포트의 실제 입력이다
+- full 변형 단면뷰 영상 — 방향당 25개 217 MB. 대표 방향도 영상은 빼고 넣었다
