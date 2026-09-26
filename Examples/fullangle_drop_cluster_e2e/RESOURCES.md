@@ -146,7 +146,9 @@ d3plot 원본은 방향당 약 19 GB, 20방향 363 GB — 후처리 입력으로
 - 드라이버 기본 `VMEM_KB` 는 **60 GB** 다. 실측 요구량(32.84 GiB)의 약 1.8배
 - `ulimit -v` 를 요구량 바로 위로 조이지 말 것. 런어웨이 방어는 넉넉한 배수로 건다
 - 60 GB 로 다시 돌린 뒤 전수 비교 결과: **불일치 0건** (20방향 × 23파트 × 6항목)
-- 40 GB 산출물은 `/data/koopark/Test_Postprocess_v14/evidence_reproducibility/` 에 증거로 남겼다
+- 40 GB 산출물은 `evidence_ulimit/` 에 60 GB 짝과 함께 동봉했다.
+  `python3 evidence_ulimit/verify_ulimit_finding.py` 로 클러스터 없이 재검증된다
+  (원 실험 디렉터리 509 MB 는 `/data/koopark/Test_Postprocess_v14/` 에 남겨 뒀다)
 
 ## 두 변형 일치 확인 (최종)
 

@@ -18,6 +18,7 @@
 | `scripts/make_resources_md.py` | 실측 TSV → `RESOURCES.md` 생성 |
 | `reports/` | 생성된 리포트 실물 — 집계 리포트(HTML+JSON) + 방향별 샘플 2종 |
 | `RESOURCES.md` | 단계별 실측 시간·메모리·용량, 재현성 조사 결과 |
+| `evidence_ulimit/` | `ulimit -v` 함정의 원본 증거 + 재검증 스크립트 (클러스터 불필요) |
 
 ## 1. 해석 (LS-DYNA 필요)
 
