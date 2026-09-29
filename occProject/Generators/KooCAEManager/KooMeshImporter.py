@@ -1190,7 +1190,60 @@ class KooDynaImporter():
                     # 크래시 대신 스킵 — 재료 카드는 _write_uninterpreted_raw_blocks로 출력에 보존됨.
                     print(f"  Warning: Part {getattr(curPart, 'id', part)} references MID "
                           f"{curPart.mid} with no loaded material — SetMaterial skipped")
+        self._ReportMaterialMIDInvariant()
         return self.matManager.maxid
+
+    def _ReportMaterialMIDInvariant(self):
+        """입력 덱 *MAT_* 블록의 MID 집합과 등록된 재료 MID 집합을 대조해 무언 손실을 알린다.
+
+        중단하지 않는다 — MAT_GENERAL_VISCOELASTIC 등 의도적 미해석(raw 보존) 재료가 있어
+        중단시키면 기존 모델이 깨진다. 파트가 참조하는 소실만 🔴 로 올린다(LS-DYNA Error 10157 확정).
+        """
+        raw = getattr(self.dynaManager, "_raw_keyword_dict", None)
+        if not raw:
+            return
+
+        deck_mids = set()
+        for kw, blocks in raw.items():
+            if not isinstance(kw, str) or not kw.startswith("MAT_"):
+                continue
+            if kw.startswith("MAT_ADD_"):
+                continue            # 기존 MID 를 참조할 뿐 정의하지 않는다
+            idx = 1 if kw.endswith("_TITLE") else 0
+            for block in blocks:
+                lines = [ln for ln in block if str(ln).strip() != ""]
+                if len(lines) <= idx:
+                    continue
+                token = str(lines[idx])[:10].replace(",", " ").strip().split()
+                if not token:
+                    continue
+                try:
+                    mid = int(round(float(token[0])))
+                except (ValueError, OverflowError):
+                    continue        # 비숫자 MID 는 _GuardMaterialMID 가 따로 잡는다
+                if mid > 0:
+                    deck_mids.add(mid)
+
+        if not deck_mids:
+            return
+        missing = deck_mids - set(self.matManager.materials)
+        if not missing:
+            return
+
+        referenced = sorted({
+            getattr(pt, "mid", 0) for pt in self.partManager.parts.values()
+            if getattr(pt, "mid", 0) in missing
+        })
+        unreferenced = sorted(missing - set(referenced))
+
+        if referenced:
+            print(f"  🔴 재질 MID 소실: 입력 덱 {len(deck_mids)}개 중 {len(referenced)}개가 "
+                  f"등록되지 않았고 파트가 참조한다 — MID {referenced}")
+            print(f"     이대로 두면 LS-DYNA 가 Error 10157 (MAT not found) 로 실패한다. "
+                  f"재질 카드의 키워드/내용 불일치를 확인할 것")
+        if unreferenced:
+            print(f"  Info: 등록되지 않은 재질 MID {len(unreferenced)}개 (참조 파트 없음) — "
+                  f"미해석 raw 보존일 수 있다: {unreferenced if len(unreferenced) <= 12 else str(unreferenced[:12]) + ' ...'}")
 
     def importDefine(self):
         dynaKeyword = self.dynaManager.dynaKeywordMan.keywords

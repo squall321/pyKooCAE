@@ -1169,7 +1169,53 @@ class KooMaterialManager():
                 TList.append(KooDynaFloat(curLine[i]))
             self.CreateEOSTabulated(mid, gama, e0, v0, lcc, lct, evList, CList, TList)
     
+    # LS-DYNA 규격상 *MAT_* 카드1 필드1 은 정수 MID 다. 이 필드가 숫자가 아니면 제목 줄을
+    # 데이터 카드로 읽은 것이다 — 덱이 "bare 키워드 + 제목 줄" 로 잘못 작성된 경우다.
+    # 예전에는 KooDynaInt 가 조용히 0 을 돌려주고 AddMaterial 이 maxid+1 로 재부여해서
+    # 원래 MID 가 통째로 사라졌다(참조 파트 전원 고아 -> LS-DYNA Error 10157).
+    def _GuardMaterialMID(self, dynaMaterial):
+        try:
+            keyword = dynaMaterial[0]
+        except (TypeError, IndexError):
+            return
+        if not isinstance(keyword, str) or not keyword.startswith("*MAT"):
+            return
+        if "_TITLE" in keyword.upper():
+            return                      # [1] 이 제목 줄인 것이 정상
+        if len(dynaMaterial) < 2:
+            return
+
+        first = dynaMaterial[1]
+        if isinstance(first, str):
+            raw, field = first, first[:10]
+        elif isinstance(first, (list, tuple)) and len(first) > 0 and isinstance(first[0], str):
+            raw, field = first[0], first[0][:10]
+        else:
+            return                      # 필드를 확정할 수 없는 형태 - 기존 동작 보존
+
+        stripped = field.strip()
+        if stripped == "":
+            return                      # 빈 MID 는 별건 - 기존 동작 보존
+        # 숫자로 읽을 수 있으면 통과. 지수표기 eE 와 자유간격 콤마는 허용한다.
+        has_digit = any(c.isdigit() for c in stripped)
+        bad_alpha = any(c.isalpha() and c not in "eE" for c in stripped)
+        if has_digit and not bad_alpha:
+            return
+
+        raise ValueError(
+            "재질 카드의 MID 필드가 숫자가 아니다 - 키워드와 내용이 맞지 않는다.\n"
+            "  키워드   : {kw}\n"
+            "  읽은 줄  : {raw!r}\n"
+            "  MID 필드 : {field!r}\n"
+            "  진단     : 이 줄은 제목(title)으로 보인다. 키워드에 _TITLE 이 없으면\n"
+            "             LS-DYNA 도 이 줄을 카드1 로 읽어 실패한다.\n"
+            "  조치     : 키워드를 {kw}_TITLE 로 바꾸거나, 제목 줄을 지울 것.\n"
+            "  참고     : 예전에는 이 상태가 조용히 통과해 MID 가 0 으로 읽히고\n"
+            "             maxid+1 로 재부여되어 원래 MID 가 사라졌다.".format(
+                kw=keyword, raw=raw, field=stripped))
+
     def AddMaterialfromDyna(self, dynaMaterial,forcedid = 0):
+        self._GuardMaterialMID(dynaMaterial)
         if dynaMaterial[0] == "*MAT_ADD_EROSION":  
             curDynaMaterial = dynaMaterial[1]
             firstLine = curDynaMaterial[0]
