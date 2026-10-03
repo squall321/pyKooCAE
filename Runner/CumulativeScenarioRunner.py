@@ -22,6 +22,7 @@ import logging
 import argparse
 import hashlib
 import uuid
+import contextlib
 import errno
 import fcntl
 import glob
@@ -30,6 +31,46 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+
+
+def _flock_diagnosis(fd, operation, exc):
+    """flock 실패를 현장에서 추적 가능한 메시지로 만든다.
+
+    EBADF 는 "fd 가 이미 닫혔다" 는 뜻이지 저장소 장애가 아니다. 어느 호출부에서
+    어떤 fd 가 죽었는지 알아야 고칠 수 있으므로, fd 번호·유효성·호출 스택을 함께 남긴다.
+    (v89 는 이것을 120초 재시도 후 "NFS stale lock" 으로 오진했다)
+    """
+    import traceback
+    opname = {fcntl.LOCK_SH: "LOCK_SH", fcntl.LOCK_EX: "LOCK_EX",
+              fcntl.LOCK_UN: "LOCK_UN"}.get(operation, str(operation))
+    try:
+        rawfd = fd if isinstance(fd, int) else fd.fileno()
+    except Exception as e:
+        rawfd = f"<fileno 실패: {e}>"
+    valid = "?"
+    if isinstance(rawfd, int):
+        try:
+            fcntl.fcntl(rawfd, fcntl.F_GETFD)
+            valid = "열려있음"
+        except OSError as e2:
+            valid = f"닫혀있음(errno={e2.errno})"
+    target = "?"
+    if isinstance(rawfd, int):
+        try:
+            target = os.readlink(f"/proc/self/fd/{rawfd}")
+        except OSError:
+            target = "<해석 불가 — 이미 닫힘>"
+    # 호출 스택에서 이 모듈 안의 호출부만 뽑는다
+    callers = []
+    for fr in traceback.extract_stack()[:-2][-6:]:
+        callers.append(f"{os.path.basename(fr.filename)}:{fr.lineno} {fr.name}")
+    hint = ""
+    if exc.errno == errno.EBADF:
+        hint = (" 🔴 EBADF = fd 가 이미 닫혔다. 저장소 장애가 아니라 fd 수명 버그다 — "
+                "lock 파일을 지우지 말 것(지우면 상호배제가 깨진다).")
+    return (f"flock({opname}) 실패 — 재시도해도 복구되지 않는 오류: {exc.strerror} "
+            f"(errno={exc.errno}). fd={rawfd} 상태={valid} 가리킨대상={target}. "
+            f"호출경로: {' <- '.join(reversed(callers))}.{hint}")
 
 
 def _flock_with_timeout(fd, operation, timeout=120):
@@ -44,7 +85,13 @@ def _flock_with_timeout(fd, operation, timeout=120):
         TimeoutError: timeout 초 내에 lock 획득 실패
     """
     if operation == fcntl.LOCK_UN:
-        fcntl.flock(fd, operation)
+        try:
+            fcntl.flock(fd, operation)
+        except OSError as e:
+            # fd 를 받쳐주던 NFSv4 open state 가 이미 끊긴 경우(EBADF). 해제할 락이
+            # 애초에 없으니 오류가 아니다. finally 안에서 터져 본 예외를 가리는 것을 막는다.
+            if e.errno != errno.EBADF:
+                raise
         return
     deadline = time.time() + timeout
     while True:
@@ -58,10 +105,7 @@ def _flock_with_timeout(fd, operation, timeout=120):
             # 예전에는 이것까지 120초 동안 1초씩 재시도한 뒤 "NFS stale lock" 으로
             # 보고해서, 코드 결함을 저장소 장애로 오진하게 만들었다.
             if e.errno not in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES, errno.EINTR):
-                raise OSError(
-                    e.errno,
-                    f"flock 실패 — 재시도해도 복구되지 않는 오류: {e.strerror} "
-                    f"(errno={e.errno}). fd 수명 또는 파일시스템 지원 문제.") from e
+                raise OSError(e.errno, _flock_diagnosis(fd, operation, e)) from e
         if time.time() >= deadline:
             raise TimeoutError(
                 f"flock 획득 실패 (timeout={timeout}s). 다른 잡이 장시간 점유 중이다 — "
@@ -79,6 +123,50 @@ def _open_lock(lock_path):
     락을 걸게 된다 — 상호배제가 조용히 깨지고 index 가 동시 쓰기로 손상된다.
     """
     return os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o664)
+
+
+@contextlib.contextmanager
+def _locked_lock_file(lock_path, operation, timeout=120, ebadf_retries=3):
+    """락 파일을 열고 flock 을 건 상태로 파일객체를 넘긴다. 닫기까지 책임진다.
+
+    🔴 EBADF 재개방이 이 함수의 핵심이다.
+    `local_lock=none` 으로 마운트된 NFSv4 에서 flock 은 서버로 나가 **open stateid** 에 묶인다.
+    `soft` 마운트(timeo/retrans)에서 그 state 가 끊기면 fd 는 로컬에 열려 있는데도 커널이
+    EBADF 를 돌려준다. 같은 fd 로 재시도하면 영원히 실패한다 — **경로를 다시 열어야**
+    새 stateid 가 생긴다. 현장 실측: NFSv4.1 soft 마운트에서 약 37% 간헐 발생,
+    노드 6대 이상에 분산되고 같은 노드가 성공도 실패도 했다.
+
+    🔴 재개방은 **같은 경로**다. lock 파일을 지우고 새로 만드는 것과 전혀 다르다 —
+    경로가 같으므로 같은 inode 에 락이 걸려 상호배제가 유지된다.
+    (예전 코드는 unlink 로 새 inode 를 만들어 상호배제를 깼다)
+    """
+    last = None
+    for attempt in range(ebadf_retries):
+        lf = os.fdopen(_open_lock(lock_path), 'r+', encoding='utf-8')
+        try:
+            _flock_with_timeout(lf, operation, timeout=timeout)
+        except OSError as e:
+            try:
+                lf.close()
+            except OSError:
+                pass
+            if e.errno == errno.EBADF and attempt < ebadf_retries - 1:
+                last = e
+                logging.warning(
+                    f"flock EBADF — NFSv4 open state 끊김으로 보인다. 같은 경로를 다시 열어 "
+                    f"재시도 {attempt + 1}/{ebadf_retries - 1}: {lock_path}")
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise
+        try:
+            yield lf
+        finally:
+            try:
+                lf.close()
+            except OSError:
+                pass
+        return
+    raise last
 
 
 def _semaphore_acquire(lock_dir, max_concurrency, timeout=120, poll_interval=1.0):
@@ -565,8 +653,7 @@ class CumulativeScenarioRunner:
     def _load_index_locked(self, lock_file):
         """_load_index 내부: flock 사용 읽기"""
         # 1단계: LOCK_SH로 빠른 읽기 시도
-        with os.fdopen(_open_lock(lock_file), 'r+', encoding='utf-8') as lf:
-            _flock_with_timeout(lf, fcntl.LOCK_SH)
+        with _locked_lock_file(lock_file, fcntl.LOCK_SH) as lf:
             try:
                 if os.path.exists(self.index_file):
                     try:
@@ -581,8 +668,7 @@ class CumulativeScenarioRunner:
                 _flock_with_timeout(lf, fcntl.LOCK_UN)
 
         # 2단계: 파일 없거나 손상 → LOCK_EX로 단독 초기화/복구
-        with os.fdopen(_open_lock(lock_file), 'r+', encoding='utf-8') as lf:
-            _flock_with_timeout(lf, fcntl.LOCK_EX)
+        with _locked_lock_file(lock_file, fcntl.LOCK_EX) as lf:
             try:
                 # EX 획득 후 재확인 (다른 잡이 먼저 초기화했을 수 있음)
                 if os.path.exists(self.index_file):
@@ -652,8 +738,7 @@ class CumulativeScenarioRunner:
     def _save_index(self):
         """simulation_index.json 저장 (파일 잠금 + atomic write)"""
         lock_file = self.index_file + ".lock"
-        with os.fdopen(_open_lock(lock_file), 'r+', encoding='utf-8') as lf:  # O_RDWR|O_CREAT,0o664
-            _flock_with_timeout(lf, fcntl.LOCK_EX)
+        with _locked_lock_file(lock_file, fcntl.LOCK_EX) as lf:
             try:
                 self._save_index_unlocked()
             finally:
@@ -678,8 +763,7 @@ class CumulativeScenarioRunner:
 
     def _update_index_locked(self, lock_file, alias, run_info):
         """_update_index 내부: flock 사용 업데이트"""
-        with os.fdopen(_open_lock(lock_file), 'r+', encoding='utf-8') as lf:  # O_RDWR|O_CREAT,0o664
-            _flock_with_timeout(lf, fcntl.LOCK_EX)
+        with _locked_lock_file(lock_file, fcntl.LOCK_EX) as lf:
             try:
                 # 최신 파일 재읽기: 다른 DOE 잡이 쓴 내용을 반영
                 if os.path.exists(self.index_file):
@@ -915,8 +999,7 @@ class CumulativeScenarioRunner:
         """시나리오 status 집계 (lock 내 re-read 후 실제 결과 기반 판정)"""
         lock_file = self.index_file + ".lock"
         try:
-            with os.fdopen(_open_lock(lock_file), 'r+', encoding='utf-8') as lf:
-                _flock_with_timeout(lf, fcntl.LOCK_EX)
+            with _locked_lock_file(lock_file, fcntl.LOCK_EX) as lf:
                 try:
                     if os.path.exists(self.index_file):
                         try:

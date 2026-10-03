@@ -41,9 +41,13 @@ def main():
     check("unlink 재시도 루프 제거", "for attempt in range(2)" not in SRC)
     check("타임아웃 메시지가 lock 삭제를 권하지 않음",
           "lock 파일 삭제 후 재시도" not in SRC)
-    check("락 열기는 _open_lock 경유 5곳",
-          SRC.count("_open_lock(lock_file)") == 5,
-          "%d곳" % SRC.count("_open_lock(lock_file)"))
+    check("락 획득은 _locked_lock_file 경유 5곳",
+          SRC.count("_locked_lock_file(lock_file") == 5,
+          "%d곳" % SRC.count("_locked_lock_file(lock_file"))
+    check("호출부에서 직접 fdopen 하지 않음",
+          "os.fdopen(_open_lock(lock_file)" not in SRC)
+    check("EBADF 재개방 경로 존재", "ebadf_retries" in SRC)
+    check("LOCK_UN 이 EBADF 를 허용", "if e.errno != errno.EBADF:" in SRC)
     check("'a' 모드 직접 열기 0건", "open(lock_file, 'a'" not in SRC)
 
     with tempfile.TemporaryDirectory(prefix="idxlock_") as work:
@@ -91,6 +95,60 @@ def main():
         except TimeoutError:
             check("닫힌 fd 가 TimeoutError 로 둔갑하지 않음", False,
                   "120초 재시도 후 timeout — 회귀")
+
+    print("=== EBADF 재개방 복구 (NFSv4 open state 끊김 모사)")
+    import fcntl as _f
+    from Runner.CumulativeScenarioRunner import _locked_lock_file
+    import Runner.CumulativeScenarioRunner as CSR
+
+    with tempfile.TemporaryDirectory(prefix="idxlock2_") as work2:
+        lock2 = os.path.join(work2, "simulation_index.json.lock")
+
+        # 첫 획득만 EBADF 를 던지게 만들어 재개방 경로를 강제한다
+        real = CSR._flock_with_timeout
+        state = {"n": 0}
+
+        def flaky(fd, operation, timeout=120):
+            if operation != _f.LOCK_UN:
+                state["n"] += 1
+                if state["n"] == 1:
+                    raise OSError(9, "Bad file descriptor")
+            return real(fd, operation, timeout=timeout)
+
+        CSR._flock_with_timeout = flaky
+        try:
+            inodes = []
+            with _locked_lock_file(lock2, _f.LOCK_EX) as lf:
+                inodes.append(os.fstat(lf.fileno()).st_ino)
+            check("EBADF 1회 후 재개방으로 획득 성공", len(inodes) == 1)
+            check("획득 시도 2회 (1회 실패 + 1회 성공)", state["n"] == 2, str(state["n"]))
+        finally:
+            CSR._flock_with_timeout = real
+
+        # 재개방이 같은 inode 를 쓰는지 = 상호배제 유지 확인
+        f1 = os.fdopen(_open_lock(lock2), 'r+', encoding='utf-8')
+        f2 = os.fdopen(_open_lock(lock2), 'r+', encoding='utf-8')
+        try:
+            check("재개방은 같은 inode (상호배제 유지)",
+                  os.fstat(f1.fileno()).st_ino == os.fstat(f2.fileno()).st_ino)
+        finally:
+            f1.close(); f2.close()
+
+        # EBADF 가 계속 나면 결국 실패해야 한다 (무한 재시도 금지)
+        def always_bad(fd, operation, timeout=120):
+            if operation == _f.LOCK_UN:
+                return real(fd, operation, timeout=timeout)
+            raise OSError(9, "Bad file descriptor")
+
+        CSR._flock_with_timeout = always_bad
+        try:
+            try:
+                with _locked_lock_file(lock2, _f.LOCK_EX, ebadf_retries=2):
+                    check("EBADF 지속 시 실패해야 함", False, "성공해버림")
+            except OSError as e:
+                check("EBADF 지속 시 OSError 로 종료", e.errno == 9, str(e)[:60])
+        finally:
+            CSR._flock_with_timeout = real
 
     print()
     if FAILS:
