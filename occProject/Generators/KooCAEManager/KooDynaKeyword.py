@@ -6506,8 +6506,26 @@ class Hourglass(DynaKeyword):
         super(Hourglass,self).__init__("HOURGLASS")
     
     def parse(self, hourglassKeywords):
-        parameters = self.parse_whole(hourglassKeywords[0][0], [10, 10, 10, 10, 10, 10, 10, 10])
-        self.parameters.append(parameters)
+        """*HOURGLASS 전 블록·전 줄을 읽는다.
+
+        🔴 예전에는 hourglassKeywords[0][0] 로 **첫 블록의 첫 줄만** 읽어
+        HGID 1 을 제외한 나머지가 경고 없이 사라졌다. *HOURGLASS 는 파트별
+        hourglass 제어 카드(*PART 의 HGID 가 참조)라, 파트마다 다른 설정을 쓰는
+        모델은 해석 조건이 조용히 바뀌었다.
+        """
+        n_in = 0
+        for block in hourglassKeywords:
+            for line in block:
+                if str(line).strip() == "":
+                    continue
+                n_in += 1
+                self.parameters.append(
+                    self.parse_whole(line, [10, 10, 10, 10, 10, 10, 10, 10]))
+        # 개수 불변식 — 소실 시 즉시 눈에 띄게 (A27 교훈)
+        if len(self.parameters) != n_in:
+            print(f"  🔴 *HOURGLASS 개수 불일치: 입력 {n_in}개 → 등록 {len(self.parameters)}개")
+        elif n_in > 1:
+            print(f"  *HOURGLASS {n_in}개 로드")
     
     def getHourglass(self):
         parameterList = [] 
@@ -6520,12 +6538,15 @@ class Hourglass(DynaKeyword):
         return parameterList    
     
     def write(self, stream):
-        stream.write("*HOURGLASS\n")        
+        # 🔴 예전에는 self.parameters[0] 하나만 썼다. 전 항목을 쓴다.
+        if not self.parameters:
+            return
+        stream.write("*HOURGLASS\n")
         stream.write("$$    HGID       IHQ        QM       IBQ        Q1        Q2     QBVDC        QW\n")
-        for j in range(len(self.parameters[0])):
-            formatted_elements = f"{str(self.parameters[0][j]):>10}"
-            stream.write(formatted_elements)
-        stream.write("\n")
+        for parameter in self.parameters:
+            for field in parameter:
+                stream.write(f"{str(field):>10}")
+            stream.write("\n")
         
 class InitialStressSolid(DynaKeyword):
     def __init__(self):
