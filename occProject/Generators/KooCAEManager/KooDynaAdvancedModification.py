@@ -2433,6 +2433,11 @@ class KooDynaAdvancedModification:
 
             robust_contact = option.get("RobustContact", False)
 
+            # 바닥판 접촉 상속(DropContact.InheritGeneral)용 원본 GENERAL 스냅샷.
+            # 아래에서 GENERAL 이 SINGLE_SURFACE 로 변환·제거되므로 그 전에 참조를 잡아둔다.
+            _general_snapshot = (self.dynaImporter.contactManager.contacts[general_cids[0]]
+                                 if general_cids else None)
+
             if convertToSS and not decomposeGeneral and general_cids:
                 # GENERAL → SINGLE_SURFACE(SOFT=2) 변환 (바닥판 제외 part set)
                 modelPartSet = self.dynaImporter.partManager.CreatePartSet(pids=existingPartIDs, name="ModelParts_SS")
@@ -2930,6 +2935,48 @@ class KooDynaAdvancedModification:
                         outerPartIDs.append(pid)
                 print("Drop contact: {0}/{1} outer parts selected".format(len(outerPartIDs), len(partBBoxes)))
 
+                # 바닥판 접촉 값 해석기.
+                # 우선순위: drop_contact 명시값 > (InheritGeneral 이면) 원본 GENERAL > 하드코딩.
+                # 🔴 예전에는 바닥판만 원본 GENERAL 을 전혀 보지 않아, 내부 접촉은 GENERAL 값을
+                # 상속하는데 바닥판은 하드코딩으로 리셋되는 비일관이 있었다
+                # (예: GENERAL VDC=0 인데 바닥판은 10). InheritGeneral 기본 False = 기존 동작.
+                _inherit = str(drop_contact.get("InheritGeneral", False)).strip().lower() in ("true", "1", "yes")
+                # 🔴 convertToSS 경로에서는 원본 GENERAL 이 이미 SINGLE_SURFACE 로 변환되고
+                # RemoveContactbyID 로 제거된 상태다. 여기서 contacts[cid] 를 조회하면 KeyError —
+                # 변환 전에 떠 둔 스냅샷을 쓴다.
+                _orig_gen = _general_snapshot if _inherit else None
+
+                def _dcval(key, default):
+                    if key in drop_contact:
+                        return drop_contact[key]
+                    if _orig_gen is not None:
+                        v = getattr(_orig_gen, key, None)
+                        if v is not None and v != "":
+                            # DT 는 기존 덱이 "1.0000E+20" 표기를 쓴다. 상속하면 float 1e20 이
+                            # 들어와 "1e+20" 으로 찍혀 표기가 달라지므로, 같은 값이면 표기를 지킨다.
+                            if key == "DT":
+                                try:
+                                    if float(v) == float(default):
+                                        return default
+                                except (TypeError, ValueError):
+                                    pass
+                            return v
+                    return default
+
+                # DropContact.Scope — 바닥판 접촉 대상 범위.
+                # 기본 "Outer"(bbox 외곽 10% 마진 자동선별, 기존 동작). "All" 이면 전 파트.
+                # 🔴 D2R 을 쓸 때는 이 집합의 접촉력이 R2D/D2R 트리거(entno)가 된다.
+                # 자세에 따라 실제로 바닥에 닿는 파트가 외곽 선별에서 빠지면 전환이 늦거나
+                # 일어나지 않으므로, 트리거 신뢰도가 중요하면 All 로 둔다.
+                _scope = str(drop_contact.get("Scope", "Outer")).strip().lower()
+                if _scope == "all":
+                    outerPartIDs = list(partBBoxes.keys())
+                    print("Drop contact: Scope=All → 전 파트 {0}개를 바닥판 접촉 대상으로".format(
+                        len(outerPartIDs)))
+                elif _scope not in ("outer", ""):
+                    print("  Warning: DropContact.Scope={0} 는 알 수 없는 값 — Outer 로 처리".format(
+                        drop_contact.get("Scope")))
+
                 if not convertToSS and option.get("DeformableToRigid", False):
                     # GENERAL 유지 + D2R → 내부 접촉 GENERAL + 바닥판 접촉 GENERAL 분리
                     # 기존 GENERAL 설정값 가져오기
@@ -2982,23 +3029,52 @@ class KooDynaAdvancedModification:
                         self.dynaImporter.contactManager.RemoveContactbyID(cid_g)
                         print("DROP_ATTITUDE: GENERAL(CID={0}) -> Internal_GENERAL(CID={1}, PartSet, SOFT=1)".format(cid_g, internalGeneral.cid))
 
-                    # 외곽 part vs 바닥판: AUTOMATIC_GENERAL로 생성 (D2R 감시용)
+                    # 외곽 part vs 바닥판: D2R 감시용 접촉.
+                    # DropContact.Type — "General"(기본, 기존 동작) | "SurfaceToSurface".
+                    # S2S 는 정의상 slave↔master 양면만 보므로 트리거 경계가 더 명확하다.
+                    # 어느 쪽이든 내부 접촉(MSID=0 단면)과는 대상이 겹치지 않는다 —
+                    # 내부는 바닥판 제외 집합의 자기접촉, 바닥판은 외곽↔바닥판 쌍만 본다.
                     if outerPartIDs:
                         outerPartSet = self.dynaImporter.partManager.CreatePartSet(pids=outerPartIDs, name="DropContact_OuterParts")
-                        dropGeneral = self.dynaImporter.contactManager.CreateContactAutomaticGeneral(
-                            outerPartSet.psid, part.id, 2, 3, 0, 0, 0, 0,
-                            gen_FS, gen_FD, gen_DC, gen_VC, gen_VDC,
-                            0, 0.0, "1.0000E+20",
-                            1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
-                        dropGeneral.name = "DropSurface_GENERAL"
-                        dropGeneral.SetOptCardA(opt_SOFT if opt_SOFT != 2 else 1, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
-                        dropGeneral.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
-                        if has_optC:
-                            dropGeneral.SetOptCardC(opt_IGAP, opt_IGNORE, opt_DPRFAC, opt_DTSTIF, opt_EDGEK, 0.0, opt_FLANGL, opt_CID_RCF)
-                        if has_optD:
-                            dropGeneral.SetOptCardD(opt_Q2TRI, opt_DTPCHK, opt_SFNBR, opt_FNLSCL, opt_DNLSCL, opt_TCSO, opt_TIEDID, opt_SHLEDG)
-                        dropContactCID = dropGeneral.cid
-                        print("DROP_ATTITUDE: Created DropSurface_GENERAL (CID={0}, SOFT=1)".format(dropGeneral.cid))
+                        _dctype = str(drop_contact.get("Type", "General")).strip().lower().replace("_", "")
+                        if _dctype in ("surfacetosurface", "s2s"):
+                            dropS2S = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(
+                                outerPartSet.psid, part.id, 2, 3, 0, 0, 0, 0,
+                                gen_FS, gen_FD, gen_DC, gen_VC, gen_VDC,
+                                int(_dcval("PENCHK", 0)), _dcval("BT", 0.0), _dcval("DT", "1.0000E+20"),
+                                _dcval("SFS", 1.0), _dcval("SFM", 1.0),
+                                _dcval("SST", 0.0), _dcval("MST", 0.0),
+                                _dcval("SFST", 1.0), _dcval("SFMT", 1.0),
+                                _dcval("FSF", 1.0), _dcval("VSF", 1.0))
+                            dropS2S.name = "DropSurface_S2S"
+                            dropS2S.SetOptCardA(opt_SOFT, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR,
+                                                opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
+                            dropS2S.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG,
+                                                opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
+                            if has_optC:
+                                dropS2S.SetOptCardC(opt_IGAP, opt_IGNORE, opt_DPRFAC, opt_DTSTIF,
+                                                    opt_EDGEK, 0.0, opt_FLANGL, opt_CID_RCF)
+                            if has_optD:
+                                dropS2S.SetOptCardD(opt_Q2TRI, opt_DTPCHK, opt_SFNBR, opt_FNLSCL,
+                                                    opt_DNLSCL, opt_TCSO, opt_TIEDID, opt_SHLEDG)
+                            dropContactCID = dropS2S.cid
+                            print("DROP_ATTITUDE: DropSurface_S2S(CID={0}, SSID={1}(PartSet,{2} parts), MSID={3}) — D2R entno".format(
+                                dropS2S.cid, outerPartSet.psid, len(outerPartIDs), part.id))
+                        else:
+                            dropGeneral = self.dynaImporter.contactManager.CreateContactAutomaticGeneral(
+                                outerPartSet.psid, part.id, 2, 3, 0, 0, 0, 0,
+                                gen_FS, gen_FD, gen_DC, gen_VC, gen_VDC,
+                                0, 0.0, "1.0000E+20",
+                                1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
+                            dropGeneral.name = "DropSurface_GENERAL"
+                            dropGeneral.SetOptCardA(opt_SOFT if opt_SOFT != 2 else 1, opt_SOFSCL, opt_LCIDAB, opt_MAXPAR, opt_SBOPT, opt_DEPTH, opt_BSORT, opt_FRCFRQ)
+                            dropGeneral.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
+                            if has_optC:
+                                dropGeneral.SetOptCardC(opt_IGAP, opt_IGNORE, opt_DPRFAC, opt_DTSTIF, opt_EDGEK, 0.0, opt_FLANGL, opt_CID_RCF)
+                            if has_optD:
+                                dropGeneral.SetOptCardD(opt_Q2TRI, opt_DTPCHK, opt_SFNBR, opt_FNLSCL, opt_DNLSCL, opt_TCSO, opt_TIEDID, opt_SHLEDG)
+                            dropContactCID = dropGeneral.cid
+                            print("DROP_ATTITUDE: Created DropSurface_GENERAL (CID={0}, SOFT=1)".format(dropGeneral.cid))
 
                 else:
                     # convert_to_ss=true → S2S로 바닥판 접촉 생성
@@ -3012,22 +3088,22 @@ class KooDynaAdvancedModification:
 
                     MSID = part.id
                     MSTYP = 3
-                    FS = drop_contact.get("FS", 0.3)
-                    FD = drop_contact.get("FD", 0.2)
-                    DC = drop_contact.get("DC", 0.0)
-                    VC = drop_contact.get("VC", 0.0)
-                    VDC = drop_contact.get("VDC", 10.0)
-                    PENCHK = int(drop_contact.get("PENCHK", 1))
-                    BT = 0.00
-                    DT = "1.0000E+20"
-                    SFS = drop_contact.get("SFS", 1.0)
-                    SFM = drop_contact.get("SFM", 1.0)
-                    SST = drop_contact.get("SST", 0.0)
-                    MST = drop_contact.get("MST", 0.0)
-                    SFST = drop_contact.get("SFST", 1.0)
-                    SFMT = drop_contact.get("SFMT", 1.0)
-                    FSF = drop_contact.get("FSF", 1.0)
-                    VSF = drop_contact.get("VSF", 1.0)
+                    FS = _dcval("FS", 0.3)
+                    FD = _dcval("FD", 0.2)
+                    DC = _dcval("DC", 0.0)
+                    VC = _dcval("VC", 0.0)
+                    VDC = _dcval("VDC", 10.0)
+                    PENCHK = int(_dcval("PENCHK", 1))
+                    BT = _dcval("BT", 0.00)          # 예전엔 하드코딩이라 옵션조차 없었다
+                    DT = _dcval("DT", "1.0000E+20")
+                    SFS = _dcval("SFS", 1.0)
+                    SFM = _dcval("SFM", 1.0)
+                    SST = _dcval("SST", 0.0)
+                    MST = _dcval("MST", 0.0)
+                    SFST = _dcval("SFST", 1.0)
+                    SFMT = _dcval("SFMT", 1.0)
+                    FSF = _dcval("FSF", 1.0)
+                    VSF = _dcval("VSF", 1.0)
                     surfacetosurfaceContact = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(
                         SSID, MSID, SSTYP, MSTYP, 0, 0, 0, 0,
                         FS, FD, DC, VC, VDC, PENCHK, BT, DT,
