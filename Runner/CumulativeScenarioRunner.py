@@ -64,9 +64,21 @@ def _flock_with_timeout(fd, operation, timeout=120):
                     f"(errno={e.errno}). fd 수명 또는 파일시스템 지원 문제.") from e
         if time.time() >= deadline:
             raise TimeoutError(
-                f"flock 획득 실패 (timeout={timeout}s). "
-                f"NFS stale lock 가능성 — lock 파일 삭제 후 재시도 필요")
+                f"flock 획득 실패 (timeout={timeout}s). 다른 잡이 장시간 점유 중이다 — "
+                f"동시 잡 수 또는 점유 구간을 줄일 것. "
+                f"🔴 lock 파일을 지우지 말 것: 지우면 재시도가 새 inode 를 만들어 상호배제가 깨진다")
         time.sleep(1)
+
+
+def _open_lock(lock_path):
+    """index 락 파일 fd 를 연다.
+
+    O_RDWR|O_CREAT, 0o664 — 다른 사용자(또는 root)가 먼저 만든 락 파일도 그룹이 쓸 수 있게 한다.
+    🔴 이 파일은 절대 unlink 하지 않는다. flock 은 보유 프로세스가 죽으면 자동 해제되므로
+    지울 이유가 없고, 지우면 재시도가 **새 inode** 를 만들어 기존 보유자와 서로 다른 파일에
+    락을 걸게 된다 — 상호배제가 조용히 깨지고 index 가 동시 쓰기로 손상된다.
+    """
+    return os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o664)
 
 
 def _semaphore_acquire(lock_dir, max_concurrency, timeout=120, poll_interval=1.0):
@@ -532,36 +544,28 @@ class CumulativeScenarioRunner:
         """simulation_index.json 로드 (double-checked locking + stale lock 복구)
         - 정상 경로: LOCK_SH로 동시 읽기 허용
         - 파일 없거나 손상 시: LOCK_EX로 재획득 후 단독 초기화/복구
-        - NFS stale lock 시: lock 파일 삭제 후 재시도
+        - 🔴 lock 파일은 지우지 않는다: 지우면 재시도가 새 inode 를 만들어 상호배제가 깨진다
         """
         lock_file = self.index_file + ".lock"
 
-        for attempt in range(2):  # stale lock 복구 시 최대 1회 재시도
-            try:
-                return self._load_index_locked(lock_file)
-            except TimeoutError:
-                if attempt == 0:
-                    logging.warning(
-                        f"NFS stale lock 감지: {lock_file} — "
-                        f"노드 장애로 인한 잔존 lock 가능성. lock 파일 삭제 후 재시도")
-                    try:
-                        os.unlink(lock_file)
-                    except OSError:
-                        pass
-                else:
-                    # 🔴 락 없이 읽지 않는다. 동시 수백 잡 환경에서 쓰기 도중 파일을
-                    # 읽으면 JSONDecodeError 가 나고, 예전에는 그때 _init_index() 로
-                    # 빈 index 를 만들어 기존 기록을 통째로 날릴 수 있었다.
-                    # 못 읽으면 못 읽는다고 실패하는 편이 낫다.
-                    raise RuntimeError(
-                        f"simulation_index.json lock 획득 실패: {lock_file}. "
-                        f"stale lock 이면 이 파일을 지우고 재실행하라. "
-                        f"(락 없이 읽으면 부분 기록을 읽어 index 를 손상시킨다)")
+        # 🔴 예전에는 타임아웃 시 lock 파일을 unlink 하고 재시도했다. 그 재시도는 **새 inode** 를
+        # 만들어 기존 보유자와 다른 파일에 락을 걸게 하므로 상호배제가 깨졌다(실측 확인).
+        # flock 은 보유 프로세스가 죽으면 자동 해제되므로 복구 조작 자체가 불필요하다.
+        try:
+            return self._load_index_locked(lock_file)
+        except TimeoutError as e:
+            # 🔴 락 없이 읽지 않는다. 쓰기 도중 파일을 읽으면 JSONDecodeError 가 나고,
+            # 예전에는 그때 _init_index() 로 빈 index 를 만들어 기존 기록을 날릴 수 있었다.
+            raise RuntimeError(
+                f"simulation_index.json lock 획득 실패: {lock_file}. "
+                f"다른 잡이 장시간 점유 중이다 — 동시 잡 수를 줄이거나 점유 구간을 확인할 것. "
+                f"🔴 이 lock 파일을 지우지 말 것(지우면 상호배제가 깨진다). "
+                f"원인: {e}") from e
 
     def _load_index_locked(self, lock_file):
         """_load_index 내부: flock 사용 읽기"""
         # 1단계: LOCK_SH로 빠른 읽기 시도
-        with open(lock_file, 'a', encoding='utf-8') as lf:
+        with os.fdopen(_open_lock(lock_file), 'r+', encoding='utf-8') as lf:
             _flock_with_timeout(lf, fcntl.LOCK_SH)
             try:
                 if os.path.exists(self.index_file):
@@ -577,7 +581,7 @@ class CumulativeScenarioRunner:
                 _flock_with_timeout(lf, fcntl.LOCK_UN)
 
         # 2단계: 파일 없거나 손상 → LOCK_EX로 단독 초기화/복구
-        with open(lock_file, 'a', encoding='utf-8') as lf:
+        with os.fdopen(_open_lock(lock_file), 'r+', encoding='utf-8') as lf:
             _flock_with_timeout(lf, fcntl.LOCK_EX)
             try:
                 # EX 획득 후 재확인 (다른 잡이 먼저 초기화했을 수 있음)
@@ -648,7 +652,7 @@ class CumulativeScenarioRunner:
     def _save_index(self):
         """simulation_index.json 저장 (파일 잠금 + atomic write)"""
         lock_file = self.index_file + ".lock"
-        with open(lock_file, 'a', encoding='utf-8') as lf:  # 'a': NFS truncate 경합 방지
+        with os.fdopen(_open_lock(lock_file), 'r+', encoding='utf-8') as lf:  # O_RDWR|O_CREAT,0o664
             _flock_with_timeout(lf, fcntl.LOCK_EX)
             try:
                 self._save_index_unlocked()
@@ -657,30 +661,24 @@ class CumulativeScenarioRunner:
 
     def _update_index(self, alias: str, run_info: Dict[str, Any]):
         """simulation_index.json 업데이트 (lock 내 re-read + 머지로 lost update 방지)
-        NFS stale lock 시 lock 파일 삭제 후 재시도"""
+        🔴 lock 파일은 지우지 않는다(새 inode 로 상호배제 붕괴)"""
         lock_file = self.index_file + ".lock"
-        for attempt in range(2):
-            try:
-                self._update_index_locked(lock_file, alias, run_info)
-                return
-            except TimeoutError:
-                if attempt == 0:
-                    logging.warning(f"_update_index: NFS stale lock 감지 — lock 파일 삭제 후 재시도")
-                    try:
-                        os.unlink(lock_file)
-                    except OSError:
-                        pass
-                else:
-                    # 🔴 락 없이 쓰지 않는다. 동시 수백 잡이 각자 자기 index 를
-                    # 통째로 덮어쓰면 다른 잡의 기록이 사라진다(lost update).
-                    raise RuntimeError(
-                        f"simulation_index.json lock 획득 실패: {lock_file}. "
-                        f"stale lock 이면 이 파일을 지우고 재실행하라. "
-                        f"(락 없이 쓰면 다른 잡의 기록을 덮어쓴다)")
+        # unlink 재시도 제거 — _load_index 의 주석 참조(새 inode 로 상호배제 붕괴)
+        try:
+            self._update_index_locked(lock_file, alias, run_info)
+            return
+        except TimeoutError as e:
+            # 🔴 락 없이 쓰지 않는다. 동시 수백 잡이 각자 자기 index 를 통째로
+            # 덮어쓰면 다른 잡의 기록이 사라진다(lost update).
+            raise RuntimeError(
+                f"simulation_index.json lock 획득 실패: {lock_file}. "
+                f"다른 잡이 장시간 점유 중이다 — 동시 잡 수를 줄이거나 점유 구간을 확인할 것. "
+                f"🔴 이 lock 파일을 지우지 말 것(지우면 상호배제가 깨진다). "
+                f"원인: {e}") from e
 
     def _update_index_locked(self, lock_file, alias, run_info):
         """_update_index 내부: flock 사용 업데이트"""
-        with open(lock_file, 'a', encoding='utf-8') as lf:  # 'a': NFS truncate 경합 방지
+        with os.fdopen(_open_lock(lock_file), 'r+', encoding='utf-8') as lf:  # O_RDWR|O_CREAT,0o664
             _flock_with_timeout(lf, fcntl.LOCK_EX)
             try:
                 # 최신 파일 재읽기: 다른 DOE 잡이 쓴 내용을 반영
@@ -917,7 +915,7 @@ class CumulativeScenarioRunner:
         """시나리오 status 집계 (lock 내 re-read 후 실제 결과 기반 판정)"""
         lock_file = self.index_file + ".lock"
         try:
-            with open(lock_file, 'a', encoding='utf-8') as lf:
+            with os.fdopen(_open_lock(lock_file), 'r+', encoding='utf-8') as lf:
                 _flock_with_timeout(lf, fcntl.LOCK_EX)
                 try:
                     if os.path.exists(self.index_file):
