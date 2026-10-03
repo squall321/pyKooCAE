@@ -331,6 +331,22 @@ class KooInterfaceSpringbackLSDyna:
             stream.write("\n")
 
 
+def _d2r_num(v):
+    """DEFORMABLE_TO_RIGID_AUTOMATIC 실수 필드를 10칸 안에서 손실 없이 쓴다.
+
+    기존 출력(0.0 -> "       0.0", 1e20 -> "   1.0e+20")을 보존하면서, 1e-7 처럼
+    ">10.1f" 로는 0.0 이 돼버리던 작은 값을 지수표기로 살린다.
+    """
+    f = float(v)
+    if f == 0.0:
+        return format(0.0, ">10.1f")          # 기존과 동일한 "       0.0"
+    if 0.1 <= abs(f) < 1.0e5:
+        s = format(f, ">10.1f")               # 사람이 읽기 쉬운 범위는 고정소수점 유지
+        if float(s) == f:
+            return s
+    return format(f, ">10.1e")                # 그 밖은 지수표기 (손실 방지)
+
+
 class KooDeformableToRigidAutomatic:
     """*DEFORMABLE_TO_RIGID_AUTOMATIC 키워드 클래스"""
     def __init__(self, swset, code, time1, time2, time3, entno, relsw, paired,
@@ -354,11 +370,15 @@ class KooDeformableToRigidAutomatic:
     def WriteDynaKeyword(self):
         kw = "*DEFORMABLE_TO_RIGID_AUTOMATIC\n"
         kw += "$    swset      code     time1     time2     time3     entno     relsw    paired\n"
-        kw += f"{self.swset:>10}{self.code:>10}{self.time1:>10.1f}{self.time2:>10.1e}"
-        kw += f"{self.time3:>10.1f}{self.entno:>10}{self.relsw:>10}{self.paired:>10}\n"
+        # 🔴 예전에는 time1/time3/dtmax/offset 이 ">10.1f" 였다. 그래서 1e-7 같은 작은 값이
+        # 0.0 으로 반올림돼 **출력에서 조용히 사라졌다**(time2 만 ">10.1e" 라 살아남았다).
+        # 세부 옵션을 열면서 드러난 기존 결함이라 함께 고친다. 0.0 은 _d2r_num 이 "0.0" 으로
+        # 내보내므로 기존 덱은 바이트 동일하다.
+        kw += f"{self.swset:>10}{self.code:>10}{_d2r_num(self.time1)}{_d2r_num(self.time2)}"
+        kw += f"{_d2r_num(self.time3)}{self.entno:>10}{self.relsw:>10}{self.paired:>10}\n"
         kw += "$     nrbf      ncsf       rwf     dtmax       D2R       R2D    offset\n"
-        kw += f"{self.nrbf:>10}{self.ncsf:>10}{self.rwf:>10}{self.dtmax:>10.1f}"
-        kw += f"{len(self.d2r_pids):>10}{len(self.r2d_pids):>10}{self.offset:>10.1f}\n"
+        kw += f"{self.nrbf:>10}{self.ncsf:>10}{self.rwf:>10}{_d2r_num(self.dtmax)}"
+        kw += f"{len(self.d2r_pids):>10}{len(self.r2d_pids):>10}{_d2r_num(self.offset)}\n"
         for pid, lrb in self.d2r_pids:
             kw += f"{pid:>10}{lrb:>10}      PART\n"
         for pid in self.r2d_pids:
@@ -450,10 +470,19 @@ class KooDynaAdditionalManager:
         return interface
 
     def CreateDeformableToRigidAutomatic(self, swset, code, entno, relsw, paired,
-                                          d2r_pids, r2d_pids, offset=0.0):
+                                          d2r_pids, r2d_pids, offset=0.0,
+                                          time1=0.0, time2=1e20, time3=0.0,
+                                          nrbf=0, ncsf=0, rwf=0, dtmax=0.0):
+        """*DEFORMABLE_TO_RIGID_AUTOMATIC 카드 생성.
+
+        time1/time2/time3/nrbf/ncsf/rwf/dtmax 는 예전에 리터럴로 박혀 있어
+        시나리오에서 바꿀 수 없었다. 기본값을 그 리터럴과 동일하게 두었으므로
+        인자를 주지 않으면 기존 덱과 바이트 동일하다.
+        swset/code/relsw/paired 는 쌍 스위치 메커니즘이라 호출부가 고정으로 넘긴다.
+        """
         d2r = KooDeformableToRigidAutomatic(
-            swset, code, 0.0, 1e20, 0.0, entno, relsw, paired,
-            0, 0, 0, 0.0, d2r_pids, r2d_pids, offset)
+            swset, code, time1, time2, time3, entno, relsw, paired,
+            nrbf, ncsf, rwf, dtmax, d2r_pids, r2d_pids, offset)
         self.d2r_automatics[swset] = d2r
         return d2r
 

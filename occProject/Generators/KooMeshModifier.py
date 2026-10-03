@@ -1653,6 +1653,22 @@ class KooMeshModifier(KooSimulationGenerator):
                                     curOptions["DropSurface"] = ["PlanewithRoughness", xLength, yLength, zLength, numX, numY, numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor2]
                                 else:
                                     curOptions["DropSurface"] = ["PlanewithRoughness", xLength, yLength, zLength, numX, numY, numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor]
+                        elif "d2rtime1" in line.lower():
+                            curOptions["D2RTime1"] = KooDynaFloat(line.split(",")[1])
+                        elif "d2rtime2" in line.lower():
+                            curOptions["D2RTime2"] = KooDynaFloat(line.split(",")[1])
+                        elif "d2rtime3" in line.lower():
+                            curOptions["D2RTime3"] = KooDynaFloat(line.split(",")[1])
+                        elif "d2rnrbf" in line.lower():
+                            curOptions["D2RNrbf"] = KooDynaInt(line.split(",")[1])
+                        elif "d2rncsf" in line.lower():
+                            curOptions["D2RNcsf"] = KooDynaInt(line.split(",")[1])
+                        elif "d2rrwf" in line.lower():
+                            curOptions["D2RRwf"] = KooDynaInt(line.split(",")[1])
+                        elif "d2rdtmax" in line.lower():
+                            curOptions["D2RDtmax"] = KooDynaFloat(line.split(",")[1])
+                        elif "d2roffset" in line.lower():
+                            curOptions["D2ROffset"] = KooDynaFloat(line.split(",")[1])
                         elif "deformabletorigid" in line.lower():
                             svector = line.split(",")
                             curOptions["DeformableToRigid"] = svector[1].strip().lower() == "true"

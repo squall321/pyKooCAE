@@ -3038,14 +3038,26 @@ class KooDynaAdvancedModification:
             if option.get("DeformableToRigid", False) and dropContactCID is not None:
                 d2r_pid_list = [(pid, 0) for pid in existingPartIDs]
                 r2d_pid_list = list(existingPartIDs)
+                # 세부 필드는 옵션파일에서 지정 가능. 미지정이면 예전에 리터럴로 박혀 있던
+                # 값과 동일한 기본값이 들어가므로 기존 덱과 바이트 동일하다.
+                # swset/code/relsw/paired 는 쌍 스위치 메커니즘이라 고정이다.
+                d2r_detail = dict(
+                    time1=option.get("D2RTime1", 0.0),
+                    time2=option.get("D2RTime2", 1e20),
+                    time3=option.get("D2RTime3", 0.0),
+                    nrbf=option.get("D2RNrbf", 0),
+                    ncsf=option.get("D2RNcsf", 0),
+                    rwf=option.get("D2RRwf", 0),
+                    dtmax=option.get("D2RDtmax", 0.0),
+                    offset=option.get("D2ROffset", 0.0))
                 # SWSET 20: 접촉력이 !=0 → 0으로 변할 때 D→R (충돌 후 바운싱 시작)
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
                     swset=20, code=4, entno=dropContactCID, relsw=10, paired=1,
-                    d2r_pids=d2r_pid_list, r2d_pids=[])
+                    d2r_pids=d2r_pid_list, r2d_pids=[], **d2r_detail)
                 # SWSET 10: 접촉력이 0 → !=0으로 변할 때 R→D (재충돌 직전)
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
                     swset=10, code=2, entno=dropContactCID, relsw=20, paired=-1,
-                    d2r_pids=[], r2d_pids=r2d_pid_list)
+                    d2r_pids=[], r2d_pids=r2d_pid_list, **d2r_detail)
                 print("DROP_ATTITUDE: D2R paired switch configured for {0} model parts (CID={1})".format(len(existingPartIDs), dropContactCID))
 
             self.dynaImporter.metaData["scenario_mode"] = "DropAttitude"

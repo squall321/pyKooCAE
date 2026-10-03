@@ -155,9 +155,21 @@ def build_drop_attitude_config(
         sf2 = drop_surface.get("shape_factor2", sf1)
         drop_surface_line += f",{roughness},{r_max},{sf1},{sf2}"
 
-    # DeformableToRigid 옵션
-    d2r_enabled = drop_surface.get("deformable_to_rigid", False)
-    d2r_line = "\nDeformableToRigid,True" if d2r_enabled else ""
+    # DeformableToRigid 옵션 — bool(기존) 또는 dict(세부 필드) 둘 다 받는다.
+    # dict 의 미지정 필드는 KMM 기본값(예전 리터럴)이 들어가므로 회귀 0.
+    # swset/code/relsw/paired 는 쌍 스위치 메커니즘이라 노출하지 않는다.
+    d2r_raw = drop_surface.get("deformable_to_rigid", False)
+    d2r_line = ""
+    if d2r_raw:
+        d2r_line = "\nDeformableToRigid,True"
+        if isinstance(d2r_raw, dict):
+            # scenario 키(소문자) → KMM 옵션 키(D2R*) 매핑
+            for skey, okey in (("time1", "D2RTime1"), ("time2", "D2RTime2"),
+                               ("time3", "D2RTime3"), ("nrbf", "D2RNrbf"),
+                               ("ncsf", "D2RNcsf"), ("rwf", "D2RRwf"),
+                               ("dtmax", "D2RDtmax"), ("offset", "D2ROffset")):
+                if skey in d2r_raw:
+                    d2r_line += f"\n{okey},{d2r_raw[skey]}"
 
     # 누적 스텝 간 DR 안정화 라인 (기본 off = 기존 동작). DROP/IMPACT 공용 헬퍼 사용.
     dr_line = build_dynamic_relaxation_lines(sim_params, tFinal)
