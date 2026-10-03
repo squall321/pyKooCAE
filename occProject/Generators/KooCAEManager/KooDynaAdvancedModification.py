@@ -1903,9 +1903,23 @@ class KooDynaAdvancedModification:
                 DT2MS=ct.get("DT2MS", 0.0), LCTM=int(ct.get("LCTM", 0)),
                 ERODE=int(ct.get("ERODE", 1)), MS1ST=int(ct.get("MS1ST", 0)))
 
-        # CONTROL_HOURGLASS: 기존 값 보존. 없으면 새로 생성 (override 가능)
+        # CONTROL_HOURGLASS
+        # 🔴 예전에는 `if cm.controlHourglass is None` 가드 때문에 입력 덱에 *CONTROL_HOURGLASS
+        # 가 있으면 옵션이 **경고 없이 통째로 무시**됐다. 같은 함수의 controlTermination 은
+        # 덱에 있어도 ENDTIM/DTMIN 을 덮어쓰므로 hourglass 만 예외였다.
+        # 옵션을 '지정했을 때만' 덮어쓴다 → 옵션을 쓰지 않는 기존 모델은 덱 값 그대로(회귀 0).
         if cm.controlHourglass is None:
             cm.SetControlHourglass(IHQ=int(ch.get("IHQ", 5)), QH=ch.get("QH", 0.1))
+        elif ch:
+            prev_ihq, prev_qh = cm.controlHourglass.IHQ, cm.controlHourglass.QH
+            if "IHQ" in ch:
+                cm.controlHourglass.IHQ = int(ch["IHQ"])
+            if "QH" in ch:
+                cm.controlHourglass.QH = ch["QH"]
+            if (cm.controlHourglass.IHQ, cm.controlHourglass.QH) != (prev_ihq, prev_qh):
+                print("CONTROL_HOURGLASS: 덱 값 IHQ={0} QH={1} → 옵션 값 IHQ={2} QH={3} 으로 덮어씀"
+                      .format(prev_ihq, prev_qh,
+                              cm.controlHourglass.IHQ, cm.controlHourglass.QH))
 
         # DAMPING_PART_STIFFNESS 보정: coef=0.0이면 0.01(최소 권장값)로 설정
         # LS-DYNA explicit에서 COEF > 0: unitless stiffness-weighted damping (권장 0.01~0.25)
