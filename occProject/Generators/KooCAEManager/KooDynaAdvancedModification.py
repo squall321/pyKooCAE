@@ -2378,6 +2378,8 @@ class KooDynaAdvancedModification:
             DEPTH_opt = drop_contact.get("DEPTH", 35)
             BSORT_opt = drop_contact.get("BSORT", 100)
             FRCFRQ_opt = drop_contact.get("FRCFRQ", 1)
+            LCIDAB_opt = int(drop_contact.get("LCIDAB", 0))      # 예전엔 리터럴 0
+            MAXPAR_opt = drop_contact.get("MAXPAR", 1.025)       # 예전엔 리터럴 1.025
             # OptCardA/B (바닥판 + robust_contact 공용)
             opt_SOFT = int(drop_contact.get("SOFT", 1))
             opt_SOFSCL = drop_contact.get("SOFSCL", 0.1)
@@ -2438,6 +2440,51 @@ class KooDynaAdvancedModification:
             _general_snapshot = (self.dynaImporter.contactManager.contacts[general_cids[0]]
                                  if general_cids else None)
 
+            # OptCardA 상속 — DropContact.InheritGeneral 이 켜져 있고 drop_contact 에 명시하지 않은
+            # 필드만 원본 GENERAL 의 OptCardA(SOFT SOFSCL LCIDAB MAXPAR SBOPT DEPTH BSORT FRCFRQ)를
+            # 따른다. OptCardA 는 어느 경로에서도 상속되지 않아, 입력 덱의 MAXPAR=0.0/BSORT=0 이
+            # 공통 기본값 1.025/100 으로 덮이던 것을 고친다(2026-10-06 실측).
+            # 🔴 robust_contact 가 켜져 있으면 SOFT·DEPTH 는 상속하지 않는다 — 뒤에서 SOFT=2·DEPTH=3 을
+            # 강제하는 것이 segfault·관통 방지를 위한 의도된 동작이라 그쪽이 이긴다.
+            _inh_a = {}
+            if (str(drop_contact.get("InheritGeneral", False)).strip().lower() in ("true", "1", "yes")
+                    and _general_snapshot is not None and getattr(_general_snapshot, "OptCardA", None)):
+                _ga = _general_snapshot.OptCardA
+                for _i, _n in enumerate(("SOFT", "SOFSCL", "LCIDAB", "MAXPAR", "SBOPT", "DEPTH", "BSORT", "FRCFRQ")):
+                    if _n in drop_contact or _i >= len(_ga):
+                        continue
+                    if robust_contact and _n in ("SOFT", "DEPTH"):
+                        continue
+                    # 덱에서 읽힌 값은 10칸 패딩 문자열('     0.000')일 수 있다.
+                    # - 정수 필드(SOFT·LCIDAB·SBOPT·DEPTH·BSORT·FRCFRQ)는 진짜 int 로 — 뒤에서
+                    #   `opt_SOFT != 2` 같은 비교를 하므로 문자열이면 틀어진다. '2.0' 표기도 받는다.
+                    # - 실수 필드(SOFSCL·MAXPAR)는 공백만 벗긴 원문 문자열로 둔다 — 하류에 산술이 없고
+                    #   format(x, ">10") 으로만 쓰므로 원본 덱 표기('0.000')가 그대로 보존된다.
+                    #   float 로 바꾸면 '0.0' 으로 찍혀 원본과 달라진다(실측).
+                    _raw = str(_ga[_i]).strip()
+                    if _raw == "":
+                        continue
+                    if _n in ("SOFSCL", "MAXPAR"):
+                        _inh_a[_n] = _raw
+                    else:
+                        try:
+                            _inh_a[_n] = int(float(_raw))
+                        except ValueError:
+                            continue
+                if _inh_a:
+                    # 양 계열(SS 경로 *_opt / GENERAL·바닥판 경로 opt_*) 모두 갱신
+                    if "SOFT"   in _inh_a: opt_SOFT   = int(_inh_a["SOFT"]);   SOFT_opt   = int(_inh_a["SOFT"])
+                    if "SOFSCL" in _inh_a: opt_SOFSCL = _inh_a["SOFSCL"];      SOFSCL_opt = _inh_a["SOFSCL"]
+                    if "LCIDAB" in _inh_a: opt_LCIDAB = int(_inh_a["LCIDAB"]); LCIDAB_opt = int(_inh_a["LCIDAB"])
+                    if "MAXPAR" in _inh_a: opt_MAXPAR = _inh_a["MAXPAR"];      MAXPAR_opt = _inh_a["MAXPAR"]
+                    if "SBOPT"  in _inh_a: opt_SBOPT  = int(_inh_a["SBOPT"]);  SBOPT_opt  = int(_inh_a["SBOPT"])
+                    if "DEPTH"  in _inh_a: opt_DEPTH  = int(_inh_a["DEPTH"]);  DEPTH_opt  = int(_inh_a["DEPTH"])
+                    if "BSORT"  in _inh_a: opt_BSORT  = int(_inh_a["BSORT"]);  BSORT_opt  = int(_inh_a["BSORT"])
+                    if "FRCFRQ" in _inh_a: opt_FRCFRQ = int(_inh_a["FRCFRQ"]); FRCFRQ_opt = int(_inh_a["FRCFRQ"])
+                    print("DROP_ATTITUDE: OptCardA 상속 from GENERAL(CID={0}): {1}{2}".format(
+                        general_cids[0], _inh_a,
+                        "  (robust_contact → SOFT·DEPTH 는 강제값 유지)" if robust_contact else ""))
+
             if convertToSS and not decomposeGeneral and general_cids:
                 # GENERAL → SINGLE_SURFACE(SOFT=2) 변환 (바닥판 제외 part set)
                 modelPartSet = self.dynaImporter.partManager.CreatePartSet(pids=existingPartIDs, name="ModelParts_SS")
@@ -2456,7 +2503,7 @@ class KooDynaAdvancedModification:
                         contact_g.SFMT if contact_g.SFMT != "" else 1.0,
                         contact_g.FSF if contact_g.FSF != "" else 1.0,
                         contact_g.VSF if contact_g.VSF != "" else 1.0)
-                    ss.SetOptCardA(SOFT_opt, SOFSCL_opt, 0, 1.025, SBOPT_opt, DEPTH_opt, BSORT_opt, FRCFRQ_opt)
+                    ss.SetOptCardA(SOFT_opt, SOFSCL_opt, LCIDAB_opt, MAXPAR_opt, SBOPT_opt, DEPTH_opt, BSORT_opt, FRCFRQ_opt)
                     if contact_g.OptCardB:
                         ss.OptCardB = contact_g.OptCardB
                     else:
@@ -2501,7 +2548,7 @@ class KooDynaAdvancedModification:
                         0.0, 0.0, drop_contact.get("VDC", 10.0),
                         0, 0.0, 1.0E20,
                         1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
-                    ss.SetOptCardA(SOFT_opt, SOFSCL_opt, 0, 1.025, SBOPT_opt, DEPTH_opt, BSORT_opt, FRCFRQ_opt)
+                    ss.SetOptCardA(SOFT_opt, SOFSCL_opt, LCIDAB_opt, MAXPAR_opt, SBOPT_opt, DEPTH_opt, BSORT_opt, FRCFRQ_opt)
                     ss.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
                     if has_optC:
                         ss.SetOptCardC(opt_IGAP, opt_IGNORE, opt_DPRFAC, opt_DTSTIF, opt_EDGEK, 0.0, opt_FLANGL, opt_CID_RCF)
@@ -3108,14 +3155,14 @@ class KooDynaAdvancedModification:
                         SSID, MSID, SSTYP, MSTYP, 0, 0, 0, 0,
                         FS, FD, DC, VC, VDC, PENCHK, BT, DT,
                         SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
-                    SOFT = drop_contact.get("SOFT", 2)
-                    SOFSCL = drop_contact.get("SOFSCL", 0.1)
-                    LCIDAB = drop_contact.get("LCIDAB", 0)
-                    MAXPAR = drop_contact.get("MAXPAR", 1.025)
-                    SBOPT = drop_contact.get("SBOPT", 3)
-                    DEPTH = drop_contact.get("DEPTH", 35)
-                    BSORT = drop_contact.get("BSORT", 100)
-                    FRCFRQ = drop_contact.get("FRCFRQ", 1)
+                    SOFT = drop_contact.get("SOFT", _inh_a.get("SOFT", 2))
+                    SOFSCL = drop_contact.get("SOFSCL", _inh_a.get("SOFSCL", 0.1))
+                    LCIDAB = drop_contact.get("LCIDAB", _inh_a.get("LCIDAB", 0))
+                    MAXPAR = drop_contact.get("MAXPAR", _inh_a.get("MAXPAR", 1.025))
+                    SBOPT = drop_contact.get("SBOPT", _inh_a.get("SBOPT", 3))
+                    DEPTH = drop_contact.get("DEPTH", _inh_a.get("DEPTH", 35))
+                    BSORT = drop_contact.get("BSORT", _inh_a.get("BSORT", 100))
+                    FRCFRQ = drop_contact.get("FRCFRQ", _inh_a.get("FRCFRQ", 1))
                     surfacetosurfaceContact.SetOptCardA(SOFT, SOFSCL, LCIDAB, MAXPAR, SBOPT, DEPTH, BSORT, FRCFRQ)
                     surfacetosurfaceContact.SetOptCardB(opt_PENMAX, opt_THKOPT, opt_SHLTHK, opt_SNLOG, opt_ISYM, opt_I2D3D, opt_SLDTHK, opt_SLDSTF)
                     if has_optC:
