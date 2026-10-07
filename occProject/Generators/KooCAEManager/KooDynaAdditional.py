@@ -344,7 +344,13 @@ def _d2r_num(v):
         s = format(f, ">10.1f")               # 사람이 읽기 쉬운 범위는 고정소수점 유지
         if float(s) == f:
             return s
-    return format(f, ">10.1e")                # 그 밖은 지수표기 (손실 방지)
+    # 지수표기는 손실 없는 최단 유효숫자. .1e 고정이면 1.25e-3 이 1.3e-03 으로 조용히 바뀌었다(10-07 감사).
+    # 1e20 → "   1.0e+20", 1e-7 → "   1.0e-07" 는 그대로라 기존 덱과 바이트 동일.
+    for _prec in (1, 2, 3):
+        s = format(f, ">10.{0}e".format(_prec))
+        if float(s) == f:
+            return s
+    return format(f, ">10.3e")
 
 
 class KooDeformableToRigidAutomatic:

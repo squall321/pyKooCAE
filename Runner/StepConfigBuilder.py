@@ -167,7 +167,8 @@ def build_drop_attitude_config(
             for skey, okey in (("time1", "D2RTime1"), ("time2", "D2RTime2"),
                                ("time3", "D2RTime3"), ("nrbf", "D2RNrbf"),
                                ("ncsf", "D2RNcsf"), ("rwf", "D2RRwf"),
-                               ("dtmax", "D2RDtmax"), ("offset", "D2ROffset")):
+                               ("dtmax", "D2RDtmax"), ("offset", "D2ROffset"),
+                               ("lrb", "D2RLrb")):
                 if skey in d2r_raw:
                     d2r_line += f"\n{okey},{d2r_raw[skey]}"
 
@@ -230,6 +231,11 @@ def build_drop_attitude_config(
     drop_contact_line = ""
     for key, val in drop_contact.items():
         drop_contact_line += f"\nDropContact.{key},{val}"
+    # 사용자가 지정한 철자(simulation_params.inherit_general_contact)도 받는다 — DropContact.InheritGeneral 로.
+    # KMM 쪽이 type/scope/inherit_general 등 대소문자·밑줄을 정규화하므로 drop_contact 안의 철자는 그대로 둔다.
+    if "inherit_general_contact" in sim_params and not any(
+            str(k).lower().replace("_", "") in ("inheritgeneral", "inheritgeneralcontact") for k in drop_contact):
+        drop_contact_line += f"\nDropContact.InheritGeneral,{sim_params['inherit_general_contact']}"
 
     # CONTROL 카드 override (*CONTROL_TIMESTEP TSSFAC/DT2MS/ERODE…, *CONTROL_HOURGLASS IHQ/QH)
     control_line = ""

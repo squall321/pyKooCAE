@@ -66,7 +66,8 @@ def _flock_diagnosis(fd, operation, exc):
         callers.append(f"{os.path.basename(fr.filename)}:{fr.lineno} {fr.name}")
     hint = ""
     if exc.errno == errno.EBADF:
-        hint = (" 🔴 EBADF = fd 가 이미 닫혔다. 저장소 장애가 아니라 fd 수명 버그다 — "
+        hint = (" 🔴 EBADF = 열어 둔 fd 가 무효화됐다. NFSv4 soft 마운트에서 서버가 open state 를 잃으면 "
+                "이 fd 로는 영원히 안 되고 같은 경로를 다시 열어야 복구된다(_locked_lock_file 이 3회 재개방 후 포기) — "
                 "lock 파일을 지우지 말 것(지우면 상호배제가 깨진다).")
     return (f"flock({opname}) 실패 — 재시도해도 복구되지 않는 오류: {exc.strerror} "
             f"(errno={exc.errno}). fd={rawfd} 상태={valid} 가리킨대상={target}. "
@@ -74,7 +75,7 @@ def _flock_diagnosis(fd, operation, exc):
 
 
 def _flock_with_timeout(fd, operation, timeout=120):
-    """fcntl.flock with timeout — NFS stale lock 무한 대기 방지
+    """fcntl.flock with timeout — 다른 잡의 장시간 점유로 인한 무한 대기 방지
 
     Args:
         fd: file descriptor
@@ -101,9 +102,9 @@ def _flock_with_timeout(fd, operation, timeout=120):
         except BlockingIOError:
             pass                      # 다른 잡이 점유 중 — 재시도가 맞다
         except OSError as e:
-            # 🔴 EBADF(9) 는 fd 가 이미 닫힌 것이다. 재시도해도 영원히 안 된다.
-            # 예전에는 이것까지 120초 동안 1초씩 재시도한 뒤 "NFS stale lock" 으로
-            # 보고해서, 코드 결함을 저장소 장애로 오진하게 만들었다.
+            # 🔴 EBADF(9) 는 이 fd 로는 영원히 안 된다(NFSv4 open state 상실 또는 닫힌 fd).
+            # 같은 fd 재시도 대신 상위 _locked_lock_file 이 같은 경로를 재개방한다. 예전에는
+            # 이것까지 120초 동안 1초씩 재시도한 뒤 "NFS stale lock" 으로 보고했다.
             if e.errno not in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES, errno.EINTR):
                 raise OSError(e.errno, _flock_diagnosis(fd, operation, e)) from e
         if time.time() >= deadline:

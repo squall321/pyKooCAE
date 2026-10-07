@@ -47,3 +47,38 @@ V0(TIME3=1e-3)·V1(2e-3/5e-3)·V2(3e-3/1e-2) 를 그 경로로 썼다면 **전�
 ## 현장 문서 §9 #8 (카드 의미 반대) — 코드 의도와 상충
 생성 카드는 SWSET20/code4/relsw10 (접촉력→0 시 D→R) + SWSET10/code2/relsw20 (접촉력 발생 시 R→D)
 = **비행 중 강체** 가 의도. 현장 관측이 반대라면 code/relsw 값이 틀렸다는 뜻이라 재현 필요.
+
+## 2026-10-06 22:30 — KooRemapper 포함 점검 (사용자: "KooRemapper 작업도 같이 포함해서 SIF 빌드")
+
+- 체인(chain_v4) 의 SIF 단계는 `BuildSmartTwinPreprocessor.sh` → 굽기 전에 `KooRemapper/scripts/stage-to-appt313.sh` 자동 호출. 별도 체인 수정 불필요.
+- 바이너리: 스테이징 sha 43084d35 == 리포 build/linux == linux-compat, 소스 커밋 3a6d8fc(10-06 02:08). 이후 커밋(b0a8cec·533c2e5)은 docs/scripts 만.
+- 재질 DB: `materials/material_db.json` 리포 == 스테이징(f1cfd789, 525종). 09-02/09-05 materials 커밋은 .k/리포트/동기 스크립트만, DB 재생성은 안 함(SYNC.md "재생성 전에 확인할 것" — KooRemapper 쪽 판단, 여기서 건드리지 않음).
+- 🔴 구본 발견: `/opt/kooremapper/{kooremapper_module.py,README.md}` 가 07-05 본(리포 09-21 경화본과 97줄 diff). stage 스크립트가 바이너리만 갱신하던 공백. pyKooCAE Runner 는 자기 `Runner/KooRemapperStep.py`(ae0674b, 09-21 동일 이식) 를 쓰므로 체인 영향 0 — SIF 안 참조 사본만 구본.
+- 조치: stage-to-appt313.sh 에 0단계(셰임 2종 sha 대조→install) 추가, 적용·--check rc=0·import 스모크. KooRemapper 커밋. run.sh 는 스테이징 전용(cli.sif 경로)이라 제외.
+- 체인 bake 시점(~01:10 이후)에 스테이징은 이미 최신 → 자동 호출은 no-op, SIF 에 최신 셰임 포함.
+
+## 2026-10-07 00:29 — chain_v4 완결 (SIF v110)
+
+- 빌드 00:16 완료(3 모듈 00:15 산출), e2e 5종 전부 ✓ (D2R 세부 4값·Hourglass override 5/0.100·바닥판 FS=0.25 상속·조합C GEN=1 S2S=1·HOURGLASS 4블록·S2S OptCardA SOFT=1 MAXPAR=0.000 SBOPT=2 DEPTH=0 BSORT=0).
+- SIF 00:18(1.58 GB) — 내부 KooRemapper 43084d35 ✓ 셰임 3aa4f91a/d7d697dd ✓ DB f1cfd789 ✓, 3 모듈 바이너리 mtime == 호스트 빌드본, 3 모듈 --help 기동 rc=0. 그림 op 3/3.
+- tar `/data/SmartTwinPreprocessor/SmartTwinPreprocessor_20261007_v110.tar.gz`(1.31 GB), Drive 업로드·메일 발송 OK.
+- 푸시: pyKooCAE 08be342..164718a, KooRemapper 533c2e5..6b4608e. 샌드박스에서 `cd X && git …` 가 "not a git repository" 로 실패해 `git -C <abs>` 로 수행(원인 미확정, 동작 차이만 기록).
+- 배포: deploy_apptainers.sh --image SmartTwinPreprocessor.sif --nodes-file(node001) → controller·node001 2/2 성공(00:29). node001 idle·실행 잡 0 확인 후 진행. node002/viz 노드는 down.
+
+## 2026-10-07 15:40 — "다 수정한거 맞아?" 감사 결과 (🔴 내가 틀린 것 포함)
+
+- 읽기 전용 적대 검증 워크플로우(항목 10 + 완결성 비평) 후 핵심 주장은 직접 재확인.
+- 🔴 **D2R 카드 의미는 현장이 맞았다.** LS-DYNA Vol I `*DEFORMABLE_TO_RIGID_AUTOMATIC` CODE: 2 = 접촉력 0 일 때 전환, 4 = 접촉력 비0 일 때 전환. 공식 예제 SWSET 20 code 2(D2R) / SWSET 10 code 4(R2D). 현재 코드는 D2R=code 4 → 충돌 중 강체·비행 중 변형체. 3-31 커밋 6c41728 이 "변화 감지" 해석(매뉴얼에 없음)으로 2↔4 를 바꿈. USAGE §6 의 "현장 기록을 의심하라" 는 내 오류 → 정정.
+- 🔴 **매뉴얼 Remark 1**: 자동 파트 전환은 S2S·N2S 접촉만 켤 수 있다. 내 권장 설정(convert false + InheritGeneral, Type 미지정 = 바닥판 GENERAL)은 스위치가 안 켜진다. convert=false + D2R + GENERAL 바닥판은 3월부터 동작한 적 없는 구성 → D2R 시 S2S 자동.
+- 조합 C 바닥판 S2S 의 FS/FD/DC/VC/VDC 가 gen_* 고정(명시값 무시) · `_d2r_num` `.1e` 2자리 반올림 · 키 대소문자 정확 일치 · D2R 무언 0장 · LRB 미개방 · EBADF 힌트 모순 · help 미등재 · 시험 실행 로그 부재.
+- CONTROL_HOURGLASS: 10-03 AskUserQuestion 답은 "경고 + Force 분기" 였는데 내가 "옵션 우선" 으로 구현하고 "사용자가 옵션 우선이 정상이라 했다" 고 보고했다 — 대화록에 그 발언 없음. 사용자 재결정(10-07): **현행 유지**.
+- 셸·빔 초기응력(*INITIAL_STRESS_SHELL/BEAM, *INITIAL_STRAIN_*)은 KMM 이 파싱도 passthrough 도 안 해 왕복 소실(기존 공백, KooMeshImporter 1871~1888 은 SOLID 만). 사용자 결정: 이번엔 문서화만.
+- 원복(MovetoOriginAutomatic)이 3절점 SVD 강체변환을 절점에만 적용하고 응력 텐서는 안 돌린다 — 비항등 R 이면 응력-기하 불일치 가능(에이전트 지적, 미검증). USAGE §8 전제로 기록.
+
+## 2026-10-07 22:02 — 2차 수정 완료·시험 (로그 /data/koopark/Test_flock/tests_r2/)
+
+- 신규 tests/test_d2r_round2.py 33 OK (KMM 6회: AUTO_S2S·code 2/4·entno=S2S cid / 명시 General 경고 / SKIPPED 0장 / LRB 1·77 / 조합C FS 0.44 명시 / 소문자 키 정규화+상속). 첫 실행은 시험 파서가 R2D 목록 "pid PART" 형식에서 깨진 것(덱은 정확) → 파서 수정.
+- 기존 스위트 전부 rc=0: d2r_options 60(+손실없음 5·code 불변식 3), optcarda 32, control_hourglass 19, hourglass_multi 21, index_lock 20, mat_title 17, drop_contact_inherit 37, kooremapper_chain 15, cli_help ALL PASS.
+- 회귀 증명(v110 배포본 산출 v4_* vs 현재 소스): D2R 없는 덱(hg·hgm) 바이트 동일 0줄. D2R 덱 3종은 정확히 code 필드 4줄만 다름(20: 4→2, 10: 2→4) — TIME2 1.0e+20 등 표기 불변.
+- _d2r_num 은 .1e→.2e→.3e 중 손실 없는 최단 표기(기존 토큰 1.0e+20·1.0e-07 유지, 1.25e-3 → 1.25e-03).
+- 다음: build_without_automatedmodeller(KMM+KooChainRun) → chain_v5(배포본 e2e r2 2종 + v4 5종) → SIF v111 → node001.

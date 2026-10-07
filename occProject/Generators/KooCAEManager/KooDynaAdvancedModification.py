@@ -2372,6 +2372,16 @@ class KooDynaAdvancedModification:
             decomposeGeneral = option.get("DecomposeGeneralContact", False)
             ensureSingleSurface = option.get("EnsureSingleSurface", False)
             drop_contact = option.get("DropContact", {})
+            # 키 철자 정규화 — 사용자가 고른 철자(type / inherit_general_contact)와 구현 키(Type /
+            # InheritGeneral)가 대소문자·밑줄로 어긋나면 경고 없이 기본값으로 떨어졌다(10-07 감사).
+            # 세 키만 정규화한다. LS-DYNA 필드명(FS, SOFT …)은 원래 대문자라 그대로 둔다.
+            _DC_ALIASES = {"inheritgeneral": "InheritGeneral", "inheritgeneralcontact": "InheritGeneral",
+                           "type": "Type", "contacttype": "Type", "scope": "Scope"}
+            for _k in list(drop_contact.keys()):
+                _canon = _DC_ALIASES.get(str(_k).lower().replace("_", ""))
+                if _canon and _k != _canon:
+                    drop_contact[_canon] = drop_contact.pop(_k)
+                    print("DROP_ATTITUDE: DropContact.{0} → {1} 로 해석".format(_k, _canon))
             SOFT_opt = drop_contact.get("SOFT", 2)
             SOFSCL_opt = drop_contact.get("SOFSCL", 0.1)
             SBOPT_opt = drop_contact.get("SBOPT", 3)
@@ -3084,10 +3094,22 @@ class KooDynaAdvancedModification:
                     if outerPartIDs:
                         outerPartSet = self.dynaImporter.partManager.CreatePartSet(pids=outerPartIDs, name="DropContact_OuterParts")
                         _dctype = str(drop_contact.get("Type", "General")).strip().lower().replace("_", "")
+                        if option.get("DeformableToRigid", False) and _dctype not in ("surfacetosurface", "s2s"):
+                            # 🔴 LS-DYNA Vol I *DEFORMABLE_TO_RIGID_AUTOMATIC Remark 1: 자동 파트 전환은
+                            # surface-to-surface / node-to-surface 접촉만 켤 수 있다. 바닥판이 GENERAL 이면
+                            # D2R 카드가 있어도 스위치가 한 번도 안 일어난다 (10-07 감사, 3월부터의 공백).
+                            if "Type" in drop_contact:
+                                print("🔴 DROP_ATTITUDE: D2R_FLOOR_GENERAL — DropContact.Type=General 은 D2R 스위치를 못 켠다"
+                                      "(매뉴얼 Remark 1: S2S/N2S 만). 전환이 일어나지 않는다 — DropContact.Type,SurfaceToSurface 로 바꿀 것")
+                            else:
+                                _dctype = "s2s"
+                                print("DROP_ATTITUDE: D2R_FLOOR_AUTO_S2S — DeformableToRigid 가 켜져 바닥판 접촉을 S2S 로 자동 선택"
+                                      " (매뉴얼 Remark 1: GENERAL 은 파트 전환을 못 켠다)")
                         if _dctype in ("surfacetosurface", "s2s"):
                             dropS2S = self.dynaImporter.contactManager.CreateContactAutomaticSurfacetoSurface(
                                 outerPartSet.psid, part.id, 2, 3, 0, 0, 0, 0,
-                                gen_FS, gen_FD, gen_DC, gen_VC, gen_VDC,
+                                _dcval("FS", gen_FS), _dcval("FD", gen_FD), _dcval("DC", gen_DC),
+                                _dcval("VC", gen_VC), _dcval("VDC", gen_VDC),
                                 int(_dcval("PENCHK", 0)), _dcval("BT", 0.0), _dcval("DT", "1.0000E+20"),
                                 _dcval("SFS", 1.0), _dcval("SFM", 1.0),
                                 _dcval("SST", 0.0), _dcval("MST", 0.0),
@@ -3110,7 +3132,8 @@ class KooDynaAdvancedModification:
                         else:
                             dropGeneral = self.dynaImporter.contactManager.CreateContactAutomaticGeneral(
                                 outerPartSet.psid, part.id, 2, 3, 0, 0, 0, 0,
-                                gen_FS, gen_FD, gen_DC, gen_VC, gen_VDC,
+                                _dcval("FS", gen_FS), _dcval("FD", gen_FD), _dcval("DC", gen_DC),
+                                _dcval("VC", gen_VC), _dcval("VDC", gen_VDC),
                                 0, 0.0, "1.0000E+20",
                                 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
                             dropGeneral.name = "DropSurface_GENERAL"
@@ -3173,7 +3196,13 @@ class KooDynaAdvancedModification:
 
             # DeformableToRigid Paired Switch
             if option.get("DeformableToRigid", False) and dropContactCID is not None:
-                d2r_pid_list = [(pid, 0) for pid in existingPartIDs]
+                # LRB(lead rigid body): 0 이면 파트마다 독립 강체. 파트 간 CNRB 가 있으면 LS-DYNA 가
+                # Error 30164 로 죽으므로(현장 §9 #9) 한 파트 ID 를 주면 나머지를 그 강체에 합친다.
+                _lrb = int(float(option.get("D2RLrb", 0) or 0))
+                if _lrb and _lrb not in existingPartIDs:
+                    print("🔴 DROP_ATTITUDE: D2RLrb={0} 는 모델 파트가 아니다 — 0(독립 강체)으로 둔다".format(_lrb))
+                    _lrb = 0
+                d2r_pid_list = [(pid, (0 if pid == _lrb else _lrb)) for pid in existingPartIDs]
                 r2d_pid_list = list(existingPartIDs)
                 # 세부 필드는 옵션파일에서 지정 가능. 미지정이면 예전에 리터럴로 박혀 있던
                 # 값과 동일한 기본값이 들어가므로 기존 덱과 바이트 동일하다.
@@ -3187,15 +3216,24 @@ class KooDynaAdvancedModification:
                     rwf=option.get("D2RRwf", 0),
                     dtmax=option.get("D2RDtmax", 0.0),
                     offset=option.get("D2ROffset", 0.0))
-                # SWSET 20: 접촉력이 !=0 → 0으로 변할 때 D→R (충돌 후 바운싱 시작)
+                # 🔴 LS-DYNA Vol I CODE 정의: 2 = 접촉력이 0 일 때 전환, 4 = 접촉력이 비0 일 때 전환.
+                # 공식 예제도 D2R 세트가 code 2 / R2D 세트가 code 4 다. 3-31 커밋 6c41728 이 "접촉력
+                # 변화 감지" 라는 매뉴얼에 없는 해석으로 2↔4 를 바꿔 **충돌 중 강체·비행 중 변형체**가
+                # 됐었고 현장 관측(§9 #8)이 그것이었다. 비행 중 강체·충돌 중 변형체 = 아래가 맞다.
+                # SWSET 20: 접촉력 0 (비행 중) → D→R
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
-                    swset=20, code=4, entno=dropContactCID, relsw=10, paired=1,
+                    swset=20, code=2, entno=dropContactCID, relsw=10, paired=1,
                     d2r_pids=d2r_pid_list, r2d_pids=[], **d2r_detail)
-                # SWSET 10: 접촉력이 0 → !=0으로 변할 때 R→D (재충돌 직전)
+                # SWSET 10: 접촉력 비0 (충돌) → R→D
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
-                    swset=10, code=2, entno=dropContactCID, relsw=20, paired=-1,
+                    swset=10, code=4, entno=dropContactCID, relsw=20, paired=-1,
                     d2r_pids=[], r2d_pids=r2d_pid_list, **d2r_detail)
-                print("DROP_ATTITUDE: D2R paired switch configured for {0} model parts (CID={1})".format(len(existingPartIDs), dropContactCID))
+                print("DROP_ATTITUDE: D2R paired switch configured for {0} model parts (CID={1}, LRB={2})".format(len(existingPartIDs), dropContactCID, _lrb))
+            elif option.get("DeformableToRigid", False):
+                # 예전에는 조용히 0장이었다(현장 문서 §2). IncludeWallInGeneral=True 또는 RigidWall 이면
+                # 바닥판 전용 접촉이 없어 entno 를 줄 수 없다.
+                print("🔴 DROP_ATTITUDE: D2R_SKIPPED — DeformableToRigid 요청됐지만 바닥판 접촉 CID 가 없어 D2R 카드를 0장 생성."
+                      " IncludeWallInGeneral=True 또는 DropSurface=RigidWall 이면 D2R 을 쓸 수 없다")
 
             self.dynaImporter.metaData["scenario_mode"] = "DropAttitude"
             self.dynaImporter.metaData["initial_conditions"]["orientation_euler_deg"]["pitch"] = RyOrigin

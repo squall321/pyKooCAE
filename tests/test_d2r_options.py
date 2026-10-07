@@ -15,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "occProject" / "Generators"))
+GEN = ROOT / "occProject" / "Generators"
 
 FAILS = []
 
@@ -104,6 +105,15 @@ def main():
               float(out) == v, f"{out!r} -> {float(out)}")
         check(f"{v:g} 출력 폭 10칸", len(out) == 10, f"{len(out)}")
     check("0.5 는 고정소수점 유지", _d2r_num(0.5).strip() == "0.5", repr(_d2r_num(0.5)))
+    # 10-07 감사: ".1e" 고정은 1.25e-3 을 1.3e-03 으로 조용히 바꿨다 → 손실 없는 최단 지수표기
+    for v in (1.25e-3, 1.23e-4, 1.234e-4, -1.25e-3, 1.75):
+        out = _d2r_num(v)
+        check("손실 없음 %r → %r" % (v, out), float(out) == v and len(out) == 10, out)
+    check("1e-7 표기 유지 (기존 e2e 토큰)", _d2r_num(1e-7) == "   1.0e-07", repr(_d2r_num(1e-7)))
+    ADV = (GEN / "KooCAEManager" / "KooDynaAdvancedModification.py").read_text(encoding="utf-8")
+    check("ADV D2R 세트 code 2 (접촉력 0 → 강체, 매뉴얼 예제)", "swset=20, code=2, entno=dropContactCID" in ADV)
+    check("ADV R2D 세트 code 4 (접촉력 비0 → 변형체)", "swset=10, code=4, entno=dropContactCID" in ADV)
+    check("ADV 구 반전(code 4 D2R) 없음", "swset=20, code=4" not in ADV)
 
     # 카드 전체 출력에 실제로 실리는지
     mgr4 = KooAdditionalManager()

@@ -1669,6 +1669,9 @@ class KooMeshModifier(KooSimulationGenerator):
                             curOptions["D2RDtmax"] = KooDynaFloat(line.split(",")[1])
                         elif "d2roffset" in line.lower():
                             curOptions["D2ROffset"] = KooDynaFloat(line.split(",")[1])
+                        elif "d2rlrb" in line.lower():
+                            # 전환 파트들을 합칠 선도 강체 파트 ID (0 = 파트별 독립 강체)
+                            curOptions["D2RLrb"] = KooDynaInt(line.split(",")[1])
                         elif "deformabletorigid" in line.lower():
                             svector = line.split(",")
                             curOptions["DeformableToRigid"] = svector[1].strip().lower() == "true"
