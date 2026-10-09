@@ -82,3 +82,15 @@ V0(TIME3=1e-3)·V1(2e-3/5e-3)·V2(3e-3/1e-2) 를 그 경로로 썼다면 **전�
 - 회귀 증명(v110 배포본 산출 v4_* vs 현재 소스): D2R 없는 덱(hg·hgm) 바이트 동일 0줄. D2R 덱 3종은 정확히 code 필드 4줄만 다름(20: 4→2, 10: 2→4) — TIME2 1.0e+20 등 표기 불변.
 - _d2r_num 은 .1e→.2e→.3e 중 손실 없는 최단 표기(기존 토큰 1.0e+20·1.0e-07 유지, 1.25e-3 → 1.25e-03).
 - 다음: build_without_automatedmodeller(KMM+KooChainRun) → chain_v5(배포본 e2e r2 2종 + v4 5종) → SIF v111 → node001.
+
+## 2026-10-09 21:10 — 체인 v5 가 2일간 멈춰 있었다 (내 실수)
+
+- build_without_automatedmodeller 는 10-07 22:57 에 정상 완료("✅ 호스트 배포 완료", BAD 0)했는데 chain_v5.sh 는 "전체 완료" 를 기다렸다. 그 문구는 로그에 한 번도 안 찍힌다(스크립트 끝 echo 가 실제 흐름에 없음). 마커를 로그로 확인하지 않고 스크립트 grep 만 보고 골랐다.
+- 조치: chain_v5 kill → chain_v6(빌드 대기 제거, e2e 7종 → SIF) 가동. 바이너리 3곳 중 appt313(SIF 소스)·/data 는 10-07 신본 + 신규 식별자(D2R_SKIPPED·D2R_FLOOR_AUTO_S2S·D2RLrb) 확인. /opt/SmartTwinPreprocessor 는 8월 본으로 정체 — 운영 코드가 참조하지 않아(테스트 파일 1곳) 영향 없음.
+- 교훈: 대기 마커는 **직전 성공 로그에서 grep 되는 문구**만 쓸 것(build_all·build_without 둘 다 "호스트 배포 완료").
+
+## 2026-10-09 21:36 — chain_v6 완결 (SIF v111)
+
+- 배포 바이너리 e2e 7종 전부 ✓ — r2-A(AUTO_S2S 로그·S2S=1·SWSET 20 code 2·SWSET 10 code 4), r2-C(SKIPPED 로그·D2R 0장), e2e-1 표기 유지(1.0e-04/5.0e-03/2.0e-04/1.0e-07), Hourglass 5 0.100, 상속 FS=0.25·조합C GEN=1 S2S=1, HOURGLASS 4블록, S2S OptCardA 상속.
+- 첫 e2e 가 4.5분 — 690 MB 배포 바이너리의 NFS 콜드 기동. 이후 런은 캐시로 빠름(총 7종 7분).
+- SIF 21:22(1.58 GB) — 내부 KMM/KooChainRun .bin 10-07 빌드본(D2R_SKIPPED·D2RLrb 식별자 확인), KooRemapper 43084d35 유지, compute-node-images 사본 cmp 동일. tar `/data/SmartTwinPreprocessor/SmartTwinPreprocessor_20261009_v111.tar.gz`, Drive 업로드·메일 OK. 푸시 164718a..8073766.
