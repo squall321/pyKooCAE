@@ -25,5 +25,5 @@
 ## 빌드·배포
 - [x] build_without_automatedmodeller.sh (KMM + KooChainRun) → 바이너리 mtime 확인
 - [x] 배포 바이너리 e2e (code 2/4, AUTO_S2S, SKIPPED, 1.0e-07 유지)
-- [ ] SIF v111 + tar + Drive + 메일 → node001 배포 → sha 확인
-- [ ] 커밋·푸시
+- [x] SIF v111 + tar + Drive + 메일 → node001 배포 → sha 확인
+- [x] 커밋·푸시

@@ -94,3 +94,5 @@ V0(TIME3=1e-3)·V1(2e-3/5e-3)·V2(3e-3/1e-2) 를 그 경로로 썼다면 **전�
 - 배포 바이너리 e2e 7종 전부 ✓ — r2-A(AUTO_S2S 로그·S2S=1·SWSET 20 code 2·SWSET 10 code 4), r2-C(SKIPPED 로그·D2R 0장), e2e-1 표기 유지(1.0e-04/5.0e-03/2.0e-04/1.0e-07), Hourglass 5 0.100, 상속 FS=0.25·조합C GEN=1 S2S=1, HOURGLASS 4블록, S2S OptCardA 상속.
 - 첫 e2e 가 4.5분 — 690 MB 배포 바이너리의 NFS 콜드 기동. 이후 런은 캐시로 빠름(총 7종 7분).
 - SIF 21:22(1.58 GB) — 내부 KMM/KooChainRun .bin 10-07 빌드본(D2R_SKIPPED·D2RLrb 식별자 확인), KooRemapper 43084d35 유지, compute-node-images 사본 cmp 동일. tar `/data/SmartTwinPreprocessor/SmartTwinPreprocessor_20261009_v111.tar.gz`, Drive 업로드·메일 OK. 푸시 164718a..8073766.
+
+- node001 배포 21:38 — /opt/apptainers SIF sha 29849604… == 호스트, 내부 KMM D2R_SKIPPED 식별자 확인. 체크리스트 전 항목 완료.
