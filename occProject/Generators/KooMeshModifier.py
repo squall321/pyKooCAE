@@ -2848,8 +2848,21 @@ class KooMeshModifier(KooSimulationGenerator):
             if part.mid != 0:
                 curMIDExcept.append(part.mid)
             
+        # 제외 파트와 MID 를 같이 쓰는 강체화 대상 파트 — 그 MID 는 제외 파트용으로 그대로 둬야 하므로,
+        # 대상 파트에는 강체 재질을 새 MID 로 따로 만들어 준다(예전에는 강체화도 보존도 안 돼 재질이 사라졌다).
+        shared = {}
+        for pid, part in self.dynaImporter.partManager.parts.items():
+            if pid not in curPIDExcept and part.mid in curMIDExcept:
+                shared.setdefault(part.mid, []).append(pid)
         self.dynaImporter.matManager.ExchangetoRigid(curMIDExcept)     
         self.dynaImporter.partManager.UpdateMaterial(self.dynaImporter.matManager)   
+        for mid, pids in shared.items():
+            src = self.dynaImporter.matManager.materials[mid]
+            rigid = KooMaterialRigid(0, "Rigid" + src.name, src.GetRho(), src.GetE(), src.GetNu())
+            self.dynaImporter.matManager.AddMaterial(rigid)
+            for pid in pids:
+                self.dynaImporter.partManager.parts[pid].SetMaterial(rigid)
+            print(f"ELASTIC_TO_RIGID: MID {mid} 를 제외 파트와 같이 쓰는 파트 {pids} → 새 강체 MID {rigid.id}")
         self.dynaImporter.constrainedManager.GenerageConstraintforAllRigidBodies(self.dynaImporter.partManager, 1)
         
     

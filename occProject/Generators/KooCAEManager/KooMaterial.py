@@ -992,7 +992,10 @@ class KooMaterialManager():
     def ExchangetoRigid(self,curMIDExcept = []):
         self.GenerateRigidMaterials(curMIDExcept)
         self.tmpMaterials = self.materials
-        self.materials = self.rigidMaterials
+        # 제외 재질(PIDExcept 파트가 쓰는 MID)은 그대로 남긴다. 예전에는 강체 사본만 남겨서 제외 파트의 재질이
+        # 출력에서 통째로 사라졌다(덱이 없는 MID 를 참조 → LS-DYNA 입력 단계 실패). 제외가 없으면 예전과 같다.
+        kept = {mid: self.tmpMaterials[mid] for mid in curMIDExcept if mid in self.tmpMaterials}
+        self.materials = {**kept, **self.rigidMaterials} if kept else self.rigidMaterials
     
     def ExchangetoOriginal(self):
         self.materials = self.tmpMaterials
