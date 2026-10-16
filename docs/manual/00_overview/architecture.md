@@ -9,7 +9,7 @@ pyKooCAE는 전자패키지/HW의 낙하·충격·진동·열 CAE 해석을 **�
 | **KooChainRun** | KCR | Slurm 누적/DOE 시뮬레이션 오케스트레이션 CLI (`prepare`/`submit`/`run`/`status`/`collect`/`postprocess` 등) | `KooChainRun:1-9`, `KooChainRun:34-37` |
 | **KooMeshModifier** | KMM | LS-DYNA `.k` 모델을 읽어 모드 기반 변형(낙하 자세, 충격추, 재료 교환 등)을 적용·재출력. SIF(SmartTwinPreprocessor) 내부에서 실행 | `occProject/Generators/KooMeshModifier.py:1-6` |
 | **KooAutomatedModeller** | KAM | ODB++ PCB 패키지 정의 → STEP CAD 지오메트리 → 다중 솔버 포맷 메시(.k/.bdf/.cdb/.inp/.obj) 생성 | `occProject/Generators/KooAutomatedModeller.py:1-6` |
-| **KooRemapper** | KRM | LS-DYNA `.k` 메쉬·재료 리매핑 CLI(C++, 46 op: matdb 재료교체, map/generate 메시, warpage/assemble 등). SIF 내부 네이티브 바이너리로 실행, KooChainRun의 `REMAP` 체인 스텝으로 호출 | `Runner/KooRemapperStep.py:1-104`, `Runner/CumulativeScenarioRunner.py`(`_run_kooremapper_step`) |
+| **KooRemapper** | KRM | LS-DYNA `.k` 메쉬·재료 리매핑 CLI(C++, 63 op: matdb 재료교체, map/generate 메시, warpage/assemble 등). SIF 내부 네이티브 바이너리로 실행, KooChainRun의 `REMAP` 체인 스텝으로 호출 | `Runner/KooRemapperStep.py:1-104`, `Runner/CumulativeScenarioRunner.py`(`_run_kooremapper_step`) |
 
 전체 데이터 흐름은 CAD(ODB++/STEP) → 메시(`.k`/`dynain`) → LS-DYNA → 후처리 리포트(deep/sphere/impact) 로 이어진다.
 

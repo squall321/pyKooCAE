@@ -1,4 +1,4 @@
-# KooRemapper ops — 메시 편집(convert · refine · elform · disconnect · offset · wrap · restack · update · iga)
+# KooRemapper ops — 메시 편집(convert · refine · elform · disconnect · offset · wrap · restack · update · iga · cleanup-nodes · extract-parts · cad_solid_merge_to_deck · rebind_entities_after_remesh · id_floor)
 
 요소 차수·공식 변경, 세분화, 노드 분리, 셸 오프셋/재적층, 와인딩 프리스트레스, 좌표 갱신, IGA 변환을 수행하는 KooRemapper의 아홉 가지 **yaml-config op** 레퍼런스다.
 
@@ -316,6 +316,10 @@ operations:
 - `target_pid=0`은 전체를 대상으로 한다. (help)
 - `restack` op 뒤에 이어 붙여 레이어 스택의 CZM/Peri 분리에 쓸 수 있다. (help, examples/disconnect/restack_czm.yaml)
 
+### 2026-10 정본 대조
+
+- `mefem` 의 새 `*SET_NODE` 번호가 덱 · 인클루드의 기존 `*SET_NODE` 위에서 난다(관례 `PID 최대 + 1000` 은 바닥으로 남는다 — 2026-10-15. 그 전에는 기존 세트를 보지 않아 같은 SID 를 다시 냈다). 겹치지 않는 덱은 번호가 그대로다.
+
 ### 개발 현황
 
 v1.8.0 바이너리에 구현됨(help Usage 확인).
@@ -432,6 +436,13 @@ operations:
 - 예전 결함(수정됨): MID 칸이 5열 밀림, 카드 끝 줄바꿈 누락으로 `0.25*END` 붙음, CZM 파트가 기존 PID·SECID 와 충돌, `@CZM_MID@` 미치환, assemble 의 `connection_mode: none` 거부, 단독 offset 의 `material_cards` 누락.
 - 소스 표면의 일부만 처리하려면 region 필터(bbox / nodeId / elementId)를 쓴다. (help; 정본 §22의 `bbox_*`/`node_id_*`/`element_id_*` 필드)
 - 전체 예제는 `examples/offset/README.md` 참조. (help)
+
+### 2026-10 정본 대조
+
+- ★`element_type: tshell` 산출이 **진짜 TSHELL 덱**이다(2026-10-16) — 8절점 `*ELEMENT_TSHELL`(그 전에는 4절점 `*ELEMENT_SHELL` 로 써서 윗면 절점 넷이 빠졌다) · `*SECTION_TSHELL` ELFORM 1(16 은 TSHELL 정식이 아니다) · 섹션은 Card 1 만 · 삼각 바닥은 매뉴얼의 쐐기 꼴.
+- ★TSHELL 도 `connection_mode` 를 솔리드와 같은 뜻으로 받는다(2026-10-16) — `tied`(기본) · `none` 이면 0층이 원본 면 절점을 공유해 붙고, `czm` 은 복제한 절점과 원본 면 사이에 코히시브(ELFORM 20)를 면 수만큼 만들고, `contact` 는 복제해 떼고 접촉 안내를 붙인다. 그 전에는 기본값으로 만든 층이 원본 면에서 떠 있었다.
+- ⚠ `element_type: shell` + `connection_mode: czm` 은 **적용되지 않는다** — rc 0 인데 코히시브를 하나도 만들지 않고 말도 하지 않는다(2026-10-16 실측). 셸 층에는 czm 을 주지 마라.
+- 새 셸 EID 가 덱의 요소 EID 와 겹치던 것을 고쳤다(셸 · TSHELL 도 요소 공용 커서). 정본 §22 · 회귀 `test_offset_tshell_deck.py`.
 
 ### 개발 현황
 
@@ -682,6 +693,12 @@ restack 은 대상 파트를 층으로 나누며 층마다 **새 PID/SECID/MID**
 > (`cfg["model"] = "input.k"`, `cfg["output"] = "Remap_dti.k"`). 그래서 체인이 만드는 설정은 `base_model`/`operations`
 > 형태가 아니라 **op 수준 평평한 형태**이고, `pid_refs` 도 그 수준에 둔다.
 
+### 2026-10 정본 대조
+
+- 두께 방향 컬럼 높이가 **불균일하면 rc=1 로 거절**한다 — `[ERROR] Part N: non-uniform column heights - not a valid extrusion`. 슬릿·구멍 때문에 컬럼마다 높이가 다른 격자(지지격자 등)는 대상이 아니다(의도된 가드 · 컬럼별 모드는 없다).
+- 계면(tied/CZM)은 **한 연산 안의 층 사이**에만 만든다. 이미 나뉜 적층의 요소 타입만 바꾸려고 1층짜리 restack 을 층마다 돌리면 셸이 아무것에도 묶이지 않는다 — 그때 `셸 층을 만들었는데 계면이 0건입니다` 를 경고한다. 묶으려면 그 층들을 한 연산에 함께 넣는다.
+- 정본 §12.
+
 ### 개발 현황
 
 v1.8.0 바이너리에 구현됨(help Usage 확인).
@@ -844,3 +861,376 @@ operations:
 ### 개발 현황
 
 v1.8.0 바이너리에 구현됨(help Usage 확인).
+
+---
+
+## cleanup-nodes
+
+### 용도
+
+아무도 참조하지 않는 절점을 보고(기본)·삭제 + 세트 정리.
+
+덱에서 아무것도 가리키지 않는 절점을 보고(기본)하거나 지운다 — 숫자를 긁지 않고 키워드마다 칸을 읽는다.
+
+### 호출 형태
+
+config YAML 파일 경로를 위치 인자로 받는 yaml-config op 다.
+
+```
+KooRemapper cleanup-nodes <config.yaml>
+```
+
+근거 — 바이너리 `help cleanup-nodes` 의 사용법(2026-10-16 · SmartTwinPreprocessor.sif 판).
+
+### config YAML 인자
+
+| 키 | 필수 · 기본 | 설명 |
+|---|---|---|
+| `model` | 필수 | 입력 K-파일(또는 `input`). 참조를 셀 때 `*INCLUDE` 를 따라간다 |
+| `output` | 선택 | 출력 K-파일. mode 가 safe·force 일 때만 쓴다. 기본은 입력 이름에 `_clean` |
+| `mode` | 기본 `report` | `report`(기본)는 분류만 하고 덱을 쓰지 않는다. `safe` 는 이해하는 키워드도 모르는 키워드도 가리킬 수 없는 절점만 지우고, 못 읽은 `*INCLUDE` 가 있으면 거절한다. `force` 는 모델링하지 않는 키워드만 가리키던 절점까지 지우고 `force_deleted_despite_unknown` 에 센다 |
+| `prune_sets` | 기본 `True` | 지운 절점을 `*SET_NODE`·`*SET_NODE_LIST`·`*SET_NODE_COLUMN` 구성원에서 뺀다. 끄면 세트가 없는 절점을 가리키게 되고 되읽기 검증이 실패로 보고한다 |
+| `verify` | 기본 `True` | 쓴 덱을 다시 읽어 모든 요소 절점 참조와 절점 세트 구성원이 정의돼 있는지 본다. 아니면 0 이 아닌 종료 |
+| `keep_referenced_by` | 기본 `['CONSTRAINED_NODAL_RIGID_BODY', 'BOUNDARY_SPC_NODE', 'DATABASE_HISTORY_NODE', 'CONSTRAINED_EXTRA_NODES', 'INITIAL_VELOCITY_NODE']` | 보고에서 이름으로 귀속하고 `mode: force` 에서도 지키는 키워드 접두사(앞의 `*` 없이). 이 목록에 없는 키워드도 여전히 훑고 그 절점을 지킨다 — `unknown_keyword_kept` 로 보고될 뿐이다 |
+| `report` | 선택 | 분류를 JSON 으로 쓴다 — 절점 수 · 키워드별 kept_by · unknown_keyword_kept · sets_pruned · verify · bbox_before/after |
+
+### 예제
+
+KooRemapper 저장소 예제다 — 같은 형식의 자기 모델로 바꿔 쓴다.
+
+`cn.yaml`
+
+```yaml
+model: examples/cleanup-nodes/cleanup_demo.k
+output: cleaned.k
+mode: safe
+report: cleanup_report.json
+```
+
+직접 실행이다(필요한 입력을 작업 폴더에 둔다).
+
+```bash
+apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper cleanup-nodes cn.yaml
+```
+
+필요한 입력 — `examples/cleanup-nodes/cleanup_demo.k`
+
+**체인(REMAP 스텝)으로 쓸 수 있다.** 체인의 입력 덱에 바로 적용된다.
+
+```yaml
+params:
+  op: cleanup-nodes
+  config:
+    mode: safe
+    report: cleanup_report.json
+```
+
+`model` 과 `output` 은 러너가 넣는다(`input.k` → `Remap_dti.k`).
+
+### 주의사항
+
+- **기본 `mode` 는 `report` 다 — 덱을 쓰지 않는다.** 지우려면 `mode: safe` 를 적어야 한다
+- ★`*SET_NODE_*` **멤버십은 참조로 세지 않는다.** 운영 덱에는 '전체 절점' 세트가 있고 그 블록은 모든 절점 ID 를 글자 그대로 담는다 — 그걸 참조로 세면 고아가 **전부** 가려진다 (실측: 13.4M 절점 덱에서 고아 118,568개가 '전부 참조됨' 으로 나온 원인이 이것이다) 대신 지운 절점을 **세트에서 뺀다**(`prune_sets`, 안 빼면 LS-DYNA `Error 10233`)
+- ★반대 실수도 똑같이 나쁘다 — CNRB 는 절점을 **NSID 로** 가리킨다. 그래서 세트를 **이름하는 카드**가 있으면 그 멤버를 전이로 남긴다(그 덱의 CNRB 71건이 이 경로다)
+- ★`safe` 의 뜻은 '**내가 이해한 것만 지운다**' 다 — 모르는 키워드도 전수 훑어서, 삭제 후보와 같은 정수를 가지면 남기고 `unknown_keyword_kept` 에 적는다. 그래서 안전을 만드는 것은 `keep_referenced_by` **목록이 아니라 전수 훑기**다 (목록은 귀속을 적고 `mode: force` 에서만 갈라진다)
+- `*INCLUDE` 를 **읽는다** — 안 읽으면 인클루드가 쓰는 절점을 고아로 보고 지운다. `safe` 는 못 읽은 인클루드가 하나라도 있으면 **쓰지 않는다**(rc=1). 인클루드 안에 정의된 절점은 **지우지 않는다**(주 덱만 다시 쓴다)
+- ★`bbox_before`/`bbox_after` 를 반드시 낸다 — 이 op 이 생긴 까닭이다. 기기 두께가 14.55mm 인데 `*NODE` bbox 가 67.50mm 라 낙하판이 기기에서 **53mm 밖**에 생겼다. 두 bbox 를 나란히 보면 그 중 얼마가 애초에 형상이 아니었는지가 보인다
+- 산출 덱을 **되읽어** 증명한다 — 요소가 쓰는 절점·세트 멤버가 전부 있는지 보고, 없으면 rc≠0 이다(`prune_sets: false` 로 일부러 깨면 그 자리에서 잡힌다)
+- 칸 폭은 덱을 따른다 — 고정폭을 **먼저** 읽고, 칸 하나에 두 수가 든 경우에만 공백으로 되돌린다. 절점 ID 8자리는 8칸을 꽉 채우므로 공백 분해를 먼저 하면 한 토큰으로 읽혀 **요소가 쓰는 절점을 전부 지운다**(실측으로 재현했다)
+
+### 개발 현황
+
+바이너리(v1.8.0 · 63 op 판, 2026-10-16 SIF)에 있다. 정본 `KooRemapper/docs/KooRemapper_Manual.md` §47 · 회귀 `tools/regress/test_cleanup_nodes.py`.
+
+---
+
+## extract-parts
+
+### 용도
+
+고른 파트만 뽑아 **돌아가는** 덱으로 (ID·칸폭·CRLF 보존).
+
+고른 파트만 든 덱을 쓴다 — 모든 ID · 칸 폭 · 개행을 그대로 두고, 다시 읽어 빠진 참조를 보고한다.
+
+### 호출 형태
+
+config YAML 파일 경로를 위치 인자로 받는 yaml-config op 다.
+
+```
+KooRemapper extract-parts <config.yaml>
+```
+
+근거 — 바이너리 `help extract-parts` 의 사용법(2026-10-16 · SmartTwinPreprocessor.sif 판).
+
+### config YAML 인자
+
+| 키 | 필수 · 기본 | 설명 |
+|---|---|---|
+| `model` | 필수 | 입력 K-파일(또는 `input`). `*INCLUDE` 를 따라가 산출에 펼쳐 넣는다 |
+| `output` | 선택 | 출력 K-파일. 기본은 입력 이름에 `_extracted` |
+| `parts` | 선택 | 뽑을 PID 목록. 덱에 없는 PID 는 빈 덱을 조용히 내지 않고 거절한다. 이것이나 part_titles 하나는 있어야 한다 |
+| `part_titles` | 선택 | `*PART` 제목에 맞출 패턴(`*`·`?` 와일드카드, 대소문자 무시). 아무것도 안 맞는 패턴은 거절한다 |
+| `renumber` | 기본 `False` | 절점·요소를 1부터 다시 매기고 `<output>_renumber_map.json` 에 옛→새 짝을 쓴다. 줄마다 칸 0 만 제자리에서 바꿔 좌표 글자는 바이트 그대로다. 두 요소 갈래가 같은 EID 를 쓰면 거절한다 |
+| `verify` | 기본 `True` | 쓴 덱을 다시 읽어 정의되지 않은 절점·파트·섹션·재질을 보고한다. 하나라도 있으면 0 이 아닌 종료 |
+| `include.nodes` | 기본 `True` | 뽑은 요소가 쓰는 `*NODE` 줄을 싣는다 |
+| `include.sets` | 기본 `referenced` | `referenced` 는 `*SET_NODE`·`*SET_PART`·`*SET_SOLID`·`*SET_SHELL`·`*SET_TSHELL` 을 산출에 있는 것으로 줄이고, 네 절점이 모두 남는 `*SET_SEGMENT` 면만 남긴다. 구성원을 ID 로 읽을 수 없는 변종(`_GENERATE`·`_GENERAL`·`_ADD`·`_INTERSECT`)은 빼고 그 SID 를 적는다 |
+| `include.materials` | 기본 `True` | 고른 파트가 쓰는 `*MAT_*`·`*EOS_*`·`*HOURGLASS` 블록과 `*DEFINE_CURVE`·`*DEFINE_TABLE`(숫자뿐 — 절점 참조 없음)을 싣는다. 정의가 여럿 든 블록은 통째로 싣고 센다 |
+| `include.sections` | 기본 `True` | 고른 파트가 쓰는 `*SECTION_*` 블록을 싣는다 |
+| `report` | 선택 | 결과를 JSON 으로 쓴다 — 고른 파트 · 집은 수 · 필요한 섹션/재질 ID · 줄이고 뺀 세트 · 뺀 키워드 · 재번호 표 경로 · 되읽기 검증 |
+
+### 예제
+
+KooRemapper 저장소 예제다 — 같은 형식의 자기 모델로 바꿔 쓴다.
+
+`ep.yaml`
+
+```yaml
+model: examples/extract-parts/assembly.k
+output: extracted.k
+parts: [1, 2]
+report: extract_report.json
+```
+
+직접 실행이다(필요한 입력을 작업 폴더에 둔다).
+
+```bash
+apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper extract-parts ep.yaml
+```
+
+필요한 입력 — `examples/extract-parts/assembly.k` · `examples/extract-parts/part2_include.k`
+
+**체인(REMAP 스텝)으로 쓸 수 있다.** 러너는 입력 덱 **하나만** Output 폴더에 복사하므로, 덱이 `*INCLUDE` 로 나뉘어 있으면 그 안의 파트를 못 찾는다(실측 — 「덱에 없는 PID」 rc 1). 인클루드가 없는 덱에 쓴다.
+
+```yaml
+params:
+  op: extract-parts
+  config:
+    parts: [1, 2]
+    report: extract_report.json
+```
+
+`model` 과 `output` 은 러너가 넣는다(`input.k` → `Remap_dti.k`).
+
+### 주의사항
+
+- ★어려운 부분은 '뽑기' 가 아니라 **남은 것이 멀쩡한가** 다. 뽑은 덱이 없는 절점·파트· 섹션·재질을 가리키면 LS-DYNA 는 **엉뚱한 자리**에서 죽고 원인이 추출이라는 걸 한참 뒤에 안다. 그래서 산출 덱을 **되읽어** 미정의 참조를 세고, 0 이 아니면 rc≠0 이다
+- ★`*INCLUDE` 를 **펼쳐 넣는다** — 2.32GB 급 덱은 거의 늘 인클루드로 쪼개져 있고, 고른 파트의 요소가 그 안에 있으면 안 읽는 순간 **요소가 하나도 없는 덱**이 조용히 나온다. 산출은 **홀로 서는 한 파일**이고, 못 읽는 인클루드는 **거절**한다
+- 격자 3족 말고 **보 족 5종**(BEAM·DISCRETE·MASS·SEATBELT·PLOTEL)도 읽는다 — 칸 자리를 매뉴얼로 확정해 두었다. 절점 칸 **개수**까지 아므로 보의 RT1·LOCAL 이나 안전벨트의 SBRID·SLEN 을 절점으로 세지 않는다(번호를 다시 매길 때 그 칸을 덮어쓰면 카드가 깨진다). PID 칸은 족마다 다르고(`*ELEMENT_MASS` 는 칸 3), `PLOTEL` 은 PID 가 없어 **두 절점이 다 남았을 때만** 싣는다
+- ★그래도 모르는 변형(`*ELEMENT_MASS_NODE_SET`·`*ELEMENT_INERTIA` 등)이 **고른 파트의** 요소를 담고 있으면 **거절한다**. 조용히 빠뜨린 덱은 그럴듯하게 돌면서 틀린다. 안 고른 파트의 것이면 버리고 **수로 적는다**
+- 버린 것은 전부 `dropped_keywords` 에 키워드별로 적는다 — 안 보이는 손실을 만들지 않는다
+- `part_titles` 는 `*` `?` 와일드카드다(대소문자 무시) — 61파트 덱에서 PID 를 외우지 않아도 된다. 덱에 없는 PID 는 **거절**한다(오타면 조용히 빈 덱이 나온다)
+- `renumber: false` 가 기본. `true` 면 절점·요소를 1 부터 매기고 **매핑 표를 함께** 낸다(`<output>_renumber_map.json`) — 없으면 되돌릴 수 없다. 칸만 **제자리에서** 갈아 끼우므로 좌표 글자는 바이트 그대로다(실수 왕복 오차 0)
+- `include.sets: referenced` 는 세트를 **자른다**(빼지 않는다) — 세트를 가리키는 접촉· 경계 카드가 미정의 참조가 되면 덱이 안 돈다. `*SET_SEGMENT` 는 **네 절점이 다 남은** 면만 싣는다(일부만 남은 면은 면이 아니다)
+- `*DATABASE_HISTORY_*` 는 버린다(절점·요소 ID 를 담는다). 그 밖 `*DATABASE_` 와 `*CONTROL_*` 은 그대로 싣는다 — 안 싣으면 뽑은 덱이 애초에 안 돈다
+
+### 개발 현황
+
+바이너리(v1.8.0 · 63 op 판, 2026-10-16 SIF)에 있다. 정본 `KooRemapper/docs/KooRemapper_Manual.md` §48 · 회귀 `tools/regress/test_extract_parts.py`.
+
+---
+
+## cad_solid_merge_to_deck
+
+### 용도
+
+StepForge 조각(.k + 대응표)을 기존 덱에 **넣는다** — 계약 대조 · 번호 이동 · coord_sha 검산.
+
+StepForge 조각(.k + 대응표 JSON)을 기존 덱에 넣는다. 경계 계약대로 대조하고, 조각 번호가 덱 최대값(인클루드 닫힘까지) 위면 옮기지 않으며 아래에 걸치면 위로 옮긴다. 파트마다 coord_sha 를 다시 잰다.
+
+### 호출 형태
+
+config YAML 파일 경로를 위치 인자로 받는 yaml-config op 다.
+
+```
+KooRemapper cad_solid_merge_to_deck <config.yaml>
+```
+
+근거 — 바이너리 `help cad_solid_merge_to_deck` 의 사용법(2026-10-16 · SmartTwinPreprocessor.sif 판).
+
+### config YAML 인자
+
+| 키 | 필수 · 기본 | 설명 |
+|---|---|---|
+| `model` | 필수 | 조각이 들어갈 기존 덱. `*INCLUDE` 닫힘을 읽어 새 번호가 인클루드의 번호와도 겹치지 않게 한다 |
+| `output` | 필수 | 출력 덱. 옆에 `<output>_fragment_map.json`(조각이 받은 덱 번호를 적은 대응표)을 쓴다 |
+| `fragment` | 필수 | StepForge 조각 .k(`export_part_fragment`) |
+| `fragment_map` | 필수 | StepForge 조각 대응표 JSON. 모르는 칸·빠진 칸은 거절한다 |
+| `deck_unit` | 기본 `mm-t-s` | 대상 덱의 단위계. 조각의 unit 이 같아야 한다 — 환산하지 않는다 |
+
+### 예제
+
+KooRemapper 저장소 예제다 — 같은 형식의 자기 모델로 바꿔 쓴다.
+
+`m.yaml`
+
+```yaml
+model: examples/cad_solid_merge_to_deck/deck.k
+output: merged.k
+fragment: examples/cad_solid_merge_to_deck/stepforge_fragment.k
+fragment_map: examples/cad_solid_merge_to_deck/stepforge_fragment.json
+```
+
+직접 실행이다(필요한 입력을 작업 폴더에 둔다).
+
+```bash
+apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper cad_solid_merge_to_deck m.yaml
+```
+
+필요한 입력 — `examples/cad_solid_merge_to_deck/deck.k` · `examples/cad_solid_merge_to_deck/stepforge_fragment.k` · `examples/cad_solid_merge_to_deck/stepforge_fragment.json`
+
+**체인(REMAP 스텝)으로 쓸 수 있다.** `fragment`·`fragment_map` 을 **절대 경로**로 준다(러너는 입력 덱만 Output 폴더에 복사한다).
+
+```yaml
+params:
+  op: cad_solid_merge_to_deck
+  config:
+    fragment: examples/cad_solid_merge_to_deck/stepforge_fragment.k
+    fragment_map: examples/cad_solid_merge_to_deck/stepforge_fragment.json
+```
+
+`model` 과 `output` 은 러너가 넣는다(`input.k` → `Remap_dti.k`).
+
+### 주의사항
+
+- 경계 합의(StepForge `docs/BOUNDARY-DYNAFORGE.md` §3-3) — 조각을 **쓰는** 것은 StepForge, 기존 덱에 **넣는** 것은 이 op 이다(이미 있는 덱의 바이트를 바꾸는 일이라서)
+- ★대응표는 **계약의 칸 그대로** 읽는다 — 맨 위 넷(unit·frame·ranges·parts) · ranges 넷 · parts 여덟. 모르는 칸·빠진 칸은 **거절**한다. `ranges` 의 `null`(그 번호를 안 썼다)은 받는다
+- ★넣기 전에 조각을 대응표와 **대조**한다 — 번호가 ranges 안이고 lo·hi 가 실제 최소·최대인가 · 파트 집합 · 파트마다 요소 수·구간 · 그 요소가 쓰는 절점 = 절점 구간 · **coord_sha**(저쪽과 같은 식 — `%16.9e` 셋씩 이은 줄을 정렬해 sha256 앞 16자). 하나라도 어긋나면 넣지 않는다(rc=1)
+- ★조각 번호가 이 덱(**인클루드 닫힘까지** 센 최대값) **위에 있으면 옮기지 않는다** — 대응표 번호 = 덱 번호 (요청 때 발행 — `id_floor` 가 낸 시작 번호로 받은 조각). 최대값 이하에 걸치면 그 위로 옮긴다(과도기 길 — 저쪽 기본값 1 로 받은 조각). PID·SECID·MID 는 **한 이동량**이다(저쪽이 셋을 같은 번호로 쓴다)
+- 좌표 글자는 **바이트 그대로** 두고 번호 칸만 이 덱의 폭(8 · i10 이면 10)으로 쓴다. 넣을 블록을 **다시 읽어** coord_sha 를 한 번 더 잰다. long 덱은 받지 않는다
+- unit 은 `deck_unit`(기본 mm-t-s)과 같아야 하고 frame 은 world 여야 한다 — 환산·변환은 하지 않는다
+- 계약 밖 키워드(`*SET_*`·`*MAT_ADD_*`·`*MAT_THERMAL_*` …)가 든 조각·`ranges.sid` 가 null 이 아닌 조각은 거절
+- 저쪽 자리표시 물성(RO = E = 1.0)은 그대로 넣되 MID 마다 **경고**한다 — 해석 전에 바꿀 것
+- 산출 둘 — `<output>.k` · `<output>_fragment_map.json`(같은 칸 집합의 대응표를 **덱 번호**로 옮긴 것)
+
+### 개발 현황
+
+바이너리(v1.8.0 · 63 op 판, 2026-10-16 SIF)에 있다. 정본 `KooRemapper/docs/KooRemapper_Manual.md` §49 · 회귀 `tools/regress/test_cad_solid_merge.py`.
+
+---
+
+## rebind_entities_after_remesh
+
+### 용도
+
+재메시 뒤 덧붙인 블록의 절점·파트·요소 번호를 새 덱 번호에 **다시 묶는다** — 절점은 (파트 이름, 좌표) · 파트는 제목 · 요소는 (파트, 절점 좌표).
+
+StepForge 가 재메시로 덱 전체를 다시 번호 매긴 뒤, 그 위에 덧붙인 블록(세트 · SPC · 하중 · 이력 · 접촉 · CNRB …)의 절점·파트·요소 번호를 새 덱 번호로 옮긴다. 절점은 (파트 제목, 좌표), 파트는 `*PART` 제목, 요소는 (파트 제목, 절점 좌표 집합)으로 **정확히** 짝짓는다.
+
+### 호출 형태
+
+config YAML 파일 경로를 위치 인자로 받는 yaml-config op 다.
+
+```
+KooRemapper rebind_entities_after_remesh <config.yaml>
+```
+
+근거 — 바이너리 `help rebind_entities_after_remesh` 의 사용법(2026-10-16 · SmartTwinPreprocessor.sif 판).
+
+### config YAML 인자
+
+| 키 | 필수 · 기본 | 설명 |
+|---|---|---|
+| `old_deck` | 필수 | 덧붙인 블록이 쓰인 기준 덱(그 번호가 블록이 가리키는 번호다). 한 파일 덱만 |
+| `new_deck` | 필수 | 다시 구운 덱. 한 파일 덱만 · 정수 칸 폭이 old_deck 과 같아야 한다 |
+| `entities` | 필수 | 우리가 덧붙인 블록만 든 .k(절점·세그먼트·파트·요소 세트 · SPC · 하중 · 이력 · CNRB · 강체 묶음 · 접촉 · 질량 · 좌표계 절점 · 곡선 · 박스). 고치지 않는다 |
+| `output` | 필수 | 다시 묶은 블록 — new_deck 과 함께 `*INCLUDE` 해 쓴다. entities 와 달라야 한다 |
+| `range_diff` | 선택 | StepForge 구간 표(range_diff JSON, 선택). 파트마다 coord_sha 를 두 덱에서 다시 재어 대조한다 |
+
+### 예제
+
+KooRemapper 저장소 예제다 — 같은 형식의 자기 모델로 바꿔 쓴다.
+
+`rb.yaml`
+
+```yaml
+old_deck: examples/rebind_entities_after_remesh/v1.k
+new_deck: examples/rebind_entities_after_remesh/v2.k
+entities: examples/rebind_entities_after_remesh/ours.k
+output: ours_rebound.k
+range_diff: examples/rebind_entities_after_remesh/range_diff.json
+```
+
+직접 실행이다(필요한 입력을 작업 폴더에 둔다).
+
+```bash
+apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper rebind_entities_after_remesh rb.yaml
+```
+
+필요한 입력 — `examples/rebind_entities_after_remesh/v1.k` · `examples/rebind_entities_after_remesh/v2.k` · `examples/rebind_entities_after_remesh/ours.k` · `examples/rebind_entities_after_remesh/range_diff.json`
+
+**체인(REMAP 스텝)으로는 쓸 수 없다.** 러너가 넣는 `model` 키를 **모르는 키로 거절**한다(rc 1 — 엉뚱한 덱을 조용히 집지 않게 하려는 거절이다). 직접 실행한다.
+
+### 주의사항
+
+- 경계 합의(StepForge §3-6 · Q12) — StepForge 덱은 메시 잡마다 파트 순서대로 **전역 재번호**한다. 그 위에 덧붙인 세트·SPC·이력·CNRB 를 새 덱 번호로 옮기는 것이 이 op 이다(구간 표 + 좌표 기준)
+- ★짝은 옛 절점의 (그 절점을 쓰는 파트 **이름**, 좌표 `%16.9e`×3)와 **정확히** 같은 새 절점이다 — 공차·가장 가까운 절점은 쓰지 않는다(물리가 조용히 바뀐다). 맞닿은 두 파트의 같은 자리 절점은 파트 이름으로 가른다
+- 다시 구운 파트의 사라진 자리 · 짝이 여럿 · 정본이 칸 뜻을 단정 못 한 카드(초기응력 · 파트 감쇠 · `_GENERATE` 세트 …) · 자유형식 줄 · 블록이 정의한 번호가 새 덱과 겹침 — 하나라도 있으면 **쓰지 않는다**(rc 1)
+- `range_diff` 를 주면 파트마다 `coords.before`/`after` 를 두 덱에서 **다시 재어** 대조한다 — 다르면 거절
+- 번호 칸만 같은 폭으로 바꾸고 나머지 바이트는 그대로다. 산출을 새 덱과 함께 `*INCLUDE` 해 쓴다
+- 한 파일 덱만 받는다(인클루드가 있으면 거절) · 절점 칸 자리는 `info --strict` 와 같은 정본(`parser/NodeRefs`)
+- ★v2 — 파트는 `*PART` 제목으로, 요소는 (파트 제목, 요소 절점 좌표 집합)으로 옮긴다(`*SET_PART` · 접촉 SSTYP 3 · 강체 묶음 · 요소 세트 · 요소 이력 — 정본 `parser/IdRefs`). 초기응력·파트 감쇠 같은 갈래는 아직 거절한다
+
+### 개발 현황
+
+바이너리(v1.8.0 · 63 op 판, 2026-10-16 SIF)에 있다. 정본 `KooRemapper/docs/KooRemapper_Manual.md` §50 · 회귀 `tools/regress/test_rebind_after_remesh.py`.
+
+---
+
+## id_floor
+
+### 용도
+
+덱(인클루드 닫힘)의 번호 **바닥** — StepForge 조각을 요청할 때 줄 시작 번호 · 대응표 대조.
+
+StepForge 조각을 요청할 때 줄 시작 번호를 낸다 — 덱 최대값 + 1(인클루드 닫힘까지). 대응표를 주면 그 범위가 바닥 위인지 대조한다.
+
+### 호출 형태
+
+config YAML 파일 경로를 위치 인자로 받는 yaml-config op 다.
+
+```
+KooRemapper id_floor <config.yaml>
+```
+
+근거 — 바이너리 `help id_floor` 의 사용법(2026-10-16 · SmartTwinPreprocessor.sif 판).
+
+### config YAML 인자
+
+| 키 | 필수 · 기본 | 설명 |
+|---|---|---|
+| `model` | 필수 | 조각이 들어갈 덱. `*INCLUDE` 닫힘을 읽는다 |
+| `output` | 필수 | deck · basis · node_start · elem_start · pid_start · sid_start 를 담는 JSON. `fragment_map` 을 주면 범위마다 `check`(above · below · unused — 대응표의 범위가 null 이면 unused)를 더한다. 이름에 `.json` 이 없으면 붙인다 |
+| `fragment_map` | 선택 | 바닥과 대조할 StepForge 조각 대응표 JSON(선택) |
+
+### 예제
+
+KooRemapper 저장소 예제다 — 같은 형식의 자기 모델로 바꿔 쓴다.
+
+`f.yaml`
+
+```yaml
+model: examples/cad_solid_merge_to_deck/deck.k
+output: floor.json
+fragment_map: examples/cad_solid_merge_to_deck/stepforge_fragment.json
+```
+
+직접 실행이다(필요한 입력을 작업 폴더에 둔다).
+
+```bash
+apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper id_floor f.yaml
+```
+
+필요한 입력 — `examples/cad_solid_merge_to_deck/deck.k` · `examples/cad_solid_merge_to_deck/stepforge_fragment.json`
+
+**체인(REMAP 스텝)으로는 쓸 수 없다.** 산출이 JSON(`<output>.json`)이다 — 직접 실행한다.
+
+### 주의사항
+
+- ★**요청 때 발행**(2026-10-16) — 대역표를 두지 않는다. 조각을 요청할 때 이 op 이 낸 네 번호를 StepForge `export_part_fragment` 의 인자(`node_start`·`elem_start`·`pid_start`·`sid_start` — 이름 그대로)로 주면 조각이 그 번호로 쓰이고 `cad_solid_merge_to_deck` 가 **옮기지 않고** 넣는다(대응표 번호 = 덱 번호)
+- 바닥 = assemble 과 같은 커서(**인클루드 닫힘까지**)의 최대값 + 1. pid_start 는 PID·SECID·MID 셋의 최대값 위다 (조각은 셋을 같은 번호로 쓴다 — 삽입도 한 이동량으로 옮긴다)
+- `fragment_map` 을 주면 그 `ranges` 가 바닥 위인지 대조한다 — 아래에 걸치면 rc 1(그 조각은 넣을 때 옮겨진다)
+- 경계 문서의 `id_floor`(Q7 — 대응표의 `ranges` 를 읽어 대조한다)가 이 op 이다
+
+### 개발 현황
+
+바이너리(v1.8.0 · 63 op 판, 2026-10-16 SIF)에 있다. 정본 `KooRemapper/docs/KooRemapper_Manual.md` §51 · 회귀 `tools/regress/test_id_floor.py`.

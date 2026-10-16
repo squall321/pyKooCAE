@@ -1,4 +1,4 @@
-# KooRemapper ops — 메시 생성(generate · generate-var · battery · cclip)
+# KooRemapper ops — 메시 생성(generate · generate-var · battery · cclip · refshell)
 
 KooRemapper(SmartTwinPreprocessor.sif 내 `/opt/kooremapper/bin/KooRemapper`, C++ CLI v1.8.0)의 메시 생성 계열 op 4종 레퍼런스다. 각 op은 `apptainer exec <sif> /opt/kooremapper/bin/KooRemapper <op> ...` 로 직접 실행하거나 KooChainRun 의 REMAP 스텝으로 실행한다.
 
@@ -275,6 +275,106 @@ apptainer exec SmartTwinPreprocessor.sif \
 - 출력 검증은 솔버 없이 `tools/cclip_check.py` 로 수행한다(help).
 - 정본 명령 목록에는 한 줄 설명만 있고 전용 섹션·config 필드 문서가 없어, 세부는 help 와 examples/cclip 근거. 그 외 필드·조합은 **확인 필요**.
 
+### 2026-10 정본 대조
+
+- 새 SECID · MID · SET · CNRB 번호가 인클루드의 번호와 겹치지 않는다(2026-10-16 — 충돌 검사 코퍼스를 정본 인클루드 리더로 모은다). i10 덱에는 새 카드를 10칸으로 쓴다(그 전에는 8칸).
+
 ### 개발 현황
 
 **구현됨** — help 에 config 스키마·동작·검증 도구가 명시되고, analytic/deck 예제(examples/cclip/cclip.yaml, cclip_deck.yaml)와 입력 생성용 gen_board.yaml 이 제공된다. 정본 문서화는 부재.
+
+---
+
+## refshell
+
+### 용도
+
+2D 곡선을 폭으로 쓸어 QUAD4 기준 셸 생성.
+
+2D 곡선을 폭 방향으로 쓸어 QUAD4 기준 셸 덱 생성 (shellmap 의 기준면).
+
+### 호출 형태
+
+config YAML 파일 경로를 위치 인자로 받는 yaml-config op 다.
+
+```
+KooRemapper refshell <config.yaml>
+```
+
+근거 — 바이너리 `help refshell` 의 사용법(2026-10-16 · SmartTwinPreprocessor.sif 판).
+
+### config YAML 인자
+
+| 키 | 필수 · 기본 | 설명 |
+|---|---|---|
+| `curve` | 필수 | `x`·`y` 이름 열이 있는 곡선 CSV(예: foldsurface 의 `<output>_curve.csv`) |
+| `output` | 필수 | 출력 덱 경로(.k) |
+| `width` | 필수 | +z 로 쓸어 낼 폭 |
+| `thickness` | 필수 | `*SECTION_SHELL` 에 쓸 셸 두께 |
+| `divisions` | 기본 `0` | 곡선 방향 요소 수. 0 이면 CSV 점을 그대로 쓰고, 아니면 같은 현 길이로 다시 표본한다 |
+| `width_divisions` | 기본 `0` | 폭 방향 요소 수. 0 이면 종횡비 1:1 이 되는 수를 고른다 |
+| `part_title` | 기본 `Reference shell` | `*PART` 제목 |
+| `pid` | 기본 `1` | 파트 ID |
+| `secid` | 기본 `1` | 섹션 ID |
+| `mid` | 기본 `1` | 재질 ID |
+| `rho` | 기본 `7.85e-09` | `*MAT_ELASTIC` 밀도 |
+| `E` | 기본 `210000.0` | `*MAT_ELASTIC` 영률 |
+| `nu` | 기본 `0.3` | `*MAT_ELASTIC` 푸아송비 |
+
+### 예제
+
+KooRemapper 저장소 예제다 — 같은 형식의 자기 모델로 바꿔 쓴다.
+
+`fold.yaml`
+
+```yaml
+output: fold
+arc_length: 10.0
+fold_angle: 90.0
+min_radius: 3.0
+points: 201
+```
+
+`ref.yaml`
+
+```yaml
+curve: fold_curve.csv
+output: refshell.k
+width: 2.0
+thickness: 0.05
+divisions: 20
+```
+
+직접 실행이다(필요한 입력을 작업 폴더에 둔다).
+
+```bash
+apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper foldsurface fold.yaml
+apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper refshell ref.yaml
+```
+
+**체인(REMAP 스텝)으로 쓸 수 있다.** 체인의 입력 덱은 쓰지 않는다(러너가 넣는 `model` 은 경고와 함께 무시된다) — 곡선에서 새 기준 셸 덱을 지어 `Remap_dti.k` 로 낸다. `curve` 는 **절대 경로**로 준다.
+
+```yaml
+params:
+  op: refshell
+  config:
+    curve: fold_curve.csv
+    width: 2.0
+    thickness: 0.05
+    divisions: 20
+```
+
+`model` 과 `output` 은 러너가 넣는다(`input.k` → `Remap_dti.k`).
+
+### 주의사항
+
+- 곡선 CSV 는 `x`·`y` 칸을 **이름으로** 찾는다 — foldsurface 산출물이 그대로 맞는다
+- 곡선은 x-y 평면, 폭은 +z 로 쓴다
+- divisions 를 주면 **등현 길이**로 다시 뽑는다. width_divisions 를 0 으로 두면 종횡비 1:1
+- 감김은 (a, d, c, b) — 법선이 ŵ x û 쪽이다(직선 곡선이면 정확히 +y)
+- 현은 호보다 짧다 — 입력 길이와의 편차를 찍고 0.01% 넘으면 경고한다
+- *PART·*SECTION_SHELL·*MAT_ELASTIC 까지 써서 덱이 혼자 선다(미정의 참조 0건)
+
+### 개발 현황
+
+바이너리(v1.8.0 · 63 op 판, 2026-10-16 SIF)에 있다. 정본 `KooRemapper/docs/KooRemapper_Manual.md` §44.3 · 회귀 `tools/regress/test_refshell.py`.

@@ -141,3 +141,16 @@ pyKooCAE 매뉴얼 작성 현황과 후속 보완 대상을 정리한다. 본 �
   - wrap tension 단위: help=[force/length] vs 정본=MPa.
   - explicit: level 체계 없음. `examples/explicit/levelNN.yaml` 은 실은 `stabilize` op 예제.
   - ale YAML 키가 정본(parts/preset)과 help·예제(ale_parts/material) 불일치.
+
+## 8. 2026-10-16 보강 — KooRemapper 63 op 판
+
+SIF 의 KooRemapper 가 47 op(09-18 문서) → 63 op 이 되어 `04_KooRemapper` 를 다시 맞췄다(정본 `KooRemapper/docs/KooRemapper_Manual.md` ·
+도움말 카탈로그 `tools/help/ops_help.py` · 바이너리 help 를 근거로).
+
+- **신규 15건** — `cnrb2spring` · `foldsurface` · `stackwrap` · `applyfold` · `linkage-fit` · `refshell` · `neutralaxis` · `section` · `surfview` ·
+  `stackdiagram` · `cleanup-nodes` · `extract-parts` · `cad_solid_merge_to_deck` · `rebind_entities_after_remesh` · `id_floor`.
+- **기존 항목에 「2026-10 정본 대조」** — info(다시 씀) · modelmeta · meshfix · extract-surface · merge · cnrb2solid · tetremesh · offset ·
+  restack · disconnect · assemble · matswap · ale · shellmap · hfdamp · contact · load · prestress · cclip.
+- **REMAP 스텝 판정을 러너 배선으로 실측** — 덱을 내지 않는 op 은 rc 0 이어도 실패로 끝난다(예전 판의 info · modelmeta REMAP 예시는
+  틀렸다). 그 과정에서 KooRemapper 쪽 결함을 셋 고쳤다 — applyfold · stackwrap 이 `output: x.k` 에 `x.k.k` 를 쓰던 것(`7a13f72`) ·
+  모르는 YAML 키를 말없이 넘기던 셋(`888f578`) · 재결속 도움말 요약이 v1 문장이던 것(`e0e2b3f`).

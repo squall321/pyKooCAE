@@ -16,7 +16,7 @@ SmartTwinPreprocessor(pyKooCAE)의 도구들을 **하나의 파이프라인으�
 |------|------|-----------|------|
 | **KooAutomatedModeller** (KAM) | CAD/ECAD(ODB++)·정의파일 → 형상 자동 생성 + FEA 메시 | ODB++/정의 → `.k` + STEP | [03_KooAutomatedModeller](../03_KooAutomatedModeller/README.md) |
 | **KooMeshModifier** (KMM) | `.k` 모델 변형 엔진(낙하 자세·메시 연산·재료/파트 교체·DOE·하중) | `.k` + 제어 `.txt` → 변형된 `.k` | [02_KooMeshModifier](../02_KooMeshModifier/README.md) |
-| **KooRemapper** (KR) | `.k` 메쉬·재료 리매핑 CLI(47 op). 재료 DB 교체·메시 매핑·어셈블리 등 | `.k`(+YAML) → 변환된 `.k` | [04_KooRemapper](../04_KooRemapper/README.md) |
+| **KooRemapper** (KR) | `.k` 메쉬·재료 리매핑 CLI(63 op). 재료 DB 교체·메시 매핑·어셈블리 등 | `.k`(+YAML) → 변환된 `.k` | [04_KooRemapper](../04_KooRemapper/README.md) |
 | **KooChainRun** (KCR) | 오케스트레이션. 시나리오 준비 → Slurm 제출 → 상태/재실행 → 후처리 | `scenario.json` → 대량 잡 → 결과/리포트 | [01_KooChainRun](../01_KooChainRun/README.md) |
 | **KooDynaPostProcessor** | 후처리 엔진(deep/sphere/impact 리포트 생성). KCR `postprocess`가 호출 | d3plot → 리포트 HTML | [후처리 가이드](../01_KooChainRun/postprocess/postprocess.md) |
 
@@ -149,7 +149,7 @@ KooRemapper의 전처리(재료 DB 교체·메시 리매핑·어셈블리 등)�
 }
 ```
 
-- `params.op` — 실행할 KooRemapper op(예: `matdb`). 전체 47 op는 [04_KooRemapper](../04_KooRemapper/README.md).
+- `params.op` — 실행할 KooRemapper op(예: `matdb`). 전체 63 op 는 [04_KooRemapper](../04_KooRemapper/README.md) — 체인 스텝으로 쓸 수 있는 op 는 그 README 의 「REMAP 스텝으로 쓸 수 있나」 표.
 - `params.config` — **yaml-config op**용 설정 dict. `model`/`output` 은 러너가 자동 주입(입력 모델 → `Remap_dti.k`).
 - `params.argv` — **positional op**용 인자 리스트(예: `map` → `["bent.k","flat.k","out.k"]`). `config` 대신 사용.
 - `environment.kooremapper_path` — sif 내부 바이너리 경로. 생략 시 기본값으로 자동 탐색(`PathResolver.find_kooremapper()`).

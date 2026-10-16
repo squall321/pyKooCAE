@@ -1,4 +1,4 @@
-# KooRemapper ops — 변형·초기응력(strain · prestress · formstrain · warpage · bend · indent · squeeze)
+# KooRemapper ops — 변형·초기응력(strain · prestress · formstrain · warpage · bend · indent · squeeze · foldsurface · stackwrap · applyfold)
 
 SmartTwinPreprocessor.sif 안 `/opt/kooremapper/bin/KooRemapper`(C++ CLI, v1.8.0)의 변형·초기응력 계열 op 7종 레퍼런스다. 각 op는 컨테이너에서 직접 실행하거나 KooChainRun 의 REMAP 스텝으로 호출한다.
 
@@ -106,6 +106,11 @@ positional 계열이므로 `params.op: prestress` + `params.argv: ["ref.k", "def
 - 두 메시는 동일 토폴로지여야 한다(help).
 - 재료가 없고 `--E`/`--nu` 도 없으면 응력을 계산할 수 없다(변형률만, 정본 §6·help).
 - `--strain` 기본값은 help 기준 `green` 이다(정본 §6 본문의 기본값 서술과 차이가 있으므로 v1.8.0 바이너리 기준 `green` 을 따른다).
+
+### 2026-10 정본 대조
+
+- **솔리드 네이티브**다 — `*INITIAL_STRESS_SOLID` 를 쓰므로 대상은 솔리드 요소다. 셸만 있는 덱은 계산할 요소가 없어 **종료 코드 1** 로 끊는다(2026-10-02 전에는 rc 0 으로 빈 블록을 썼다). 셸 적층이면 `restack` 으로 솔리드 층을 만든 뒤 쓴다.
+- `*INITIAL_STRESS_SOLID` 카드 1 을 매뉴얼 그대로 **I10×8** 로 쓴다(2026-10-16 — 그 전에는 `I10 + I8×5`). 값은 같고 바이트만 다르다.
 
 ### 개발현황
 구현됨(v1.8.0 바이너리 내장, help 확인).
@@ -403,3 +408,215 @@ positional 3인자 계열이므로 `params.op: squeeze` + `params.argv: ["mesh.k
 
 ### 개발현황
 구현됨(v1.8.0 바이너리 내장, help 확인). 동작 예제 `examples/squeeze/`(ex01~ex05: 응력/재료/무재료/swelling/혼합) 제공. 입력 덱 `examples/squeeze/squeeze_box.k`(2파트 HEX8, PID 1 강철 / PID 2 알루미늄)와 러너 `examples/squeeze/run.sh` 가 같은 폴더에 있어 `bash run.sh` 로 바로 돌릴 수 있다.
+
+---
+
+## foldsurface
+
+### 용도
+
+접힘 곡면(평면 elastica) 중심선 — 최소 곡률반경 고정.
+
+접힘 곡면(평면 elastica) 중심선 — 최소 곡률반경을 목표로 고정하고 B 를 푼다.
+
+### 호출 형태
+
+config YAML 파일 경로를 위치 인자로 받는 yaml-config op 다.
+
+```
+KooRemapper foldsurface <config.yaml>
+```
+
+근거 — 바이너리 `help foldsurface` 의 사용법(2026-10-16 · SmartTwinPreprocessor.sif 판).
+
+### config YAML 인자
+
+| 키 | 필수 · 기본 | 설명 |
+|---|---|---|
+| `output` | 필수 | 출력 접두사 — `<output>_curve.csv` 를 쓴다 |
+| `arc_length` | 필수 | 굽힘 구간의 호 길이 L |
+| `fold_angle` | 필수 | 굽힘 구간의 접선 총 회전각[deg], 0 < 각 < 360. 평평한 두 반쪽이 각 φ 로 만나면 회전각은 180 − φ 다(완전히 접은 판은 180) |
+| `min_radius` | 필수 | 목표 최소 곡률반경 — 꼭짓점에서 정확히 지킨다 |
+| `points` | 기본 `201` | CSV 에 쓰는 표본 수(3 이상) |
+
+### 예제
+
+KooRemapper 저장소 예제다 — 같은 형식의 자기 모델로 바꿔 쓴다.
+
+`fold.yaml`
+
+```yaml
+output: fold
+arc_length: 10.0
+fold_angle: 90.0
+min_radius: 3.0
+points: 201
+```
+
+직접 실행이다(필요한 입력을 작업 폴더에 둔다).
+
+```bash
+apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper foldsurface fold.yaml
+```
+
+**체인(REMAP 스텝)으로는 쓸 수 없다.** 덱이 아니라 중심선 표(`<output>_curve.csv`)를 쓴다 — `Remap_dti.k` 가 없어 러너가 실패로 친다. 직접 실행한다.
+
+### 주의사항
+
+- fold_angle 은 **굽힘 영역의 접선 총회전**(도)이다 — 두 평판 사이각 φ 면 180-φ 다
+- 최소 곡률반경은 정점에서 **정확히** 걸린다. 미지수는 힘 매개변수 B 하나다
+- elastica 는 다중해다 — [0, Bmax] 를 연속법으로 훑어 **첫 교차**를 집는다(뒤집힘이 가장 적은 해)
+- fold_angle 이 L/min_radius 라디안을 넘으면 불가능하다(원호가 상한) — 필요한 R·L 을 찍고 rc=1
+- arc_length 가 R*α 보다 많이 길면 해가 물결이 된다 — 뒤집힘 수를 찍고 경고한다
+- 덱을 읽지도 쓰지도 않는다. 산출물은 CSV 하나다
+
+### 개발 현황
+
+바이너리(v1.8.0 · 63 op 판, 2026-10-16 SIF)에 있다. 정본 `KooRemapper/docs/KooRemapper_Manual.md` §44.2 · 회귀 `tools/regress/test_foldsurface.py`.
+
+---
+
+## stackwrap
+
+### 용도
+
+적층을 EI 중립축 기준으로 기준 셸에 감기.
+
+적층을 EI 중립축 기준으로 옮겨 기준 셸에 감기 (shellmap 의 z=0 전제를 맞춘다).
+
+### 호출 형태
+
+config YAML 파일 경로를 위치 인자로 받는 yaml-config op 다.
+
+```
+KooRemapper stackwrap <config.yaml>
+```
+
+근거 — 바이너리 `help stackwrap` 의 사용법(2026-10-16 · SmartTwinPreprocessor.sif 판).
+
+### config YAML 인자
+
+| 키 | 필수 · 기본 | 설명 |
+|---|---|---|
+| `bent_shell` | 필수 | 굽은 QUAD4 기준 셸 덱(k-파일) — 예) `refshell` 산출 |
+| `flat_stack` | 필수 | 감을 평평한 적층 덱(k-파일) |
+| `output` | 필수 | 출력 접두사 — `<output>.k` 와 `<output>_neutral.k` 를 쓴다(끝의 `.k` 는 먼저 떼므로 `output: x.k` 는 `x.k` 를 쓴다) |
+| `thickness` | 기본 `0.0` | 매퍼에 넘기는 셸 두께. 0 이면 적층의 z 범위에서 스스로 잡는다 |
+| `axis` | 기본 `z` | 중립축을 재는 적층 방향 |
+| `shift` | 기본 `True` | false 면 옮기지 않고 감는다 — 정렬하지 않은 결과와 비교할 때 쓴다. op 이 그렇다고 말한다 |
+
+### 예제
+
+KooRemapper 저장소 예제다 — 같은 형식의 자기 모델로 바꿔 쓴다.
+
+`sw.yaml`
+
+```yaml
+bent_shell: examples/stackwrap/ref_shell.k
+flat_stack: examples/stackwrap/flat_stack.k
+output: wrapped
+```
+
+직접 실행이다(필요한 입력을 작업 폴더에 둔다).
+
+```bash
+apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper stackwrap sw.yaml
+```
+
+필요한 입력 — `examples/stackwrap/ref_shell.k`
+
+**체인(REMAP 스텝)으로 쓸 수 있다.** 체인의 입력 덱은 쓰지 않는다(러너가 넣는 `model` 은 경고와 함께 무시된다). `bent_shell`·`flat_stack` 을 **절대 경로**로 준다(러너는 입력 덱만 Output 폴더에 복사한다). 2026-10-16(`7a13f72`) 전 바이너리는 `Remap_dti.k.k` 를 써서 실패했다.
+
+```yaml
+params:
+  op: stackwrap
+  config:
+    bent_shell: examples/stackwrap/ref_shell.k
+    flat_stack: examples/stackwrap/flat_stack.k
+```
+
+`model` 과 `output` 은 러너가 넣는다(`input.k` → `Remap_dti.k`).
+
+### 주의사항
+
+- shellmap 은 평면 덱의 축=0 을 중립면으로 본다 — 적층의 EI 중립축이 거기 없으면 전부 어긋난다(§1-6)
+- <output>_neutral.k 는 **매핑에 실제로 넣은** 덱이다 — 무엇이 들어갔는지 볼 수 있게 남긴다
+- 매핑은 shellmap 과 **같은 경로**다. 두 번째 구현을 두지 않는다
+- 평행이동은 덱의 칸폭·개행을 보존한다 — 좌표만 바뀐다
+- 부호: (a,d,c,b) 감김의 법선이 오목한 쪽이라 **양수 z 가 곡률 중심 쪽**이다(반경 = R - z)
+- shift: false 면 옮기지 않고 감고, 그 사실을 경고한다 — 정렬 전후를 대조할 때 쓴다
+
+### 개발 현황
+
+바이너리(v1.8.0 · 63 op 판, 2026-10-16 SIF)에 있다. 정본 `KooRemapper/docs/KooRemapper_Manual.md` §44.5 · 회귀 `tools/regress/test_stackwrap.py`.
+
+---
+
+## applyfold
+
+### 용도
+
+linkage-fit 의 군별 변환을 덱에 찍기.
+
+linkage-fit 이 적은 군별 변환을 덱에 찍기 — 빠지는 절점이 하나도 없어야 한다.
+
+### 호출 형태
+
+config YAML 파일 경로를 위치 인자로 받는 yaml-config op 다.
+
+```
+KooRemapper applyfold <config.yaml>
+```
+
+근거 — 바이너리 `help applyfold` 의 사용법(2026-10-16 · SmartTwinPreprocessor.sif 판).
+
+### config YAML 인자
+
+| 키 | 필수 · 기본 | 설명 |
+|---|---|---|
+| `model` | 필수 | 접을 덱(k-파일) |
+| `groups` | 필수 | `linkage-fit` 이 쓴 군 표 YAML |
+| `output` | 필수 | 출력 접두사 — `<output>.k` 를 쓴다(끝의 `.k` 는 먼저 떼므로 `output: x.k` 는 `x.k` 를 쓴다) |
+
+### 예제
+
+KooRemapper 저장소 예제다 — 같은 형식의 자기 모델로 바꿔 쓴다.
+
+`af.yaml`
+
+```yaml
+model: examples/linkage_fit/arm_flat.k
+groups: examples/linkage_fit/fold_groups.yaml
+output: arm_refolded
+```
+
+직접 실행이다(필요한 입력을 작업 폴더에 둔다).
+
+```bash
+apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper applyfold af.yaml
+```
+
+필요한 입력 — `examples/linkage_fit/arm_flat.k`
+
+**체인(REMAP 스텝)으로 쓸 수 있다.** `groups` 를 **절대 경로**로 준다(러너는 입력 덱만 Output 폴더에 복사한다). 2026-10-16(`7a13f72`) 전 바이너리는 `Remap_dti.k.k` 를 써서 실패했다.
+
+```yaml
+params:
+  op: applyfold
+  config:
+    groups: examples/linkage_fit/fold_groups.yaml
+```
+
+`model` 과 `output` 은 러너가 넣는다(`input.k` → `Remap_dti.k`).
+
+### 주의사항
+
+- 좌표만 바꾼다 — 덱의 칸폭·개행을 보존하므로 보통 **바이트 크기가 같다**
+- ★버리지 않는다: 없는 파트를 가리키면 rc=1 · 두 군이 절점을 나눠 가지면 rc=1 (절점으로 붙은 파트는 접힘이 정의되지 않는다 — `disconnect` 로 떼라)
+- ★군의 절점을 **전부** 옮겼는지 세고, 되읽어 **요구한 변환과 대조**한다
+- '미이동 0' 만 보면 틀린다 — 회전축 위 절점은 제대로 변환해도 제자리다
+- bbox 와 바이트 크기를 전후로 찍는다 — 기대 범위를 눈으로 확인하라
+
+### 개발 현황
+
+바이너리(v1.8.0 · 63 op 판, 2026-10-16 SIF)에 있다. 정본 `KooRemapper/docs/KooRemapper_Manual.md` §44.7 · 회귀 `tools/regress/test_applyfold.py`.

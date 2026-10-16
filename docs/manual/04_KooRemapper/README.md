@@ -1,6 +1,6 @@
 # KooRemapper — `.k` 메쉬·재료 리매핑 CLI (op 색인)
 
-LS-DYNA 키워드(`.k`) 모델의 **메쉬·재료를 변환·리매핑**하는 C++ CLI 도구(v1.8.0, **47 op**).
+LS-DYNA 키워드(`.k`) 모델의 **메쉬·재료를 변환·리매핑**하는 C++ CLI 도구(v1.8.0, **63 op** — 2026-10-16 SIF 판).
 위 3개(Nuitka) 도구와 달리 독립 C++ 바이너리이며, `SmartTwinPreprocessor.sif` 내부에
 네이티브 바이너리(`/opt/kooremapper/bin/KooRemapper`)로 구워져 KooMeshModifier 와 동일하게
 `apptainer exec <sif> <바이너리>` 로 호출된다. KooChainRun 시나리오의 `REMAP` 스텝으로
@@ -16,14 +16,16 @@ LS-DYNA 키워드(`.k`) 모델의 **메쉬·재료를 변환·리매핑**하는 
 
 ## 호출 규약
 
-두 가지 인자 형태로 47개 op를 모두 호출한다. op가 어느 형태인지는 각 op 레퍼런스의 바이너리 `Usage` 로 확정한다.
+두 가지 인자 형태로 63개 op를 모두 호출한다. op가 어느 형태인지는 각 op 레퍼런스의 바이너리 `Usage` 로 확정한다.
 
 | 형태 | 예 | 대상 op(예) |
 |------|----|---------|
 | yaml-config ops | `KooRemapper matdb config.yaml` | matdb, matswap, assemble, battery, cnrb2solid, hfdamp, contact, load, boundary, rbe, relax, database, bend, indent 등 |
 | positional ops | `KooRemapper map bent.k flat.k out.k` | map, shellmap, unfold, generate, strain, prestress, info, extract-surface 등. 일부는 config.yaml 을 **위치 인자**로 받는다(예: `generate-var <config.yaml> <output.k>`, `squeeze <mesh.k> <config.yaml> <output_prefix>`) |
 
-> 각 op는 필요한 **입력 파일이 작업 디렉토리에 있어야** 한다(CLI 특성). REMAP 스텝은 이를 자동 준비한다.
+> 각 op는 필요한 **입력 파일이 작업 디렉토리에 있어야** 한다(CLI 특성). REMAP 스텝은 **입력 덱 하나만**(`input.k`) Output 폴더에
+> 준비한다 — 그 밖의 입력(조각 · 대응표 · 군 표 · 곡선 · `*INCLUDE` 파일)은 절대 경로로 주거나 덱이 가리키는 자리에 둔다
+> (2026-10-16 러너 배선 실측 — 아래 「REMAP 스텝으로 쓸 수 있나」).
 
 ---
 
@@ -34,6 +36,11 @@ implicit · modal · ale · database · optimize · stabilize · matdb · cclip 
 restack · bend · indent · formstrain · disconnect · iga · warpage · offset · wrap · update · cnrb2solid ·
 hfdamp · battery · modelmeta · assemble · matswap · tetremesh · meshfix · `generate box` · squeeze ·
 generate-var)이 같은 리더를 쓴다. 아래는 그 공통 규칙이다.
+
+> 2026-10 판 — `cnrb2spring` 도 같은 리더를 쓴다(41종). 그 밖에 더해진 YAML op 13종은 각자 읽는다 — 상대 경로는 YAML 폴더
+> 기준이고, **모르는 키 처리는 op 마다 다르다**(2026-10-16 실측). 거절(rc 1) — `id_floor` · `rebind_entities_after_remesh` ·
+> `cad_solid_merge_to_deck`. 경고하고 무시 — `foldsurface` · `refshell` · `stackwrap` · `linkage-fit` · `applyfold` · `section` ·
+> `surfview` · `stackdiagram` · `extract-parts` · `cleanup-nodes`.
 
 | 규칙 | 내용 |
 |---|---|
@@ -81,22 +88,23 @@ generate-var)이 같은 리더를 쓴다. 아래는 그 공통 규칙이다.
 
 ## op 레퍼런스 (카테고리별)
 
-47개 op를 9개 카테고리 페이지로 나눠 op별(용도·호출·인자·예제·주의)로 문서화했다.
+63개 op를 9개 카테고리 페이지로 나눠 op별(용도·호출·인자·예제·주의)로 문서화했다. 2026-10-16 판에서 15개를 더했고(그림 셋 · 접힘 워크플로 · StepForge 경계 셋 · `extract-parts` · `cleanup-nodes` · `cnrb2spring`), 기존 항목에는 그 뒤 바뀐 것을
+「2026-10 정본 대조」 문단으로 덧붙였다.
 
 | 카테고리 | op | 페이지 |
 |----------|----|--------|
 | 메시 매핑 | `map` · `shellmap` · `unfold` | [ops/mesh_mapping.md](ops/mesh_mapping.md) |
-| 메시 생성 | `generate` · `generate-var` · `battery` · `cclip` | [ops/mesh_generate.md](ops/mesh_generate.md) |
-| 메시 편집 | `convert` · `refine` · `elform` · `disconnect` · `offset` · `wrap` · `restack` · `update` · `iga` | [ops/mesh_edit.md](ops/mesh_edit.md) |
+| 메시 생성 | `generate` · `generate-var` · `battery` · `cclip` · `refshell` | [ops/mesh_generate.md](ops/mesh_generate.md) |
+| 메시 편집 | `convert` · `refine` · `elform` · `disconnect` · `offset` · `wrap` · `restack` · `update` · `iga` · `cleanup-nodes` · `extract-parts` · `cad_solid_merge_to_deck` · `rebind_entities_after_remesh` · `id_floor` | [ops/mesh_edit.md](ops/mesh_edit.md) |
 | 표면·재메시 | `extract-surface` · `tetremesh` · `meshfix` · `cnrb2solid` · `merge` · `strip` | [ops/surface_remesh.md](ops/surface_remesh.md) |
-| 변형·초기응력 | `strain` · `prestress` · `formstrain` · `warpage` · `bend` · `indent` · `squeeze` | [ops/deform_prestress.md](ops/deform_prestress.md) |
+| 변형·초기응력 | `strain` · `prestress` · `formstrain` · `warpage` · `bend` · `indent` · `squeeze` · `foldsurface` · `stackwrap` · `applyfold` | [ops/deform_prestress.md](ops/deform_prestress.md) |
 | 재료·어셈블리 | `matdb` · `matswap` · `assemble` | [ops/material_assembly.md](ops/material_assembly.md) |
-| 하중·경계·접촉 | `load` · `boundary` · `rbe` · `contact` · `relax` · `stabilize` · `database` · `hfdamp` | [ops/load_bc_contact.md](ops/load_bc_contact.md) |
+| 하중·경계·접촉 | `load` · `boundary` · `rbe` · `contact` · `relax` · `stabilize` · `database` · `hfdamp` · `cnrb2spring` | [ops/load_bc_contact.md](ops/load_bc_contact.md) |
 | 솔버 설정 | `explicit` · `implicit` · `modal` · `ale` · `optimize` | [ops/solver_setup.md](ops/solver_setup.md) |
-| 정보·메타 | `info` · `modelmeta` · `version` | [ops/info_meta.md](ops/info_meta.md) |
+| 정보·메타 | `info` · `modelmeta` · `version` · `neutralaxis` · `linkage-fit` · `section` · `surfview` · `stackdiagram` | [ops/info_meta.md](ops/info_meta.md) |
 
-> **숨은(hidden) op 5종**: `extract-surface` · `tetremesh` · `meshfix` · `merge` · `strip` 은
-> 바이너리 `--help` 최상위 목록엔 안 뜨지만 정상 동작한다(각자 `Usage` 출력, 실행 검증됨).
+> **예전 판의 숨은 op 5종**(`extract-surface` · `tetremesh` · `meshfix` · `merge` · `strip`)은 지금 `--help` 최상위 목록에 뜬다
+> (2026-10-16 확인).
 > `split_fillet`/`tet10`/`quadratic`/`remesh` 는 op가 아니라 예제·요소타입 이름이므로 명령이 아니다.
 
 ---
@@ -141,6 +149,23 @@ generate-var)이 같은 리더를 쓴다. 아래는 그 공통 규칙이다.
   `matdb` 에서 `database` 생략 시 번들 DB(`/opt/kooremapper/materials/material_db.json`) 자동 사용.
 - `params.argv`: positional ops 용 인자 리스트(예: `map` → `["bent.k","flat.k","out.k"]`). `config` 대신 사용.
 - `environment.kooremapper_path`: sif 내부 바이너리 경로. 생략 시 기본값(위 경로)으로 자동 탐색.
+
+### REMAP 스텝으로 쓸 수 있나 — 2026-10-16 러너 배선 실측
+
+러너는 YAML op 에 `model: input.k` · `output: Remap_dti.k` 를 넣고, Output 폴더에 **입력 덱 하나만** 복사해 돌린 뒤, `Remap_dti.k` 가
+있어야 성공으로 친다. 그 배선을 그대로 흉내 내 op 마다 돌린 결과다 — 덱을 내지 않는 op 은 rc 0 이어도 실패(`output not produced`)로 끝난다.
+
+| op | 체인 | 까닭 · 조건 |
+|---|---|---|
+| `cnrb2spring` · `cleanup-nodes` | 된다 | 체인의 입력 덱에 바로 적용된다 |
+| `cad_solid_merge_to_deck` | 된다 | `fragment` · `fragment_map` 을 절대 경로로 준다 |
+| `applyfold` | 된다 | `groups` 를 절대 경로로 · 2026-10-16(`7a13f72`) 바이너리부터(그 전에는 `Remap_dti.k.k` 를 썼다) |
+| `stackwrap` · `refshell` | 된다 | 체인 입력 덱 대신 자기 입력(절대 경로)으로 새 덱을 짓는다(넣어 준 `model` 은 경고와 함께 무시) · stackwrap 은 `7a13f72` 부터 |
+| `extract-parts` | 조건부 | 덱이 `*INCLUDE` 로 나뉘어 있으면 그 안의 파트를 못 찾는다(러너가 인클루드를 복사하지 않는다 — 실측 rc 1) |
+| `info` · `modelmeta` · `neutralaxis` · `section` · `surfview` · `stackdiagram` · `id_floor` · `foldsurface` · `linkage-fit` | 안 된다 | 덱 대신 콘솔 · JSON · SVG · CSV · YAML 을 낸다 — 체인 앞뒤에서 직접 실행한다 |
+| `rebind_entities_after_remesh` | 안 된다 | 러너가 넣는 `model` 키를 모르는 키로 거절한다(rc 1) |
+
+> 같은 판정을 각 쪽(`ops/`)의 op 마다 「체인(REMAP 스텝)」 문단에도 적었다. 예전 판의 `info` · `modelmeta` REMAP 예시는 그래서 지웠다.
 
 ### `restack`·`merge` 는 rc=1 이 기본이다 — 체인이 멈출 수 있다
 

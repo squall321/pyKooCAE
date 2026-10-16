@@ -147,10 +147,10 @@ SmartTwinPreprocessor — 프로그램 설명서
 - CLI 모드(offscreen)로 배치 처리 지원
 
 
-4. KooRemapper — LS-DYNA .k 메쉬·재료 리매핑 CLI (46 op)
+4. KooRemapper — LS-DYNA .k 메쉬·재료 리매핑 CLI (63 op)
 --------------------------------------------------------------------------------
 
-- LS-DYNA 키워드(.k) 모델의 메쉬/재료를 변환·리매핑하는 C++ CLI 도구(v1.8.0, 46 op)
+- LS-DYNA 키워드(.k) 모델의 메쉬/재료를 변환·리매핑하는 C++ CLI 도구(v1.8.0, 63 op)
 - 위 3개(Nuitka) 도구와 달리 독립 C++ 바이너리이며, SmartTwinPreprocessor.sif 내부에
   네이티브 바이너리(/opt/kooremapper/bin/KooRemapper)로 구워져 KooMeshModifier 와 동일하게
   apptainer exec <sif> <바이너리> 로 호출된다
@@ -169,16 +169,22 @@ SmartTwinPreprocessor — 프로그램 설명서
 - map / shellmap / unfold: 굽은/평평 메시 간 필드 매핑, 셸 매핑, 언폴드
 - refine / elform / disconnect / offset / wrap / convert / restack: 메시 정제·요소 변환·분리·오프셋 등
 - extract-surface / tetremesh / meshfix: 표면 추출, 사면체 재메시(gmsh), 메시 보정
+- cleanup-nodes / extract-parts: 아무도 안 쓰는 절점 정리, 고른 파트만 뽑기(ID·칸 폭 그대로)
+- cad_solid_merge_to_deck / rebind_entities_after_remesh / id_floor: StepForge 조각 넣기 · 재메시 뒤 덧붙인 블록 다시 묶기 · 조각 시작 번호 발행
+- foldsurface / refshell / stackwrap / linkage-fit / applyfold: 접힘 적층 워크플로(중심선 → 기준 셸 → 감기 · 힌지 찾기 → 군별 접기)
 
 [해석 전처리]
 - strain / prestress / formstrain / warpage / bend / indent / squeeze / assemble: 초기변형·프리스트레스·워피지·조립 등
 - cclip: 육면체 파트를 F-δ 캘리브레이션된 C형 스프링 클립(쉘)으로 치환, 눌린 상태+초기응력 출력
   - 스마트폰 스프링 접점(C-clip/Ground Spring) 단순화 모델링, 누름 방향(axis ±)·개구 방향(open ±) 지정 가능
 - load / boundary / rbe / contact / relax / stabilize / database: 하중·경계·강체·접촉·완화 등
+- cnrb2spring: CNRB 체결점을 두 강체 + 유격 discrete beam 조인트로 분할
 - explicit / implicit / modal / ale: 솔버 제어 카드 설정
 
 [정보]
-- info / version: 모델 정보/버전 조회
+- info / version: 모델 정보/버전 조회(info --strict 는 미정의 참조를 rc 1 로)
+- modelmeta / neutralaxis: 파트별 메타 JSON, 적층 중립축·굽힘강성
+- section / surfview / stackdiagram: 격자를 그림(SVG)으로 — 단면 · 자유면 · 층 모식도
 
 [비고]
 - 재료 DB(material_db.json)는 바이너리 옆(materials/)에 번들되어, matdb 에서 database 생략 시 자동 사용

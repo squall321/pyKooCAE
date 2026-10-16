@@ -305,6 +305,10 @@ ale_parts:
 - `detonation`은 tnt/c4 폭발물 프리셋에서만 유효하다. (help)
 - YAML 키 이름은 help/examples 형식(`ale_parts`/`material`/`fsi_pids`)을 사용한다(위 키 이름 주의 참조). **확인 필요**.
 
+### 2026-10 정본 대조
+
+- ★**인클루드 마스터 덱**에서는 멈춘다 — ale 은 주 덱만 고쳐 쓰므로 `*PART` 가 `*INCLUDE` 안에 있으면 그 파트를 못 찾아 `[ERROR] [ale] PID 1 not found in model` → `No valid ALE parts to process` 로 끝난다(rc 1 · 산출 없음 · 2026-10-16 실측). 파트가 든 파일을 `model` 로 지목하고, 마스터 덱이 그 산출을 인클루드하게 바꿔 쓴다. 새 번호는 인클루드 닫힘까지 센다. 정본 §35.
+
 ### 개발 현황
 
 v1.8.0 바이너리에 구현됨(help Usage + examples/ale 확인).

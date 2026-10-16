@@ -1,4 +1,4 @@
-# KooRemapper ops — 하중·경계·접촉(load · boundary · rbe · contact · relax · stabilize · database · hfdamp)
+# KooRemapper ops — 하중·경계·접촉(load · boundary · rbe · contact · relax · stabilize · database · hfdamp · cnrb2spring)
 
 LS-DYNA 데크에 하중·경계조건·RBE·접촉·완화(relaxation)·안정화·출력제어·고주파 댐핑 키워드를 삽입/관리하는 KooRemapper의 여덟 개 YAML-config op에 대한 레퍼런스다.
 
@@ -77,6 +77,10 @@ PID 10이 참여하는 tied 접촉 세그먼트를 자동 탐색해, 그중 z+ �
 ### 주의사항
 
 - 정본 §26 본문 표는 `type/nid/pid/dof/lcid` 형태의 노드/파트 ID 기반 구버전 스키마를 보여주나, v1.8.0 바이너리 help와 shipped 예제는 위 `part/mode/select/direction` 면-선택 스키마를 사용한다. 실제 실행 기준은 help·예제다.
+
+### 2026-10 정본 대조
+
+- 새 곡선 LCID 가 `*DEFINE_CURVE_TITLE` 의 LCID 와 겹치던 것을 고쳤다(2026-10-16 — 제목줄을 LCID 줄로 읽었다).
 
 ### 개발 현황
 
@@ -377,6 +381,10 @@ contacts:
 - tied 변환에는 마주보는 면만 남기는 `facing: true`가 사실상 필수다(얇은 파트에서 반대면이 tied에 포함되는 문제 방지). (`examples/contact/04, 05`)
 - **`assemble` 안의 contact create 도 이제 같은 약칭 표를 쓴다**(2026-09-18 실행 확인). 코드에서 표가 한 곳(`ct_getPreset`)으로 합쳐져 단독 `contact` 와 `assemble` 의 `- type: contact` 가 같은 11종 약칭을 받고 같은 키워드를 낸다 — `assemble` 에서 `type: tied_thermal` 은 `*CONTACT_TIED_SURFACE_TO_SURFACE_THERMAL_TITLE`, `type: tiebreak` 는 `*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_TIEBREAK_TITLE` 로 나간다. 대소문자를 가리지 않고 `-` 를 `_` 로 읽는 것도 같다. 예전에는 `assemble` 에만 `tied_thermal`·`thermal`·`tiebreak` 가 없어 LS-DYNA 에 없는 `*CONTACT_TIED_THERMAL`·`*CONTACT_THERMAL`·`*CONTACT_TIEBREAK` 가 나갔다 — 그 우회로 전체 키워드를 적어 둔 기존 설정은 여전히 그대로 동작한다.
 - 모르는 `type` 은 단독·assemble 모두 rc=0 이고 경고만 찍는다(단독은 `[WARN] `, assemble 은 `[WARNING] ` 접두). 출력 덱은 만들어지므로 오타를 눈치채려면 로그를 봐야 한다.
+
+### 2026-10 정본 대조
+
+- 새 세트 · 접촉 번호를 인클루드 닫힘까지 센 최대값 위에서 낸다(2026-10-15 — 그 전에는 주 덱만 세고 「겹칠 수 있다」고 경고만 했다).
 
 ### 개발 현황
 
@@ -683,6 +691,112 @@ apptainer exec <sif> /opt/kooremapper/bin/KooRemapper hfdamp selective.yaml
 - DEFORM 옵션은 동적 강성을 약 CDAMP% 증가시킨다. 필요하면 E를 소폭 낮춰 보정한다. (`examples/hfdamp/hfdamp_full.yaml`)
 - `selective` 모드는 K-파일에 재료 물성(E, PR, RHO)이 있어야 한다. (`examples/hfdamp/hfdamp_full.yaml`)
 
+### 2026-10 정본 대조
+
+- ★선택형(`mode: selective`)은 **인클루드 닫힘 안의 파트**를 본다(2026-10-16). 그 전에는 분석이 주 덱만 봐서, 메시를 인클루드한 마스터 덱에서 「dt 조건을 만족하는 파트가 없다」며 **전체 감쇠(PSID=0)로 조용히 바뀌었다**. 새 세트와 키워드는 여전히 주 덱에 쓴다.
+- 인클루드를 다 못 읽었는데 대상 파트가 없으면 전체로 바꾸지 않고 **멈춘다** — 종료 코드 255 · 산출 없음(`인클루드를 찾게 하거나 mode: global 로 주라`). 대상이 있는데 닫힘이 불완전하면 못 읽은 인클루드의 파트는 보지 않았다고 경고한다. 회귀 `test_hfdamp_include_closure.py`.
+
 ### 개발 현황
 
 v1.8.0 바이너리에 구현됨(정본 섹션 없음. `--help`는 인자를 config 경로로 해석해 에러를 내므로, 호출형태·옵션은 `examples/hfdamp`와 `README` 기준).
+
+---
+
+## cnrb2spring
+
+### 용도
+
+CNRB 체결점을 두 강체 + 유격 discrete beam 조인트로 분할.
+
+### 호출 형태
+
+config YAML 파일 경로를 위치 인자로 받는 yaml-config op 다.
+
+```
+KooRemapper cnrb2spring <config.yaml>
+```
+
+근거 — 바이너리 `help cnrb2spring` 의 사용법(2026-10-16 · SmartTwinPreprocessor.sif 판).
+
+### config YAML 인자
+
+| 키 | 필수 · 기본 | 설명 |
+|---|---|---|
+| `model` | 필수 | 입력 K-파일 (*CONSTRAINED_NODAL_RIGID_BODY 포함) |
+| `output` | 필수 | 출력 K-파일 |
+| `axis` | 필수 | 나사 축 — 빔의 로컬 r 이 된다. r 에 k_axial 이, s·t 에 ±gap 유격 곡선이 붙는다. auto 없음(필수) |
+| `target_pids` | 기본 `[]` | 변환할 CNRB 의 PID 목록. 생략하면 덱의 모든 CNRB |
+| `gap` | 기본 `0.1` | 반경 유격 ±[mm], 로컬 s·t(전단)에 적용 (가정값) |
+| `k_engage` | 기본 `100000.0` | 유격 소진 후 전단 강성 [N/mm] (가정값) |
+| `k_axial` | 기본 `10000000.0` | 축방향(로컬 r, 나사 헤드 클램핑) 강성 [N/mm] (가정값) |
+| `k_rot` | 기본 `10000000.0` | 회전 3자유도 강성 [N*mm/rad] (가정값). 0 이면 회전을 풀어 둔다 — 원 CNRB 와 달라진다 |
+| `curve_range` | 기본 `1.0` | 곡선 가로축 반범위 [mm]. gap 보다 커야 한다 |
+| `node_id_start` | 기본 `90000001` | 팬텀 노드 시작 ID (조인트당 2개, 같은 좌표). 충돌하면 rc=1 |
+| `elem_id_start` | 기본 `9900001` | *ELEMENT_BEAM 시작 ID (조인트당 1개). 충돌하면 rc=1 |
+| `card_id_start` | 기본 `990001` | 곡선·재질·섹션·좌표계·파트·세트 시작 ID. 충돌하면 rc=1 |
+| `pid_refs` | 기본 `strict` | 지운 CNRB PID·SET SID 를 가리키던 참조가 남았을 때: strict=rc=1, warn=경고만 |
+
+### 예제
+
+KooRemapper 저장소 예제다 — 같은 형식의 자기 모델로 바꿔 쓴다.
+
+`spring.yaml`
+
+```yaml
+model: examples/cnrb2spring/two_plate_bolt.k
+output: two_plate_bolt_spring.k
+axis: z
+gap: 0.1
+k_engage: 1.0e5
+k_axial: 1.0e7
+k_rot: 1.0e7
+curve_range: 1.0
+target_pids: [1201]
+node_id_start: 90000001
+elem_id_start: 9900001
+card_id_start: 990001
+pid_refs: strict
+```
+
+직접 실행이다(필요한 입력을 작업 폴더에 둔다).
+
+```bash
+apptainer exec SmartTwinPreprocessor.sif /opt/kooremapper/bin/KooRemapper cnrb2spring spring.yaml
+```
+
+필요한 입력 — `examples/cnrb2spring/two_plate_bolt.k`
+
+**체인(REMAP 스텝)으로 쓸 수 있다.** 체인의 입력 덱에 바로 적용된다.
+
+```yaml
+params:
+  op: cnrb2spring
+  config:
+    axis: z
+    gap: 0.1
+    k_engage: 1.0e5
+    k_axial: 1.0e7
+    k_rot: 1.0e7
+    curve_range: 1.0
+    target_pids: [1201]
+    node_id_start: 90000001
+    elem_id_start: 9900001
+    card_id_start: 990001
+    pid_refs: strict
+```
+
+`model` 과 `output` 은 러너가 넣는다(`input.k` → `Remap_dti.k`).
+
+### 주의사항
+
+- CNRB 하나를 Side A/B 두 강체로 쪼개고 같은 자리에 둔 팬텀 노드 2개를 제로길이 discrete beam(*SECTION_BEAM ELFORM=6 + *MAT_NONLINEAR_ELASTIC_DISCRETE_BEAM) 하나로 잇는다. 원 CNRB 와 그 *SET_NODE_LIST 는 통째로 지운다.
+- 축 분리는 *DEFINE_COORDINATE_SYSTEM 이 세운다 — 로컬 r=axis(k_axial), s·t=전단(±gap 유격). 제로길이라 상대변위가 아무리 커져도 r/s/t 가 섞이지 않는다.
+- axis 는 필수다(auto 없음). 두 파트 간격의 최대 성분과 다르면 [WARN] 만 내고 계속한다.
+- k_rot 은 회전 3자유도 강성이다(기본 1.0e7 N*mm/rad). 0 으로 두면 회전을 풀지만 원 CNRB 와 달라진다.
+- gap·k_engage·k_axial·k_rot 는 실측이 아닌 가정값이다 — 기본값을 쓰면 콘솔에 그 사실을 알린다.
+- 새 ID 는 고정 번호대(노드 9000만·요소 990만·카드 99만)다. 원본과 겹치면 조용히 밀지 않고 rc=1 이다.
+- CNRB 가 잇는 두 파트는 요소 연결성으로 판정한다. 세트 안의 '*NODE 에 없는 ID' 는 제외하고 몇 개인지 알린다.
+
+### 개발 현황
+
+바이너리(v1.8.0 · 63 op 판, 2026-10-16 SIF)에 있다. 정본 `KooRemapper/docs/KooRemapper_Manual.md` §43.11 · 회귀 `tools/regress/test_cnrb2spring.py`.
