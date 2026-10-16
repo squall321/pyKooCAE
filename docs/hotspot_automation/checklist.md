@@ -6,7 +6,9 @@
 - [x] 2 `hotspot_part` → `--hotspot-part` — 이전 코드와 4경우 바이트 동일, 숫자 아닌 값 경고·제외(시험 [10])
 - [x] 3 도움말 `postprocess_json`·DROP 키 — test_cli_help ALL PASS, MCP scenario_drop 재생성
 - [x] KooD3plotReader §1 이름 확정(2026-10-16) — `--hotspot-criterion` 7종+엔진 별칭, `--hotspot-time-aggregate {elemmax_then_mean,mean_then_timemax,both}`
-- [ ] (대기) KooD3plotReader §1 배포 알림
+- [x] KooD3plotReader §1 구현 e8460d9 — 저장소 소스+배포 엔진으로 검증 단계 확인(별칭 통과, 잘못된 값 rc=1). 사용자 배포 승인 전달(2026-10-16)
+- [x] 1b 미리 작성·시험 통과 — 패치로 보관(스크래치패드 hotspot_1b.patch), 작업 트리는 원복(그쪽 요청: 배포 알림 뒤에 넣기)
+- [ ] (대기) KooD3plotReader §1 배포 알림 — Post SIF 빌드 시작·끝 알림 포함
 - [ ] 1 기준 7종·`hotspot_time_aggregate` 키 → verify: 생성 sh 에 플래그, 배포 deep 이 받음
 - [ ] 빌드(KMM·KooChainRun) → SIF → tar·메일 → 노드 → sha — 이 SIF 에 KooRemapper 10-16 판(e37fdf4f)도 들어간다
 - [ ] MCP — kooremapper_core 재벤더링(새 op 3개) + 생성기 재실행 + post_deep_report 설명 재생성(새 --help)
