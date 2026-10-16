@@ -79,6 +79,10 @@ TOPICS = [
         "  auto_deep    DOE 마다 deep report (응력·핫스팟)",
         "  auto_sphere  전각도 낙하 종합 리포트 / auto_impact  전위치 충격 종합 리포트",
         "  *_extra_args 각 리포트 명령에 붙일 인자",
+        "  hotspot_clusters  true 면 DOE 마다 deep report 에 핫스팟 군집(파트 안 상위 백분위 요소의 덩어리)을 싣는다",
+        "    hotspot_top_percent(5) · hotspot_distance_factor(1.5) · hotspot_min_elements(5) · hotspot_max_clusters(20)",
+        "    hotspot_criterion  von_mises | max_principal | min_principal — 쉼표로 여러 개, 별칭 vm·sigma1·sigma3",
+        "  hotspot_part      전각도 리포트의 핫스팟 군집을 이 파트로만 (예 \"12,15\", 생략 = 전 파트) — auto_sphere 때",
     ]),
     Topic("units", "단위 — 입력은 모델 .k 단위 그대로", aliases=["단위", "unit"], body=[
         "  KMM 은 값을 변환하지 않는다. 표준 낙하 모델은 [tonne, mm, s, MPa] (강철 ρ 7.85e-9, E 2.0e5).",
@@ -171,6 +175,9 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
          K("simulation_params.dynamic_relaxation", "bool | 객체", "false", "누적 스텝 사이 DR (nrcyck, drtol, drfctr, drterm)"),
          K("simulation_params.dtmin", "실수", "1e-10 (DR 이면 0.01)", "CONTROL_TERMINATION DTMIN"),
          K("simulation_params.non_reflecting_boundary / include_wall_in_general", "bool", "false", "바닥판 옵션"),
+         K("postprocess.hotspot_clusters (+ hotspot_top_percent·hotspot_distance_factor·hotspot_min_elements·hotspot_max_clusters·hotspot_criterion)",
+           "bool / 수 / 문자", "false", "DOE 마다 deep report 에 핫스팟 군집. 기준 von_mises | max_principal | min_principal (--help postprocess_json)"),
+         K("postprocess.hotspot_part", "정수 · 목록 · \"12,15\"", "전 파트", "전각도 리포트의 핫스팟 군집을 이 파트로만"),
      ],
      examples=[
          Example("피보나치 26 자세 1.5 m 1회 낙하", DROP_FIB,
