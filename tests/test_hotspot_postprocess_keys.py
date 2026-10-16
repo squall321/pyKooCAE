@@ -5,7 +5,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from Runner.PostprocessShellGenerator import build_deep_report_sh
+from Runner.PostprocessShellGenerator import build_deep_report_sh, build_sphere_report_sh
 
 FAILS = []
 
@@ -77,6 +77,27 @@ c = cmd({**BASE, "hotspot_clusters": True, "hotspot_criterion": "tresca"})
 chk("전부 모르는 이름이면 플래그 없음(=von_mises 기본)", "--hotspot-criterion" not in c)
 c = cmd({**BASE, "hotspot_criterion": "min_principal"})
 chk("활성화 없이 기준만 주면 방출 안 함", "--hotspot" not in c)
+
+print("[10] 전각도 핫스팟 파트 필터 — hotspot_part → koo_sphere_report --hotspot-part")
+
+
+def sph(opts):
+    return build_sphere_report_sh("/data/out", "/opt/apptainers/x.sif", opts)
+
+
+chk("미지정 → 플래그 없음", "--hotspot-part" not in sph(BASE))
+chk("None·빈 값·bool 은 미지정과 같다",
+    sph(BASE) == sph({**BASE, "hotspot_part": None}) == sph({**BASE, "hotspot_part": ""})
+    == sph({**BASE, "hotspot_part": True}))
+chk("정수 목록", "--hotspot-part 12,15" in sph({**BASE, "hotspot_part": [12, 15]}))
+chk("정수 하나", "--hotspot-part 7" in sph({**BASE, "hotspot_part": 7}))
+chk("쉼표 문자열·공백·중복 정리", "--hotspot-part 12,15" in sph({**BASE, "hotspot_part": " 12, 15,12"}))
+s = sph({**BASE, "hotspot_part": "12;rm -rf /"})
+chk("숫자가 아니면 버림(셸에 안 박힘)", "--hotspot-part" not in s and "12;rm" not in s)  # 템플릿 자체에 rm -rf 줄이 있다
+s = sph({**BASE, "hotspot_part": "3,x,9"})
+chk("섞이면 숫자만", "--hotspot-part 3,9" in s)
+s = sph({**BASE, "hotspot_part": [12], "sphere_extra_args": ["--hotspot-part", "99"]})
+chk("sphere_extra_args 가 뒤에 와서 이긴다", s.index("--hotspot-part 12") < s.index("--hotspot-part 99"))
 
 print()
 if FAILS:
