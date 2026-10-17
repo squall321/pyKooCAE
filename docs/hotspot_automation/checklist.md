@@ -12,5 +12,5 @@
 - [x] 1 기준 7종·`hotspot_time_aggregate` 키(493a86d) — 시험 [9]~[12] PASS, 배포 바이너리 런타임 deep_report.sh 에 플래그 확인(아래 e2e)
 - [x] 빌드 → SIF v118(1147567e) → tar·메일 → deploy_apptainers.sh 로 헤드·node001·node002 — sha 3곳 동일. SIF 안 KooRemapper 는 1164d8ed(5a0fbd6)
 - [x] MCP — post_* 재생성(16efc642) + kooremapper_core 를 배포 커밋 5a0fbd6 으로(7dae7698, remap_* 3 추가) — 시험 328 통과·1 실패(벤더링 비교, 리포가 배포보다 앞섬), 서비스 재기동 167종
-- [x] 배포본 e2e — MCP post_deep_report(잡 1211, 대조군 1212)·캠페인 경로(잡 1214, 대역 솔버) 모두 두 기준 23+23항목, 군집 전부 mean_timemax, 부등식 위반 0. kood3plotreader-a9 에 전달
+- [x] 배포본 e2e — MCP post_deep_report(잡 1211, 대조군 1212)·캠페인 경로(잡 1214, 대역 솔버) 모두 두 기준 23+23항목, 군집 전부 mean_timemax, 부등식 위반 0. kood3plotreader-a9 에 전달. 1214 는 HTML 전에 시간 제한으로 끊김(컨텍스트 노트)
 - [x] 4 3D 인벨롭 — KooD3plotReader 45/45 완료·배포(be9d2b0). 새 CLI 옵션은 `--viewer`·`--hotspot-part` 둘뿐(각도 프리셋·컨투어는 HTML 안 기능) → `sphere_viewer`·`hotspot_part` 로 배선(493a86d), 컴파일 prepare 의 sphere_report.sh 에서 확인
