@@ -441,7 +441,7 @@ operations:
 
 - ★`element_type: tshell` 산출이 **진짜 TSHELL 덱**이다(2026-10-16) — 8절점 `*ELEMENT_TSHELL`(그 전에는 4절점 `*ELEMENT_SHELL` 로 써서 윗면 절점 넷이 빠졌다) · `*SECTION_TSHELL` ELFORM 1(16 은 TSHELL 정식이 아니다) · 섹션은 Card 1 만 · 삼각 바닥은 매뉴얼의 쐐기 꼴.
 - ★TSHELL 도 `connection_mode` 를 솔리드와 같은 뜻으로 받는다(2026-10-16) — `tied`(기본) · `none` 이면 0층이 원본 면 절점을 공유해 붙고, `czm` 은 복제한 절점과 원본 면 사이에 코히시브(ELFORM 20)를 면 수만큼 만들고, `contact` 는 복제해 떼고 접촉 안내를 붙인다. 그 전에는 기본값으로 만든 층이 원본 면에서 떠 있었다.
-- ⚠ **셸 층(`element_type: shell`)은 연결 모드를 타지 않는다** — 원본 면과 떨어진 별도 면이다(2026-10-16 실측 · 모드 다섯이 같은 산출). 그래서 `czm` 은 **거절**한다(rc 1 · 2026-10-17 판부터 — 그 전에는 rc 0 · 코히시브 0개). `tied`(기본)는 층이 원본 면에 묶이지 않는다고 **경고**한다 — 묶으려면 tied 접촉 카드를 따로 더한다. `contact` · `none` 은 그대로다.
+- ★**셸 층(`element_type: shell`)은 원본 면과 떨어진 별도 면이다** — `tied`(기본)는 원본 면에 **묶음 접촉**으로 묶는다(2026-10-17 판 — 새 `*SET_SEGMENT` 둘 + `*CONTACT_TIED_SURFACE_TO_SURFACE_OFFSET`, restack 의 셸 계면과 같은 꼴) · `czm` 은 거절(rc 1) · `contact` · `none` 은 묶지 않는다 · `offset_direction: both` 는 묶지 않고 경고. 그 전 판은 셸이 연결 모드를 통째로 건너뛰어 기본 tied 층이 떠 있었다. ⚠ 솔버 확인은 사용자 시험으로 본다.
 - 새 셸 EID 가 덱의 요소 EID 와 겹치던 것을 고쳤다(셸 · TSHELL 도 요소 공용 커서). 정본 §22 · 회귀 `test_offset_tshell_deck.py`.
 
 ### 개발 현황
