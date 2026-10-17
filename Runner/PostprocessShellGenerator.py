@@ -17,7 +17,8 @@ DROP/IMPACT 분기는 report_mode_from_runner_config() 로 판정
 --impact-opts 와 동일 패턴):
 - postprocess.deep_extra_args   → koo_deep_report 명령 끝에 그대로 추가
 - postprocess.sphere_extra_args → koo_sphere_report 명령 끝에 추가
-  (그 앞에 postprocess.hotspot_part → --hotspot-part PID,… — 전각도 핫스팟 군집을 그 파트로만)
+  (그 앞에 postprocess.hotspot_part → --hotspot-part PID,… — 전각도 핫스팟 군집을 그 파트로만,
+   postprocess.sphere_viewer → --viewer canvas|plotly — 3D 인벨롭 뷰어, 기본 canvas 면 생략)
 - postprocess.impact_extra_args → koo_impact_report 명령 끝에 추가
   값은 JSON 리스트(권장, 셸 분할 모호성 없음) 또는 공백 구분 문자열.
   고정 플래그 뒤에 붙으므로 argparse "마지막 우선" 으로 기본값 override 가능.
@@ -44,7 +45,23 @@ DEFAULT_HOTSPOT_DISTANCE_FACTOR = 1.5
 DEFAULT_HOTSPOT_MIN_ELEMENTS = 5
 DEFAULT_HOTSPOT_MAX_CLUSTERS = 20
 DEFAULT_HOTSPOT_CRITERION = "von_mises"
-HOTSPOT_CRITERIA = ("von_mises", "max_principal", "min_principal")
+DEFAULT_HOTSPOT_TIME_AGGREGATE = "elemmax_then_mean"
+SPHERE_VIEWERS = ("canvas", "plotly")   # koo_sphere_report --viewer — canvas 는 외부 스크립트 0(폐쇄망 안전)
+DEFAULT_SPHERE_VIEWER = "canvas"
+# 기준량·시간 집계 — KooD3plotReader koo_deep_report(e8460d9)·엔진 unified_analyzer 와 같은 이름·별칭.
+# 그쪽 표는 C++ parseHotspotCriterion 과 시험으로 묶여 있다. 엔진이 늘리면 여기도 늘린다.
+HOTSPOT_CRITERIA = ("von_mises", "max_principal", "min_principal", "max_shear",
+                    "x_tension", "y_tension", "z_tension")
+HOTSPOT_TIME_AGGREGATES = ("elemmax_then_mean", "mean_then_timemax", "both")
+_HOTSPOT_ALIASES = {
+    "vm": "von_mises", "vonmises": "von_mises",
+    "sigma1": "max_principal", "s1": "max_principal", "p1": "max_principal", "maxprincipal": "max_principal",
+    "sigma3": "min_principal", "s3": "min_principal", "p3": "min_principal", "minprincipal": "min_principal",
+    "maxshear": "max_shear", "tau_max": "max_shear", "taumax": "max_shear", "tresca": "max_shear",
+    "xtension": "x_tension", "sigma_xx": "x_tension", "sxx": "x_tension",
+    "ytension": "y_tension", "sigma_yy": "y_tension", "syy": "y_tension",
+    "ztension": "z_tension", "sigma_zz": "z_tension", "szz": "z_tension",
+}
 
 
 def _extra_args_str(options, key):
@@ -88,6 +105,21 @@ def _hotspot_part_str(options):
         if s not in pids:
             pids.append(s)
     return f"--hotspot-part {','.join(pids)}" if pids else ""
+
+
+def _sphere_viewer_str(options):
+    """postprocess.sphere_viewer → koo_sphere_report `--viewer plotly`. 기본(canvas)이거나 없으면 "".
+
+    plotly 는 호버·범례·축을 주지만 리포트가 약 1.6MB 커진다. 모르는 값은 경고하고 버린다.
+    """
+    val = (options or {}).get("sphere_viewer")
+    if val in (None, ""):
+        return ""
+    v = str(val).strip().lower()
+    if v not in SPHERE_VIEWERS:
+        print(f"  ⚠️  postprocess.sphere_viewer: 알 수 없는 뷰어 무시 — {val!r} (허용: {', '.join(SPHERE_VIEWERS)})")
+        return ""
+    return "" if v == DEFAULT_SPHERE_VIEWER else f"--viewer {v}"
 
 
 def _hotspot_args_str(options):
@@ -135,6 +167,16 @@ def _hotspot_args_str(options):
     if crit and crit != DEFAULT_HOTSPOT_CRITERION:
         parts.extend(["--hotspot-criterion", crit])
 
+    # 시간 집계 — 기본(elemmax_then_mean)이면 생략. 모르는 값은 경고하고 버린다(기준량과 같은 규칙).
+    agg = opts.get("hotspot_time_aggregate")
+    if agg not in (None, ""):
+        a = str(agg).strip().lower().replace("-", "_").replace(" ", "_")
+        if a not in HOTSPOT_TIME_AGGREGATES:
+            print(f"  ⚠️  postprocess.hotspot_time_aggregate: 알 수 없는 방식 무시 — {agg!r} "
+                  f"(허용: {', '.join(HOTSPOT_TIME_AGGREGATES)})")
+        elif a != DEFAULT_HOTSPOT_TIME_AGGREGATE:
+            parts.extend(["--hotspot-time-aggregate", a])
+
     return " ".join(shlex.quote(x) for x in parts)
 
 
@@ -148,9 +190,7 @@ def _normalize_hotspot_criterion(value):
         k = it.strip().strip('"').strip("'").lower().replace("-", "_").replace(" ", "_")
         if not k:
             continue
-        k = {"vm": "von_mises", "vonmises": "von_mises",
-             "sigma1": "max_principal", "s1": "max_principal", "maxprincipal": "max_principal",
-             "sigma3": "min_principal", "s3": "min_principal", "minprincipal": "min_principal"}.get(k, k)
+        k = _HOTSPOT_ALIASES.get(k, k)
         if k not in HOTSPOT_CRITERIA:
             print(f"  ⚠️  postprocess.hotspot_criterion: 알 수 없는 기준량 무시 — {it.strip()!r} "
                   f"(허용: {', '.join(HOTSPOT_CRITERIA)})")
@@ -264,6 +304,7 @@ def build_sphere_report_sh(output_dir, sif_path=None, options=None, runs_subdir=
         options: dict
             - yield_stress_mpa: float (default 350)
             - hotspot_part: int | list | "12,15" — 전각도 핫스팟 군집을 그 파트로만(--hotspot-part)
+            - sphere_viewer: "canvas"(기본) | "plotly" — 3D 인벨롭 뷰어(--viewer)
             - sphere_extra_args: list | str — 임의 koo_sphere_report 인자 pass-through
         runs_subdir: output_dir 안의 시뮬 폴더 prefix (default "runs")
                      실제로는 output_dir/Run_*/ 패턴이므로 runs_subdir은 호환용
@@ -284,7 +325,8 @@ def build_sphere_report_sh(output_dir, sif_path=None, options=None, runs_subdir=
     opts = options or {}
     yield_stress = opts.get("yield_stress_mpa", DEFAULT_YIELD_STRESS)
     # 핫스팟 파트 필터 → 그 뒤에 임의 koo_sphere_report 인자 pass-through (고정 플래그 뒤 → override 가능)
-    tail = " ".join(x for x in (_hotspot_part_str(opts), _extra_args_str(opts, "sphere_extra_args")) if x)
+    tail = " ".join(x for x in (_hotspot_part_str(opts), _sphere_viewer_str(opts),
+                                _extra_args_str(opts, "sphere_extra_args")) if x)
     extra_line = f" \\\n    {tail}" if tail else ""
 
     return f"""#!/bin/bash

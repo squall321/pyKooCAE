@@ -74,11 +74,33 @@ chk("배열 → 쉼표 목록", "--hotspot-criterion max_principal,min_principal
 c = cmd({**BASE, "hotspot_clusters": True, "hotspot_criterion": "VM, Sigma3"})
 chk("별칭·대소문자 정규화", "--hotspot-criterion von_mises,min_principal" in c)
 c = cmd({**BASE, "hotspot_clusters": True, "hotspot_criterion": "tresca"})
+chk("tresca 는 max_shear 별칭(엔진·deep 과 같다)", "--hotspot-criterion max_shear" in c)
+c = cmd({**BASE, "hotspot_clusters": True, "hotspot_criterion": "von_misses"})
 chk("전부 모르는 이름이면 플래그 없음(=von_mises 기본)", "--hotspot-criterion" not in c)
 c = cmd({**BASE, "hotspot_criterion": "min_principal"})
 chk("활성화 없이 기준만 주면 방출 안 함", "--hotspot" not in c)
 
-print("[10] 전각도 핫스팟 파트 필터 — hotspot_part → koo_sphere_report --hotspot-part")
+print("[10] 기준 7종·별칭 표·시간 집계 — KooD3plotReader e8460d9 와 같은 이름")
+c = cmd({**BASE, "hotspot_clusters": True,
+         "hotspot_criterion": ["max_shear", "x_tension", "y_tension", "z_tension"]})
+chk("새 기준 4종 그대로", "--hotspot-criterion max_shear,x_tension,y_tension,z_tension" in c)
+c = cmd({**BASE, "hotspot_clusters": True, "hotspot_criterion": "P1, tau-max, SXX, sigma_yy, szz, P3"})
+chk("별칭·대소문자·하이픈 정규화",
+    "--hotspot-criterion max_principal,max_shear,x_tension,y_tension,z_tension,min_principal" in c)
+c = cmd({**BASE, "hotspot_clusters": True, "hotspot_criterion": "tresca,max_shear"})
+chk("별칭과 표준 이름 중복 제거", "--hotspot-criterion max_shear" in c and "max_shear,max_shear" not in c)
+c = cmd({**BASE, "hotspot_clusters": True, "hotspot_time_aggregate": "elemmax_then_mean"})
+chk("시간 집계 기본값은 생략", "--hotspot-time-aggregate" not in c)
+c = cmd({**BASE, "hotspot_clusters": True, "hotspot_time_aggregate": "Both"})
+chk("시간 집계 both", "--hotspot-time-aggregate both" in c)
+c = cmd({**BASE, "hotspot_clusters": True, "hotspot_time_aggregate": "mean-then-timemax"})
+chk("하이픈 표기 정규화", "--hotspot-time-aggregate mean_then_timemax" in c)
+c = cmd({**BASE, "hotspot_clusters": True, "hotspot_time_aggregate": "nope"})
+chk("모르는 방식은 경고하고 버림", "--hotspot-time-aggregate" not in c and "--hotspot-clusters" in c)
+c = cmd({**BASE, "hotspot_time_aggregate": "both"})
+chk("활성화 없이 시간 집계만 주면 방출 안 함", "--hotspot" not in c)
+
+print("[11] 전각도 핫스팟 파트 필터 — hotspot_part → koo_sphere_report --hotspot-part")
 
 
 def sph(opts):
@@ -98,6 +120,16 @@ s = sph({**BASE, "hotspot_part": "3,x,9"})
 chk("섞이면 숫자만", "--hotspot-part 3,9" in s)
 s = sph({**BASE, "hotspot_part": [12], "sphere_extra_args": ["--hotspot-part", "99"]})
 chk("sphere_extra_args 가 뒤에 와서 이긴다", s.index("--hotspot-part 12") < s.index("--hotspot-part 99"))
+
+print("[12] 3D 인벨롭 뷰어 — sphere_viewer → koo_sphere_report --viewer")
+chk("미지정 → 플래그 없음", "--viewer" not in sph(BASE))
+chk("기본 canvas 는 생략", "--viewer" not in sph({**BASE, "sphere_viewer": "canvas"}))
+chk("plotly", "--viewer plotly" in sph({**BASE, "sphere_viewer": "Plotly"}))
+s = sph({**BASE, "sphere_viewer": "webgl"})
+chk("모르는 값은 경고하고 버림", "--viewer" not in s)
+s = sph({**BASE, "sphere_viewer": "plotly", "hotspot_part": [3], "sphere_extra_args": ["--viewer", "canvas"]})
+chk("순서 — 파트 필터·뷰어 다음에 추가 인자(추가 인자가 이긴다)",
+    s.index("--hotspot-part 3") < s.index("--viewer plotly") < s.index("--viewer canvas"))
 
 print()
 if FAILS:
