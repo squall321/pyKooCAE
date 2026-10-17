@@ -167,6 +167,17 @@ generate-var)이 같은 리더를 쓴다. 아래는 그 공통 규칙이다.
 
 > 같은 판정을 각 쪽(`ops/`)의 op 마다 「체인(REMAP 스텝)」 문단에도 적었다. 예전 판의 `info` · `modelmeta` REMAP 예시는 그래서 지웠다.
 
+### 인클루드로 쪼갠 덱 — 고쳐 쓰는 op 은 주 덱만 고친다 · `flatten_includes: true` (2026-10-17)
+
+덱을 **고쳐 쓰는** op(ale · convert · refine · elform · restack · offset · bend · indent · warpage · disconnect · iga · wrap · update ·
+merge · strip · matswap · matdb · load · boundary · rbe · cclip · cnrb2spring · cnrb2solid · applyfold · tetremesh · explicit · assemble)은
+주 덱만 고친다. 대상(파트의 요소 · 재질 · CNRB · 지울 카드 · 남길 키워드)이 인클루드 안에만 있으면 **rc 1** 로 멈추고 이 키를
+안내한다(예전에는 10여 개가 rc 0 으로 아무것도 안 바꾼 덱을 냈다 — tetremesh 는 빈 덱). config 에 `flatten_includes: true` 를
+넣으면 닫힘을 펼쳐 `*INCLUDE` 없는 한 덱으로 고친다(실측 — 안 쪼갠 덱과 같은 산출). 「모든 파트」 op 은 주 덱에 파트가 있으면
+그것만 고치고 인클루드 파트는 고치지 않았다고 `[WARN]` 으로 말한다. 못 읽는 인클루드 · 순환 · 폭을 바꾸는 `*INCLUDE ±` 는 펼치지
+않는다. ⚠ **REMAP 체인에서는** 러너가 입력 덱 **하나만** Output 폴더에 복사하므로 인클루드 파일이 그 자리에 없다 — 펼칠 것이 없어
+「찾지 못했다」로 멈춘다. 체인에 넣을 덱은 미리 펼친 한 파일로 준다. 정본 §3.1(i).
+
 ### `restack`·`merge` 는 rc=1 이 기본이다 — 체인이 멈출 수 있다
 
 두 op 은 원 파트를 비운다(restack 은 층마다 새 PID, merge 는 합친 PID 하나). 그래서 그 파트·요소·노드를
