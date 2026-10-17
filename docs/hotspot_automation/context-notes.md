@@ -18,8 +18,10 @@
   그 뒤의 런타임 deep_report.sh 생성·자동 실행은 실제와 같다. 해석 자체는 검증 대상이 아니다. 시험 폴더 /data/koopark/Test_HotspotKeys_v118.
 - 판정은 의미로 — 요청한 기준 집합과 항목 수, `mean_timemax` 의 존재(대조군에선 0개), 그리고 mean_timemax ≤ elemmax_then_mean
   (시간 극값의 평균은 평균의 시간 극값보다 작을 수 없다). 같은 기준의 stress_mean 이 시간 집계를 켜도 23/23 같았다.
-- 캠페인 deep report 는 `--section-view` 가 늘 붙어 파트마다 구역 뷰를 그린다(2 CPU 노드에서 파트당 약 2.5분). `--no-render` 로는 안 꺼진다.
-  끄는 키는 없다 — 바꿀 일은 아니고, 대형 모델 후처리 시간 예측에 참고.
+- 캠페인 deep report 는 `--section-view` 가 늘 붙고, 타겟을 안 주면 파트별 구역 뷰가 자동 ON 이라 시간이 파트 수에 비례한다
+  (2 CPU 노드에서 파트당 약 2.5분). `--no-render` 로는 안 꺼진다. KooChainRun 전용 키는 없지만 `postprocess.deep_extra_args` 로
+  `--no-section-view-per-part`(또는 `--section-view-target-ids`·`--section-view-target-patterns` — 타겟을 주면 파트별 렌더는 자동 OFF)를
+  넘기면 된다(kood3plotreader-a9 안내, 배포본 `--help` 로 확인). 배선만 보는 재시험엔 이걸 쓴다.
 - 잡 1214 는 **TIMEOUT**(40:01) — 내가 시험 시나리오의 time_limit 을 01:00:00 에서 00:40:00 으로 줄였는데, 구역 뷰가 23파트 중 16번째에서
   잘려 report.html 이 안 나왔다. 판정에 쓴 analysis_result.json 은 분석 단계(07:55)에서 이미 완성돼 영향 없음. HTML 핫스팟 탭은
-  MCP 경로 잡 1211 의 report.html 로 확인했다. 대역 e2e 를 다시 돌릴 땐 time_limit 을 (파트 수 × 2.5분 + KMM 5분) 넘게 준다.
+  MCP 경로 잡 1211 의 report.html 로 확인했다. 대역 e2e 를 다시 돌릴 땐 구역 뷰를 끄거나(위) time_limit 을 (파트 수 × 2.5분 + KMM 5분) 넘게 준다.
