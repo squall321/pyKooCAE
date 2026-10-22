@@ -6173,11 +6173,29 @@ class ElementSolid(DynaKeyword):
         # 폭은 헤더마다 재감지(원문 길이 16=I8, 20=I10, 그 외=토큰 모드 — I8/I10 혼합 블록 대응).
         # 노드줄 고정폭 슬라이스는 "전 필드가 정수 또는 빈칸"일 때만 채택, 아니면 공백 토큰화
         # (자유간격 덱은 부모 커밋과 동일하게 폭-무관 처리 = 회귀 방지).
+        # 🔴 절삭 카드(2026-10-22): LS-DYNA 의 Card 2 는 카드 한 장(한 줄)이고 빈 칸은 0 이다
+        #    (R16 Vol I GENERAL CARD FORMAT). n9·n10 을 생략한 8필드 줄(I8 이면 64자)은 적법하다.
+        #    랩 우선만 쓰면 다음 요소의 헤더(2필드)를 n9·n10 으로 먹고, 그 요소의 노드줄을
+        #    "헤더 형식 이상"으로 버려 요소가 하나 걸러 사라진다. 그래서 노드 8개 + 2필드 줄이면
+        #    뒤를 미리 본다(_truncated_here). 바로 다음 줄을 옛 동작이 헤더로 못 읽어 버릴 줄이고,
+        #    다음 헤더 앞까지의 줄이 전부 정수이며 필드 합이 정확히 8 또는 10 일 때만
+        #    2필드 줄을 다음 요소의 헤더로 읽는다. 옛 동작이 그 줄을 버리는 경우에만 해석이 바뀐다
+        #    (폭이 섞인 블록·잡문·쉼표 카드·정수 잡줄 포함 — tests/test_element_solid_tennodes.py).
+        #    절삭 카드 뒤에 2개씩 넘긴 카드가 오면 모양만으론 경계를 못 가린다 → 🔴 로 알린다.
+        #    미리 보기는 block 을 인덱스로 직접 본다(줄 목록을 새로 만들지 않는다 — 대형 덱 메모리).
         parameterList = []
         header = None
         nodes = []
         width = 0
         warn_cnt = 0
+        skipped = 0
+        reinterp = 0              # 절삭 카드로 다시 읽은 횟수(경계 판정)
+        trunc_cards = 0           # 선언 블록에서 8절점으로 마감한 카드 수(블록 끝 포함)
+        pair_after_ambig = 0      # 모호한 자리에서 n9·n10 을 붙인 요소 바로 뒤의 2개씩 넘긴 요소 수
+        line_counts = []          # 지금 요소의 노드줄별 필드 수
+        cur_ambig = False         # 지금 요소의 n9·n10 을 모호한 자리에서 붙였나
+        start_after_ambig = False # 지금 요소가 그런 요소 바로 뒤에서 시작했나
+        last_ambig = False
 
         def _int_ok(f):
             try:
@@ -6186,38 +6204,7 @@ class ElementSolid(DynaKeyword):
             except (TypeError, ValueError):
                 return False
 
-        def finalize():
-            nonlocal header, nodes
-            if header is None:
-                return
-            if len(nodes) < 10:
-                nodes.extend(['0'] * (10 - len(nodes)))
-            parameterList.append(header)
-            parameterList.append(nodes[:10])
-            header = None
-            nodes = []
-
-        saw_i10 = False
-        for line in block:
-            s = str(line).rstrip('\r\n').rstrip()
-            stripped = s.strip()
-            if not stripped or stripped.startswith('$'):
-                continue
-            if header is None:
-                # 공백 분리 우선, 실패 시 고정폭(16/20) 2등분 — 8자리 ID 가 붙어
-                # 공백이 사라진 헤더도 인식한다 (_split_header 주석 참조)
-                toks, width = ElementSolid._split_header(s)
-                if toks is None:
-                    if warn_cnt < 5:
-                        print("  Warning: ELEMENT_SOLID ten-nodes 헤더 형식 이상 — 라인 무시:", s[:40])
-                    warn_cnt += 1
-                    continue
-                if width == 10:
-                    saw_i10 = True
-                header = toks
-                nodes = []
-                continue
-            # 노드 수집
+        def _node_fields(s, stripped, width, have):
             fields = None
             if width:
                 n = max(1, -(-len(s) // width))  # ceil: 비배수 길이 끝자락 필드 보존
@@ -6227,9 +6214,97 @@ class ElementSolid(DynaKeyword):
             toks = stripped.split()
             if fields is None:
                 fields = toks
-            elif len(nodes) + len(fields) > 10 and len(nodes) + len(toks) <= 10:
+            elif have + len(fields) > 10 and have + len(toks) <= 10:
                 # 고정폭 슬라이스는 10을 초과하는데 토큰화는 맞아떨어짐 = 폭 오판 신호 → 토큰 채택
                 fields = toks
+            return fields
+
+        def _clean(line):
+            s = str(line).rstrip('\r\n').rstrip()
+            return s, s.strip()
+
+        def _next_data(i):
+            # block[i] 다음 실데이터 줄 — 빈 줄·주석은 옛 동작처럼 건너뛴다
+            j = i + 1
+            while j < len(block):
+                s, st = _clean(block[j])
+                if st and not st.startswith('$'):
+                    return j, s, st
+                j += 1
+            return None, None, None
+
+        def _is_header(s):
+            return ElementSolid._split_header(s)[0] is not None
+
+        def _truncated_here(i, s):
+            # block[i](노드 8개 뒤의 2필드 줄)이 n9·n10 이 아니라 다음 요소의 헤더인가
+            hwidth = ElementSolid._split_header(s)[1]
+            j, ns, nst = _next_data(i)
+            if j is None or _is_header(ns):
+                return False                 # 다음 줄이 헤더 모양이면 진짜 n9·n10 일 수 있다
+            total = 0
+            for _ in range(12):
+                if not all(_int_ok(f) for f in nst.split()):
+                    return False             # 잡문·쉼표 카드 — 옛 동작(버림) 유지
+                total += len(_node_fields(ns, nst, hwidth, total))
+                if total >= 10:
+                    return total == 10
+                j, ns, nst = _next_data(j)
+                if j is None or _is_header(ns):
+                    return total == 8        # 다음 헤더·블록 끝에서 8 이면 n9·n10 생략 카드
+            return False
+
+        def finalize():
+            nonlocal header, nodes, line_counts, cur_ambig, last_ambig, pair_after_ambig, trunc_cards
+            if header is None:
+                return
+            if expect == 10 and len(nodes) == 8:
+                trunc_cards += 1
+            if len(nodes) < 10:
+                nodes.extend(['0'] * (10 - len(nodes)))
+            parameterList.append(header)
+            parameterList.append(nodes[:10])
+            if start_after_ambig and len(line_counts) >= 2 and all(c == 2 for c in line_counts):
+                pair_after_ambig += 1
+            last_ambig = cur_ambig
+            cur_ambig = False
+            header = None
+            nodes = []
+            line_counts = []
+
+        saw_i10 = False
+        for i in range(len(block)):
+            s, stripped = _clean(block[i])
+            if not stripped or stripped.startswith('$'):
+                continue
+            if (header is not None and expect == 10 and len(nodes) == 8
+                    and len(_node_fields(s, stripped, width, len(nodes))) == 2 and _is_header(s)):
+                if _truncated_here(i, s):
+                    finalize()       # n9·n10 을 생략한 절삭 카드 — 이 줄은 아래에서 헤더로 읽는다
+                    reinterp += 1
+                else:
+                    j, ns, _ = _next_data(i)
+                    if j is not None and _is_header(ns):
+                        cur_ambig = True   # n9·n10 인지 다음 헤더인지 모양만으론 모르는 자리
+            if header is None:
+                # 공백 분리 우선, 실패 시 고정폭(16/20) 2등분 — 8자리 ID 가 붙어
+                # 공백이 사라진 헤더도 인식한다 (_split_header 주석 참조)
+                toks, width = ElementSolid._split_header(s)
+                if toks is None:
+                    if warn_cnt < 5:
+                        print("  Warning: ELEMENT_SOLID ten-nodes 헤더 형식 이상 — 라인 무시:", s[:40])
+                    warn_cnt += 1
+                    skipped += 1
+                    continue
+                if width == 10:
+                    saw_i10 = True
+                header = toks
+                nodes = []
+                start_after_ambig = last_ambig
+                continue
+            # 노드 수집
+            fields = _node_fields(s, stripped, width, len(nodes))
+            line_counts.append(len(fields))
             # 랩 우선: 2필드 연속줄(n9 n10 / 0 0)도 노드 — 10개 찰 때까지 전부 소비
             nodes.extend(fields)
             # 한 줄에 10필드가 들어온 경우는 10 우선(순수 *ELEMENT_SOLID 인데 Card 2 가
@@ -6244,6 +6319,16 @@ class ElementSolid(DynaKeyword):
         finalize()
         if warn_cnt > 5:
             print(f"  Warning: ELEMENT_SOLID ten-nodes 형식 경고 총 {warn_cnt}건")
+        if skipped:
+            # 버린 줄은 그 자리의 요소가 사라졌다는 뜻이다 — 개수 검사는 파싱 결과끼리 비교해 못 본다
+            print(f"  🔴 ELEMENT_SOLID ten-nodes 블록: {skipped}줄을 요소로 읽지 못해 버렸다 — 요소가 소실됐을 수 있다(카드 형식 확인)")
+        if trunc_cards:
+            # 늘 알린다 — 잡줄이 우연히 8·10필드를 이루면 진짜 절삭 카드와 모양이 같아 못 가린다
+            print(f"  ELEMENT_SOLID ten-nodes 블록: n9·n10 을 생략한 카드 {trunc_cards}개를 빈 칸 0 으로 읽었다"
+                  "(LS-DYNA 규칙) — 생략 카드가 없어야 할 덱이면 카드 형식 확인")
+        if reinterp and pair_after_ambig:
+            print(f"  🔴 ELEMENT_SOLID ten-nodes 블록: n9·n10 을 생략한 카드({reinterp}곳)와 2개씩 넘긴 카드({pair_after_ambig}개)가 "
+                  "섞여 있다 — 모양만으로 요소 경계를 못 가렸을 수 있다(카드 형식 확인)")
         return parameterList, saw_i10
 
     def parse(self, elementSolidKeywords):
