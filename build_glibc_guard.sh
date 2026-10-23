@@ -45,15 +45,16 @@ if [ -n "${KCR_IN_BUILD_SANDBOX:-}" ]; then
         echo "   (컨테이너: sudo 생략) sudo $*"
         return 0
     }
-    # 🔴 샌드박스 LD_LIBRARY_PATH 의 /opt/SmartTwinPreprocessor/... 는 SIF 를 구울 때 복사된 **지난 배포 폴더**다.
-    #    Nuitka 가 그 안의 GLIBC 2.38 libcrypto·libssl·libreadline 을 의존 라이브러리로 집어 새 배포에 다시
-    #    넣었다(순환 오염 — 2.35 노드·SIF 에서 import ssl 이 GLIBC_2.38 not found 로 죽는다, 2026-10-23 실측).
-    #    그 항목과 빈 항목(=현재 폴더)을 빼고 컨테이너 시스템 라이브러리로 찾게 한다.
-    LD_LIBRARY_PATH="$(printf '%s' "${LD_LIBRARY_PATH:-}" | tr ':' '\n' \
-        | grep -v -e '^$' -e '^/opt/SmartTwinPreprocessor' | paste -sd: -)"
-    export LD_LIBRARY_PATH
-    echo "   (컨테이너) 빌드용 LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
 fi
+
+# 🔴 샌드박스·SIF 의 LD_LIBRARY_PATH 에 든 /opt/SmartTwinPreprocessor/... 는 SIF 를 구울 때 복사된 **지난 배포 폴더**다.
+#    Nuitka 가 그 안의 GLIBC 2.38 libcrypto·libssl·libreadline 을 의존 라이브러리로 집어 새 배포에 다시 넣었다
+#    (순환 오염 — 2.35 노드·SIF 에서 import ssl 이 GLIBC_2.38 not found 로 죽는다, 2026-10-23 실측).
+#    그 항목과 빈 항목(=현재 폴더)을 뺀다. 가드 재실행뿐 아니라 SIF 안 직접 빌드(glibc 2.35 라 재실행 안 함)에도 건다.
+LD_LIBRARY_PATH="$(printf '%s' "${LD_LIBRARY_PATH:-}" | tr ':' '\n' \
+    | grep -v -e '^$' -e '^/opt/SmartTwinPreprocessor' | paste -sd: -)"
+export LD_LIBRARY_PATH
+echo "   빌드용 LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
 
 if [ "$GLIBC_GUARD" = "1" ] && [ -z "${KCR_IN_BUILD_SANDBOX:-}" ]; then
     HOST_GLIBC="$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$')"
