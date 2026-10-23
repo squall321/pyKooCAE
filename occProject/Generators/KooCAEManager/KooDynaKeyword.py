@@ -3046,7 +3046,7 @@ class ControlAdaptive(DynaKeyword):
             if ADPTYP == 1 or ADPTYP == 2 or ADPTYP == 4:
                 stream.write("$$ ADPFREQ    ADPTOL    ADPTYP    MAXLVL    TBIRTH    TDEATH     LCADP    IOFLAG\n")
             elif ADPTYP == 7:
-                stream.write("$$ ADPFREQ              ADPTYP              TBIRTH    TDEATH     LCADP")
+                stream.write("$$ ADPFREQ              ADPTYP              TBIRTH    TDEATH     LCADP\n")
             elif ADPTYP == 8 or ADPTYP == -8:
                 stream.write("$$ ADPFREQ    ADPTOL    ADPTYP    MAXLVL    TBIRTH    TDEATH     LCADP\n")
 
@@ -3082,7 +3082,7 @@ class ControlAdaptive(DynaKeyword):
                     elif ADPTYP == 8 or ADPTYP == -8:
                         stream.write("$$    CNLA                                   MMM2D   D3TRACE\n")
                 if j == 4:
-                        stream.write("$$ INMEMRY")
+                        stream.write("$$ INMEMRY\n")
                
                 formatted_elements = [f"{str(element):>10}" for element in curParameter[j]]
                 result = ''.join(formatted_elements)
@@ -4539,7 +4539,7 @@ class DatabaseFrequencyBinaryD3SSD(DynaKeyword):
         parameters = self.parameters[0]
         formatted_elements = f"{str(parameters[0]):>10}\n"
         stream.write(formatted_elements)
-        stream.write("$$    FMIN      FMAX     NFREQ    FSPACE    LCFREQ")
+        stream.write("$$    FMIN      FMAX     NFREQ    FSPACE    LCFREQ\n")
         parameters = self.parameters[1]
         formatted_elements = f"{str(parameters[0]):>10}{str(parameters[1]):>10}{str(parameters[2]):>10}{str(parameters[3]):>10}{str(parameters[4]):>10}\n"
         stream.write(formatted_elements)
@@ -7786,7 +7786,7 @@ class MatAddErosion(DynaKeyword):
                 formatted_elements = f"{str(parameter[3][0]):>10}{str(parameter[3][1]):>10}{str(parameter[3][2]):>10}{str(parameter[3][3]):>10}{str(parameter[3][4]):>10}{str(parameter[3][5]):>10}{str(parameter[3][6]):>10}{str(parameter[3][7]):>10}\n"
                 stream.write(formatted_elements)
             if len(parameter) > 4:
-                stream.write("$$  DTEFLT   VOLFRAC     MXTMP    DTMIN")
+                stream.write("$$  DTEFLT   VOLFRAC     MXTMP    DTMIN\n")
                 formatted_elements = f"{str(parameter[4][0]):>10}{str(parameter[4][1]):>10}{str(parameter[4][2]):>10}{str(parameter[4][3]):>10}\n"
                 stream.write(formatted_elements)
                 
@@ -11640,7 +11640,7 @@ class SetPartListTitle(DynaKeyword):
             parameter = self.parameters[i]
             for j in range(len(self.parameters[i])):                    
                 if j == 0:
-                    stream.write("$$                                                                              ")
+                    stream.write("$$                                                                              \n")
                     result = f"{str(parameter[j][0]):>80}"
                     stream.write(result)
                     stream.write("\n")
@@ -11873,7 +11873,7 @@ class SetShellTitle(DynaKeyword):
             parameter = self.parameters[i]
             for j in range(len(self.parameters[i])):
                 if j == 0:                    
-                    stream.write("$$                                                                          Name")
+                    stream.write("$$                                                                          Name\n")
                     result = f"{str(parameter[j][0]):>80}"
                     stream.write(result)
                     stream.write("\n")
@@ -12092,7 +12092,7 @@ class SetSolidTitle(DynaKeyword):
             parameter = self.parameters[i]
             for j in range(len(self.parameters[i])):
                 if j == 0:                    
-                    stream.write("$$                                                                          Name")
+                    stream.write("$$                                                                          Name\n")
                     result = f"{str(parameter[j][0]):>80}"
                     stream.write(result)
                     stream.write("\n")
