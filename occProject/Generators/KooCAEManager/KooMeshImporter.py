@@ -2234,6 +2234,7 @@ class KooDynaImporter():
                 empties = [k for k in empties if k not in SKIP]
                 if empties:
                     written = index_written_blocks(stream.getvalue(), empties)
+                    kept = []
                     for kw_name in empties:
                         if written.get(kw_name):
                             continue
@@ -2241,6 +2242,10 @@ class KooDynaImporter():
                             stream.write("$\n$--- Uninterpreted keywords (raw, preserved) ---\n$\n")
                             wrote_header = True
                         stream.write(f"*{kw_name}\n")
+                        kept.append(kw_name)
+                    if kept:
+                        print(f"  데이터 카드 없는 키워드 {len(kept)}개를 키워드 줄만 원문대로 남긴다: "
+                              f"{', '.join('*' + k for k in kept)} (LS-DYNA 는 빈 카드를 기본값으로 읽는다)")
         except Exception as e:
             print(f"  Warning: uninterpreted raw 보존 실패 (skip): {e}")
 
