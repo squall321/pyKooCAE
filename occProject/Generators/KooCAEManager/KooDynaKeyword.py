@@ -12237,6 +12237,10 @@ class DynaManager():
         latest_keyword = ""
         includedList = []
         empty_Keywords = []
+        # 읽는 중인 파일 스택 — 순환 인클루드(자기 자신·A→B→A)를 따라가면 RecursionError 로 죽었다
+        if not hasattr(self, '_include_stack'):
+            self._include_stack = []
+        self._include_stack.append(os.path.realpath(path))
 
         # include 파일 목록 추적 (source_file 태깅용)
         if not hasattr(self, '_include_sources'):
@@ -12412,12 +12416,18 @@ class DynaManager():
                         print(f"  Include passthrough ({reason}): {os.path.basename(include_path)}")
                     else:
                         # 일반 include → 재귀적으로 읽기 (인라인)
+                        if os.path.realpath(include_path) in self._include_stack:
+                            chain = [os.path.basename(p) for p in self._include_stack + [os.path.realpath(include_path)]]
+                            print(f"  Warning: 순환 인클루드 — {os.path.basename(include_path)} 는 이미 읽는 중이라 "
+                                  f"건너뛴다({' → '.join(chain)})")
+                            continue
                         self.ReadKeywordsfromFile(include_path, lines_with_asterisk, keyword_dict)
             else:
                 print(f"Warning: Include file not found: {include_path}")
 
         for keyword in empty_Keywords:
             lines_with_asterisk.remove(keyword)
+        self._include_stack.pop()
         return lines_with_asterisk, keyword_dict
 
     def WriteOutputFile(self, outputFileName,controlKeywords="", contactKeywords="", initialKeywords="", setKeywords="",rigidKeywords="",boundaryKeywords="",interfaceKeywords="",defineKeywords="",sectionKeywords="",materialKeywords="",loadKeywords="",meshKeywords="",databaseKeywords=""):
