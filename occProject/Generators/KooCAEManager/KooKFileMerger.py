@@ -5,7 +5,6 @@
 - ForceInlineIGA / ForceInlinePreserved 옵션으로도 override 불가.
 """
 import os
-import re
 import shutil
 
 
@@ -84,8 +83,9 @@ def merge_k_file(dynaImporter, cur_dir, input_filename, option):
         for entry in inline_entries:
             base = os.path.basename(entry['file'])
             f.write(f"$$ ----- Inlined from {base} -----\n")
-            f.write(_strip_keyword_end(entry['content']))
-            if not entry['content'].endswith('\n'):
+            body = _strip_keyword_end(entry['content'])
+            f.write(body)
+            if body and not body.endswith('\n'):   # 원문이 아니라 잘라 낸 본문으로 본다 — 원문으로 보면 빈 데이터 줄이 생겼다(리뷰 F)
                 f.write('\n')
 
         # 강제 보존: *INCLUDE 카드 + 출력 폴더에 파일 복사
@@ -133,6 +133,7 @@ def _strip_keyword_end(content):
     *END 뒤는 LS-DYNA 가 읽지 않는다(R16 *INCLUDE "*END terminates the include file") — 예전엔 *END 줄만 지워
     그 뒤에 꺼 둔 카드가 펼친 덱에서 살아났다. 파일 끝 Ctrl-Z(0x1A)도 뺀다 — 펼친 덱 중간에 남으면 다시 읽을 때
     데이터 줄로 들어갔다(리뷰 D). *END 판정은 KooDynaKeyword 리더와 같다."""
+    from KooCAEManager.KooDynaKeyword import keyword_line_name   # 리더와 같은 *END 판정('*END ,' 포함)
     tail = content.rstrip()
     if tail.endswith('\x1a'):
         content = tail.rstrip('\x1a').rstrip() + '\n'
@@ -142,8 +143,7 @@ def _strip_keyword_end(content):
         # *KEYWORD 자체만 제거 (변형 *KEYWORD_xxx는 다른 키워드)
         if stripped == '*KEYWORD' or stripped.startswith('*KEYWORD '):
             continue
-        m = re.match(r'\*([A-Za-z0-9_]+)', line.rstrip())
-        if m and m.group(1).upper() == 'END' and not line.rstrip()[m.end():].lstrip().startswith(','):
+        if line.startswith('*') and keyword_line_name(line) == 'END':
             break
         out_lines.append(line)
     return ''.join(out_lines)
