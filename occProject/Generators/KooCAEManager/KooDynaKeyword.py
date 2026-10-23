@@ -12131,6 +12131,17 @@ class PreScript():
     def write(self, stream):
         stream.write(self.script)
 
+def keyword_line_name(line):
+    """'*' 줄의 키워드 이름 — ReadKeywordsfromFile 루프와 같은 규칙이다(이 함수를 루프 대신 쓰는 곳: PARAMETER 의 *END 판정,
+    KooKFileMerger 의 *END 판정). '*' 다음 [A-Za-z0-9_] 최장 프리픽스를 대문자로 쓰고, 그 뒤가 쉼표로 시작하는 쉼표형은
+    첫 공백 앞을 그대로 쓴다(그래서 '*END ,' 는 END, '*END,' 는 아니다)."""
+    raw = line.rstrip()
+    m = re.match(r'\*([A-Za-z0-9_]+)', raw)
+    if m is not None and not raw[m.end():].lstrip().startswith(','):
+        return m.group(1).upper()
+    return line.split(' ')[0].strip().rstrip('%+-')[1:].strip()
+
+
 class DynaKeywordManager():
     def __init__(self):
         self.keywords = {}
@@ -12297,12 +12308,8 @@ class DynaManager():
                 self._param_resolver = ParameterResolver()
             # *END 뒤의 *PARAMETER 정의는 LS-DYNA 가 읽지 않는다 — 해석기에도 이 파일의 *END 까지만 준다
             # (아래 키워드 루프와 같은 판정. 예전엔 *END 뒤에 둔 R thk 2.0 이 앞의 1.0 을 덮었다 — 리뷰 D)
-            _end_at = None
-            for _i, _l in enumerate(raw_lines):
-                _m = re.match(r'\*([A-Za-z0-9_]+)', _l.rstrip())
-                if _m and _m.group(1).upper() == 'END' and not _l.rstrip()[_m.end():].lstrip().startswith(','):
-                    _end_at = _i
-                    break
+            _end_at = next((_i for _i, _l in enumerate(raw_lines)
+                            if _l.startswith('*') and keyword_line_name(_l) == 'END'), None)
             self._param_resolver.ParseFromRawLines(raw_lines if _end_at is None else raw_lines[:_end_at + 1])
             if self._param_resolver.HasParams():
                 raw_lines = [self._param_resolver.SubstituteLine(line) for line in raw_lines]
