@@ -2231,7 +2231,9 @@ class KooDynaImporter():
                         stream.write(line if line.endswith('\n') else line + '\n')
                 # 데이터 카드 없는 키워드(*CONTROL_MPP_IO_NOD3DUMP·NOTIEDIO·NODUMP 등)는 블록이 없어 빠졌다.
                 # 매니저가 같은 키워드를 쓰지 않았으면 키워드 줄만 원문대로 남긴다(쓴 것은 매니저 판이 우선).
-                empties = [k for k in empties if k not in SKIP]
+                # *CASE_BEGIN_n·*CASE_END_n 은 위치가 뜻(그 사이 카드만 그 케이스)이라 끝에 모아 쓰면 뜻이 바뀐다 —
+                # 옛 판처럼 되살리지 않는다(리뷰 D)
+                empties = [k for k in empties if k not in SKIP and not k.startswith(("CASE_BEGIN", "CASE_END"))]
                 if empties:
                     written = index_written_blocks(stream.getvalue(), empties)
                     kept = []
