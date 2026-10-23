@@ -12293,7 +12293,15 @@ class DynaManager():
             from KooCAEManager.KooParameterResolver import ParameterResolver
             if getattr(self, '_param_resolver', None) is None:
                 self._param_resolver = ParameterResolver()
-            self._param_resolver.ParseFromRawLines(raw_lines)
+            # *END 뒤의 *PARAMETER 정의는 LS-DYNA 가 읽지 않는다 — 해석기에도 이 파일의 *END 까지만 준다
+            # (아래 키워드 루프와 같은 판정. 예전엔 *END 뒤에 둔 R thk 2.0 이 앞의 1.0 을 덮었다 — 리뷰 D)
+            _end_at = None
+            for _i, _l in enumerate(raw_lines):
+                _m = re.match(r'\*([A-Za-z0-9_]+)', _l.rstrip())
+                if _m and _m.group(1).upper() == 'END' and not _l.rstrip()[_m.end():].lstrip().startswith(','):
+                    _end_at = _i
+                    break
+            self._param_resolver.ParseFromRawLines(raw_lines if _end_at is None else raw_lines[:_end_at + 1])
             if self._param_resolver.HasParams():
                 raw_lines = [self._param_resolver.SubstituteLine(line) for line in raw_lines]
         except Exception as e:
