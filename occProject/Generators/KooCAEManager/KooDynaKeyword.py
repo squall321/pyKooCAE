@@ -12252,6 +12252,9 @@ class DynaManager():
         if not hasattr(self, '_include_stack'):
             self._include_stack = []
         self._include_stack.append(os.path.realpath(path))
+        # 데이터 카드 없는 키워드 이름(순서대로) — 블록이 없어 출력에서 빠졌다. 공용 원문 보존 기록기가 되살린다
+        if not hasattr(self, '_empty_keyword_names'):
+            self._empty_keyword_names = []
 
         # include 파일 목록 추적 (source_file 태깅용)
         if not hasattr(self, '_include_sources'):
@@ -12326,7 +12329,7 @@ class DynaManager():
                     if len(curLines) > 0:
                         _store_block(latest_keyword, curLines, latest_fmt, latest_tennodes)
                     elif latest_keyword == "CONTROL_MPP_IO_NODUMP":
-                        pass
+                        self._empty_keyword_names.append(latest_keyword)
                     elif latest_keyword == "":
                         pass
                     elif latest_keyword == "KEYWORD":
@@ -12334,6 +12337,7 @@ class DynaManager():
                     else:
                         print("Warning: Empty keyword found: " + latest_keyword)
                         empty_Keywords.append(latest_keyword)
+                        self._empty_keyword_names.append(latest_keyword)
 
 
                     curLines = []
@@ -12383,9 +12387,12 @@ class DynaManager():
                 includedList.extend(curLines)
             if curLines:
                 _store_block(latest_keyword, curLines, latest_fmt, latest_tennodes)
-            elif latest_keyword not in ('KEYWORD', 'CONTROL_MPP_IO_NODUMP'):
+            elif latest_keyword == 'CONTROL_MPP_IO_NODUMP':
+                self._empty_keyword_names.append(latest_keyword)
+            elif latest_keyword != 'KEYWORD':
                 print("Warning: Empty keyword found: " + latest_keyword)
                 empty_Keywords.append(latest_keyword)
+                self._empty_keyword_names.append(latest_keyword)
 
         # include 파일 처리
         for curFile in includedList:

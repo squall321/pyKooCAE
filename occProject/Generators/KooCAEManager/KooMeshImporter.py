@@ -2212,14 +2212,15 @@ class KooDynaImporter():
         # 원본 슬라이스 그대로 출력 → byte-exact. 인터프리트된 키워드는 매니저가 이미 출력하므로 스킵.
         try:
             raw_dict = getattr(self.dynaManager, '_raw_keyword_dict', None)
-            if raw_dict:
+            empties = list(dict.fromkeys(getattr(self.dynaManager, '_empty_keyword_names', None) or []))
+            if raw_dict or empties:
                 interpreted = getattr(self, 'keywordInterpreted', {}) or {}
                 SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END", "TITLE"}
                 # 매니저가 같은 내용으로 이미 쓴 카드는 건너뛴다 — 표시(keywordInterpreted)가 빠진
                 # 일반 경로 키워드(DATABASE_NCFORC·LOAD_THERMAL_VARIABLE·MAT_ADD_THERMAL_EXPANSION 등)가
                 # 왕복마다 배로 늘어나던 것을 막는다. 내용이 다르면 그대로 보존(유실 방지 유지).
-                from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks
-                pending = filter_duplicate_raw_blocks(raw_dict, interpreted, stream.getvalue(), SKIP)
+                from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks, index_written_blocks
+                pending = filter_duplicate_raw_blocks(raw_dict or {}, interpreted, stream.getvalue(), SKIP)
                 wrote_header = False
                 for kw_name, block in pending:
                     if not wrote_header:
@@ -2228,6 +2229,18 @@ class KooDynaImporter():
                     stream.write(f"*{kw_name}\n")
                     for line in block:
                         stream.write(line if line.endswith('\n') else line + '\n')
+                # 데이터 카드 없는 키워드(*CONTROL_MPP_IO_NOD3DUMP·NOTIEDIO·NODUMP 등)는 블록이 없어 빠졌다.
+                # 매니저가 같은 키워드를 쓰지 않았으면 키워드 줄만 원문대로 남긴다(쓴 것은 매니저 판이 우선).
+                empties = [k for k in empties if k not in SKIP]
+                if empties:
+                    written = index_written_blocks(stream.getvalue(), empties)
+                    for kw_name in empties:
+                        if written.get(kw_name):
+                            continue
+                        if not wrote_header:
+                            stream.write("$\n$--- Uninterpreted keywords (raw, preserved) ---\n$\n")
+                            wrote_header = True
+                        stream.write(f"*{kw_name}\n")
         except Exception as e:
             print(f"  Warning: uninterpreted raw 보존 실패 (skip): {e}")
 

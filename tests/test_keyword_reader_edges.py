@@ -8,6 +8,9 @@
   [2] 순수 *ELEMENT_SOLID·*ELEMENT_SHELL 레거시(8칸) 경로가 빈 줄에서 int('') 로 죽었다. 둘째 줄이 비면 1줄/2줄
       판별까지 뒤집혔다. R16 Appendix V — 빈 줄은 기본값 카드인데 EID·PID·N 은 기본값이 없어 요소 카드가 될 수 없다.
       이제 빈 줄을 건너뛰고 개수를 알린다. (*ELEMENT_SHELL_THICKNESS 의 빈 두께 카드는 의미가 있어 손대지 않는다.)
+  [3] 데이터 카드가 없는 키워드(*CONTROL_MPP_IO_NOD3DUMP·*CONTROL_MPP_IO_NOTIEDIO 등)가 출력에서 빠졌다.
+      R16 원문에 "This keyword has no input parameters/data cards" 인 정상 키워드다. 이제 KMM 이 같은 키워드를
+      쓰지 않았으면 키워드 줄만 원문대로 남긴다(KMM 이 쓴 키워드는 KMM 판이 우선).
 """
 import shutil
 import subprocess
@@ -119,6 +122,38 @@ check("셸 1줄 형식 중간 빈 줄 — 출력이 기준과 같다", rc == 0 a
 check("  빈 줄을 건너뛰었다고 알린다", "ELEMENT_SHELL 블록의 빈 줄" in log, [ln for ln in log.splitlines() if "빈 줄" in ln])
 rc, log, text, _ = run_kmm({"model.k": "*KEYWORD\n" + nodes() + PROPS + SOLID + "*END\n"})
 check("빈 줄 없는 블록 — 빈 줄 안내 없음", rc == 0 and "빈 줄" not in log, f"rc={rc}")
+
+print("[3] 데이터 카드가 없는 키워드 — 출력에 남긴다")
+
+
+def kwcount(text, name):
+    return sum(1 for ln in text.splitlines() if ln.strip().upper() == "*" + name)
+
+
+def before_end(text, name):
+    lines = [ln.strip().upper() for ln in text.splitlines()]
+    return "*" + name in lines and "*END" in lines and lines.index("*" + name) < lines.index("*END")
+
+
+MPP = "*CONTROL_MPP_IO_NOD3DUMP\n*CONTROL_MPP_IO_NOTIEDIO\n"
+rc, log, text, els = run_kmm({"model.k": "*KEYWORD\n" + MPP + nodes() + PROPS + SOLID + "*END\n"})
+for name in ("CONTROL_MPP_IO_NOD3DUMP", "CONTROL_MPP_IO_NOTIEDIO"):
+    check(f"중간의 *{name} — 출력에 한 번, *END 앞", rc == 0 and kwcount(text, name) == 1 and before_end(text, name),
+          f"rc={rc} n={kwcount(text, name)}")
+check("  요소 보존", els == WANT, f"{els}")
+rc, log, text, els = run_kmm({"model.k": "*KEYWORD\n" + nodes() + PROPS + SOLID + "*CONTROL_MPP_IO_NOD3DUMP\n"})
+check("파일 끝(*END 없음)의 *CONTROL_MPP_IO_NOD3DUMP — 출력에 한 번",
+      rc == 0 and kwcount(text, "CONTROL_MPP_IO_NOD3DUMP") == 1 and els == WANT, f"rc={rc}")
+rc, log, text, els = run_kmm({"model.k": "*KEYWORD\n*CONTROL_MPP_IO_NODUMP\n" + nodes() + PROPS + SOLID + "*END\n"})
+check("전용 처리가 있는 *CONTROL_MPP_IO_NODUMP — 중복 없이 한 번", rc == 0 and kwcount(text, "CONTROL_MPP_IO_NODUMP") == 1,
+      f"rc={rc} n={kwcount(text, 'CONTROL_MPP_IO_NODUMP')}")
+rc, log, ref, _ = run_kmm({"model.k": "*KEYWORD\n" + nodes() + PROPS + SOLID + "*END\n"})
+rc2, log2, text, els = run_kmm({"model.k": "*KEYWORD\n*PART\n" + nodes() + PROPS + SOLID + "*END\n"})
+check("KMM 이 쓰는 키워드(*PART)가 빈 채로 하나 더 — KMM 판만 남는다(출력이 기준과 같다)", rc2 == 0 and text == ref,
+      f"rc={rc2} PART={kwcount(text, 'PART')}")
+rc, log, text, els = run_kmm({"model.k": "*KEYWORD\n*CONTROL_MPP_IO_NOD3DUMP\n*CONTROL_MPP_IO_NOD3DUMP\n" + nodes() + PROPS
+                              + SOLID + "*END\n"})
+check("같은 빈 키워드 두 번 — 한 번만 남긴다", rc == 0 and kwcount(text, "CONTROL_MPP_IO_NOD3DUMP") == 1, f"rc={rc}")
 
 print()
 if FAILS:
