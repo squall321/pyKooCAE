@@ -70,3 +70,12 @@
   - 자기 자신을 인클루드하는 덱은 RecursionError 다(순환 감지 없음). *END 가 있으면 옛 판도 같았다.
   - *END 가 마지막 데이터 줄에 붙은 파일('0.25*END')은 이제 읽힌다. 그 예(옛 KooRemapper 산출물)는 MID 칸이 15자로 밀려 있어 LS-DYNA 도 같은 값(RO=1.0·E=2.0·PR=12000)으로 읽는다. 입력이 틀린 경우다.
   - 데이터 없는 *CONTROL_MPP_IO_NOD3DUMP 류가 출력에서 빠지는 것은 *END 유무와 상관없는 옛 동작이다.
+
+## 2026-10-23 — 빌드·SIF v120
+- 1차 빌드는 12분 30초 만에 rc 143 으로 죽었다. OOM 킬러(137)가 아니라 earlyoom 의 SIGTERM 이었다. 가용 6%(약 7.6 GB) 이하가 되자 microk8s 파드 다섯 번, 그다음 Nuitka(4 GB)를 죽였다. cpptools 하나가 40 GB 를 쓰고 스왑도 꽉 차 있어 빌드 여유가 3.8 GB 뿐이었다.
+- 사용자 승인으로 cpptools 만 종료했다(가용 11 → 51 GB). 빌드 프로세스에는 oom_score_adj 1000 을 걸었다. code(VSCode)가 점수 884 라 그보다 낮으면 earlyoom 이 VSCode 를 먼저 고르기 때문이다. 2차 빌드는 58분에 끝났고 최저 가용은 22 GB 였다.
+- 강제 종료 뒤 Nuitka 가 KooMeshModifier.build(4.7 GB)를 비워 두었으므로 2차는 처음부터 돌았다. 남은 .build/.dist 는 지우고 시작했다.
+- SIF 스크립트를 처음에 sudo 없이 돌려 복사 단계에서 멈췄다(샌드박스 opt/KooDynaPostProcessor 는 UID 100999, opt/SmartTwinPreprocessor 는 root 소유). 지난 판들처럼 `sudo HOME=/home/koopark bash BuildSmartTwinPreprocessor.sh` 로 다시 돌려 통과했다.
+- KMM 배포 폴더의 libcrypto.so.3·libreadline.so.8 은 GLIBC 2.38 을 요구한다. v119 와 sha 가 같은, 원래 있던 상태라 손대지 않았다.
+- 다시 뜬 cpptools 가 한 시간 만에 31.5 GB 로 커졌다. 그래서 VM 두 대(18 GB)를 켜면 earlyoom 선 아래로 떨어진다. 사용자가 노드 배포를 보류했다.
+- 헤드 /opt/apptainers 사본은 deploy_apptainers.sh 대상이 아니다. 사용자 승인으로 하드 링크 백업 뒤 rename 으로 바꿨다.

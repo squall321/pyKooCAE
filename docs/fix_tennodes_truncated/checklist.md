@@ -14,5 +14,9 @@
 - [x] 기존 결함 ①② 수정(사용자 승인) — KooPart 오면체 등록 수, ReadKeywordsfromFile 파일 끝 블록. 시험 `tests/test_keyword_reader_eof.py`
 - [x] 적대 리뷰 C — 확정 2건(*END 뒤 마지막 블록을 새로 읽음, 빈 줄 인클루드 크래시)과 빈 마지막 키워드 KeyError. *END 있던 파일은 옛 동작 그대로·빈 줄 인클루드 건너뜀·빈 키워드 경고로 고치고 시험 [3] 교체
 - [x] 재검증 — 옛·직전·새 판 시험 대조, 리뷰 말뭉치 84덱(옛 판·ref 대조), MinimumModel md5 동일
-- [ ] 빌드(KMM) → SIF → tar → 노드 배포 → 컴파일본 재현 덱 e2e
-- [ ] 커밋·푸시·메모리
+- [x] 빌드(KMM·KooChainRun) — 1차는 earlyoom 에 죽음(rc 143), cpptools 종료(사용자 승인)·oom_score_adj 1000 으로 2차 통과. KMM af843161, GLIBC ≤2.35
+- [x] 컴파일본 e2e — 재현 덱 8종 엄격 판정·리더 시험 13개·MinimumModel md5 동일
+- [x] SIF v120(2293ddc7) → compute-node-images → tar v120 → Drive·메일. 새 SIF 로 헤드 e2e 8종 통과
+- [x] 헤드 /opt/apptainers 사본도 v120 으로 교체(사용자 승인, 옛 판은 SmartTwinPreprocessor_backup_20261023_120859.sif)
+- [ ] 노드 배포 — 보류(사용자 결정, VM 꺼짐). VM 을 켜면 deploy_apptainers.sh --image SmartTwinPreprocessor.sif 뒤 /data/koopark/Test_E2E_v120/run_node.sh·judge.py --strict 로 노드 e2e
+- [x] 커밋·푸시·메모리
