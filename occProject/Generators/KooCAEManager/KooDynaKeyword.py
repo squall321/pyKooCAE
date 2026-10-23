@@ -5991,8 +5991,15 @@ class ElementShellThickness(DynaKeyword):
         lines = []
         for line in block:
             s = str(line).rstrip('\r\n').rstrip()
-            if s.strip() and not s.lstrip().startswith('$'):
-                lines.append(s)
+            if s.lstrip().startswith('$'):
+                continue
+            # 빈 줄도 제자리에 남긴다 — 두께 카드 자리의 빈 줄은 '섹션 두께' 라는 정상 카드다. 버리면 카드 짝이 어긋나
+            # 요소가 조용히 사라지거나 IndexError 였다(리뷰 F). 블록 앞뒤의 빈 줄만 카드가 아니다.
+            lines.append(s)
+        while lines and not lines[-1].strip():
+            lines.pop()
+        while lines and not lines[0].strip():
+            lines.pop(0)
         parameterList = []
         if not lines:
             return parameterList
