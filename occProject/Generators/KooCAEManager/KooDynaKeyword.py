@@ -12469,8 +12469,37 @@ class DynaManager():
 
         for keyword in empty_Keywords:
             lines_with_asterisk.remove(keyword)
+        if len(self._include_stack) == 1:   # 맨 위 파일 — 인클루드까지 다 읽은 뒤
+            self._warn_unresolved_params(keyword_dict)
         self._include_stack.pop()
         return lines_with_asterisk, keyword_dict
+
+    def _warn_unresolved_params(self, keyword_dict):
+        """치환되지 않은 &참조를 알린다. 숫자 칸의 '&thk' 는 0 으로 읽혀 조용히 값이 바뀐다(리뷰 F).
+        KMM 은 파라미터를 그 파일을 읽을 때 치환하고 인클루드는 메인을 다 읽은 뒤 읽으므로, 메인 파일이 인클루드에서
+        정의한 파라미터를 쓰면 여기서 알린다. 칸 첫머리(줄 처음·공백·쉼표 뒤)의 &이름만 센다 — 제목의 'R&D' 등은 뺀다."""
+        res = getattr(self, '_param_resolver', None)
+        known = set(getattr(res, 'params', {}) or {})
+        pat = re.compile(r'(?:^|(?<=[\s,]))&([A-Za-z_][A-Za-z0-9_]*)')
+        seen = {}
+        for kw, blocks in keyword_dict.items():
+            if not isinstance(kw, str) or kw.startswith(('PARAMETER', 'TITLE', 'COMMENT', '_')):
+                continue
+            for block in blocks:
+                if not isinstance(block, list):
+                    continue
+                for line in block:
+                    s = str(line)
+                    if '&' not in s or s.lstrip().startswith('$'):
+                        continue
+                    for m in pat.finditer(s):
+                        n = m.group(1).lower()
+                        if n not in known:
+                            seen[n] = seen.get(n, 0) + 1
+        if seen:
+            names = ', '.join(f"&{n}" for n in list(seen)[:8]) + (' …' if len(seen) > 8 else '')
+            print(f"  🔴 정의되지 않은 &참조 {len(seen)}개({names}) — 그 칸은 0 으로 읽힌다. *PARAMETER 정의(위치·*END 앞인지)를 "
+                  f"확인할 것(KMM 은 인클루드에서 정의한 파라미터를 메인 파일에 치환하지 못한다)")
 
     def WriteOutputFile(self, outputFileName,controlKeywords="", contactKeywords="", initialKeywords="", setKeywords="",rigidKeywords="",boundaryKeywords="",interfaceKeywords="",defineKeywords="",sectionKeywords="",materialKeywords="",loadKeywords="",meshKeywords="",databaseKeywords=""):
         dynaKeywords = self.dynaKeywordMan.keywords
