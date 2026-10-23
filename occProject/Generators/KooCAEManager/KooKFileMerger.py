@@ -5,6 +5,7 @@
 - ForceInlineIGA / ForceInlinePreserved 옵션으로도 override 불가.
 """
 import os
+import re
 import shutil
 
 
@@ -128,15 +129,22 @@ def _matches_user_pattern(include_path, patterns):
 
 
 def _strip_keyword_end(content):
-    """content에서 *KEYWORD 및 *END 줄을 제거 (인라인 시 중복 방지)."""
+    """content에서 *KEYWORD 줄을 제거하고 첫 *END 에서 끝낸다 (인라인 시 중복 방지).
+    *END 뒤는 LS-DYNA 가 읽지 않는다(R16 *INCLUDE "*END terminates the include file") — 예전엔 *END 줄만 지워
+    그 뒤에 꺼 둔 카드가 펼친 덱에서 살아났다. 파일 끝 Ctrl-Z(0x1A)도 뺀다 — 펼친 덱 중간에 남으면 다시 읽을 때
+    데이터 줄로 들어갔다(리뷰 D). *END 판정은 KooDynaKeyword 리더와 같다."""
+    tail = content.rstrip()
+    if tail.endswith('\x1a'):
+        content = tail.rstrip('\x1a').rstrip() + '\n'
     out_lines = []
     for line in content.splitlines(keepends=True):
         stripped = line.strip().upper()
         # *KEYWORD 자체만 제거 (변형 *KEYWORD_xxx는 다른 키워드)
         if stripped == '*KEYWORD' or stripped.startswith('*KEYWORD '):
             continue
-        if stripped == '*END' or stripped.startswith('*END '):
-            continue
+        m = re.match(r'\*([A-Za-z0-9_]+)', line.rstrip())
+        if m and m.group(1).upper() == 'END' and not line.rstrip()[m.end():].lstrip().startswith(','):
+            break
         out_lines.append(line)
     return ''.join(out_lines)
 
