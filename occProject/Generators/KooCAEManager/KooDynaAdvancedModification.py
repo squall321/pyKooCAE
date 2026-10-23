@@ -3823,6 +3823,8 @@ class KooDynaAdvancedModification:
                 exceptPIDs[wallPart.id] = wallPart.id
                 if impactorType.lower() == "cylinder":
                     exceptPIDs[impactFrontPart.id] = impactFrontPart.id
+                if impactMidPart is not None:
+                    exceptPIDs[impactMidPart.id] = impactMidPart.id
                 exceptPIDs[impactorPart.id] = impactorPart.id
                 self.dynaImporter.partManager.MoveElementsfromRigidPartstoPart(exceptPIDs)                
                 
@@ -3832,6 +3834,11 @@ class KooDynaAdvancedModification:
                     impactFrontElemMan.RemoveAllElements()
                     self.dynaImporter.initialManager.RemoveInitial(initVFront.id)
                     self.dynaImporter.contactManager.RemoveContact(tiedContactImpactortoFront)
+                    if impactMidPart is not None:   # 3단 중간단도 위치마다 새로 만든다 — 지우지 않으면 요소·초기속도·접촉이 쌓였다(리뷰 F)
+                        nodeMan.RemoveNodes(impactMidElemMan.GetElementNodes())
+                        impactMidElemMan.RemoveAllElements()
+                        self.dynaImporter.initialManager.RemoveInitial(initVMid.id)
+                        self.dynaImporter.contactManager.RemoveContact(tiedContactMidtoBack)
                 nodesImpact = impactElemMan.GetElementNodes()
                 nodesWall = wallElemMan.GetElementNodes()
                 
@@ -3859,6 +3866,8 @@ class KooDynaAdvancedModification:
                 exceptPIDs[wallPart.id] = wallPart.id
                 if impactorType.lower() == "cylinder":
                     exceptPIDs[impactFrontPart.id] = impactFrontPart.id
+                if impactMidPart is not None:
+                    exceptPIDs[impactMidPart.id] = impactMidPart.id
                 exceptPIDs[impactorPart.id] = impactorPart.id                
                 if mode == "OutsideRigidElement":
                     self.dynaImporter.partManager.ChangetoRigidElementsOutsideofSphere(impactPoint, stressWaveDistance, exceptPIDs)
@@ -4287,6 +4296,8 @@ class KooDynaAdvancedModification:
                 reusable_pids = {impactorPart.id, wallPart.id}
                 if impactorType.lower() == "cylinder":
                     reusable_pids.add(impactFrontPart.id)
+                if impactMidPart is not None:
+                    reusable_pids.add(impactMidPart.id)
                 exclude_sids = set()
                 cached_base, base_state = self._CacheBaseKeyword(
                     exclude_nodeset_sids=exclude_sids, reusable_part_ids=reusable_pids)
@@ -4319,6 +4330,8 @@ class KooDynaAdvancedModification:
                     if impactorType.lower() == "cylinder":
                         if pid == impactFrontPart.id:
                             continue
+                    if impactMidPart is not None and pid == impactMidPart.id:
+                        continue
                     if pid == wallPart.id:
                         continue
                     part = self.dynaImporter.partManager.parts[pid] 
@@ -4353,6 +4366,11 @@ class KooDynaAdvancedModification:
                 if impactorType.lower() == "cylinder":
                     self.dynaImporter.initialManager.RemoveInitial(initVFront.id)
                     self.dynaImporter.contactManager.RemoveContact(tiedContactImpactortoFront)
+                if impactMidPart is not None:   # 3단 중간단도 위치마다 새로 만든다 — 지우지 않으면 요소·초기속도·접촉이 쌓였다(리뷰 F)
+                    nodeMan.RemoveNodes(impactMidElemMan.GetElementNodes())
+                    impactMidElemMan.RemoveAllElements()
+                    self.dynaImporter.initialManager.RemoveInitial(initVMid.id)
+                    self.dynaImporter.contactManager.RemoveContact(tiedContactMidtoBack)
                 if nodeSetInside != None:
                     self.dynaImporter.nodeSetManager.RemoveNodeSet(nodeSetInside)
                 if nodeSetFixed != None:
@@ -4382,6 +4400,8 @@ class KooDynaAdvancedModification:
                     if impactorType.lower() == "cylinder":
                         if pid == impactFrontPart.id:
                             continue
+                    if impactMidPart is not None and pid == impactMidPart.id:
+                        continue
                     if pid == impactorPart.id:
                         continue
                     if pid == wallPart.id:
@@ -4598,6 +4618,8 @@ class KooDynaAdvancedModification:
                         continue
                     if impactorType.lower() == "cylinder" and pid == impactFrontPart.id:
                         continue
+                    if impactMidPart is not None and pid == impactMidPart.id:
+                        continue
                     if not p.elementManager.elements:
                         continue
                     # 파트 바운딩 박스 중심과 충격점 XY 거리
@@ -4685,6 +4707,8 @@ class KooDynaAdvancedModification:
             exclude_pids = {impactorPart.id, wallPart.id, beamPart.id}
             if impactorType.lower() == "cylinder":
                 exclude_pids.add(impactFrontPart.id)
+            if impactMidPart is not None:
+                exclude_pids.add(impactMidPart.id)
             for pid, p in self.dynaImporter.partManager.parts.items():
                 if pid not in exclude_pids and p.elementManager.elements:
                     specimen_parts.append({"id": pid, "name": getattr(p, 'name', f'Part_{pid}'),

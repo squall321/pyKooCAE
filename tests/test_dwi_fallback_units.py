@@ -21,6 +21,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 GEN = ROOT / "occProject" / "Generators"
 PY = str(ROOT / "venv312" / "bin" / "python")
+import os  # noqa: E402
+# 이 호스트의 ~/.local/bin/gmsh 는 시스템 파이썬으로 돌아 충격체가 0 요소가 된다 → venv312/bin 을 PATH 앞에(리뷰 F)
+ENV = dict(os.environ, PATH=str(ROOT / "venv312" / "bin") + ":" + os.environ.get("PATH", ""))
 BASE = Path(tempfile.mkdtemp(prefix="dwi_units_"))
 FAILS = []
 
@@ -84,7 +87,7 @@ DensityWall,{u['wall_rho']}
 *End
 """)
     r = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt.txt"], cwd=d, capture_output=True, text=True,
-                       timeout=900)
+                       timeout=900, env=ENV)
     out = Path(d, "model_dwit.k")
     return r.returncode, r.stdout + r.stderr, out.read_text() if out.exists() else ""
 
@@ -182,7 +185,7 @@ DensityWall,{u['wall_rho']}
 {extra}**EndDropWeightImpactTest
 *End
 """)
-    r = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt.txt"], cwd=d, capture_output=True, text=True, timeout=900)
+    r = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt.txt"], cwd=d, capture_output=True, text=True, timeout=900, env=ENV)
     out = Path(d, "model_dwit.k")
     return r.returncode, r.stdout + r.stderr, out.read_text() if out.exists() else ""
 
@@ -209,6 +212,57 @@ cyl3 = dict(MM, cyl="0.3,0.4,0.2,0.35,0.2,0.4,0.4")
 rc, log, text = run_dwi(cyl3, mode="OutsideRigidPart", itype="cylinder")
 check("OutsideRigidPart·3단 실린더(7값) — NameError 없이 rc 0·중간단 재질 생성", rc == 0 and mat(text, "ImpactorMidMaterial")
       is not None, f"rc={rc} {log[-300:] if rc else ''}")
+
+print("[8] 3단 실린더 다위치 — 두 번째 위치 덱의 중간단·초기속도·tied 접촉이 한 위치 덱과 같다 — 리뷰 F")
+import re  # noqa: E402
+
+
+def mid_stats(text):
+    lines = text.splitlines()
+    mat = {lines[i + 2].split()[0]: lines[i + 1].strip() for i, ln in enumerate(lines)
+           if ln.startswith("*MAT_ELASTIC_TITLE") and i + 2 < len(lines) and lines[i + 2].split()}
+    mid = None
+    for i, ln in enumerate(lines):
+        if ln.startswith("*PART"):
+            data = [x for x in lines[i + 1:i + 4] if not x.startswith("$")]
+            f = data[1].split() if len(data) >= 2 else []
+            if len(f) > 2 and mat.get(f[2]) == "ImpactorMidMaterial":
+                mid = f[0]
+    el, sect = 0, None
+    for ln in lines:
+        if ln.startswith("*"):
+            sect = ln.strip().upper()
+        elif sect and sect.startswith("*ELEMENT_SOLID") and ln.split() and not ln.startswith("$"):
+            el += ln.split()[1] == mid
+    return (el, len(re.findall(r"^\*INITIAL_VELOCITY_GENERATION", text, re.M)), len(re.findall(r"^\*CONTACT_TIED", text, re.M)))
+
+
+def run_locs(xs, mode, bd):
+    d = Path(tempfile.mkdtemp(dir=BASE))
+    Path(d, "model.k").write_text(model(MM["scale"], MM["rho"], MM["e"]))
+    n = len(xs)
+    Path(d, "opt.txt").write_text(
+        "*Inputfile\nmodel.k\n*Mode\nDROP_WEIGHT_IMPACT_TEST,1\n**DropWeightImpactTest,1\nTFinal,0.001\nDT,1e-06\n"
+        f"LocationX,{','.join(map(str, xs))}\nLocationY,{','.join(['0.5'] * n)}\nHeight,{','.join(['10'] * n)}\n"
+        f"InitialVelocityX,{','.join(['0'] * n)}\nInitialVelocityY,{','.join(['0'] * n)}\nInitialVelocityZ,{','.join(['0'] * n)}\n"
+        "Gravity,9810.0\nImpactorType,cylinder\nImpactorDimension,0.3,0.4,0.2,0.35,0.2,0.4,0.4\nMeshSize,0.1\n"
+        "DensityImpactor,7.85e-09\nYoungsModulusImpactor,200000.0\nPoissonRatioImpactor,0.3\n"
+        f"GenerationMode,{mode}\nOffsetDistance,0.05\nYoungsModulusWall,10000.0\nPoissonRatioWall,0.3\nDensityWall,1e-09\n"
+        + (f"BoundaryDistance,{bd}\n" if bd else "") + "**EndDropWeightImpactTest\n*End\n")
+    r = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt.txt"], cwd=d, capture_output=True, text=True, timeout=900, env=ENV)
+    decks = {re.search(r"LOCX_([0-9.e+-]+)", q.name).group(1): q.read_text() for q in d.glob("model_MODE_*.k")}
+    if not decks and Path(d, "model_dwit.k").exists():
+        decks = {"only": Path(d, "model_dwit.k").read_text()}
+    return r.returncode, decks
+
+
+for mode, bd in (("OutsideRigidPart", 5.0), ("OutsideRigidElement", 0), ("DampingSpring", 0), ("DampingSpring", 0.2)):
+    rc1, one = run_locs([0.7], mode, bd)
+    rc2, two = run_locs([0.3, 0.7], mode, bd)
+    s1 = mid_stats(next(iter(one.values()))) if one else None
+    s2 = mid_stats(two.get("7.000e-01", "")) if two else None
+    check(f"{mode}·BD={bd} — 2위치 x=0.7 덱 (중간단 요소, IVG, tied) = 1위치 덱", rc1 == 0 and rc2 == 0 and s1 is not None
+          and s1[0] > 0 and s1 == s2, f"rc={rc1},{rc2} 1위치={s1} 2위치={s2}")
 
 print("[5] 누적 IMPACT 템플릿 — mesh_size·dimension_damper 는 시나리오에 있을 때만 넘긴다")
 import contextlib  # noqa: E402
