@@ -149,6 +149,14 @@ rc, log, text, els = run_kmm({"model.k": mid})
 check("주석 줄 안의 0x1A — 그 뒤도 읽는다(요소 보존)", rc == 0 and els == WANT, f"rc={rc} {els}")
 rc, log, text, els = run_kmm({"model.k": "*KEYWORD\n*TITLE\nmy \x1a title\n" + nodes() + PROPS + SOLID + "*END\n"})
 check("*TITLE 안의 0x1A — 그 뒤도 읽는다", rc == 0 and els == WANT, f"rc={rc} {log[-200:]}")
+TH = "".join(f"{x:>16}" for x in (0.5, 0.5, 0.5, 0.5))
+SH = ("*PART\nskin\n" + f10(2, 2, 1) + "*SECTION_SHELL\n" + f10(2, 2) + f10(1.0, 1.0, 1.0, 1.0) + "*ELEMENT_SHELL_THICKNESS\n"
+      + f"{10:8d}{2:8d}{1:8d}{2:8d}{3:8d}{4:8d}\n" + TH + "\n" + f"{11:8d}{2:8d}{5:8d}{6:8d}{7:8d}{8:8d}\n\n")
+base_sh = "*KEYWORD\n" + nodes() + PROPS + SOLID + SH
+rc, log, ref_sh, _ = run_kmm({"model.k": base_sh})
+rc2, log2, text2, _ = run_kmm({"model.k": base_sh + "\x1a"})
+check("*END 없이 빈 두께 카드로 끝나고 Ctrl-Z — 그 빈 카드는 남는다(출력이 Ctrl-Z 없는 덱과 같다) — 리뷰 F",
+      rc == 0 and rc2 == 0 and text2 == ref_sh, f"rc={rc},{rc2} {log2[-200:] if rc2 else ''}")
 rc, log, text, els = run_kmm({"model.k": noend + "\x1a\n*NODE\n       1        5.000000        5.000000        5.000000\n"})
 check("데이터 블록 안 0x1A 뒤에 내용 — 조용히 자르지 않는다(옛 판처럼 오류)", rc != 0 and "\\x1a" in log, f"rc={rc}")
 

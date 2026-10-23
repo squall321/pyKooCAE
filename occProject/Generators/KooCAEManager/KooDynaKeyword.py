@@ -12291,11 +12291,13 @@ class DynaManager():
         _k = len(raw_lines)
         while _k > 0 and not raw_lines[_k - 1].replace('\x1a', '').strip():
             _k -= 1   # 파일 끝의 공백·0x1A 만 있는 줄들
-        _glued = _k > 0 and raw_lines[_k - 1].rstrip().endswith('\x1a')
-        if _glued or any('\x1a' in _l for _l in raw_lines[_k:]):
+        if _k > 0 and raw_lines[_k - 1].rstrip().endswith('\x1a'):   # 마지막 줄 끝에 붙은 Ctrl-Z
             raw_lines = raw_lines[:_k]
-            if _glued:
-                raw_lines[-1] = raw_lines[-1].rstrip().rstrip('\x1a') + '\n'
+            raw_lines[-1] = raw_lines[-1].rstrip().rstrip('\x1a') + '\n'
+        else:
+            _z = next((_i for _i in range(_k, len(raw_lines)) if '\x1a' in raw_lines[_i]), None)
+            if _z is not None:
+                raw_lines = raw_lines[:_z]   # Ctrl-Z 앞의 빈 줄은 남긴다 — 빈 카드(기본값)일 수 있다(리뷰 F)
 
         # *PARAMETER / *PARAMETER_EXPRESSION / *PARAMETER_LOCAL 해석 + &변수 치환.
         # resolver 를 self 에 공유해 메인 파일 파라미터가 include 라인(재귀 호출)에도 적용.
