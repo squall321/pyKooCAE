@@ -13574,6 +13574,8 @@ class DynaManager():
         self._block_tennodes = {}
         self._global_i10 = False
         self._keyword_line = ''
+        self._empty_keyword_names = []   # 지난 덱의 빈 키워드가 다음 출력에 되살아나지 않게
+        self._include_stack = []         # 예외로 끊긴 지난 읽기가 남긴 항목이 정상 인클루드를 순환으로 막지 않게
         lines_with_asterisk, keyword_dict = self.ReadKeywordsfromFile(path,lines_with_asterisk, keyword_dict)
         # 다운스트림 (DECOMPOSE_K, MERGE_K, fallback writer 등)에서 raw 키워드 데이터 접근용
         self._raw_keyword_dict = keyword_dict
