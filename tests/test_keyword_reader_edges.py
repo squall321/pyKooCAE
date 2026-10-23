@@ -159,6 +159,9 @@ case_deck = ("*KEYWORD\n" + nodes() + PROPS + SOLID + "*CASE_BEGIN_1\n*BOUNDARY_
 rc, log, text, els = run_kmm({"model.k": case_deck})
 check("*CASE_BEGIN_1·*CASE_END_1(위치가 뜻) — 끝에 모아 되살리지 않는다(옛 판과 같다)",
       rc == 0 and kwcount(text, "CASE_BEGIN_1") == 0 and kwcount(text, "CASE_END_1") == 0, f"rc={rc}")
+rc, log, text, els = run_kmm({"model.k": case_deck.replace("*CASE_BEGIN_1\n", "*CASE_BEGIN_1\nMEMORY=20M\n")})
+check("데이터 있는 *CASE_BEGIN_1 도 쓰지 않는다(짝 잃은 BEGIN 이 남지 않음)·안내 — 리뷰 F",
+      rc == 0 and "CASE_BEGIN" not in text and "MEMORY=20M" not in text and "*CASE 구간 표지" in log, f"rc={rc}")
 
 print("[4] *END 뒤의 *PARAMETER 정의는 쓰지 않는다 — 리뷰 D")
 par = ("*KEYWORD\n*PARAMETER\nR      thk       1.0\n" + nodes() + PROPS + SOLID + "*PART\nskin\n" + f10(2, 2, 1)
@@ -298,6 +301,24 @@ for label, first_card in (("첫 요소 두께 카드가 빈 줄", ""), ("첫 요
     got = shells(text) if "*ELEMENT_SHELL" in text else []
     check(f"{label} — rc 0·셸 2개 보존", rc == 0 and [g[:2] for g in got] == [["10", "2"], ["11", "2"]],
           f"rc={rc} {got} {log[-250:] if rc else ''}")
+
+print("[9] I10(%) THICKNESS 의 빈 두께 카드 · 덤프 머리말 줄바꿈 — 리뷰 F")
+TH10 = "".join(f"{x:>16}" for x in (0.5, 0.5, 0.5, 0.5, 0.0))
+body10 = (f"{10:10d}{2:10d}{1:10d}{2:10d}{3:10d}{4:10d}\n\n" + f"{11:10d}{2:10d}{5:10d}{6:10d}{7:10d}{8:10d}\n" + TH10 + "\n")
+rc, log, text, _ = run_kmm({"model.k": "*KEYWORD\n" + nodes() + PROPS + SOLID + SHELLP + "*ELEMENT_SHELL_THICKNESS %\n" + body10
+                            + "*END\n"})
+got = shells(text) if "*ELEMENT_SHELL" in text else []
+check("I10 THICKNESS 첫 두께 카드가 빈 줄 — 셸 2개 모두 남는다", rc == 0 and [g[:2] for g in got] == [["10", "2"], ["11", "2"]],
+      f"rc={rc} {got} {log[-200:] if rc else ''}")
+d = Path(tempfile.mkdtemp(dir=BASE))
+Path(d, "model.k").write_text("*KEYWORD\n" + nodes() + PROPS + SOLID + "*SET_PART_LIST_TITLE\nmyset\n" + f10(5) + f10(1) + "*END\n")
+Path(d, "opt.txt").write_text(OPT)
+r = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt.txt"], cwd=d, capture_output=True, text=True, timeout=600)
+dump = Path(d, "model_dump.k").read_text() if Path(d, "model_dump.k").exists() else ""
+glued = any(ln.startswith("$$") and "myset" in ln for ln in dump.splitlines())
+own = any(ln.strip() == "myset" for ln in dump.splitlines())
+check("덤프 *SET_PART_LIST_TITLE 제목이 $$ 줄에 붙지 않고 제 줄에 있다", r.returncode == 0 and own and not glued,
+      f"rc={r.returncode} own={own} glued={glued}")
 
 print()
 if FAILS:
