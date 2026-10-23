@@ -56,6 +56,8 @@ SI = dict(scale=0.001, rho="7850.0", e="2.1E+11", g=9.81, h=0.01, loc=0.0005, sp
 
 
 def run_dwi(u, mode="DampingSpring", itype="Sphere", extra=""):
+    imp = "" if u["imp_rho"] is None else (f"DensityImpactor,{u['imp_rho']}\nYoungsModulusImpactor,{u['imp_e']}\n"
+                                           "PoissonRatioImpactor,0.3\n")
     d = Path(tempfile.mkdtemp(dir=BASE))
     Path(d, "model.k").write_text(model(u["scale"], u["rho"], u["e"]))
     dim = u["sphere"] if itype == "Sphere" else u["cyl"]
@@ -73,10 +75,7 @@ Gravity,{u['g']}
 ImpactorType,{itype}
 ImpactorDimension,{dim}
 MeshSize,{u['mesh']}
-DensityImpactor,{u['imp_rho']}
-YoungsModulusImpactor,{u['imp_e']}
-PoissonRatioImpactor,0.3
-GenerationMode,{mode}
+{imp}GenerationMode,{mode}
 OffsetDistance,{u['off']}
 YoungsModulusWall,{u['wall_e']}
 PoissonRatioWall,0.3
@@ -132,12 +131,15 @@ check("  DamperMaterial ρ=1000·E=1e10 (옛 값)", m is not None and close(m[0]
 sec = card_after(text, "*SECTION_BEAM_TITLE", "DamperSetion", nth=2)
 check("  댐퍼 단면 = 0.001 m (옛 값)", sec is not None and all(close(v, 0.001) for v in sec[:4]), f"{sec}")
 
-print("[3] mm 모델 실린더 — 앞부분 재질")
+print("[3] mm 모델 실린더 — 앞부분 재질(충격체 재질도 없으면 단위계 폴백)")
+bare = dict(MM, imp_rho=None, imp_e=None)
 for mode in ("DampingSpring", "OutsideRigidPart"):
-    rc, log, text = run_dwi(MM, mode=mode, itype="cylinder")
+    rc, log, text = run_dwi(bare, mode=mode, itype="cylinder")
     m = mat(text, "ImpactorFrontMaterial")
-    check(f"{mode}·실린더 — ImpactorFrontMaterial ρ=7.8e-9·E=2.07e5", rc == 0 and m is not None and close(m[0], 7.8e-9)
+    check(f"{mode}·실린더·충격체 재질 없음 — 앞부분 ρ=7.8e-9·E=2.07e5", rc == 0 and m is not None and close(m[0], 7.8e-9)
           and close(m[1], 2.07e5), f"rc={rc} {m} {log[-200:] if rc else ''}")
+    m = mat(text, "ImpactorMaterial")
+    check("  충격체 본체도 단위계 폴백 7.8e-9·2.07e5", m is not None and close(m[0], 7.8e-9) and close(m[1], 2.07e5), f"{m}")
 
 print("[4] 값을 준 키는 그대로 쓴다")
 rc, log, text = run_dwi(MM, extra="DensityDamper,2e-9\nYoungsModulusDamper,5000\nDimensionDamper,2,2,2\n")
@@ -145,6 +147,68 @@ m = mat(text, "DamperMaterial")
 sec = card_after(text, "*SECTION_BEAM_TITLE", "DamperSetion", nth=2)
 check("DensityDamper·YoungsModulusDamper·DimensionDamper 지정 — 그 값", rc == 0 and m is not None and close(m[0], 2e-9)
       and close(m[1], 5000.0) and sec is not None and all(close(v, 2.0) for v in sec[:4]), f"rc={rc} {m} {sec}")
+
+print("[6] 명시한 Gravity 가 단위계 판정에 앞선다(_ResolveFallGravity 와 같은 순서) — 리뷰 E A1")
+d1 = model(SI["scale"], SI["rho"], SI["e"]).replace("*ELEMENT_SOLID", "*MAT_ELASTIC\n" + f10(5, "1.0E-12", 1.0, 0.3)
+                                                  + "*MAT_ELASTIC\n" + f10(6, "1.0E-12", 1.0, 0.3) + "*ELEMENT_SOLID")
+
+
+def run_deck(deck, u, mode="DampingSpring", itype="Sphere", extra=""):
+    imp = "" if u["imp_rho"] is None else (f"DensityImpactor,{u['imp_rho']}\nYoungsModulusImpactor,{u['imp_e']}\n"
+                                           "PoissonRatioImpactor,0.3\n")
+    d = Path(tempfile.mkdtemp(dir=BASE))
+    rc, log, text = None, None, None
+    Path(d, "model.k").write_text(deck)
+    dim = u["sphere"] if itype == "Sphere" else u["cyl"]
+    Path(d, "opt.txt").write_text(f"""*Inputfile
+model.k
+*Mode
+DROP_WEIGHT_IMPACT_TEST,1
+**DropWeightImpactTest,1
+TFinal,0.001
+DT,1e-06
+LocationX,{u['loc']}
+LocationY,{u['loc']}
+Height,{u['h']}
+Gravity,{u['g']}
+ImpactorType,{itype}
+ImpactorDimension,{dim}
+MeshSize,{u['mesh']}
+{imp}GenerationMode,{mode}
+OffsetDistance,{u['off']}
+YoungsModulusWall,{u['wall_e']}
+PoissonRatioWall,0.3
+DensityWall,{u['wall_rho']}
+{extra}**EndDropWeightImpactTest
+*End
+""")
+    r = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt.txt"], cwd=d, capture_output=True, text=True, timeout=900)
+    out = Path(d, "model_dwit.k")
+    return r.returncode, r.stdout + r.stderr, out.read_text() if out.exists() else ""
+
+
+rc, log, text = run_deck(d1, SI)
+m = mat(text, "DamperMaterial")
+check("SI 모델 + 밀도 1e-12 더미 재질 둘 + Gravity 9.81 — 댐퍼 SI(1000·1e10)", rc == 0 and m is not None
+      and close(m[0], 1000.0) and close(m[1], 1e10), f"rc={rc} {m}")
+d2 = model(MM["scale"], MM["rho"], MM["e"]).replace("*MAT_ELASTIC\n" + f10(1, MM["rho"], MM["e"], 0.3),
+                                                    "*MAT_HYPERELASTIC_RUBBER\n" + f10(1, MM["rho"], 0.49, 0) + f10(0.1, 0.2))
+rc, log, text = run_deck(d2, MM)
+m = mat(text, "DamperMaterial")
+check("mm 모델인데 밀도를 못 읽는 재질뿐 + Gravity 9810 — 댐퍼 ton-mm-s(1e-9·1e4)", rc == 0 and m is not None
+      and close(m[0], 1e-9) and close(m[1], 1e4), f"rc={rc} {m} {log[-200:] if rc else ''}")
+
+print("[7] 실린더 앞부분 재질을 주지 않으면 충격체 본체 재질을 물려받는다(Mid 와 같은 규칙) — 리뷰 E")
+al = dict(MM, imp_rho="2.7e-09", imp_e="70000.0")
+for mode in ("DampingSpring", "OutsideRigidPart"):
+    rc, log, text = run_dwi(al, mode=mode, itype="cylinder")
+    m = mat(text, "ImpactorFrontMaterial")
+    check(f"{mode}·실린더·충격체 알루미늄 — 앞부분 2.7e-9·7e4", rc == 0 and m is not None and close(m[0], 2.7e-9)
+          and close(m[1], 7e4), f"rc={rc} {m}")
+cyl3 = dict(MM, cyl="0.3,0.4,0.2,0.35,0.2,0.4,0.4")
+rc, log, text = run_dwi(cyl3, mode="OutsideRigidPart", itype="cylinder")
+check("OutsideRigidPart·3단 실린더(7값) — NameError 없이 rc 0·중간단 재질 생성", rc == 0 and mat(text, "ImpactorMidMaterial")
+      is not None, f"rc={rc} {log[-300:] if rc else ''}")
 
 print("[5] 누적 IMPACT 템플릿 — mesh_size·dimension_damper 는 시나리오에 있을 때만 넘긴다")
 import contextlib  # noqa: E402

@@ -3502,10 +3502,19 @@ class KooDynaAdvancedModification:
         "DimensionDamper": 1.0,
     }
 
-    def _DwiFallbacks(self, context):
+    def _DwiFallbacks(self, context, option=None):
         """DWI 폴백값을 모델 단위계에 맞춰 (단위계 이름, 값 dict) 로 돌려준다.
-        판정은 _ResolveFallGravity 와 같다(모델 재질 밀도 중앙값 < 1e-7 → ton-mm-s). 그 밖은 옛 SI 값.
+        판정 순서는 _ResolveFallGravity 와 같다 — 1) option["Gravity"](모델 단위 g: 9810 → ton-mm-s, 9.81 → SI)
+        2) 모델 재질 밀도 중앙값(< 1e-7 → ton-mm-s, 100~1e5 → SI). 둘 다 안 되면 옛 SI 값('미판정').
         반드시 벽·충격추·댐퍼 재질을 만들기 전에 부른다."""
+        try:
+            g = float((option or {}).get("Gravity") or 0.0)
+        except (TypeError, ValueError):
+            g = 0.0
+        if 9000.0 <= g <= 10500.0:
+            return "ton-mm-s", dict(self._DWI_FALLBACK_TONMMS)
+        if 9.0 <= g <= 10.5:
+            return "SI", dict(self._DWI_FALLBACK_SI)
         rhos = []
         matMan = self.dynaImporter.matManager
         for coll in (getattr(matMan, "materials", {}), getattr(matMan, "rigidMaterials", {})):
@@ -3518,18 +3527,21 @@ class KooDynaAdvancedModification:
                     rhos.append(r)
         if rhos:
             rhos.sort()
-            if rhos[len(rhos) // 2] < 1.0e-7:
+            med = rhos[len(rhos) // 2]
+            if med < 1.0e-7:
                 return "ton-mm-s", dict(self._DWI_FALLBACK_TONMMS)
-        return "SI", dict(self._DWI_FALLBACK_SI)
+            if 100.0 <= med <= 1.0e5:
+                return "SI", dict(self._DWI_FALLBACK_SI)
+        return "미판정", dict(self._DWI_FALLBACK_SI)
 
     def _warn_dwi_fallback(self, option, keys, where, unit="SI"):
         """재질 키 누락 시 어떤 폴백이 쓰였는지 경고. keys = [(키, 폴백값), ...]"""
         missing = [(k, v) for k, v in keys if k not in option]
         if not missing:
             return
-        if unit == "ton-mm-s":
-            print(f"  ⚠️  {where}: 재질 키 {len(missing)}개 누락 — 모델 단위계(ton-mm-s, 재질 밀도로 판정)에 맞춘 "
-                  f"폴백값을 씁니다.")
+        if unit in ("ton-mm-s", "SI"):
+            print(f"  ⚠️  {where}: 재질 키 {len(missing)}개 누락 — 모델 단위계({unit}, Gravity 또는 재질 밀도로 판정)에 "
+                  f"맞춘 폴백값을 씁니다.")
             for k, v in missing:
                 print(f"       {k} = {v:g}")
             print("       다른 값이 필요하면 옵션 파일에 명시하세요.")
@@ -3588,7 +3600,10 @@ class KooDynaAdvancedModification:
             matIDWall = 0
         
             
-        _unit, _fb = self._DwiFallbacks("DropWeightImpactTestwithPartialRigid")
+        _unit, _fb = self._DwiFallbacks("DropWeightImpactTestwithPartialRigid", option)
+        # 앞부분 재질을 주지 않으면 충격체 본체 재질을 물려받는다(Mid 와 같은 규칙). 그것도 없으면 단위계 폴백
+        _fb["YoungsModulusImpactorFront"] = option.get("YoungsModulusImpactor", _fb["YoungsModulusImpactorFront"])
+        _fb["DensityImpactorFront"] = option.get("DensityImpactor", _fb["DensityImpactorFront"])
         self._warn_dwi_fallback(option, [(k, _fb[k]) for k in ('YoungsModulusImpactorFront', 'DensityImpactorFront', 'YoungsModulusWall', 'DensityWall', 'YoungsModulusImpactor', 'DensityImpactor')], "DropWeightImpactTestwithPartialRigid", _unit)
         
         if "YoungsModulusImpactorFront" in option:
@@ -3599,13 +3614,20 @@ class KooDynaAdvancedModification:
         if "PoissonRatioImpactorFront" in option:
             nuImpactorFront = option["PoissonRatioImpactorFront"]
         else:
-            nuImpactorFront = 0.3
+            nuImpactorFront = option.get("PoissonRatioImpactor", 0.3)
 
         if "DensityImpactorFront" in option:
             rhoImpactorFront = option["DensityImpactorFront"]
         else:
             rhoImpactorFront = _fb["DensityImpactorFront"]
-            
+
+        # 3단 실린더 중간단(mid) 재질 — DropWeightImpactTest 와 같은 규칙. 이 함수에는 정의가 없어 7값 실린더가
+        # NameError(matIDImpactorMid)로 죽었다
+        matIDImpactorMid = option.get("MaterialIDImpactorMid", 0)
+        EImpactorMid = option.get("YoungsModulusImpactorMid", option.get("YoungsModulusImpactor", _fb["YoungsModulusImpactor"]))
+        nuImpactorMid = option.get("PoissonRatioImpactorMid", option.get("PoissonRatioImpactor", 0.3))
+        rhoImpactorMid = option.get("DensityImpactorMid", option.get("DensityImpactor", _fb["DensityImpactor"]))
+
         if "YoungsModulusWall" in option:
             EWall = option["YoungsModulusWall"]
         else:
@@ -3631,14 +3653,7 @@ class KooDynaAdvancedModification:
             rhoImpactor = option["DensityImpactor"]
         else:
             rhoImpactor = _fb["DensityImpactor"]
-
-        # 3단 실린더 중간단(mid) 재질 — DropWeightImpactTest 와 같은 규칙. 이 함수에는 정의가 없어 7값 실린더가
-        # NameError(matIDImpactorMid)로 죽었다
-        matIDImpactorMid = option.get("MaterialIDImpactorMid", 0)
-        EImpactorMid = option.get("YoungsModulusImpactorMid", option.get("YoungsModulusImpactor", _fb["YoungsModulusImpactor"]))
-        nuImpactorMid = option.get("PoissonRatioImpactorMid", option.get("PoissonRatioImpactor", 0.3))
-        rhoImpactorMid = option.get("DensityImpactorMid", option.get("DensityImpactor", _fb["DensityImpactor"]))
-
+            
         
         if "Type" in option:
             impactorType = option["Type"]
@@ -4006,7 +4021,10 @@ class KooDynaAdvancedModification:
             matIDWall = 0
         
             
-        _unit, _fb = self._DwiFallbacks("DropWeightImpactTest")
+        _unit, _fb = self._DwiFallbacks("DropWeightImpactTest", option)
+        # 앞부분 재질을 주지 않으면 충격체 본체 재질을 물려받는다(Mid 와 같은 규칙). 그것도 없으면 단위계 폴백
+        _fb["YoungsModulusImpactorFront"] = option.get("YoungsModulusImpactor", _fb["YoungsModulusImpactorFront"])
+        _fb["DensityImpactorFront"] = option.get("DensityImpactor", _fb["DensityImpactorFront"])
         self._warn_dwi_fallback(option, [(k, _fb[k]) for k in ('YoungsModulusImpactorFront', 'DensityImpactorFront', 'YoungsModulusDamper', 'DensityDamper', 'YoungsModulusWall', 'DensityWall', 'YoungsModulusImpactor', 'DensityImpactor')], "DropWeightImpactTest", _unit)
         
         if "YoungsModulusImpactorFront" in option:
@@ -4017,7 +4035,7 @@ class KooDynaAdvancedModification:
         if "PoissonRatioImpactorFront" in option:
             nuImpactorFront = option["PoissonRatioImpactorFront"]
         else:
-            nuImpactorFront = 0.3
+            nuImpactorFront = option.get("PoissonRatioImpactor", 0.3)
 
         if "DensityImpactorFront" in option:
             rhoImpactorFront = option["DensityImpactorFront"]
