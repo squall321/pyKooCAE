@@ -12272,6 +12272,20 @@ class DynaManager():
 
         latest_fmt = 'i10' if getattr(self, '_global_i10', False) else None
         latest_tennodes = False
+        seen_end = False  # 이 파일에 *END 가 있었나 — 있으면 파일 끝 처리는 옛 동작 그대로
+
+        def _store_block(kw, block, fmt, tennodes):
+            if kw not in keyword_dict:
+                keyword_dict[kw] = []
+            keyword_dict[kw].append(block)
+            # 블록별 포맷 태깅 (keyword_dict 블록과 1:1 정렬)
+            self._block_formats.setdefault(kw, []).append(fmt)
+            self._block_tennodes.setdefault(kw, []).append(tennodes)
+            # source_file 태깅
+            if kw not in self._include_sources:
+                self._include_sources[kw] = []
+            self._include_sources[kw].append(path)
+
         for line in raw_lines:
                 # Check if the line starts with an asterisk
                 if line.startswith('*'):
@@ -12289,16 +12303,7 @@ class DynaManager():
                         line = line.split(' ')[0].strip().rstrip('%+-')
                     lines_with_asterisk.append(line[1:])
                     if len(curLines) > 0:
-                        if latest_keyword not in keyword_dict:
-                            keyword_dict[latest_keyword] = []
-                        keyword_dict[latest_keyword].append(curLines)
-                        # 블록별 포맷 태깅 (keyword_dict 블록과 1:1 정렬)
-                        self._block_formats.setdefault(latest_keyword, []).append(latest_fmt)
-                        self._block_tennodes.setdefault(latest_keyword, []).append(latest_tennodes)
-                        # source_file 태깅
-                        if latest_keyword not in self._include_sources:
-                            self._include_sources[latest_keyword] = []
-                        self._include_sources[latest_keyword].append(path)
+                        _store_block(latest_keyword, curLines, latest_fmt, latest_tennodes)
                     elif latest_keyword == "CONTROL_MPP_IO_NODUMP":
                         pass
                     elif latest_keyword == "":
@@ -12313,6 +12318,7 @@ class DynaManager():
                     curLines = []
 
                     latest_keyword = line[1:].strip()
+                    seen_end = seen_end or latest_keyword == 'END'
                     # LS-DYNA 포맷 마커: 키워드 끝 '%'=I10, '+'=long, '-'=표준 강제, *KEYWORD I10=Y=전역
                     _kwtail = raw_kwline.split('$')[0].split('#')[0].rstrip()  # 후행 주석 제거
                     # "(ten nodes format)" 선언 — Card 2 의 절점 개수(10 vs 8)를 결정한다
@@ -12337,9 +12343,24 @@ class DynaManager():
                 else:
                     curLines.append(line)
 
+        # 파일 끝 — 블록은 다음 '*' 줄을 만날 때만 마감돼, *END 없이 끝나는 파일의 마지막 블록이
+        # 사라졌다(마지막이 *INCLUDE 면 그 파일을 아예 읽지 않아 요소가 무증상으로 빠졌다).
+        # 그래서 *END 없는 파일은 끝에 *END 가 있는 것처럼 마감한다(위 '*' 줄 분기와 같은 규칙).
+        # *END 가 있던 파일은 옛 동작 그대로 둔다 — 그 뒤에 놓인 블록을 새로 읽지 않는다.
+        if not seen_end and latest_keyword:
+            if latest_keyword == 'INCLUDE':
+                includedList.extend(curLines)
+            if curLines:
+                _store_block(latest_keyword, curLines, latest_fmt, latest_tennodes)
+            elif latest_keyword not in ('KEYWORD', 'CONTROL_MPP_IO_NODUMP'):
+                print("Warning: Empty keyword found: " + latest_keyword)
+                empty_Keywords.append(latest_keyword)
+
         # include 파일 처리
         for curFile in includedList:
             include_path = curFile.strip()
+            if not include_path:
+                continue  # *INCLUDE 블록의 빈 줄은 파일 이름이 아니다(빈 이름이 폴더로 열려 죽었다)
             if not os.path.isabs(include_path):
                 include_path = os.path.join(os.path.dirname(path), include_path)
             if os.path.exists(include_path):
