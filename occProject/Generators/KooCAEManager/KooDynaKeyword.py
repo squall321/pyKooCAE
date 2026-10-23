@@ -5944,15 +5944,20 @@ class ElementShell(DynaKeyword):
                         r.extend(['0'] * (rowmax - len(r)))
                 self.parameters.append(parameterList)
                 continue
+            # 빈 줄은 셸 카드가 아니다(EID·PID·N 은 기본값이 없다) — 그대로 두면 int('') 로 죽었다
+            rows = [l for l in elementShellKeywords[i] if str(l).strip()]
+            if len(rows) != len(elementShellKeywords[i]):
+                print(f"  Warning: ELEMENT_SHELL 블록의 빈 줄 {len(elementShellKeywords[i]) - len(rows)}개를 건너뛰었다 — "
+                      f"LS-DYNA 는 빈 줄을 EID 없는 카드로 읽는다(덱 확인)")
             spaceVector = []
             parameterList = []
-            for j in range(len(elementShellKeywords[i])):
+            for j in range(len(rows)):
                 if j == 0:
-                    curStrVector = str(elementShellKeywords[i][j])
+                    curStrVector = str(rows[j])
                     length = len(curStrVector)/8
                     spaceVector = [8] * int(length)
                 #parameters = elementShellKeywords[i][j].parse_whole(spaceVector)
-                parameters = self.parse_whole(elementShellKeywords[i][j], spaceVector)
+                parameters = self.parse_whole(rows[j], spaceVector)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
     
@@ -6381,27 +6386,33 @@ class ElementSolid(DynaKeyword):
                         r.extend(['0'] * (rowmax - len(r)))
                 self.parameters.append(parameterList)
                 continue
+            # 빈 줄은 요소 카드가 아니다(R16 Appendix V — 빈 줄은 기본값 카드인데 EID·PID·N 은 기본값이 없다).
+            # 그대로 두면 int('') 로 죽고, 둘째 줄이 비면 1줄/2줄 판별까지 뒤집혔다.
+            rows = [l for l in block if str(l).strip()]
+            if len(rows) != len(block):
+                print(f"  Warning: ELEMENT_SOLID 블록의 빈 줄 {len(block) - len(rows)}개를 건너뛰었다 — "
+                      f"LS-DYNA 는 빈 줄을 EID 없는 카드로 읽는다(덱 확인)")
             spaceVector = []
             parameterList = []
             mode = 1
-            for j in range(len(block)):
+            for j in range(len(rows)):
                 if j == 0:
-                    curStrVector = str(elementSolidKeywords[i][j])
+                    curStrVector = str(rows[j])
                     length = int(len(curStrVector)/8)
                     spaceVector = [8] * length
                     mode = 1
-                    parameters = self.parse_whole(elementSolidKeywords[i][j], spaceVector)
+                    parameters = self.parse_whole(rows[j], spaceVector)
                 if j == 1:
-                    curStrVector = str(elementSolidKeywords[i][j])
+                    curStrVector = str(rows[j])
                     length2 = int(len(curStrVector)/8)
                     spaceVector2 = [8] * length2
                     if length2 != length:
                         mode = 2
-                    parameters = self.parse_whole(elementSolidKeywords[i][j], spaceVector2)
+                    parameters = self.parse_whole(rows[j], spaceVector2)
                 elif j%2 == 0:
-                    parameters = self.parse_whole(elementSolidKeywords[i][j], spaceVector)
+                    parameters = self.parse_whole(rows[j], spaceVector)
                 else:
-                    parameters = self.parse_whole(elementSolidKeywords[i][j], spaceVector2)
+                    parameters = self.parse_whole(rows[j], spaceVector2)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
     
