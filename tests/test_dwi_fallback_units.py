@@ -194,6 +194,12 @@ rc, log, text = run_deck(d1, SI)
 m = mat(text, "DamperMaterial")
 check("SI 모델 + 밀도 1e-12 더미 재질 둘 + Gravity 9.81 — 댐퍼 SI(1000·1e10)", rc == 0 and m is not None
       and close(m[0], 1000.0) and close(m[1], 1e10), f"rc={rc} {m}")
+check("  Gravity(SI) 와 밀도 중앙값(ton-mm-s)이 엇갈린다고 🔴 로 알린다 — 리뷰 F", "🔴" in log and "둘 중 하나가 틀렸다" in log,
+      [ln for ln in log.splitlines() if "Gravity" in ln][:2])
+rc, log, text = run_dwi(dict(MM, g=9.81))
+check("mm 모델 + Gravity 9.81(틀린 값) — 엇갈림 🔴", rc == 0 and "둘 중 하나가 틀렸다" in log, f"rc={rc}")
+rc, log, text = run_dwi(MM)
+check("  mm 모델 + Gravity 9810(맞는 값) — 엇갈림 경고 없음", rc == 0 and "둘 중 하나가 틀렸다" not in log, f"rc={rc}")
 d2 = model(MM["scale"], MM["rho"], MM["e"]).replace("*MAT_ELASTIC\n" + f10(1, MM["rho"], MM["e"], 0.3),
                                                     "*MAT_HYPERELASTIC_RUBBER\n" + f10(1, MM["rho"], 0.49, 0) + f10(0.1, 0.2))
 rc, log, text = run_deck(d2, MM)

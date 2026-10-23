@@ -3511,10 +3511,7 @@ class KooDynaAdvancedModification:
             g = float((option or {}).get("Gravity") or 0.0)
         except (TypeError, ValueError):
             g = 0.0
-        if 9000.0 <= g <= 10500.0:
-            return "ton-mm-s", dict(self._DWI_FALLBACK_TONMMS)
-        if 9.0 <= g <= 10.5:
-            return "SI", dict(self._DWI_FALLBACK_SI)
+        g_unit = "ton-mm-s" if 9000.0 <= g <= 10500.0 else ("SI" if 9.0 <= g <= 10.5 else None)
         rhos = []
         matMan = self.dynaImporter.matManager
         for coll in (getattr(matMan, "materials", {}), getattr(matMan, "rigidMaterials", {})):
@@ -3525,13 +3522,20 @@ class KooDynaAdvancedModification:
                     continue
                 if r > 0.0:
                     rhos.append(r)
+        d_unit, med = None, None
         if rhos:
             rhos.sort()
             med = rhos[len(rhos) // 2]
-            if med < 1.0e-7:
-                return "ton-mm-s", dict(self._DWI_FALLBACK_TONMMS)
-            if 100.0 <= med <= 1.0e5:
-                return "SI", dict(self._DWI_FALLBACK_SI)
+            d_unit = "ton-mm-s" if med < 1.0e-7 else ("SI" if 100.0 <= med <= 1.0e5 else None)
+        if g_unit and d_unit and g_unit != d_unit:
+            # 둘 다 뚜렷한데 엇갈리면 하나가 틀렸다 — 조용히 고르지 않는다(리뷰 F). 순서는 _ResolveFallGravity 와 같게 Gravity.
+            print(f"  🔴 {context}: Gravity {g:g} 는 {g_unit} 인데 모델 재질 밀도 중앙값 {med:.3g} 는 {d_unit} 다 — 폴백 재질은 "
+                  f"Gravity 쪽({g_unit})으로 넣는다. 둘 중 하나가 틀렸다(옵션 파일의 Gravity·재질 단위 확인)")
+        unit = g_unit or d_unit
+        if unit == "ton-mm-s":
+            return unit, dict(self._DWI_FALLBACK_TONMMS)
+        if unit == "SI":
+            return unit, dict(self._DWI_FALLBACK_SI)
         return "미판정", dict(self._DWI_FALLBACK_SI)
 
     def _warn_dwi_fallback(self, option, keys, where, unit="SI"):
