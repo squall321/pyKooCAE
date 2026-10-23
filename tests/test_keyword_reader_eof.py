@@ -13,7 +13,8 @@
   [4] (2026-10-23 추가) *END 에서 그 파일 읽기를 멈춘다. R16 *END "Data in a keyword file beyond a
       *END command are not read", *INCLUDE "*END terminates the include file". 옛 판은 *END 뒤 블록을
       (마지막만 빼고) 읽어 출력의 *END 앞으로 옮겼다 — *END 뒤에 꺼 둔 카드가 살아났다.
-  [5] (2026-10-23 추가) Ctrl-Z(0x1A, DOS 파일 끝 표시) 앞까지만 읽는다. 옛 판은 그 줄을 데이터로 먹어 죽었다.
+  [5] (2026-10-23 추가) 파일 끝에 붙은 Ctrl-Z(0x1A, DOS 파일 끝 표시)만 지운다. 옛 판은 그 줄을 데이터로 먹어 죽었다.
+      파일 중간의 0x1A 는 리눅스 LS-DYNA 에게 보통 글자라 그대로 둔다(첫 수정은 첫 0x1A 에서 잘라 뒤가 사라졌다 — 리뷰 D).
 """
 import shutil
 import subprocess
@@ -133,16 +134,23 @@ rc, log, text, els = run_kmm({"model.k": parent, "n.k": "*KEYWORD\n" + nodes() +
                               + "*NODE\n       1        5.000000        5.000000        5.000000\n"})
 check("인클루드의 *END 뒤 블록은 버리고 부모 파일은 이어 읽는다", rc == 0 and text == par_ref, f"rc={rc} els={els}")
 
-print("[5] Ctrl-Z(0x1A) — 그 앞까지만 읽는다")
+print("[5] Ctrl-Z(0x1A) — 파일 끝에 붙은 것만 지우고, 파일 중간의 0x1A 는 그대로(리뷰 D)")
 noend = "*KEYWORD\n" + nodes() + PROPS + SOLID
 rc, log, ref0, els = run_kmm({"model.k": noend})
 check("기준 — *END 없이 *ELEMENT_SOLID 로 끝남", rc == 0 and els == WANT, f"rc={rc}")
-for label, tail in (("마지막 줄 뒤 Ctrl-Z", "\x1a"),
-                    ("Ctrl-Z 뒤에 *NODE(절점 1 재정의)", "\x1a\n*NODE\n       1        5.000000        5.000000        5.000000\n")):
+for label, tail in (("마지막 줄 뒤 Ctrl-Z", "\x1a"), ("마지막 줄 뒤 Ctrl-Z·줄바꿈·공백", "\x1a\n  \n"),
+                    ("Ctrl-Z 두 개", "\x1a\x1a")):
     rc, log, text, els = run_kmm({"model.k": noend + tail})
     check(f"{label} — 출력이 기준과 같다", rc == 0 and text == ref0, f"rc={rc} {log[-200:]}")
 rc, log, text, els = run_kmm({"model.k": noend[:-1] + "\x1a"})
 check("마지막 데이터 줄에 붙은 Ctrl-Z — 그 앞까지 읽는다", rc == 0 and text == ref0, f"rc={rc} {log[-200:]}")
+mid = "*KEYWORD\n" + nodes() + PROPS + "$ note \x1a pasted\n" + SOLID + "*END\n"
+rc, log, text, els = run_kmm({"model.k": mid})
+check("주석 줄 안의 0x1A — 그 뒤도 읽는다(요소 보존)", rc == 0 and els == WANT, f"rc={rc} {els}")
+rc, log, text, els = run_kmm({"model.k": "*KEYWORD\n*TITLE\nmy \x1a title\n" + nodes() + PROPS + SOLID + "*END\n"})
+check("*TITLE 안의 0x1A — 그 뒤도 읽는다", rc == 0 and els == WANT, f"rc={rc} {log[-200:]}")
+rc, log, text, els = run_kmm({"model.k": noend + "\x1a\n*NODE\n       1        5.000000        5.000000        5.000000\n"})
+check("데이터 블록 안 0x1A 뒤에 내용 — 조용히 자르지 않는다(옛 판처럼 오류)", rc != 0 and "\\x1a" in log, f"rc={rc}")
 
 print()
 if FAILS:

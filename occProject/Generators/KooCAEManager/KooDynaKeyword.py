@@ -12272,12 +12272,17 @@ class DynaManager():
         # 파일 읽기
         with open(path, 'r', errors='replace') as f:
             raw_lines = f.readlines()
-        # Ctrl-Z(0x1A, DOS 파일 끝 표시) 뒤는 읽지 않는다 — 데이터 줄로 들어가 파서가 죽었다
-        for _i, _l in enumerate(raw_lines):
-            if '\x1a' in _l:
-                _head = _l.split('\x1a', 1)[0]
-                raw_lines = raw_lines[:_i] + ([_head + '\n'] if _head.strip() else [])
-                break
+        # 파일 끝의 Ctrl-Z(0x1A, DOS 파일 끝 표시)만 지운다 — 데이터 줄로 들어가 파서가 죽었다.
+        # 파일 중간의 0x1A 는 리눅스 LS-DYNA 에게 보통 글자라 그대로 둔다(주석·제목 안이면 무해, 데이터 줄이면 옛 판처럼
+        # 오류). 처음엔 첫 0x1A 에서 잘라 주석 안 0x1A 뒤가 조용히 사라졌다(리뷰 D).
+        _k = len(raw_lines)
+        while _k > 0 and not raw_lines[_k - 1].replace('\x1a', '').strip():
+            _k -= 1   # 파일 끝의 공백·0x1A 만 있는 줄들
+        _glued = _k > 0 and raw_lines[_k - 1].rstrip().endswith('\x1a')
+        if _glued or any('\x1a' in _l for _l in raw_lines[_k:]):
+            raw_lines = raw_lines[:_k]
+            if _glued:
+                raw_lines[-1] = raw_lines[-1].rstrip().rstrip('\x1a') + '\n'
 
         # *PARAMETER / *PARAMETER_EXPRESSION / *PARAMETER_LOCAL 해석 + &변수 치환.
         # resolver 를 self 에 공유해 메인 파일 파라미터가 include 라인(재귀 호출)에도 적용.
