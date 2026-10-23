@@ -53,6 +53,31 @@ echo "==========================================================================
 echo "  원본  : $LIB_DIR"
 echo "  모듈  : ${MODULES[*]}"
 
+# 🔴 번들 라이브러리 GLIBC 검사 — .bin 만 보면 배포 폴더의 .so 오염을 놓친다(2026-10-23: 지난 배포 폴더의 GLIBC 2.38
+#    libcrypto·libssl·libreadline 이 빌드마다 다시 실려 2.35 노드·SIF 에서 import ssl 이 죽었다). 막지는 않고 알린다.
+GLIBC_MAX="${GLIBC_MAX:-2.35}"
+for M in "${MODULES[@]}"; do
+    # 파일마다 프로세스를 띄우면 수천 개에서 몇 분 걸린다 → readelf 한 번에 여러 파일(/dev/null 을 끼워 늘 'File:' 머리말).
+    # readelf -V 는 버전 섹션만 읽어 700MB .bin 도 1초 안이다.
+    bad="$(find "$LIB_DIR/$M" -type f \( -name '*.so*' -o -name '*.bin' \) -print0 2>/dev/null \
+        | xargs -0 -r readelf -V /dev/null 2>/dev/null \
+        | awk -v max="$GLIBC_MAX" '
+            /^File: / { f = $2; n = split(f, p, "/"); f = p[n]; next }
+            { s = $0
+              while (match(s, /GLIBC_[0-9]+\.[0-9]+/)) {
+                  v = substr(s, RSTART + 6, RLENGTH - 6); s = substr(s, RSTART + RLENGTH)
+                  split(v, a, "."); split(max, b, ".")
+                  if (a[1] + 0 > b[1] + 0 || (a[1] + 0 == b[1] + 0 && a[2] + 0 > b[2] + 0))
+                      if (!(f in bad) || v > bad[f]) bad[f] = v
+              } }
+            END { for (f in bad) printf "%s(%s) ", f, bad[f] }')"
+    if [ -n "$bad" ]; then
+        echo "  🔴 $M: GLIBC ${GLIBC_MAX} 초과 라이브러리 — 2.35 노드·SIF 에서 못 읽는다: $bad"
+    else
+        echo "  ✅ $M: 번들 라이브러리 GLIBC <= ${GLIBC_MAX}"
+    fi
+done
+
 rc=0
 for TARGET in "$STP_DIR" "$DATA_STP_DIR"; do
     if [ ! -d "$TARGET" ]; then
