@@ -10,6 +10,10 @@
   [2] KooPart mode2(10절점 형식)의 오면체 분기가 등록 수를 올리지 않아 '🔴 개수 불일치' 오탐이 났다.
   [3] 회귀: *END 가 있던 파일은 옛 동작 그대로다. *END 뒤에 놓인 꼬리(잡문·*NODE·*INCLUDE)를
       새로 읽지 않는다 — 출력이 *END 로 끝난 덱과 바이트 같아야 한다.
+  [4] (2026-10-23 추가) *END 에서 그 파일 읽기를 멈춘다. R16 *END "Data in a keyword file beyond a
+      *END command are not read", *INCLUDE "*END terminates the include file". 옛 판은 *END 뒤 블록을
+      (마지막만 빼고) 읽어 출력의 *END 앞으로 옮겼다 — *END 뒤에 꺼 둔 카드가 살아났다.
+  [5] (2026-10-23 추가) Ctrl-Z(0x1A, DOS 파일 끝 표시) 앞까지만 읽는다. 옛 판은 그 줄을 데이터로 먹어 죽었다.
 """
 import shutil
 import subprocess
@@ -108,6 +112,37 @@ for label, tail in (("빈 줄·잡문", "\ngarbage after end line\n"),
                     ("*INCLUDE parked.k(파트 2·요소 9)", "*INCLUDE\nparked.k\n")):
     rc, log, text, els = run_kmm({"model.k": deck + tail, "parked.k": parked})
     check(f"*END 뒤 {label} — 출력이 기준과 같다", rc == 0 and text == ref, f"rc={rc} els={els}")
+
+print("[4] *END 에서 그 파일 읽기를 멈춘다 — 뒤의 블록이 여럿이어도")
+three = ("*NODE\n       1        5.000000        5.000000        5.000000\n*PART\nparked3\n" + f10(3, 1, 1)
+         + "*INCLUDE\nparked.k\n")
+rc, log, text, els = run_kmm({"model.k": deck + three, "parked.k": parked})
+check("메인 덱 *END 뒤 블록 셋(*NODE·*PART·*INCLUDE) — 출력이 기준과 같다", rc == 0 and text == ref, f"rc={rc} els={els}")
+check("  뒤 키워드 3개를 읽지 않았다고 알린다", "*END 뒤 키워드 3개" in log,
+      [ln for ln in log.splitlines() if "*END" in ln])
+inc_main = "*KEYWORD\n" + PROPS + "*INCLUDE\nsub.k\n*END\n"
+sub = "*KEYWORD\n" + nodes() + SOLID + "*END\n"
+rc, log, inc_ref, els = run_kmm({"model.k": inc_main, "sub.k": sub})
+check("기준 — 인클루드가 *END 로 끝남", rc == 0 and els == WANT, f"rc={rc}")
+rc, log, text, els = run_kmm({"model.k": inc_main, "sub.k": sub + three, "parked.k": parked})
+check("인클루드 *END 뒤 블록 셋 — 그 파일만 끝나고 출력은 기준과 같다", rc == 0 and text == inc_ref, f"rc={rc} els={els}")
+parent = "*KEYWORD\n" + PROPS + "*INCLUDE\nn.k\n" + SOLID + "*END\n"
+rc, log, par_ref, els = run_kmm({"model.k": parent, "n.k": "*KEYWORD\n" + nodes() + "*END\n"})
+check("기준 — 절점만 든 인클루드 뒤에 부모가 요소를 정의", rc == 0 and els == WANT, f"rc={rc}")
+rc, log, text, els = run_kmm({"model.k": parent, "n.k": "*KEYWORD\n" + nodes() + "*END\n"
+                              + "*NODE\n       1        5.000000        5.000000        5.000000\n"})
+check("인클루드의 *END 뒤 블록은 버리고 부모 파일은 이어 읽는다", rc == 0 and text == par_ref, f"rc={rc} els={els}")
+
+print("[5] Ctrl-Z(0x1A) — 그 앞까지만 읽는다")
+noend = "*KEYWORD\n" + nodes() + PROPS + SOLID
+rc, log, ref0, els = run_kmm({"model.k": noend})
+check("기준 — *END 없이 *ELEMENT_SOLID 로 끝남", rc == 0 and els == WANT, f"rc={rc}")
+for label, tail in (("마지막 줄 뒤 Ctrl-Z", "\x1a"),
+                    ("Ctrl-Z 뒤에 *NODE(절점 1 재정의)", "\x1a\n*NODE\n       1        5.000000        5.000000        5.000000\n")):
+    rc, log, text, els = run_kmm({"model.k": noend + tail})
+    check(f"{label} — 출력이 기준과 같다", rc == 0 and text == ref0, f"rc={rc} {log[-200:]}")
+rc, log, text, els = run_kmm({"model.k": noend[:-1] + "\x1a"})
+check("마지막 데이터 줄에 붙은 Ctrl-Z — 그 앞까지 읽는다", rc == 0 and text == ref0, f"rc={rc} {log[-200:]}")
 
 print()
 if FAILS:

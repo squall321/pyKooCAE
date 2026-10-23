@@ -12254,6 +12254,12 @@ class DynaManager():
         # 파일 읽기
         with open(path, 'r', errors='replace') as f:
             raw_lines = f.readlines()
+        # Ctrl-Z(0x1A, DOS 파일 끝 표시) 뒤는 읽지 않는다 — 데이터 줄로 들어가 파서가 죽었다
+        for _i, _l in enumerate(raw_lines):
+            if '\x1a' in _l:
+                _head = _l.split('\x1a', 1)[0]
+                raw_lines = raw_lines[:_i] + ([_head + '\n'] if _head.strip() else [])
+                break
 
         # *PARAMETER / *PARAMETER_EXPRESSION / *PARAMETER_LOCAL 해석 + &변수 치환.
         # resolver 를 self 에 공유해 메인 파일 파라미터가 include 라인(재귀 호출)에도 적용.
@@ -12272,7 +12278,7 @@ class DynaManager():
 
         latest_fmt = 'i10' if getattr(self, '_global_i10', False) else None
         latest_tennodes = False
-        seen_end = False  # 이 파일에 *END 가 있었나 — 있으면 파일 끝 처리는 옛 동작 그대로
+        seen_end = False  # 이 파일을 *END 에서 멈췄나 — 멈췄으면 마지막 블록은 이미 마감됐다
 
         def _store_block(kw, block, fmt, tennodes):
             if kw not in keyword_dict:
@@ -12286,7 +12292,7 @@ class DynaManager():
                 self._include_sources[kw] = []
             self._include_sources[kw].append(path)
 
-        for line in raw_lines:
+        for _ln, line in enumerate(raw_lines):
                 # Check if the line starts with an asterisk
                 if line.startswith('*'):
                     if latest_keyword == 'INCLUDE':
@@ -12318,7 +12324,17 @@ class DynaManager():
                     curLines = []
 
                     latest_keyword = line[1:].strip()
-                    seen_end = seen_end or latest_keyword == 'END'
+                    if latest_keyword == 'END':
+                        # *END 는 이 파일의 끝이다 — R16 *END "Data in a keyword file beyond a *END command are
+                        # not read", *INCLUDE "*END terminates the include file". 옛 판은 뒤 블록을 읽어 출력의
+                        # *END 앞으로 옮겼다(*END 뒤에 꺼 둔 카드가 살아났다).
+                        seen_end = True
+                        _rest = [l.split()[0] for l in raw_lines[_ln + 1:] if l.startswith('*') and l.split()]
+                        if _rest:
+                            print(f"  Warning: {os.path.basename(path)}: *END 뒤 키워드 {len(_rest)}개"
+                                  f"({', '.join(_rest[:5])}{' …' if len(_rest) > 5 else ''})는 읽지 않았다"
+                                  f" — LS-DYNA 도 *END 뒤는 읽지 않는다")
+                        break
                     # LS-DYNA 포맷 마커: 키워드 끝 '%'=I10, '+'=long, '-'=표준 강제, *KEYWORD I10=Y=전역
                     _kwtail = raw_kwline.split('$')[0].split('#')[0].rstrip()  # 후행 주석 제거
                     # "(ten nodes format)" 선언 — Card 2 의 절점 개수(10 vs 8)를 결정한다
@@ -12346,7 +12362,7 @@ class DynaManager():
         # 파일 끝 — 블록은 다음 '*' 줄을 만날 때만 마감돼, *END 없이 끝나는 파일의 마지막 블록이
         # 사라졌다(마지막이 *INCLUDE 면 그 파일을 아예 읽지 않아 요소가 무증상으로 빠졌다).
         # 그래서 *END 없는 파일은 끝에 *END 가 있는 것처럼 마감한다(위 '*' 줄 분기와 같은 규칙).
-        # *END 가 있던 파일은 옛 동작 그대로 둔다 — 그 뒤에 놓인 블록을 새로 읽지 않는다.
+        # *END 에서 멈춘 파일은 그 자리에서 이미 마감됐다.
         if not seen_end and latest_keyword:
             if latest_keyword == 'INCLUDE':
                 includedList.extend(curLines)
