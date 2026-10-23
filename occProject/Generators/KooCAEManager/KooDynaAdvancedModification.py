@@ -3631,7 +3631,14 @@ class KooDynaAdvancedModification:
             rhoImpactor = option["DensityImpactor"]
         else:
             rhoImpactor = _fb["DensityImpactor"]
-            
+
+        # 3단 실린더 중간단(mid) 재질 — DropWeightImpactTest 와 같은 규칙. 이 함수에는 정의가 없어 7값 실린더가
+        # NameError(matIDImpactorMid)로 죽었다
+        matIDImpactorMid = option.get("MaterialIDImpactorMid", 0)
+        EImpactorMid = option.get("YoungsModulusImpactorMid", option.get("YoungsModulusImpactor", _fb["YoungsModulusImpactor"]))
+        nuImpactorMid = option.get("PoissonRatioImpactorMid", option.get("PoissonRatioImpactor", 0.3))
+        rhoImpactorMid = option.get("DensityImpactorMid", option.get("DensityImpactor", _fb["DensityImpactor"]))
+
         
         if "Type" in option:
             impactorType = option["Type"]
