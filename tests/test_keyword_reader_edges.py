@@ -236,6 +236,17 @@ check("첫 덱의 빈 키워드는 기록됐다", first == ["CONTROL_MPP_IO_NOD3
 check("  둘째 덱을 읽은 뒤 빈 키워드·인클루드 스택이 비었다", mgr._empty_keyword_names == [] and mgr._include_stack == [],
       f"{mgr._empty_keyword_names} {mgr._include_stack}")
 
+print("[8] *ELEMENT_SHELL_THICKNESS — 빈 두께 카드(=섹션 두께)·BETA 생략 줄에서 죽지 않는다 — 리뷰 D")
+TH = "".join(f"{x:>16}" for x in (0.5, 0.5, 0.5, 0.5))
+for label, first_card in (("첫 요소 두께 카드가 빈 줄", ""), ("첫 요소 두께 카드가 BETA 생략(64자)", TH)):
+    body = (f"{10:8d}{2:8d}{1:8d}{2:8d}{3:8d}{4:8d}\n{first_card}\n"
+            f"{11:8d}{2:8d}{5:8d}{6:8d}{7:8d}{8:8d}\n" + TH + f"{0.0:>16}\n")
+    rc, log, text, _ = run_kmm({"model.k": "*KEYWORD\n" + nodes() + PROPS + SOLID + SHELLP + "*ELEMENT_SHELL_THICKNESS\n" + body
+                                + "*END\n"})
+    got = shells(text) if "*ELEMENT_SHELL" in text else []
+    check(f"{label} — rc 0·셸 2개 보존", rc == 0 and [g[:2] for g in got] == [["10", "2"], ["11", "2"]],
+          f"rc={rc} {got} {log[-250:] if rc else ''}")
+
 print()
 if FAILS:
     print(f"FAIL {len(FAILS)}건 — 실행 폴더를 남긴다: {BASE}")

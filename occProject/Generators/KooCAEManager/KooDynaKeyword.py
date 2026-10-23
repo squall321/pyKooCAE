@@ -6053,7 +6053,9 @@ class ElementShellThickness(DynaKeyword):
                         spaceVector1 = [8] * int(length)
                         curStrVector2 = str(elementShellThickKeywords[i][j+1])
                         length2 = len(curStrVector2)/16
-                        spaceVector2 = [16] * int(length2)
+                        # THIC1~4·BETA 는 늘 5칸 — 첫 두께 줄이 빈 줄(=섹션 두께, R16 정상 카드)이거나 BETA 를
+                        # 생략한 64자면 칸이 모자라 KooPart 의 parameter2[4] 에서 IndexError 였다(리뷰 D)
+                        spaceVector2 = [16] * max(5, int(length2))
                     parameters1 = self.parse_whole(elementShellThickKeywords[i][j], spaceVector1)
                     parameters2 = self.parse_whole(elementShellThickKeywords[i][j+1], spaceVector2)
                     parameterList.append(parameters1)
