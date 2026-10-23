@@ -2534,6 +2534,7 @@ class KooPartManager():
                             elif len(nids) == 6 or nids[6] == 0 or nids[6] == nids[5]:
                                 nodes = get_nodes(part.nodeManager, nids[:6])
                                 part.AddPentahedronLinearElement(eid, *nodes)                                
+                                _add_total += 1
                             elif len(nids) == 8 or nids[8] == 0 or nids[8] == nids[7]:
                                 nodes = get_nodes(part.nodeManager, nids[:8])
                                 part.AddHexahedronLinearElement(eid, *nodes)
