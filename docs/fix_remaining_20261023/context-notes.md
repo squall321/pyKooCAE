@@ -19,3 +19,25 @@
 - F5 는 '매니저가 쓰지 않은 키워드' 만 되살린다. 데이터 없는 `*DEFINE_CURVE` 처럼 필수 카드가 빠진 키워드도 원문대로 남는다. 예전에는 조용히 지웠고, 원래 덱도 LS-DYNA 오류다. 무엇을 남겼는지는 한 줄로 알린다(dca2d5f).
 - 시험 중 실패 둘(이미 통과하던 [3]·기준 케이스)은 코드 탓이 아니었다. 19:55 호스트 메모리 고갈(NVRM out of memory, earlyoom 이 NewsKooo 워커·kube 파드를 계속 죽임) 탓이었다. 메모리를 회복한 뒤 다시 돌리니 예상한 실패만 남았다.
 - 메모리 고갈의 주범은 cpptools(48.9 GB 익명 메모리)였다. 그런데 이것은 pyKooCAE 가 아니라 **KooD3plotReader** 작업 공간의 것이었다(workspaceStorage c814e896 = 색인 캐시 이름). 처음에 pyKooCAE 의 Nuitka 빌드 폴더로 오진했다. 사용자 승인(PID 명시)으로 종료만 했다. pyKooCAE 설정 파일은 만들지 않았고, 62 GB 색인 캐시도 지우지 않았다(지우면 처음부터 다시 색인). KooD3plotReader/.vscode/settings.json 의 제외 목록은 이름이 정확히 같은 폴더만 뺀다. 그래서 build_norender·.work/review/build_*·viewer/third_party·references·apptainer 가 색인에 남는다. 그 프로젝트 담당과 정할 일이다.
+
+## 적대 리뷰 D·E 와 반영
+- 리뷰 E(DWI·빌드)
+  - A1 확정: 단위계 판정이 명시한 Gravity 를 무시했다. Gravity 9.81 인 SI 덱도 더미 재질 밀도 탓에 ton-mm-s 폴백을 받았다. 반대로 밀도를 못 읽는 mm 덱은 Gravity 9810 이어도 SI 폴백을 받았다. → 1de4a5a. Gravity → 밀도 → 미판정 순서다.
+  - A2: 내 리뷰 요청서의 '8pi·15pi 단계 설정이 같다' 는 틀렸다. dimension_damper 를 안 주는 예제는 이제 DimensionDamper 줄이 빠진다. 다만 누적 IMPACT 템플릿은 BoundaryDistance 를 쓰지 않아 댐퍼 보 자체가 안 생기므로 덱 영향은 없다.
+  - A3(근거 정정): Test_Impact_Grid5x5·Spacing5mm 은 SI 값을 준 시나리오다. 그런데 템플릿 MinimumModel 은 ton-mm-s(ρ 1.8e-9~2.8e-9, 71×147×9 mm)다. 그러니 'IMPACT 가 SI 모델에 쓰인다' 는 근거는 틀렸다. 저장소에 SI IMPACT 모델은 없다. 그 두 시나리오는 0.008 mm 충격체를 만드는 잘못된 예제다(보고). 그래도 KMM 쪽 판정은 어느 단위계 모델이든 맞게 고르므로 그대로 둔다.
+  - 반영: 앞부분 재질은 충격체 재질을 물려받는다(1de4a5a). 3단 실린더 NameError(26acfeb), 도움말 문구(5242b55), 가드 정리를 늘 적용(3433f46), 배포 GLIBC 검사(b3a3cd1).
+  - 남긴 것
+    - KAM 배포 폴더에도 GLIBC 2.38 libcrypto·libreadline 이 있다. build_all 로 KAM 까지 다시 빌드해야 없어진다.
+    - 누적 DWI 체인에서 벽·댐퍼가 단계마다 겹친다(옛 판과 같다). 라이선스가 만료돼 실제 해석으로는 검증하지 못했다.
+    - DWI OutsideRigid* 산출 덱이 Run_* 아래가 아니라 모델 옆에 써진다.
+    - mesh_size 가드는 실린더의 가장 큰 치수를 써서 메시가 거칠 수 있다.
+    - 재질이 짝수 개일 때 중앙값은 위쪽 값으로 판정한다.
+- 리뷰 D(리더·파서)
+  - 확정: Ctrl-Z 를 첫 0x1A 에서 잘라, 주석·*TITLE 안 0x1A 뒤가 조용히 사라지거나 새로 죽었다. MERGE_K 가 만든 덱에서도 생겼다. → 94ecd32 에서 파일 끝에 붙은 것만 지우게 했다.
+  - 반영(옛 판부터 있던 결함): *END 뒤 PARAMETER 가 앞 값을 덮음(11283e1), 매니저 재사용 초기화(db7d554), 덤프 BULK_VISCOSITY 줄바꿈(05a1911), CASE 표지를 되살리지 않음(034e268), MERGE_K 가 *END 뒤·0x1A 까지 펼침(07c3be9).
+  - 남긴 것
+    - 빈 두께 카드가 든 *ELEMENT_SHELL_THICKNESS 는 IndexError 로 죽는다(옛 판과 같다). LS-DYNA 에서는 '섹션 두께' 를 뜻하는 정상 카드다.
+    - 매니저는 *CONTROL_MPP_IO_NODUMP 를 쓰지 못한다(비교 문자열 버그, write 메서드 없음). 지금은 원문 보존 기록기만 이 카드를 쓴다.
+    - 4~5월 KMM 산출물 가운데 IGA 인클루드를 *END 째 펼친 파일은 이제 첫 *END 에서 멈추고 크게 알린다. LS-DYNA 도 같게 읽는다.
+    - 데이터 없는 필수 카드(빈 *DEFINE_CURVE, 이름이 다른 두 번째 빈 *MAT_ELASTIC)는 원문대로 남는다(의도, 원래 덱도 LS-DYNA 오류).
+- 3차 리뷰(F)는 위 반영분을 다시 본다.
