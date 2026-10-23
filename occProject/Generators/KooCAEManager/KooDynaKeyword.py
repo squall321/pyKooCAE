@@ -3158,7 +3158,7 @@ class ControlBulkViscosity(DynaKeyword):
     
     def write(self, stream):
         stream.write("*CONTROL_BULK_VISCOSITY\n")
-        stream.write("$$      Q1        Q2      TYPE     BTYPE    TSTYPE")
+        stream.write("$$      Q1        Q2      TYPE     BTYPE    TSTYPE\n")  # 줄바꿈이 없어 값이 주석 줄에 붙었다
         self.writeParameters(stream)   
 
 class ControlContact(DynaKeyword):
