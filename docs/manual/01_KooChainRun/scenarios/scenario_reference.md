@@ -184,8 +184,8 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 | `type` | `Sphere` | `Sphere` 또는 `cylinder` |
 | `dimension` | 0.008 | 충격자 치수 (Sphere). cylinder 는 `cylinder_stages` 로 대체 |
 | `height` | 0.5 | 낙하 높이 |
-| `mesh_size` | 0.001 | 요소 크기 |
-| `dimension_damper` | [0.001,0.001,0.001] | 댐퍼 치수 |
+| `mesh_size` | (미지정) | 요소 크기. 없으면 KMM 이 정한다 — 치수/0.001 이 100 분할을 넘으면 치수/8(mm 모델), 아니면 0.001 |
+| `dimension_damper` | (미지정) | 댐퍼 치수 `[폭,높이,오프셋]`. 없으면 KMM 이 모델 단위계(재질 밀도)로 정한다 — ton-mm-s 1.0 mm, SI 0.001 m |
 | `density` | 7.85e-9 | 충격자 밀도 |
 | `youngs_modulus` | 2.01e5 | 충격자 E |
 | `poisson_ratio` | 0.3 | 충격자 ν |

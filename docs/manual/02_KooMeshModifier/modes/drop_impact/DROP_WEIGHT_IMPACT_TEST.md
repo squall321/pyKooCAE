@@ -32,7 +32,7 @@ KooMeshModifier 입력 `.k`(텍스트) 블록은 `**DropWeightImpactTest,<modeid
 | `GenerationMode` | 생성 방식: `DampingSpring`/`OutsideRigidElement`/`OutsideRigidPart`/`Part` | `DampingSpring` | KooMeshModifier.py:1050, 1066-1068 |
 | `Type` | 충격추 형상: `Sphere` / `Cylinder` | `Sphere` | KooMeshModifier.py:1214-1217 / AdvMod:3705-3708 |
 | `Dimension` | 형상 치수. Sphere=`[radius]`. Cylinder 2단=`[r,outerR,hFront,hBack,backR]`(5값), 3단=`[r,outerR,hFront,midR,hMid,backR,hBack]`(7값) | `[0.008]` | KooMeshModifier.py:1225-1241 / AdvMod:4069-4096 |
-| `DimensionDamper` | 댐퍼(beam) 단면 `[width, height, offset]` | `[0.001,0.001,0.001]` | KooMeshModifier.py:1218-1224 / AdvMod:3720-3726 |
+| `DimensionDamper` | 댐퍼(beam) 단면 `[width, height, offset]` | 모델 단위계(재질 밀도 판정)별 — ton-mm-s `[1,1,1]` mm, 그 밖 `[0.001,0.001,0.001]` m | KooMeshModifier.py:1218-1224 / AdvMod `_DwiFallbacks` |
 | `MeshSize` | 충격추 테트라 메시 크기 | `0.001` | KooMeshModifier.py:1248-1251 / AdvMod:3715-3718 |
 | `LocationX` / `LocationY` | 충격 위치 X/Y 좌표 리스트(DOE) | `[0.0]` | KooMeshModifier.py:1164-1177 / AdvMod:3610-3617 |
 | `Height` | 낙하 높이 리스트(위치와 1:1) | `[0.5]` | KooMeshModifier.py:1178-1184 / AdvMod:3743-3746 |
@@ -43,7 +43,7 @@ KooMeshModifier 입력 `.k`(텍스트) 블록은 `**DropWeightImpactTest,<modeid
 | `BoundaryDistance` | 응력파 흡수/강체화 경계 거리(0=비활성) | `0.0` | KooMeshModifier.py:1080-1083 / AdvMod:3606-3609 |
 | `StressWaveVelocity` + `DistanceMargin` | BoundaryDistance=0 일 때 `stressWaveDistance = v·tFinal·margin` 로 자동 산출 | `0.0` | KooMeshModifier.py:1062-1079 / AdvMod:3811-3816 |
 | `MaterialIDImpactor` / `…ImpactorFront` / `…ImpactorMid` / `…Damper` / `…Wall` | 기존 모델의 재질 ID 재사용(0=신규 생성) | `0` | KooMeshModifier.py:1120-1137 / AdvMod:3622-3640 |
-| `YoungModulus*` / `PoissonRatio*` / `Density*` (Impactor/ImpactorFront/ImpactorMid/Damper/Wall) | 신규 재질 물성 | E≈2.07e11, ν=0.3, ρ=7800(impactor) / Wall·Damper ρ=1000 등 | KooMeshModifier.py:1084-1155 / AdvMod:3643-3702 |
+| `YoungModulus*` / `PoissonRatio*` / `Density*` (Impactor/ImpactorFront/ImpactorMid/Damper/Wall) | 신규 재질 물성 | 없으면 모델 단위계(재질 밀도 중앙값 < 1e-7 → ton-mm-s)별 폴백 — ton-mm-s: 충격체·앞부분 E 2.07e5·ρ 7.8e-9, 댐퍼·바닥판 E 1e4·ρ 1e-9 / 그 밖(SI): E 2.07e11·ρ 7800, 댐퍼·바닥판 E 1e10·ρ 1000. ν=0.3. (DampingSpring·OutsideRigid* 경로, 2026-10-23) | KooMeshModifier.py:1084-1155 / AdvMod `_DwiFallbacks` |
 | `WallNumX/Y/Z` | 바닥판 박스 요소 분할 수 | `10` | KooMeshModifier.py:1242-1247 / AdvMod:3756-3758 |
 | `PartIDs` | (Part 모드) 충격 대상 파트 ID 리스트 | `[]` | KooMeshModifier.py:1156-1159 |
 | `LocationMode` | (Part 모드) 격자 패턴(예: `3X3`) | `[]` | KooMeshModifier.py:1160-1163 / AdvMod:4487-4488 |

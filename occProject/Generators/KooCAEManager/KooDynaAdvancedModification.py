@@ -3484,25 +3484,61 @@ class KooDynaAdvancedModification:
     #          모델 MAT 23~27 은 2.330e-09 인데 Impactor MAT 30 은 7.800e+03.
     #    값을 바꾸면 이 폴백에 의존하던 기존 덱의 결과가 조용히 달라지므로,
     #    동작은 유지하고 **어느 키가 빠져 어떤 값이 쓰였는지** 알린다.
-    _DWI_SI_FALLBACK_HINT = {
-        "YoungsModulus": "ton-mm-s 라면 2.07e5 (MPa)",
-        "PoissonRatio": "",
-        "Density": "ton-mm-s 라면 7.85e-9 (ton/mm^3)",
+    # DWI 재질·댐퍼 치수 폴백(kg-m-s). 모델이 ton-mm-s 면 같은 물성을 그 단위로 바꿔 쓴다(_DwiFallbacks).
+    # 러너(DWI·누적 IMPACT)가 댐퍼 재질을 넘기지 않아 mm 덱에 E 1e10·ρ 1000 댐퍼가 들어가던 것을 막는다.
+    _DWI_FALLBACK_SI = {
+        "YoungsModulusImpactorFront": 2.07e11, "DensityImpactorFront": 7800.0,
+        "YoungsModulusImpactor": 2.07e11, "DensityImpactor": 7800.0,
+        "YoungsModulusDamper": 1.0e10, "DensityDamper": 1000.0,
+        "YoungsModulusWall": 1.0e10, "DensityWall": 1000.0,
+        "DimensionDamper": 0.001,
+    }
+    # E Pa→MPa ×1e-6, ρ kg/m³→ton/mm³ ×1e-12, 길이 m→mm ×1e3
+    _DWI_FALLBACK_TONMMS = {
+        "YoungsModulusImpactorFront": 2.07e5, "DensityImpactorFront": 7.8e-9,
+        "YoungsModulusImpactor": 2.07e5, "DensityImpactor": 7.8e-9,
+        "YoungsModulusDamper": 1.0e4, "DensityDamper": 1.0e-9,
+        "YoungsModulusWall": 1.0e4, "DensityWall": 1.0e-9,
+        "DimensionDamper": 1.0,
     }
 
-    def _warn_dwi_fallback(self, option, keys, where):
+    def _DwiFallbacks(self, context):
+        """DWI 폴백값을 모델 단위계에 맞춰 (단위계 이름, 값 dict) 로 돌려준다.
+        판정은 _ResolveFallGravity 와 같다(모델 재질 밀도 중앙값 < 1e-7 → ton-mm-s). 그 밖은 옛 SI 값.
+        반드시 벽·충격추·댐퍼 재질을 만들기 전에 부른다."""
+        rhos = []
+        matMan = self.dynaImporter.matManager
+        for coll in (getattr(matMan, "materials", {}), getattr(matMan, "rigidMaterials", {})):
+            for m in coll.values():
+                try:
+                    r = float(m.GetRho())
+                except Exception:
+                    continue
+                if r > 0.0:
+                    rhos.append(r)
+        if rhos:
+            rhos.sort()
+            if rhos[len(rhos) // 2] < 1.0e-7:
+                return "ton-mm-s", dict(self._DWI_FALLBACK_TONMMS)
+        return "SI", dict(self._DWI_FALLBACK_SI)
+
+    def _warn_dwi_fallback(self, option, keys, where, unit="SI"):
         """재질 키 누락 시 어떤 폴백이 쓰였는지 경고. keys = [(키, 폴백값), ...]"""
         missing = [(k, v) for k, v in keys if k not in option]
         if not missing:
             return
+        if unit == "ton-mm-s":
+            print(f"  ⚠️  {where}: 재질 키 {len(missing)}개 누락 — 모델 단위계(ton-mm-s, 재질 밀도로 판정)에 맞춘 "
+                  f"폴백값을 씁니다.")
+            for k, v in missing:
+                print(f"       {k} = {v:g}")
+            print("       다른 값이 필요하면 옵션 파일에 명시하세요.")
+            return
         print(f"  ⚠️  {where}: 재질 키 {len(missing)}개 누락 — 내장 폴백값(SI 단위)을 씁니다.")
         for k, v in missing:
-            hint = ""
-            for pre, h in self._DWI_SI_FALLBACK_HINT.items():
-                if k.startswith(pre) and h:
-                    hint = f"  ← {h}"
-                    break
-            print(f"       {k} = {v}{hint}")
+            mm = self._DWI_FALLBACK_TONMMS.get(k)
+            hint = f"  ← ton-mm-s 라면 {mm:g}" if mm is not None else ""
+            print(f"       {k} = {v:g}{hint}")
         print("       모델이 ton-mm-s 라면 단위가 10^12 배 어긋납니다. 옵션 파일에 명시하세요.")
 
     def DropWeightImpactTestwithPartialRigid(self, option, filePath):
@@ -3552,12 +3588,13 @@ class KooDynaAdvancedModification:
             matIDWall = 0
         
             
-        self._warn_dwi_fallback(option, [("YoungsModulusImpactorFront", "2.07e11"), ("DensityImpactorFront", "7800.0"), ("YoungsModulusWall", "1.0e10"), ("DensityWall", "1000.0"), ("YoungsModulusImpactor", "2.07e11"), ("DensityImpactor", "7800.0")], "DropWeightImpactTestwithPartialRigid")
+        _unit, _fb = self._DwiFallbacks("DropWeightImpactTestwithPartialRigid")
+        self._warn_dwi_fallback(option, [(k, _fb[k]) for k in ('YoungsModulusImpactorFront', 'DensityImpactorFront', 'YoungsModulusWall', 'DensityWall', 'YoungsModulusImpactor', 'DensityImpactor')], "DropWeightImpactTestwithPartialRigid", _unit)
         
         if "YoungsModulusImpactorFront" in option:
             EImpactorFront = option["YoungsModulusImpactorFront"]
         else:
-            EImpactorFront = 2.07e11
+            EImpactorFront = _fb["YoungsModulusImpactorFront"]
         
         if "PoissonRatioImpactorFront" in option:
             nuImpactorFront = option["PoissonRatioImpactorFront"]
@@ -3567,12 +3604,12 @@ class KooDynaAdvancedModification:
         if "DensityImpactorFront" in option:
             rhoImpactorFront = option["DensityImpactorFront"]
         else:
-            rhoImpactorFront = 7800.0                               
+            rhoImpactorFront = _fb["DensityImpactorFront"]
             
         if "YoungsModulusWall" in option:
             EWall = option["YoungsModulusWall"]
         else:
-            EWall = 1.0e10
+            EWall = _fb["YoungsModulusWall"]
         if "PoissonRatioWall" in option:
             nuWall = option["PoissonRatioWall"]
         else:
@@ -3580,12 +3617,12 @@ class KooDynaAdvancedModification:
         if "DensityWall" in option:
             rhoWall = option["DensityWall"]
         else:
-            rhoWall = 1000.0
+            rhoWall = _fb["DensityWall"]
                     
         if "YoungsModulusImpactor" in option:
             EImpactor = option["YoungsModulusImpactor"]
         else:
-            EImpactor = 2.07e11
+            EImpactor = _fb["YoungsModulusImpactor"]
         if "PoissonRatioImpactor" in option:
             nuImpactor = option["PoissonRatioImpactor"]
         else:
@@ -3593,7 +3630,7 @@ class KooDynaAdvancedModification:
         if "DensityImpactor" in option:
             rhoImpactor = option["DensityImpactor"]
         else:
-            rhoImpactor = 7800.0
+            rhoImpactor = _fb["DensityImpactor"]
             
         
         if "Type" in option:
@@ -3962,12 +3999,13 @@ class KooDynaAdvancedModification:
             matIDWall = 0
         
             
-        self._warn_dwi_fallback(option, [("YoungsModulusImpactorFront", "2.07e11"), ("DensityImpactorFront", "7800.0"), ("YoungsModulusDamper", "1.0e10"), ("DensityDamper", "1000.0"), ("YoungsModulusWall", "1.0e10"), ("DensityWall", "1000.0"), ("YoungsModulusImpactor", "2.07e11"), ("DensityImpactor", "7800.0")], "DropWeightImpactTest")
+        _unit, _fb = self._DwiFallbacks("DropWeightImpactTest")
+        self._warn_dwi_fallback(option, [(k, _fb[k]) for k in ('YoungsModulusImpactorFront', 'DensityImpactorFront', 'YoungsModulusDamper', 'DensityDamper', 'YoungsModulusWall', 'DensityWall', 'YoungsModulusImpactor', 'DensityImpactor')], "DropWeightImpactTest", _unit)
         
         if "YoungsModulusImpactorFront" in option:
             EImpactorFront = option["YoungsModulusImpactorFront"]
         else:
-            EImpactorFront = 2.07e11
+            EImpactorFront = _fb["YoungsModulusImpactorFront"]
         
         if "PoissonRatioImpactorFront" in option:
             nuImpactorFront = option["PoissonRatioImpactorFront"]
@@ -3977,19 +4015,19 @@ class KooDynaAdvancedModification:
         if "DensityImpactorFront" in option:
             rhoImpactorFront = option["DensityImpactorFront"]
         else:
-            rhoImpactorFront = 7800.0
+            rhoImpactorFront = _fb["DensityImpactorFront"]
 
         # 3단 실린더 중간단(mid) 재질 — MaterialIDImpactorMid/E/nu/Density (없으면 Impactor 본체 값 상속)
         matIDImpactorMid = option.get("MaterialIDImpactorMid", 0)
-        EImpactorMid = option.get("YoungsModulusImpactorMid", option.get("YoungsModulusImpactor", 2.07e11))
+        EImpactorMid = option.get("YoungsModulusImpactorMid", option.get("YoungsModulusImpactor", _fb["YoungsModulusImpactor"]))
         nuImpactorMid = option.get("PoissonRatioImpactorMid", option.get("PoissonRatioImpactor", 0.3))
-        rhoImpactorMid = option.get("DensityImpactorMid", option.get("DensityImpactor", 7800.0))
+        rhoImpactorMid = option.get("DensityImpactorMid", option.get("DensityImpactor", _fb["DensityImpactor"]))
 
 
         if "YoungsModulusDamper" in option:
             EDamp = option["YoungsModulusDamper"]
         else:
-            EDamp = 1.0e10
+            EDamp = _fb["YoungsModulusDamper"]
         if "PoissonRatioDamper" in option:
             nuDamp = option["PoissonRatioDamper"]
         else:
@@ -3997,12 +4035,12 @@ class KooDynaAdvancedModification:
         if "DensityDamper" in option:
             rhoDamp = option["DensityDamper"]
         else:
-            rhoDamp = 1000.0
+            rhoDamp = _fb["DensityDamper"]
 
         if "YoungsModulusWall" in option:
             EWall = option["YoungsModulusWall"]
         else:
-            EWall = 1.0e10
+            EWall = _fb["YoungsModulusWall"]
         if "PoissonRatioWall" in option:
             nuWall = option["PoissonRatioWall"]
         else:
@@ -4010,12 +4048,12 @@ class KooDynaAdvancedModification:
         if "DensityWall" in option:
             rhoWall = option["DensityWall"]
         else:
-            rhoWall = 1000.0
+            rhoWall = _fb["DensityWall"]
                     
         if "YoungsModulusImpactor" in option:
             EImpactor = option["YoungsModulusImpactor"]
         else:
-            EImpactor = 2.07e11
+            EImpactor = _fb["YoungsModulusImpactor"]
         if "PoissonRatioImpactor" in option:
             nuImpactor = option["PoissonRatioImpactor"]
         else:
@@ -4023,7 +4061,7 @@ class KooDynaAdvancedModification:
         if "DensityImpactor" in option:
             rhoImpactor = option["DensityImpactor"]
         else:
-            rhoImpactor = 7800.0
+            rhoImpactor = _fb["DensityImpactor"]
             
         
         if "Type" in option:
@@ -4039,9 +4077,9 @@ class KooDynaAdvancedModification:
             dimensionDamper = option["DimensionDamper"]
             if len(dimensionDamper) <3:
                 for i in range(3-len(dimensionDamper)):
-                    dimensionDamper.append(0.001)
+                    dimensionDamper.append(_fb["DimensionDamper"])
         else:
-            dimensionDamper = [0.001,0.001,0.001]
+            dimensionDamper = [_fb["DimensionDamper"]] * 3
             
         if "InitialVelocityX" in option:
             VxList = option["InitialVelocityX"]

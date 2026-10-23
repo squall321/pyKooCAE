@@ -1637,8 +1637,13 @@ class CumulativeScenarioRunner:
             _g = impact_params.get("gravity", sim_params.get("gravity"))
             gravity_block = f"\nGravity,{_g}" if _g else ""
 
-            dim_damper = impact_params.get("dimension_damper", [0.001, 0.001, 0.001])
-            dim_damper_str = ",".join(str(v) for v in dim_damper)
+            # 댐퍼 치수·메시 크기는 시나리오에 있을 때만 넘긴다. 없으면 KMM 이 모델 단위계(재질 밀도)에 맞춰
+            # 정한다 — 예전 기본값 0.001 은 SI 라 mm 덱에서 0.001 mm 댐퍼·0.001 mm 메시(폭주)가 됐다.
+            mesh_damper_block = ""
+            if impact_params.get("mesh_size") is not None:
+                mesh_damper_block += f"MeshSize,{impact_params['mesh_size']}\n"
+            if impact_params.get("dimension_damper") is not None:
+                mesh_damper_block += "DimensionDamper," + ",".join(str(v) for v in impact_params["dimension_damper"]) + "\n"
             preserve_block = self._build_preserve_block()
 
             # 실린더 3단(cylinder_stages) → dimension 직렬화 + mid 재질 라인
@@ -1742,9 +1747,7 @@ InitialVelocityY,0
 InitialVelocityZ,0
 Type,{impact_params.get('type', 'Sphere')}
 Dimension,{dimension_str}
-MeshSize,{impact_params.get('mesh_size', 0.001)}
-DimensionDamper,{dim_damper_str}
-DensityImpactor,{imp_rho}
+{mesh_damper_block}DensityImpactor,{imp_rho}
 YoungsModulusImpactor,{imp_E}
 PoissonRatioImpactor,{imp_nu}
 {front_material_block}{mid_material_block}DensityWall,{wall_params.get('density', 1.0e-9)}

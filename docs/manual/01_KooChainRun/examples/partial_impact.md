@@ -40,12 +40,12 @@ output/impact_report.html + impact_report.json
 |---|---|---|---|
 | `type` | str | 충격추 형상. 실린더는 `"cylinder"` (대소문자 무관) | CumulativeScenarioRunner.py:1213,1217 |
 | `height` | float | 낙하 높이 → `Height` 카드 | CumulativeScenarioRunner.py:1258 |
-| `mesh_size` | float | 충격추/Wall 메쉬 크기 → `MeshSize` | CumulativeScenarioRunner.py:1264 |
+| `mesh_size` | float | 충격추/Wall 메쉬 크기 → `MeshSize` (없으면 줄을 쓰지 않고 KMM 이 치수로 정함) | CumulativeScenarioRunner.py |
 | `tFinal` | float | 해석 종료 시간 → `tFinal` | CumulativeScenarioRunner.py:1275 |
 | `dt` | float | 시간증분 → `dt` | CumulativeScenarioRunner.py:1276 |
 | `offset_distance` | float | 충격추 초기 이격거리 → `OffsetDistance` | CumulativeScenarioRunner.py:1277 |
 | `cylinder_stages` | list | 실린더 단(stage) 목록 `[front, (mid), back]`. 2단 또는 3단 | CumulativeScenarioRunner.py:1212,1217 |
-| `dimension_damper` | list | 댐퍼 치수 `[x,y,z]` → `DimensionDamper` (기본 `[0.001,0.001,0.001]`) | CumulativeScenarioRunner.py:1204-1205 |
+| `dimension_damper` | list | 댐퍼 치수 `[x,y,z]` → `DimensionDamper` (없으면 KMM 이 모델 단위계로 정함 — ton-mm-s 1.0, SI 0.001) | CumulativeScenarioRunner.py |
 | `density` / `youngs_modulus` / `poisson_ratio` | float | 단순 형상(Sphere 등) 충격추 재질 → `DensityImpactor` 등. 실린더는 back 단에 재질이 없을 때만 쓰인다 | CumulativeScenarioRunner.py IMPACT 분기 |
 
 ### `cylinder_stages[]` 각 단(stage)
