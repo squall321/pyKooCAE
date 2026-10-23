@@ -193,6 +193,58 @@ check("  *END 뒤 파트 parked·요소 3 은 펼치지 않는다, 0x1A 없음",
       "parked" not in merged and not any(ln.split()[:2] == ["3", "2"] for ln in merged.splitlines()) and "\x1a" not in merged,
       f"parked={'parked' in merged} ctrlz={'\x1a' in merged}")
 
+
+def merge_and_reread(keep_text, label):
+    d = Path(tempfile.mkdtemp(dir=BASE))
+    Path(d, "model.k").write_text("*KEYWORD\n" + nodes() + PROPS + SOLID + "*INCLUDE\nkeep.k\n*END\n")
+    Path(d, "keep.k").write_bytes(keep_text.encode())
+    Path(d, "opt.txt").write_text(MERGE_OPT)
+    r = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt.txt"], cwd=d, capture_output=True, text=True, timeout=600)
+    merged = Path(d, "model_merged.k").read_text() if Path(d, "model_merged.k").exists() else ""
+    e = Path(tempfile.mkdtemp(dir=BASE))
+    Path(e, "model.k").write_text(merged)
+    Path(e, "opt.txt").write_text(OPT)
+    r2 = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt.txt"], cwd=e, capture_output=True, text=True, timeout=600)
+    out = Path(e, "model_trans.k").read_text() if Path(e, "model_trans.k").exists() else ""
+    return r.returncode, r2.returncode, merged, out, r2.stdout + r2.stderr
+
+
+CURVE = "*KEYWORD\n*DEFINE_CURVE\n         7\n            0.000000            0.000000\n            1.000000            1.000000\n"
+for label, tail in (("*END 뒤 0x1A(줄바꿈 없음)", "*END\x1a"), ("*END CRLF 뒤 0x1A", "*END\r\n\x1a"), ("*END 뒤 줄바꿈 없음", "*END")):
+    rc1, rc2, merged, out, log = merge_and_reread(CURVE + tail, label)
+    seg = merged.split("Inlined from keep.k", 1)[-1].splitlines()[1:6]   # 펼친 본문 앞부분
+    blank_after = any(ln.strip() == "" for ln in seg)
+    check(f"MERGE_K {label} — 병합 덱에 빈 데이터 줄 없음·다시 읽어도 rc 0 — 리뷰 F", rc1 == 0 and rc2 == 0 and not blank_after,
+          f"rc={rc1},{rc2} blank={blank_after} {log[-200:] if rc2 else ''}")
+node_inc = "*KEYWORD\n*NODE\n      90        9.000000        9.000000        9.000000\n*END\x1a"
+rc1, rc2, merged, out, log = merge_and_reread(node_inc, "node")
+nids = [ln.split()[0] for ln in out.split("*NODE", 1)[-1].split("*", 1)[0].splitlines() if ln.split() and not ln.startswith("$")]
+check("MERGE_K *NODE 인클루드 + *END^Z — 다시 읽은 덱에 원점의 절점 0 이 생기지 않는다 — 리뷰 F",
+      rc1 == 0 and rc2 == 0 and "0" not in nids and "90" in nids, f"rc={rc1},{rc2} nids={nids[:5]}…")
+rc1, rc2, merged, out, log = merge_and_reread(CURVE + "*END ,\n*PART\nparked\n" + f10(2, 1, 1), "end comma")
+check("MERGE_K '*END ,'(리더가 END 로 보는 꼴) — 그 줄과 뒤를 펼치지 않는다 — 리뷰 F",
+      rc1 == 0 and "*END ," not in merged and "parked" not in merged, f"rc={rc1}")
+
+print("[4b] '*END ,' 뒤 *PARAMETER 도 쓰지 않는다·미정의 &참조는 🔴 로 알린다 — 리뷰 F")
+rc, log, text, els = run_kmm({"model.k": par.replace("*END\n*PARAMETER", "*END ,\n*PARAMETER")})
+shell_t2 = None
+lines2 = text.splitlines()
+for i, ln in enumerate(lines2):
+    if ln.startswith("*SECTION_SHELL"):
+        j = i + 1 + (1 if ln.strip().upper().endswith("_TITLE") else 0)
+        data = [x for x in lines2[j:j + 6] if x.strip() and not x.startswith("$")]
+        shell_t2 = float(data[1].split()[0]) if len(data) >= 2 else None
+        break
+check("'*END ,' 뒤 R thk 2.0 — 두께 1.0", rc == 0 and shell_t2 == 1.0, f"rc={rc} t={shell_t2}")
+only_after = par.replace("*PARAMETER\nR      thk       1.0\n", "", 1)
+rc, log, text, els = run_kmm({"model.k": only_after})
+check("&thk 를 *END 뒤에서만 정의 — '정의되지 않은 &참조' 🔴", rc == 0 and "정의되지 않은 &참조" in log and "&thk" in log,
+      [ln for ln in log.splitlines() if "&" in ln][:3])
+rc, log, text, els = run_kmm({"model.k": par})
+check("  정상 덱(정의가 앞) — 경고 없음", rc == 0 and "정의되지 않은 &참조" not in log, f"rc={rc}")
+rc, log, text, els = run_kmm({"model.k": "*KEYWORD\n*TITLE\nR&D test &model\n" + nodes() + PROPS + SOLID + "*END\n"})
+check("  제목의 'R&D'·'&model' — 경고 없음", rc == 0 and "정의되지 않은 &참조" not in log, f"rc={rc}")
+
 print("[6] 덤프 *CONTROL_BULK_VISCOSITY — 값이 주석 줄에 붙지 않는다 — 리뷰 D")
 d = Path(tempfile.mkdtemp(dir=BASE))
 Path(d, "model.k").write_text("*KEYWORD\n*CONTROL_BULK_VISCOSITY\n" + f10(1.6, 0.07, -2) + nodes() + PROPS + SOLID + "*END\n")
