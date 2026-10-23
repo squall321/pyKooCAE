@@ -154,6 +154,87 @@ check("KMM 이 쓰는 키워드(*PART)가 빈 채로 하나 더 — KMM 판만 �
 rc, log, text, els = run_kmm({"model.k": "*KEYWORD\n*CONTROL_MPP_IO_NOD3DUMP\n*CONTROL_MPP_IO_NOD3DUMP\n" + nodes() + PROPS
                               + SOLID + "*END\n"})
 check("같은 빈 키워드 두 번 — 한 번만 남긴다", rc == 0 and kwcount(text, "CONTROL_MPP_IO_NOD3DUMP") == 1, f"rc={rc}")
+case_deck = ("*KEYWORD\n" + nodes() + PROPS + SOLID + "*CASE_BEGIN_1\n*BOUNDARY_SPC_NODE\n" + f10(1, 0, 1, 1, 1, 0, 0, 0)
+             + "*CASE_END_1\n*END\n")
+rc, log, text, els = run_kmm({"model.k": case_deck})
+check("*CASE_BEGIN_1·*CASE_END_1(위치가 뜻) — 끝에 모아 되살리지 않는다(옛 판과 같다)",
+      rc == 0 and kwcount(text, "CASE_BEGIN_1") == 0 and kwcount(text, "CASE_END_1") == 0, f"rc={rc}")
+
+print("[4] *END 뒤의 *PARAMETER 정의는 쓰지 않는다 — 리뷰 D")
+par = ("*KEYWORD\n*PARAMETER\nR      thk       1.0\n" + nodes() + PROPS + SOLID + "*PART\nskin\n" + f10(2, 2, 1)
+       + "*SECTION_SHELL\n" + f10(2, 2) + "      &thk      &thk      &thk      &thk\n*ELEMENT_SHELL\n"
+       + f"{10:8d}{2:8d}{1:8d}{2:8d}{3:8d}{4:8d}\n*END\n*PARAMETER\nR      thk       2.0\n")
+rc, log, text, els = run_kmm({"model.k": par})
+shell_t = None
+lines = text.splitlines()
+for i, ln in enumerate(lines):
+    if ln.startswith("*SECTION_SHELL"):
+        j = i + 1 + (1 if ln.strip().upper().endswith("_TITLE") else 0)   # _TITLE 이면 제목 줄을 건너뛴다
+        data = [x for x in lines[j:j + 6] if x.strip() and not x.startswith("$")]
+        if len(data) >= 2:
+            shell_t = float(data[1].split()[0])   # Card 2 의 T1
+        break
+check("SECTION_SHELL 두께 = *END 앞 정의 1.0 (뒤의 2.0 아님)", rc == 0 and shell_t == 1.0, f"rc={rc} t={shell_t}")
+
+print("[5] MERGE_K — 강제로 펼친 인클루드는 첫 *END 에서 끝나고 끝의 Ctrl-Z 를 뺀다 — 리뷰 D")
+MERGE_OPT = ("*Inputfile\nmodel.k\n*Mode\nMERGE_K,1\n**MergeK,1\nForceInlinePreserved,true\n**EndMergeK\n"
+             "*PreserveIncludes\nkeep.k\n*End\n")
+keep = ("*KEYWORD\n*DEFINE_CURVE\n         7\n            0.000000            0.000000\n            1.000000            1.000000\n"
+        "*END\n*PART\nparked\n" + f10(2, 1, 1) + "*ELEMENT_SOLID\n" + f"{3:8d}{2:8d}" + "".join(f"{n:8d}" for n in range(1, 9))
+        + "\n\x1a")
+d = Path(tempfile.mkdtemp(dir=BASE))
+Path(d, "model.k").write_text("*KEYWORD\n" + nodes() + PROPS + SOLID + "*INCLUDE\nkeep.k\n*END\n")
+Path(d, "keep.k").write_text(keep)
+Path(d, "opt.txt").write_text(MERGE_OPT)
+r = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt.txt"], cwd=d, capture_output=True, text=True, timeout=600)
+merged = Path(d, "model_merged.k").read_text() if Path(d, "model_merged.k").exists() else ""
+check("MERGE_K rc 0·커브는 펼침", r.returncode == 0 and "*DEFINE_CURVE" in merged, f"rc={r.returncode} {r.stderr[-200:]}")
+check("  *END 뒤 파트 parked·요소 3 은 펼치지 않는다, 0x1A 없음",
+      "parked" not in merged and not any(ln.split()[:2] == ["3", "2"] for ln in merged.splitlines()) and "\x1a" not in merged,
+      f"parked={'parked' in merged} ctrlz={'\x1a' in merged}")
+
+print("[6] 덤프 *CONTROL_BULK_VISCOSITY — 값이 주석 줄에 붙지 않는다 — 리뷰 D")
+d = Path(tempfile.mkdtemp(dir=BASE))
+Path(d, "model.k").write_text("*KEYWORD\n*CONTROL_BULK_VISCOSITY\n" + f10(1.6, 0.07, -2) + nodes() + PROPS + SOLID + "*END\n")
+Path(d, "opt.txt").write_text(OPT)
+r = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt.txt"], cwd=d, capture_output=True, text=True, timeout=600)
+dump = Path(d, "model_dump.k").read_text() if Path(d, "model_dump.k").exists() else ""
+dl = dump.splitlines()
+i = next((k for k, ln in enumerate(dl) if ln.startswith("*CONTROL_BULK_VISCOSITY")), None)
+vals = None
+if i is not None:
+    after = [ln for ln in dl[i + 1:i + 4] if not ln.startswith("$")]
+    try:
+        vals = [float(v) for v in after[0].split()[:2]] if after else None
+    except ValueError:
+        vals = None   # 값 줄이 아니다(옛 판은 값이 주석 줄에 붙어 다음 키워드 줄이 온다)
+check("model_dump.k 의 BULK_VISCOSITY 값 줄 = 1.6 0.07", r.returncode == 0 and vals == [1.6, 0.07],
+      f"rc={r.returncode} {dl[i:i + 3] if i is not None else None}")
+
+print("[7] 같은 DynaManager 재사용 — 지난 덱의 빈 키워드·인클루드 스택이 남지 않는다 — 리뷰 D")
+sys.path.insert(0, str(GEN))
+from KooCAEManager.KooDynaKeyword import DynaManager  # noqa: E402
+import contextlib  # noqa: E402
+import io  # noqa: E402
+import os  # noqa: E402
+cwd0 = os.getcwd()
+da, db = Path(tempfile.mkdtemp(dir=BASE)), Path(tempfile.mkdtemp(dir=BASE))
+Path(da, "a.k").write_text("*KEYWORD\n*CONTROL_MPP_IO_NOD3DUMP\n" + nodes() + PROPS + SOLID + "*END\n")
+Path(db, "b.k").write_text("*KEYWORD\n" + nodes() + PROPS + SOLID + "*END\n")
+mgr = DynaManager()
+try:
+    with contextlib.redirect_stdout(io.StringIO()):
+        mgr.currentDirectory, mgr.inputFile = str(da), "a.k"
+        mgr.ReadInputFile(str(da / "a_dump.k"), writelog=False)
+        first = list(getattr(mgr, "_empty_keyword_names", []))
+        mgr._include_stack.append("/stale/after/exception.k")  # 예외로 끊긴 읽기를 흉내
+        mgr.currentDirectory, mgr.inputFile = str(db), "b.k"
+        mgr.ReadInputFile(str(db / "b_dump.k"), writelog=False)
+finally:
+    os.chdir(cwd0)
+check("첫 덱의 빈 키워드는 기록됐다", first == ["CONTROL_MPP_IO_NOD3DUMP"], f"{first}")
+check("  둘째 덱을 읽은 뒤 빈 키워드·인클루드 스택이 비었다", mgr._empty_keyword_names == [] and mgr._include_stack == [],
+      f"{mgr._empty_keyword_names} {mgr._include_stack}")
 
 print()
 if FAILS:
