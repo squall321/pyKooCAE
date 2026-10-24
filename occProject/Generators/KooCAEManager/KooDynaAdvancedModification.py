@@ -4417,8 +4417,16 @@ class KooDynaAdvancedModification:
                     removedElemList[pid] = removedElems
                     removedNodeList[pid] = removedNodes
                     boundaryNodes.extend(addBDNodes)
-                                
-                nodeSetInside.AddNodes(boundaryNodes)                                       
+
+                # 바깥 요소를 다 지운 뒤, 남은 요소 어디에도 안 쓰이는 후보 절점만 공용 절점표에서 지운다 — 파트마다 절점표를
+                # 통째로 바꿔 시편 파트가 둘 이상이면 시편 절점이 *NODE 에서 사라졌다(리뷰 G). 복원 루프는 지운 것만 되돌린다
+                usedNodeIds = {n.id for p in self.dynaImporter.partManager.parts.values()
+                               for e in p.elementManager.elements.values() for n in e.nodes}
+                for pid in removedNodeList:
+                    removedNodeList[pid] = {nid: n for nid, n in removedNodeList[pid].items() if nid not in usedNodeIds}
+                    nodeMan.RemoveNodes(removedNodeList[pid])
+
+                nodeSetInside.AddNodes(boundaryNodes)
                 
                                           
             else:

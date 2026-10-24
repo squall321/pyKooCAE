@@ -5585,7 +5585,14 @@ class ElementManager:
         for key in removedElems:
             self.RemoveElement(removedElems[key])
             
-        removedNodes = self.nodeManager.RemoveComplementaryNodes(nodesSustained)
+        # 절점은 여기서 지우지 않고 후보만 돌려준다 — 절점표는 모든 파트가 함께 쓴다. 예전엔 절점표를 이 파트가 남긴 절점으로
+        # 통째로 바꿔(RemoveComplementaryNodes) 시편 파트가 둘 이상이면 앞 파트 절점이 *NODE 에서 사라졌다(리뷰 G).
+        # 호출부가 모든 파트를 처리한 뒤 어떤 요소도 쓰지 않는 후보만 지운다.
+        removedNodes = {}
+        for element in removedElems.values():
+            for node in element.nodes:
+                if node.id not in nodesSustained:
+                    removedNodes[node.id] = node
         return boundayNodes, removedElems, removedNodes
     
     def IsOverlappingwithSphere(self, locX, locY, locZ, Radius):
