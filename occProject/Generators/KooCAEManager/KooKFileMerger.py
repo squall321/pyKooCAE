@@ -134,10 +134,9 @@ def _strip_keyword_end(content):
     그 뒤에 꺼 둔 카드가 펼친 덱에서 살아났다. 파일 끝 Ctrl-Z(0x1A)도 뺀다 — 펼친 덱 중간에 남으면 다시 읽을 때
     데이터 줄로 들어갔다(리뷰 D). 줄 나누기·Ctrl-Z·*END 판정은 모두 KooDynaKeyword 리더와 같다 — splitlines() 는 FF·VT
     등에서도 줄을 나눠, 주석 안 FF 뒤의 '*END' 에서 리더와 달리 멈췄다(리뷰 G)."""
-    import io
-    from KooCAEManager.KooDynaKeyword import keyword_line_name, strip_trailing_ctrl_z
+    from KooCAEManager.KooDynaKeyword import keyword_line_name, strip_trailing_ctrl_z, split_lines_keepends
     out_lines = []
-    for line in strip_trailing_ctrl_z(io.StringIO(content).readlines()):   # 리더의 readlines 처럼 '\n' 에서만 나눈다
+    for line in strip_trailing_ctrl_z(split_lines_keepends(content)):   # 리더의 readlines 처럼 '\n' 에서만 나눈다
         stripped = line.strip().upper()
         # *KEYWORD 자체만 제거 (변형 *KEYWORD_xxx는 다른 키워드)
         if stripped == '*KEYWORD' or stripped.startswith('*KEYWORD '):

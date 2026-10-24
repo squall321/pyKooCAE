@@ -12184,6 +12184,18 @@ def strip_trailing_ctrl_z(lines):
     return lines if z is None else lines[:z]
 
 
+def split_lines_keepends(text):
+    """'\\n' 에서만 나눈 줄 목록(줄 끝 '\\n' 유지) — 텍스트 모드 readlines() 와 같다(FF·VT 등에서는 나누지 않는다).
+    io.StringIO(text).readlines() 는 안에서 글자마다 4바이트 버퍼를 만들어 큰 파일에서 메모리를 크게 먹었다(217 MB 에 1.3 GB)."""
+    lines = text.split('\n')
+    last = lines.pop()
+    for i in range(len(lines)):
+        lines[i] += '\n'
+    if last:
+        lines.append(last)
+    return lines
+
+
 class DynaKeywordManager():
     def __init__(self):
         self.keywords = {}
@@ -12506,18 +12518,31 @@ class DynaManager():
         self._include_stack.pop()
         return lines_with_asterisk, keyword_dict
 
-    def _include_passthrough_reason(self, include_path, inc_content):
+    def _include_passthrough_reason(self, include_path, inc_content=None, inc_lines=None):
         """인클루드를 읽지 않고 *INCLUDE 로 남길 이유 — 'user-specified'(사용자 보존 패턴)·'IGA'(자동 보존), 인라인으로 읽으면
-        None. 리더와 파라미터 훑기(_param_walk)가 같은 판정을 쓴다(어긋나면 파일마다 치환 계획이 엇갈린다)."""
+        None. 리더와 파라미터 훑기(_param_walk)가 같은 판정을 쓴다(어긋나면 파일마다 치환 계획이 엇갈린다). 내용은 글
+        (inc_content, 리더) 또는 readlines() 줄 목록(inc_lines, 훑기 — 큰 파일을 글 한 덩어리로 다시 만들지 않게)으로 받는다."""
         if self.matchesPreservePattern(include_path):
             return "user-specified"
+        kws = ['*IGA_', '*SECTION_IGA_', '*PARAMETER_LOCAL']   # 줄바꿈 없는 글이라 줄마다 찾아도 글 전체에서 찾는 것과 같다
+        if inc_content is not None:
+            head = inc_content[:500]
+            found = any(kw in inc_content for kw in kws)
+        else:
+            head = ''
+            for l in inc_lines:
+                head += l
+                if len(head) >= 500:
+                    break
+            head = head[:500]
+            found = any('*' in l and any(kw in l for kw in kws) for l in inc_lines)
         # 분해 출력 파일은 자동 IGA passthrough 우회 (raw 보존된 IGA 키워드가
         # 자기 자신을 IGA로 오인식해 통째 passthrough되는 문제 방지)
         no_auto_passthrough = (
-            "KOO_DECOMPOSED_NO_AUTO_PASSTHROUGH" in inc_content[:500]
+            "KOO_DECOMPOSED_NO_AUTO_PASSTHROUGH" in head
             or getattr(self, '_disable_auto_iga_passthrough', False)
         )
-        if not no_auto_passthrough and any(kw in inc_content for kw in ['*IGA_', '*SECTION_IGA_', '*PARAMETER_LOCAL']):
+        if not no_auto_passthrough and found:
             return "IGA"
         return None
 
@@ -12530,7 +12555,6 @@ class DynaManager():
         LOCAL 을 못 봐 0 이 됐다(리뷰 J). 리더가 인라인으로 읽을 인클루드(조상까지 모두 인라인)의 계획은 plans[실경로] 에 읽는
         차례로 쌓는다 — 리더도 같은 차례(깊이 우선)로 파일을 읽는다. 따라가는 인클루드·*END·없는 파일·순환 규칙은 리더와
         같다. 정의보다 앞 줄에서 쓴 참조는 예전처럼 채우고 알린다 — 이 파일 끝 값, 그래도 없으면 덱 끝 값(deck_late)."""
-        import io
         res = self._param_resolver
         res.BeginFile()
         plan, late = {}, []
@@ -12568,13 +12592,13 @@ class DynaManager():
                     continue
                 try:
                     with open(inc, 'r', errors='replace') as f:
-                        content = f.read()
+                        raw = f.readlines()   # 리더와 같은 읽기(errors='replace', 텍스트 모드 줄 나누기)
                 except OSError:
                     continue
                 sub_inline = (inline and not getattr(self, 'preserve_includes', False)
-                              and self._include_passthrough_reason(inc, content) is None)
-                sub_plan = self._param_walk(inc, strip_trailing_ctrl_z(io.StringIO(content).readlines()),
-                                            plans, stack + [real], sub_inline, deck_late)
+                              and self._include_passthrough_reason(inc, inc_lines=raw) is None)
+                sub_plan = self._param_walk(inc, strip_trailing_ctrl_z(raw), plans, stack + [real], sub_inline, deck_late)
+                del raw
                 if sub_inline:
                     plans.setdefault(real, []).append(sub_plan)
             deck_late.extend(self._param_fill_late(late, '이 파일 끝'))
