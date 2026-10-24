@@ -96,6 +96,10 @@ def _expr_param_deps(tree):
 _PENDING = object()   # 식의 참조가 아직 정의 전 — 정의가 늘 때마다 다시 센다
 _FAILED = object()    # 구문·평가 오류 — 다시 세지 않는다(경고는 이미 냈다)
 _DFLAGS = (1, 2, 3, 4, 5)
+# 고정폭 카드에서 값 칸(10칸 오른쪽 맞춤) 뒤에 다음 PRMR 이 붙은 토큰 — '1.0Rw', '2.0I'(R16 Card 1 그대로 쓰면 생긴다)
+_GLUED_VALUE_PRMR = re.compile(r'([-+]?(?:\d+\.?\d*|\.\d+)(?:[eEdD][-+]?\d+)?)([RrIiCc]\w*)$')
+# 쉼표형 식 줄의 이름부 — 'rplot,term/(states-30)'(R16 EXPRESSION Remark 1), 'R x, a+b'
+_COMMA_EXPR_PRMR = re.compile(r'([RrIiCc]\s+[A-Za-z_]\w*|[A-Za-z_]\w*)\s*,(.*)$')
 
 
 class ParameterResolver:
@@ -108,14 +112,14 @@ class ParameterResolver:
         """덱마다 새로 시작하는 상태 — 중복 규칙(R16 *PARAMETER_DUPLICATION·MUTABLE), LOCAL 범위, 아직 못 센 식.
         전역 값 표(params)는 그대로 둔다(같은 매니저가 이어 읽는 덱 — 예전 동작)."""
         self.dflag = None          # *PARAMETER_DUPLICATION DFLAG(없으면 1)
-        self._defined = {}         # 전역 이름 → 받아들인 정의 글(이 덱에서 처음 본 것부터)
+        self._defined = {}         # 전역 이름 → 받아들인 정의 글(값이 나온 정의만, 이 덱에서 처음 본 것부터)
         self._mutable = set()      # 첫 정의가 MUTABLE 인 전역 이름(문자형은 빼고 — R16 Remark 6)
         self.BeginDeck()
 
     def BeginDeck(self):
         """덱 하나를 처음부터 훑기 전 — 열린 LOCAL 범위와 못 센 식을 비운다."""
         self._scopes = []          # 읽는 중인 파일마다 LOCAL 정의 — 바깥 파일부터 안쪽 파일 차례
-        self._pending = []         # [(이름, 형, 식, 범위 또는 None)] 참조가 아직 정의 전인 식
+        self._pending = []         # [(이름, 형, 식, 범위 또는 None, 정의 자리의 범위 사슬, MUTABLE)] 참조가 아직 정의 전인 식
         self._visible = None       # 지금 보이는 값 표(ChainMap) — 범위가 바뀔 때만 다시 만든다
 
     def ParseParameterLocal(self, lines):
@@ -159,27 +163,31 @@ class ParameterResolver:
 
     def EndFile(self):
         """파일 끝 — 그 파일의 LOCAL 은 사라진다("disappear when the input parser finishes reading the file in which
-        they appear"). 그 범위에서 끝내 못 센 식은 버리고 알린다."""
-        if not self._scopes:
-            return
-        sc = self._scopes.pop()
-        for name, _, expr, target in self._pending:
-            if target is sc:
-                print(f"  Warning: PARAMETER_EXPRESSION_LOCAL '{name}={expr}' 미해결 참조 — 파일이 끝나 미치환 유지")
-        self._pending = [p for p in self._pending if p[3] is not sc]
+        they appear"). 그 파일에서 못 센 식은 남겨 둔다 — 덱 끝까지 참조가 정의되면 그 파일의 앞 참조 줄을 채울 때 쓴다."""
+        if self._scopes:
+            self._scopes.pop()
         self._visible = None
 
     def ReportPending(self):
-        """덱 끝 — 끝내 참조를 못 푼 전역 식을 알리고 비운다."""
-        for name, _, expr, _ in self._pending:
-            print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 미해결 참조 — 미치환 유지")
+        """덱 끝 — 끝내 참조를 못 푼 식을 알리고 비운다."""
+        for name, _, expr, target, _, _ in self._pending:
+            kind = 'PARAMETER_EXPRESSION_LOCAL' if target is not None else 'PARAMETER_EXPRESSION'
+            print(f"  Warning: {kind} '{name}={expr}' 미해결 참조 — 미치환 유지")
         self._pending = []
 
+    def ScopeChain(self):
+        """지금 열린 LOCAL 범위들(바깥 → 안쪽)의 사본 — 앞 참조 줄을 나중에 그 자리의 범위로 채울 때 쓴다."""
+        return list(self._scopes)
+
+    def VisibleFor(self, chain):
+        """chain(ScopeChain) 자리에서 보이는 값 표 — 안쪽 LOCAL 부터, 끝에 전역(LOCAL 이 같은 이름 전역을 가린다).
+        범위 사전과 전역 사전을 그대로 잇는 ChainMap 이라 그 뒤의 정의도 보인다."""
+        return ChainMap(*[sc['vals'] for sc in reversed(chain)], self.params)
+
     def Visible(self):
-        """지금 보이는 값 표 — 안쪽 파일의 LOCAL 부터 바깥 파일의 LOCAL, 끝에 전역(LOCAL 이 같은 이름 전역을 가린다).
-        ChainMap 이라 정의가 늘어도 다시 만들 필요가 없다."""
+        """지금 보이는 값 표(VisibleFor(지금 범위들)). 정의가 늘어도 다시 만들 필요가 없다."""
         if self._visible is None:
-            self._visible = ChainMap(*[sc['vals'] for sc in reversed(self._scopes)], self.params)
+            self._visible = self.VisibleFor(self._scopes)
         return self._visible
 
     @staticmethod
@@ -240,35 +248,31 @@ class ParameterResolver:
           무시(기본), 2=경고 후 채택, 3=오류·무시, 4=조용히 채택, 5=조용히 무시).
         - LOCAL 이 같은 이름 전역을 가리는 것은 중복이 아니다. 보이는 LOCAL 을 다시 가리면 중복이다(DUPLICATION Remark 1).
         - 식은 그 자리에서 그때 보이는 값으로 센다("can reference previously defined parameters"). 참조가 아직 정의 전이면
-          미뤄 두고 정의가 늘 때마다 다시 센다(예전 KMM 이 받아 주던 앞 참조 — LS-DYNA 라면 오류다).
+          그 자리의 범위 사슬과 함께 미뤄 두고 정의가 늘 때마다 다시 센다(예전 KMM 이 받아 주던 앞 참조 — LS-DYNA 라면 오류다).
+          미뤄 둔 식은 아직 정의가 아니다 — 값이 나오기 전에 같은 이름이 다시 정의되면 그것이 첫 정의다(리뷰 K: 못 센 식이
+          이름을 차지해 뒤의 정상 정의가 DFLAG 1 로 버려졌다).
         예전엔 식을 파일 끝에 몰아 셌고, 메인 해석에 끼워 넣은 인클루드 정의를 다시 읽을 때 거절해 인클루드 식이 자기 LOCAL
         을 못 보고 0 이 됐다(리뷰 J)."""
         dflag = self.dflag if self.dflag in _DFLAGS else 1
+        if local and not self._scopes:
+            self.BeginFile()
+        chain = list(self._scopes)
         if local:
-            if not self._scopes:
-                self.BeginFile()
-            prev = next((sc for sc in reversed(self._scopes) if name in sc['text']), None)
+            prev = next((sc for sc in reversed(chain) if name in sc['text']), None)
             if prev is not None and not self._redefine_ok(name, text, prev['text'][name], name in prev['mutable'], dflag):
                 return
-            target = self._scopes[-1]
-            if (prev is None and mutable and ptype != 'C') or (prev is not None and name in prev['mutable']):
-                target['mutable'].add(name)
-            target['text'][name] = text
+            target = chain[-1]
         else:
-            if name in self._defined:
-                if not self._redefine_ok(name, text, self._defined[name], name in self._mutable, dflag):
-                    return
-            elif mutable and ptype != 'C':
-                self._mutable.add(name)
-            self._defined[name] = text
+            if name in self._defined and not self._redefine_ok(name, text, self._defined[name], name in self._mutable, dflag):
+                return
             target = None
         # 같은 자리에 미뤄 둔 같은 이름의 식은 이 정의에 밀린다
         self._pending = [p for p in self._pending if not (p[0] == name and p[3] is target)]
-        value = self._evaluate(name, ptype, text) if is_expr else str(text).strip()
+        value = self._evaluate(name, ptype, text, chain) if is_expr else str(text).strip()
         if value is _PENDING:
-            self._pending.append((name, ptype, text, target))
+            self._pending.append((name, ptype, text, target, chain, mutable))
         elif value is not _FAILED:
-            self._store_value(name, ptype, value, target)
+            self._commit(name, ptype, text, value, target, chain, mutable)
             self._retry_pending()
 
     @staticmethod
@@ -288,18 +292,27 @@ class ParameterResolver:
                   f"(R16 *PARAMETER_DUPLICATION DFLAG=1, 첫 정의가 MUTABLE 아님)")
         return False
 
-    def _store_value(self, name, ptype, value, target):
+    def _commit(self, name, ptype, text, value, target, chain, mutable):
+        """값이 나온 정의를 등록한다 — 중복 판정(_defined·범위 'text')·MUTABLE(첫 정의에만, 문자형 제외)·값."""
         if target is None:
+            if name not in self._defined and mutable and ptype != 'C':
+                self._mutable.add(name)
+            self._defined[name] = text
             self.params[name] = value
             self.param_types[name] = ptype
-        else:
-            target['vals'][name] = value
-            target['types'][name] = ptype
+            return
+        prev = next((sc for sc in reversed(chain) if name in sc['text']), None)
+        if (prev is None and mutable and ptype != 'C') or (prev is not None and name in prev['mutable']):
+            target['mutable'].add(name)
+        target['text'][name] = text
+        target['vals'][name] = value
+        target['types'][name] = ptype
 
-    def _evaluate(self, name, ptype, expr):
-        """식 → 값 글. 참조가 아직 정의 전이면 _PENDING, 구문·평가 오류면 _FAILED(경고).
+    def _evaluate(self, name, ptype, expr, chain):
+        """식 → 값 글. chain 자리에서 보이는 값으로 센다. 참조가 아직 정의 전이면 _PENDING, 구문·평가 오류면 _FAILED(경고).
         AST 화이트리스트 평가 — 지수표기 리터럴(2.1e5)을 식별자로 오인하지 않고, 파라미터가 pi/e/함수명과 겹쳐도
-        파라미터 우선, hang·dunder 탈출 불가."""
+        파라미터 우선, hang·dunder 탈출 불가. 정수형으로 바꿀 수 없는 결과(inf·nan)도 평가 실패다 — 예전엔 이 예외가
+        훑기 전체를 죽여 덱의 &참조가 하나도 치환되지 않았다(리뷰 K)."""
         if ptype == 'C':   # R16: 'For type "C" parameters, the expression is not evaluated in any sense, just stored as a string'
             return str(expr).strip()
         try:
@@ -307,31 +320,34 @@ class ParameterResolver:
         except SyntaxError as e:
             print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 구문 오류 ({e}) — 미치환 유지")
             return _FAILED
-        vis = self.Visible()
+        vis = self.VisibleFor(chain)
         deps = _expr_param_deps(tree)
         if not all(d in vis or d in _EXPR_CONSTS for d in deps):
             return _PENDING
         try:
             value = _eval_ast_node(tree, {d: float(vis[d]) for d in deps if d in vis})
+            return str(self._nint(value)) if ptype == 'I' else repr(float(value))
         except Exception as e:
             print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 평가 실패 ({e}) — 미치환 유지")
             return _FAILED
-        return str(self._nint(value)) if ptype == 'I' else repr(float(value))
 
     def _retry_pending(self):
-        """미뤄 둔 식 가운데 이제 참조가 다 정의된 것을 센다(하나가 풀리면 다른 것이 풀릴 수 있어 진전이 없을 때까지)."""
+        """미뤄 둔 식 가운데 이제 참조가 다 정의된 것을 그 정의 자리의 범위 사슬로 센다(다른 파일의 LOCAL 은 보지 않는다 —
+        리뷰 K). 하나가 풀리면 다른 것이 풀릴 수 있어 진전이 없을 때까지. 늦게 셌다고 알린다."""
         progressed = True
         while progressed and self._pending:
             progressed = False
             for p in list(self._pending):
-                name, ptype, expr, target = p
-                value = self._evaluate(name, ptype, expr)
+                name, ptype, expr, target, chain, mutable = p
+                value = self._evaluate(name, ptype, expr, chain)
                 if value is _PENDING:
                     continue
                 self._pending.remove(p)
                 progressed = True
                 if value is not _FAILED:
-                    self._store_value(name, ptype, value, target)
+                    print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 를 정의보다 뒤에 나온 값으로 셌다 — LS-DYNA 는 "
+                          f"정의 자리에서 앞서 정의된 값만 쓴다(R16). 그 사이의 카드에는 정의 전이다")
+                    self._commit(name, ptype, expr, value, target, chain, mutable)
 
     @staticmethod
     def _prmr(field):
@@ -346,8 +362,14 @@ class ParameterResolver:
         LS-DYNA 파라미터 이름·값에는 공백이 없으므로 토큰 분리가 안전하다(HM 등이 값을 10칸 경계 밖으로 흘려 쓰는 관대한
         포맷도 수용 — 고정폭 슬라이스는 'R   bndout 1.0000E-03' 의 값을 잘라먹는다). 'R    dt2ms' 처럼 형 글자가 이름과
         떨어져 있어도 된다(R16 "RSHLTHK", "R␣␣␣SHLTHK" 는 같다). LOCAL 도 같은 문법이다 — 예전 LOCAL 파서는 붙여 쓴
-        형식의 첫 쌍만 읽어 'R thk 1.0' 줄을 통째로 버렸다(리뷰 J)."""
-        toks = [t for t in re.split(r'[,\s]+', line.strip()) if t]
+        형식의 첫 쌍만 읽어 'R thk 1.0' 줄을 통째로 버렸다(리뷰 J). R16 Card 1 그대로(값 10칸 오른쪽 맞춤 뒤에 다음 PRMR)
+        쓰면 '1.0Rw' 처럼 붙으니 숫자 뒤의 형 글자에서 가른다 — 예전엔 thk='1.0R' 로 받아 조용히 0 이었다(리뷰 K)."""
+        toks = []
+        for t in re.split(r'[,\s]+', line.strip()):
+            if not t:
+                continue
+            m = _GLUED_VALUE_PRMR.match(t)
+            toks += [m.group(1), m.group(2)] if m else [t]
         out, i, n = [], 0, len(toks)
         while i < n - 1:
             tok = toks[i]
@@ -362,19 +384,26 @@ class ParameterResolver:
         return out
 
     def _split_expression_line(self, line):
-        """*PARAMETER_EXPRESSION 데이터 줄 → (형, 이름, 식) 또는 None. 식에는 공백이 올 수 있어 이름부만 토큰 분리하고
-        나머지 전체를 식으로 쓴다. 식 안 참조의 '&' 는 뗀다(R16 "with or without the leading &")."""
-        parts = line.strip().split(None, 1)
-        if len(parts) < 2:
-            return None
-        prmr, rest = parts
-        if len(prmr) == 1 and prmr in _TYPE_CHARS:
-            sub = rest.split(None, 1)
-            if len(sub) < 2:
-                return None
-            ptype, name, expr = prmr.upper(), sub[0].strip().lower(), sub[1].strip()
+        """*PARAMETER_EXPRESSION 데이터 줄 → (형, 이름, 식) 또는 None. 식에는 공백이 올 수 있어 이름부만 떼고 나머지 전체를
+        식으로 쓴다. 이름부는 고정폭('R span    5.0-xmin', 'Rspan 5.0-xmin')이나 쉼표형('rplot,term/(states-30)' —
+        R16 EXPRESSION Remark 1)이다 — 예전엔 쉼표형 이름을 'plot,' 으로 받아 조용히 미치환이었다(리뷰 K).
+        식 안 참조의 '&' 는 뗀다(R16 "with or without the leading &")."""
+        s = line.strip()
+        m = _COMMA_EXPR_PRMR.match(s)
+        if m:
+            (ptype, name), expr = self._prmr(re.sub(r'\s+', '', m.group(1))), m.group(2).strip()
         else:
-            (ptype, name), expr = self._prmr(prmr), rest.strip()
+            parts = s.split(None, 1)
+            if len(parts) < 2:
+                return None
+            prmr, rest = parts
+            if len(prmr) == 1 and prmr in _TYPE_CHARS:
+                sub = rest.split(None, 1)
+                if len(sub) < 2:
+                    return None
+                ptype, name, expr = prmr.upper(), sub[0].strip().lower(), sub[1].strip()
+            else:
+                (ptype, name), expr = self._prmr(prmr), rest.strip()
         if not name or not expr:
             return None
         if ptype != 'C':
@@ -391,6 +420,14 @@ class ParameterResolver:
     def RefNames(self, line):
         """줄 안 &참조 이름(소문자) 집합."""
         return {m.group(1).lower() for m in self._REF_RE.finditer(line)}
+
+    def SubstituteToken(self, line, params=None):
+        """&참조를 글자 수에 매이지 않고 치환한다 — 칸 폭이 없는 줄(*INCLUDE 파일 이름 등). 고정폭 치환은 '&fn' 처럼 뒤에
+        공백이 없으면 긴 이름을 넣지 못해 인클루드가 빠졌다(리뷰 K)."""
+        if '&' not in line:
+            return line
+        eol = '\n' if line.endswith('\n') else ''
+        return self._sub_token(line[:-1] if eol else line, params) + eol
 
     def _sub_token(self, body, params=None):
         """토큰 단위 치환 (필드폭 없는 라인: 코멘트/free-format). 길이 가변 허용."""

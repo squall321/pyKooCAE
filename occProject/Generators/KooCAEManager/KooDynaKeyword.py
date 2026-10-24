@@ -12573,22 +12573,33 @@ class DynaManager():
                     if '&' in line:
                         self._param_sub(path, lines, i, plan, late, False)
                     continue
-                if hdr is not None:   # 정의 줄 — 그 자리 값으로 치환해 두고(식 안 &참조), 정의는 원문으로 받는다
-                    if '&' in line:
-                        self._param_sub(path, lines, i, plan, None, False)
-                    if res.DefineLine(hdr, line) == 'end':
+                if hdr is not None:   # 정의 줄 — 그 자리 값으로 치환해 둔다
+                    sub = self._param_sub(path, lines, i, plan, None, False) if '&' in line else line
+                    # 평문 값의 &참조는 그 자리 값으로 받는다(R16 "referenced anywhere" — 예전엔 'R b &a' 를 '&a' 글자로 받아
+                    # 카드가 0, 출력 원문 블록과도 어긋났다, 리뷰 K). 식은 원문으로 — &a 를 글자로 바꾸면 -3**2 처럼 우선순위가 바뀐다
+                    if res.DefineLine(hdr, sub if hdr[0] == 'param' else line) == 'end':
                         hdr = None
                     continue
                 if not in_include:
                     if '&' in line:
                         self._param_sub(path, lines, i, plan, late, True)
                     continue
-                inc_name = (self._param_sub(path, lines, i, plan, None, False) if '&' in line else line).strip()
+                # 파일 이름 줄은 칸 폭이 없다 — 글자 수에 매이지 않게 치환한다(긴 이름이 빠지지 않게, 리뷰 K)
+                inc_line = res.SubstituteToken(line, res.Visible()) if '&' in line else line
+                if inc_line != line:
+                    plan[i] = (line, inc_line)
+                inc_name = inc_line.strip()
                 if not inc_name:
                     continue
                 inc = inc_name if os.path.isabs(inc_name) else os.path.join(os.path.dirname(path), inc_name)
                 real = os.path.realpath(inc)
-                if real in stack or not os.path.isfile(inc):
+                if real in stack:
+                    continue
+                if not os.path.exists(inc):   # 리더와 같은 판정(exists — /dev/null 같은 특수 파일도 읽는다)
+                    missing = [n for n in res.RefNames(inc_line) if n not in res.Visible()] if '&' in inc_line else []
+                    if missing:
+                        print(f"  Warning: {os.path.basename(path)}: *INCLUDE 파일 이름의 &{', &'.join(missing)} 이(가) 그 자리에서 "
+                              f"정의되지 않았다 — LS-DYNA 는 읽는 차례로 정의를 본다(R16). 그 인클루드는 읽지 않는다")
                     continue
                 try:
                     with open(inc, 'r', errors='replace') as f:
@@ -12607,30 +12618,31 @@ class DynaManager():
         return plan
 
     def _param_sub(self, path, lines, i, plan, late, warn):
-        """lines[i] 를 지금 보이는 값으로 치환해 바뀌었으면 plan 에 적는다. 정의 전이라 못 푼 참조가 남으면 late 에 넣는다."""
+        """lines[i] 를 지금 보이는 값으로 치환해 바뀌었으면 plan 에 적는다. 정의 전이라 못 푼 참조가 남으면 그 자리의 범위
+        사슬과 함께 late 에 넣는다(나중에 채울 때 그 자리 LOCAL 만 보게)."""
         res = self._param_resolver
         vis = res.Visible()
         new = res.SubstituteLine(lines[i], vis)
         if new != lines[i]:
             plan[i] = (lines[i], new)
-        if late is not None and any(n not in vis for n in res.RefNames(new)):
-            late.append((plan, i, lines[i], new, warn, path))
+        if late is not None and '&' in new and any(n not in vis for n in res.RefNames(new)):
+            late.append((plan, i, lines[i], new, warn, path, res.ScopeChain()))
         return new
 
     def _param_fill_late(self, entries, label):
-        """앞 참조가 남은 줄(entries)을 지금 보이는 값으로 다시 치환한다 — 예전 KMM 이 파일을 한 표로 치환해 받아 주던 값.
-        풀린 이름은 파일마다 알리고, 아직 못 푼 항목을 돌려준다."""
+        """앞 참조가 남은 줄(entries)을 그 줄 자리의 범위 사슬로 지금 보이는 값(그 뒤 정의 포함)으로 다시 치환한다 — 예전 KMM
+        이 파일을 한 표로 치환해 받아 주던 값. 풀린 이름은 파일마다 알리고, 아직 못 푼 항목을 돌려준다."""
         res = self._param_resolver
-        vis = res.Visible()
         left, named = [], {}
-        for plan, i, orig, cur, warn, path in entries:
+        for plan, i, orig, cur, warn, path, chain in entries:
+            vis = res.VisibleFor(chain)
             new = res.SubstituteLine(cur, vis)
             if new != cur:
                 plan[i] = (orig, new)
                 if warn:
                     named.setdefault(path, set()).update(res.RefNames(cur) - res.RefNames(new))
-            if any(n not in vis for n in res.RefNames(new)):
-                left.append((plan, i, orig, new, warn, path))
+            if '&' in new and any(n not in vis for n in res.RefNames(new)):
+                left.append((plan, i, orig, new, warn, path, chain))
         for path, names in named.items():
             names = sorted(names)
             print(f"  Warning: {os.path.basename(path)}: &{', &'.join(names[:5])}{' …' if len(names) > 5 else ''} 을(를) "

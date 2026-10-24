@@ -147,7 +147,7 @@ CASES = {
     # 인클루드 식이 메인의 나중 정의를 참조 — 정의되는 자리에서 풀린다(그 뒤 카드)
     "O_forward_ref": ({"model.k": "*KEYWORD\n*INCLUDE\np.k\n" + P(("R", "a", "3.0")) + ct("&b") + "*END\n",
                        "p.k": "*KEYWORD\n*PARAMETER_EXPRESSION\nR b       a*2.0\n*END\n"},
-                      {"model.k": [[6.0]]}, {"nowarn": ["미해결", "치환되지 않은"]}),
+                      {"model.k": [[6.0]]}, {"nowarn": ["미해결", "치환되지 않은"], "warn": ["'b=a*2.0' 를 정의보다 뒤에 나온 값으로 셌다"]}),
     "P_char_include_name": ({"model.k": "*KEYWORD\n*PARAMETER\nC fn          p.k\n*INCLUDE\n&fn          \n" + ct("&q") + "*END\n",
                              "p.k": "*KEYWORD\n" + P(("R", "q", "4.0")) + ct("&q") + "*END\n"},
                             {"model.k": [[4.0]], "p.k": [[4.0]]}, {}),
@@ -206,6 +206,49 @@ CASES = {
     "FWD3_local_forward": ({"model.k": "*KEYWORD\n*INCLUDE\na.k\n" + ct("&v") + "*END\n",
                             "a.k": "*KEYWORD\n" + ct("&v") + "*PARAMETER_LOCAL\nRv        3.0\n*END\n"},
                            {"a.k": [[3.0]], "model.k": [["&v"]]}, {"noiga": True, "warn": ["이 파일 끝 값을 넣었다"]}),
+    # ── 리뷰 K ──
+    # K2: 정수 식 결과가 inf 면 그 식만 미치환 — 예전엔 훑기·대비 경로가 함께 죽어 덱의 &참조가 하나도 치환되지 않았다
+    "K2_int_expr_inf": ({"model.k": "*KEYWORD\n" + P(("R", "t", "1.0")) + "*PARAMETER_EXPRESSION\nI n       1e200*1e200\n"
+                         + ct("&t") + "*INCLUDE\na.k\n*END\n",
+                         "a.k": "*KEYWORD\n*PARAMETER_EXPRESSION\nI m       1e200*1e200-1e200*1e200\n" + ct("&t") + "*END\n"},
+                        {"model.k": [[1.0]], "a.k": [[1.0]]}, {"warn": ["평가 실패"], "nowarn": ["훑지 못했다", "해석 실패"]}),
+    # K3: 쉼표형 식(R16 EXPRESSION Remark 1 예제 그대로)·'rxminn, &xmin-&rr'(사용자 IGA 덱 형식)
+    "K3_comma_expr_r16_example": ({"model.k": "*KEYWORD\n*parameter\nrterm, 0.2, istates, 80\n*parameter_expression\n"
+                                   "rplot,term/(states-30)\n" + P(("R", "xmin", "5.0"), ("R", "rr", "1.0"))
+                                   + "*PARAMETER_EXPRESSION\nrxminn, &xmin-&rr\n" + ct("&plot", "&xminn") + "*END\n"},
+                                  {"model.k": [[0.004, 4.0]]}, {"nowarn": ["구문 오류", "치환되지 않은"]}),
+    # K4: R16 Card 1 그대로 쓴 고정폭 여러 쌍 — 값(10칸 오른쪽 맞춤) 뒤에 다음 PRMR 이 붙는다
+    "K4_fixed_width_glued": ({"model.k": "*KEYWORD\n*PARAMETER\nR thk            1.0R w              2.0I n                3\n"
+                              "*PARAMETER_LOCAL\nRp               4.0Rq               5.0\n" + ct("&thk", "&w", "&n", "&p", "&q") + "*END\n"},
+                             {"model.k": [[1.0, 2.0, 3, 4.0, 5.0]]}, {}),
+    # P1: 인클루드 이름의 참조가 그 자리에서 정의 전이면(LS-DYNA 도 못 읽음) 읽지 않고 까닭을 알린다
+    "KP1_include_name_forward": ({"model.k": "*KEYWORD\n*INCLUDE\n&fn\n*PARAMETER\nC fn          p.k\n" + ct("&q") + "*END\n",
+                                  "p.k": "*KEYWORD\n" + P(("R", "q", "4.0")) + ct("&q") + "*END\n"},
+                                 {"model.k": [["&q"]]}, {"warn": ["*INCLUDE 파일 이름의 &fn 이(가) 그 자리에서 정의되지 않았다"]}),
+    # P2: 인클루드의 LOCAL 식이 부모의 나중 정의를 참조 — 예전처럼 덱 끝 값으로 채우고 알린다(예전 판 h=2.0)
+    "KP2_local_expr_pending_parent_later": ({"model.k": "*KEYWORD\n*INCLUDE\na.k\n" + P(("R", "w", "4.0")) + ct("&w") + "*END\n",
+                                             "a.k": "*KEYWORD\n*PARAMETER_EXPRESSION_LOCAL\nR h       w/2.0\n" + ct("&h") + "*END\n"},
+                                            {"model.k": [[4.0]], "a.k": [[2.0]]},
+                                            {"warn": ["'h=w/2.0' 를 정의보다 뒤에 나온 값으로 셌다", "덱 끝 값을 넣었다"]}),
+    # P3: 미뤄 둔 전역 식은 정의 자리의 범위로만 센다 — 다른 파일(안쪽 인클루드)의 LOCAL b 를 쓰지 않는다
+    "KP3_pending_global_not_nested_local": ({"model.k": "*KEYWORD\n*PARAMETER_EXPRESSION\nR a       b*2.0\n*INCLUDE\ninc.k\n"
+                                             + P(("R", "b", "1.0")) + ct("&a", "&b") + "*END\n",
+                                             "inc.k": "*KEYWORD\n*PARAMETER_EXPRESSION_LOCAL\nR b       5.0\n" + ct("&a") + "*END\n"},
+                                            {"model.k": [[2.0, 1.0]], "inc.k": [[2.0]]}, {"warn": ["정의보다 뒤에 나온 값으로 셌다"]}),
+    # P4: 값이 안 나온 식은 이름을 차지하지 않는다 — 뒤의 정상 정의가 첫 정의(DFLAG 1 로 버리지 않음)
+    "KP4_pending_does_not_hold_name": ({"model.k": "*KEYWORD\n*PARAMETER_EXPRESSION\nR a       a+1.0\n" + ct("&a")
+                                        + P(("R", "a", "5.0")) + ct("&a") + "*END\n"},
+                                       {"model.k": [[5.0], [5.0]]}, {"nowarn": ["재정의"]}),
+    # P5: /dev/null 같은 특수 파일 인클루드 — 리더와 같이 exists 로 판정(계획 어긋남 경고 없음)
+    "KP5_devnull_include": ({"model.k": "*KEYWORD\n" + P(("R", "t", "1.0")) + "*INCLUDE\n/dev/null\n" + ct("&t") + "*END\n"},
+                            {"model.k": [[1.0]]}, {"nowarn": ["맞지 않는다"]}),
+    # P7: 평문 *PARAMETER 값의 &참조는 그 자리 값(R16 "referenced anywhere")
+    "KP7_param_value_ref": ({"model.k": "*KEYWORD\n" + P(("R", "a", "1.5")) + "*PARAMETER\nR b       &a\n" + ct("&b") + "*END\n"},
+                            {"model.k": [[1.5]]}, {"nowarn": ["치환되지 않은"]}),
+    # F5: 뒤 공백 없는 '&fn' 에 긴 파일 이름 — 파일 이름 줄은 글자 수에 매이지 않게 치환
+    "KF5_long_include_name": ({"model.k": "*KEYWORD\n*PARAMETER\nC fn    long_include_name.k\n*INCLUDE\n&fn\n*END\n",
+                               "long_include_name.k": "*KEYWORD\n" + P(("R", "q", "4.0")) + ct("&q") + "*END\n"},
+                              {"long_include_name.k": [[4.0]]}, {"nowarn": ["not found", "필드 공백"]}),
 }
 
 
