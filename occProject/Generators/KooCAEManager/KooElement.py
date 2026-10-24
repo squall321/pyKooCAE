@@ -1824,7 +1824,7 @@ class ShellSet:
         j = 0 
         for i in range(0,len(self.elemList)):
             j = j + 1            
-            keywordString += format(self.elemList[i].id + startEID,  '>10')
+            keywordString += format(self.elemList[i] + startEID,  '>10')
             if j == 8:
                 keywordString += "\n"
                 j = 0
@@ -1845,7 +1845,8 @@ class ShellSet:
         j = 0
         for i in range(0,len(self.elemList)):
             j = j + 1
-            stream.write(format(self.elemList[i].id + startEID,  '>10'))
+            # 셋 요소 목록은 EID 정수다(AddSetsfromDyna·Solid/Beam 셋과 같음) — .id 로 죽어 셸 셋이 든 덱은 출력이 안 됐다(리뷰 G)
+            stream.write(format(self.elemList[i] + startEID,  '>10'))
             if j == 8:
                 stream.write("\n")
                 j = 0

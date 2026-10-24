@@ -11839,6 +11839,7 @@ class SetShell(DynaKeyword):
             parameterList = []
                         
             parameters = self.parse_whole(set_shell_keywords[i][0], [10, 10, 10, 10, 10])
+            parameterList.append(parameters)   # SID 카드 — 빠져 AddSetsfromDyna 가 첫 EID 를 SID 로 읽었다(리뷰 G, SET_SHELL_LIST 와 같게)
             for j in range(1,len(set_shell_keywords[i])):
                 parameters = self.parse_whole(set_shell_keywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
                 parameterList.append(parameters)
@@ -11882,6 +11883,7 @@ class SetShellTitle(DynaKeyword):
             parameters = self.parse_whole(set_shell_keywords[i][0], [80])
             parameterList.append(parameters)
             parameters = self.parse_whole(set_shell_keywords[i][1], [10, 10, 10, 10, 10])
+            parameterList.append(parameters)   # SID 카드 — 빠져 첫 EID 를 SID 로 읽었다(리뷰 G, SET_SOLID_TITLE 과 같게)
             for j in range(2,len(set_shell_keywords[i])):
                 parameters = self.parse_whole(set_shell_keywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
                 parameterList.append(parameters)
