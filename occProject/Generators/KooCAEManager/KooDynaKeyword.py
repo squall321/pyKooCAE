@@ -3023,24 +3023,22 @@ class ControlAdaptive(DynaKeyword):
     def parse(self, controlAdaptiveKeywords):
         for i in range(len(controlAdaptiveKeywords)):
             curParameter = controlAdaptiveKeywords[i]
-            parameterList = [] 
-            parameters = self.parse_whole(curParameter[0], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            for j in range(1,len(curParameter)):
-                parameters = self.parse_whole(curParameter[j], [10, 10, 10, 10, 10, 10, 10])
-                parameterList.append(parameters)
-            self.parameters.append(parameterList)
+            # 카드마다 8칸을 다 읽는다 — 카드 2~4 를 7칸으로 읽어 8번째 칸(MAXEL·LCLVL 등)이 덤프에서 사라졌다(리뷰 G)
+            self.parameters.append([self.parse_whole(line, [10] * 8) for line in curParameter])
 
     def write(self, stream):
         for i in range(len(self.parameters)):
             curParameter = self.parameters[i]
             stream.write("*CONTROL_ADAPTIVE\n")
             ADPTYP = 1
-            if len(curParameter[0])>=3:
-                if curParameter[0][2] != "":
-                    pass
-                else:
-                    ADPTYP = int(curParameter[0][2])
+            # ADPTYP(카드 1 의 3번째 칸)가 있으면 그 값을 쓴다 — 판정이 뒤집혀 값이 있으면 무시했고, 비면 int('') 로
+            # 읽는 도중 KMM 이 죽었다(ADPFREQ 만 준 정상 카드도 — 리뷰 G)
+            _adptyp = str(curParameter[0][2]).strip() if len(curParameter[0]) >= 3 else ""
+            try:
+                if _adptyp:
+                    ADPTYP = int(float(_adptyp))
+            except ValueError:
+                pass
             
             # h-adaptivity for shells
             if ADPTYP == 1 or ADPTYP == 2 or ADPTYP == 4:
@@ -3069,9 +3067,7 @@ class ControlAdaptive(DynaKeyword):
                     if ADPTYP == 1 or ADPTYP == 2 or ADPTYP == 4:
                         stream.write("$$ IADPN90    IADPGH    NCFREQ    IADPCL    ADPCTL    CBIRTH    CDEATH     LCLVL\n")   
                     elif ADPTYP == 7 or ADPTYP == 8 or ADPTYP == -8:
-                        stream.write("$$   EMPTY\n")
-                        stream.write("\n")
-                        continue
+                        stream.write("$$   EMPTY\n")   # 입력 카드 3 은 그대로 쓴다 — 예전엔 빈 줄로 바꿔 덤프에서 사라졌다
                 if j == 3:
                     if ADPTYP == 1 or ADPTYP == 2:
                         stream.write("$$                                                   D3TRACE              IFSAND\n")
