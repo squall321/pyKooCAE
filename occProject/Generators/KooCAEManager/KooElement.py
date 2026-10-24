@@ -27,6 +27,13 @@ def _format_mass8(value: float) -> str:
     return s[:8]
 
 
+def element_set_key(aSet):
+    """요소 셋 사전 키 (종류, SID) — R16 *SET: "Each set type must have a unique numeric identification" 이라 SID 는
+    셋 종류마다 따로다. SID 하나로 담으면 같은 번호의 *SET_SHELL 과 *SET_SOLID 중 하나가 조용히 사라졌다(리뷰 H)."""
+    return ({"ShellSet": "SHELL", "SolidSet": "SOLID", "BeamSet": "BEAM"}.get(type(aSet).__name__, type(aSet).__name__),
+            aSet.sid)
+
+
 class Element:
     def __init__(self,id=0):
         self.id = id
@@ -2110,31 +2117,31 @@ class ElementManager:
     def CreateShellSet(self,name="",da1=0.0,da2=0.0,da3=0.0,da4=0.0, elemList=[]):
         self.maxSID += 1
         shellSet = ShellSet(self.maxSID,name,da1,da2,da3,da4,elemList)
-        self.sets[self.maxSID] = shellSet
+        self.sets[element_set_key(shellSet)] = shellSet
         return shellSet
 
     def CreateShellSetwithID(self, id, name = "", da1=0.0,da2=0.0,da3=0.0,da4=0.0, elemList=[]):
         self.maxSID = max(self.maxSID,id)
         shellSet = ShellSet(id,name,da1,da2,da3,da4,elemList)
-        self.sets[id] = shellSet
+        self.sets[element_set_key(shellSet)] = shellSet
         return shellSet
     
     def CreateSolidSet(self,name="",solver="MECH", elemList=[]):
         self.maxSID += 1
         solidSet = SolidSet(self.maxSID,name,solver,elemList)
-        self.sets[self.maxSID] = solidSet
+        self.sets[element_set_key(solidSet)] = solidSet
         return solidSet
     
     def CreateSolidSetwithID(self, id, name = "", solver = "MECH", elemList=[]):
         self.maxSID = max(self.maxSID,id)
         solidSet = SolidSet(id,name,solver,elemList)
-        self.sets[id] = solidSet
+        self.sets[element_set_key(solidSet)] = solidSet
         return solidSet
 
     def CreateBeamSetwithID(self, id, name = "", elemList=[]):
         self.maxSID = max(self.maxSID,id)
         beamSet = BeamSet(id,name,elemList)
-        self.sets[id] = beamSet
+        self.sets[element_set_key(beamSet)] = beamSet
         return beamSet
     
     def GetNumIntegrationPoints(self):
@@ -3961,8 +3968,11 @@ class ElementManager:
             elemList = [] 
             for i in range(2, len(dynaSets)):
                 for j in range(0, len(dynaSets[i])):
-                    eid = KooDynaInt(dynaSets[i][j])
-                    elemList.append(eid)
+                    # 빈 칸·0 은 요소가 아니다(SET_BEAM 처럼 건너뛴다) — 0 을 넣으면 IMPORT_MERGE_K 의 OffsetID 가
+                    # 0+offset 을 실제 EID 로 만들어 셋이 조용히 망가졌다. 누적 체인은 KMM 이 0 으로 채운 출력을 다시 읽는다(리뷰 H)
+                    eid = KooDynaInt(dynaSets[i][j]) if str(dynaSets[i][j]).strip() else 0
+                    if eid != 0:
+                        elemList.append(eid)
             name = "SET_SHELL_" + str(sid)
             aSet = self.CreateShellSetwithID(sid, name, da1, da2, da3, da4, elemList)
         if dynaSets[0] == "*SET_SHELL_TITLE":
@@ -3977,8 +3987,11 @@ class ElementManager:
             elemList = []
             for i in range(3, len(dynaSets)):
                 for j in range(0, len(dynaSets[i])):
-                    eid = KooDynaInt(dynaSets[i][j])
-                    elemList.append(eid)
+                    # 빈 칸·0 은 요소가 아니다(SET_BEAM 처럼 건너뛴다) — 0 을 넣으면 IMPORT_MERGE_K 의 OffsetID 가
+                    # 0+offset 을 실제 EID 로 만들어 셋이 조용히 망가졌다. 누적 체인은 KMM 이 0 으로 채운 출력을 다시 읽는다(리뷰 H)
+                    eid = KooDynaInt(dynaSets[i][j]) if str(dynaSets[i][j]).strip() else 0
+                    if eid != 0:
+                        elemList.append(eid)
             aSet = self.CreateShellSetwithID(sid, name, da1, da2, da3, da4, elemList)
         if dynaSets[0] == "*SET_SOLID":
             firstLine = dynaSets[1]
@@ -3987,8 +4000,11 @@ class ElementManager:
             elemList = []
             for i in range(2, len(dynaSets)):
                 for j in range(0, len(dynaSets[i])):
-                    eid = KooDynaInt(dynaSets[i][j])
-                    elemList.append(eid)
+                    # 빈 칸·0 은 요소가 아니다(SET_BEAM 처럼 건너뛴다) — 0 을 넣으면 IMPORT_MERGE_K 의 OffsetID 가
+                    # 0+offset 을 실제 EID 로 만들어 셋이 조용히 망가졌다. 누적 체인은 KMM 이 0 으로 채운 출력을 다시 읽는다(리뷰 H)
+                    eid = KooDynaInt(dynaSets[i][j]) if str(dynaSets[i][j]).strip() else 0
+                    if eid != 0:
+                        elemList.append(eid)
             name = "SET_SOLID_" + str(sid)
             aSet = self.CreateSolidSetwithID(sid, name, solver, elemList)
         if dynaSets[0] == "*SET_SOLID_TITLE":
@@ -4000,8 +4016,11 @@ class ElementManager:
             elemList = []
             for i in range(3, len(dynaSets)):
                 for j in range(0, len(dynaSets[i])):
-                    eid = KooDynaInt(dynaSets[i][j])
-                    elemList.append(eid)
+                    # 빈 칸·0 은 요소가 아니다(SET_BEAM 처럼 건너뛴다) — 0 을 넣으면 IMPORT_MERGE_K 의 OffsetID 가
+                    # 0+offset 을 실제 EID 로 만들어 셋이 조용히 망가졌다. 누적 체인은 KMM 이 0 으로 채운 출력을 다시 읽는다(리뷰 H)
+                    eid = KooDynaInt(dynaSets[i][j]) if str(dynaSets[i][j]).strip() else 0
+                    if eid != 0:
+                        elemList.append(eid)
             aSet = self.CreateSolidSetwithID(sid, name, solver, elemList)
             print("Solid Set Created")
         if dynaSets[0] == "*SET_BEAM":

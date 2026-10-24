@@ -198,7 +198,8 @@ def _rekey_all_managers(new_importer):
         if em is not None:
             em.elements = {e.id: e for e in em.elements.values()}
             if hasattr(em, 'sets'):
-                em.sets = {s.sid: s for s in em.sets.values()}
+                from KooCAEManager.KooElement import element_set_key   # 셋 종류마다 SID 가 따로다(리뷰 H)
+                em.sets = {element_set_key(s): s for s in em.sets.values()}
     # SectionManager
     secm = new_importer.sectionManager
     secm.sections = {s.id: s for s in secm.sections.values()}
