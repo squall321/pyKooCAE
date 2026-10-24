@@ -6090,9 +6090,14 @@ class ElementShellThickness(DynaKeyword):
     def write(self, stream):
         for i in range(len(self.parameters)):
             parameter = self.parameters[i]
-            mode = 1 
-            if len(parameter[0]) > 6 and int(parameter[0][6])>0:
-                mode = 2
+            if not parameter:
+                continue   # 빈 줄만 든 블록 — 요소가 없다(parameter[0] 에서 죽었다 — 리뷰 H)
+            mode = 1
+            try:   # N5 칸이 공백이면 int('') 로 죽었다 — 파서의 판정과 같게 0 으로 본다
+                if len(parameter[0]) > 6 and int(str(parameter[0][6]).strip() or 0) > 0:
+                    mode = 2
+            except ValueError:
+                pass
             if mode == 1:
                 stream.write("*ELEMENT_SHELL_THICKNESS\n")
                 stream.write("$$   EID     PID      N1      N2      N3      N4      N5      N6      N7      N8\n")

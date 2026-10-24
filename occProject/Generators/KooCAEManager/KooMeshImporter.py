@@ -818,7 +818,7 @@ class KooDynaImporter():
 
         if elementShellThickKeyword is not None:
             parametersShellThick = elementShellThickKeyword.parameters
-            self.partManager.AddShellElementsfromDyna(parametersShellThick)
+            self.partManager.AddShellElementsfromDyna(parametersShellThick, thickness=True)
                         
         if elementSolidKeyword is not None:
             parametersSolid = elementSolidKeyword.parameters

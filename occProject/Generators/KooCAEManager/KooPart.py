@@ -2318,11 +2318,15 @@ class KooPartManager():
                         part.AddLineQuadraticElement(eid, n1, n2, n3, rt1, rr1, rt2, rr2, local)
                     
 
-    def AddShellElementsfromDyna(self, parametersShell):
+    def AddShellElementsfromDyna(self, parametersShell, thickness=False):
+        # thickness=True: *ELEMENT_SHELL_THICKNESS 블록(카드 1 + 두께 카드 2장, 8절점이면 3장). 행 길이로만 추측하면
+        # 요소 하나짜리 블록(행 2개)을 일반 셸로 읽어 두께 줄에서 죽었다(리뷰 H)
         for i in range(len(parametersShell)):
             parameters = parametersShell[i]
             mode = 1
-            if len(parameters) > 2:
+            if thickness:
+                mode = 3 if len(parameters) >= 3 and len(parameters[2]) != len(parameters[0]) else 2
+            elif len(parameters) > 2:
                 length1 = len(parameters[0])
                 length2 = len(parameters[1])
                 if length1 == length2:
@@ -2345,7 +2349,7 @@ class KooPartManager():
                     # integer
                     nids = parameter[2:]
                     # nids to integer list 
-                    nids = [int(i) for i in nids]
+                    nids = [KooDynaInt(str(i)) for i in nids]   # 빈 칸(80칸까지 채운 N5~N8)은 0 — int('') 로 죽었다(리뷰 H)
                     if pid in self.parts:
                         part : KooPart = self.parts[pid]
                         if len(nids) == 3 or nids[3] == 0:
@@ -2386,7 +2390,7 @@ class KooPartManager():
                     # integer
                     nids = parameter1[2:]
                     # nids to integer list
-                    nids = [int(i) for i in nids]
+                    nids = [KooDynaInt(str(i)) for i in nids]   # 빈 칸(80칸까지 채운 N5~N8)은 0 — int('') 로 죽었다(리뷰 H)
                     # floats
                     thickness = parameter2[0:-1]                    
                     beta = parameter2[4]
@@ -2414,12 +2418,13 @@ class KooPartManager():
                     # integer
                     nids = parameter1[2:]
                     # nids to integer list
-                    nids = [int(i) for i in nids]
+                    nids = [KooDynaInt(str(i)) for i in nids]   # 빈 칸(80칸까지 채운 N5~N8)은 0 — int('') 로 죽었다(리뷰 H)
                     # floats
                     thickness = parameter2[0:-1]                    
                     beta = parameter2[4]
                     # parameter3 has 4 theta values
-                    theta = parameter3
+                    # 8절점 두께 THIC1~8 = 카드 2 의 4개 + 카드 3 의 4개 — 카드 3(4칸)에서 theta[0..7] 을 읽어 IndexError 였다(리뷰 H)
+                    theta = list(parameter2[0:4]) + list(parameter3[0:4])
 
                     if pid in self.parts:
                         part : KooPart = self.parts[pid]
