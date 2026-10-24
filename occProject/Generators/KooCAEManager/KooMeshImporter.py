@@ -2219,15 +2219,14 @@ class KooDynaImporter():
                 # 매니저가 같은 내용으로 이미 쓴 카드는 건너뛴다 — 표시(keywordInterpreted)가 빠진
                 # 일반 경로 키워드(DATABASE_NCFORC·LOAD_THERMAL_VARIABLE·MAT_ADD_THERMAL_EXPANSION 등)가
                 # 왕복마다 배로 늘어나던 것을 막는다. 내용이 다르면 그대로 보존(유실 방지 유지).
-                from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks, index_written_blocks
+                from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks, index_written_blocks, is_case_marker
                 pending = filter_duplicate_raw_blocks(raw_dict or {}, interpreted, stream.getvalue(), SKIP)
                 wrote_header = False
                 # *CASE_BEGIN_n·*CASE_END_n 은 위치가 뜻이라(그 사이 카드만 그 케이스) 끝에 모아 쓰면 뜻이 바뀐다. KMM 은
                 # *CASE 를 지원하지 않으므로 데이터가 있든 없든 표지를 쓰지 않고 알린다(데이터 있는 BEGIN 만 끝으로 옮겨져 짝이
                 # 안 맞던 것 — 리뷰 F).
-                case_marks = sorted({k for k, _ in pending if k.startswith(("CASE_BEGIN", "CASE_END"))}
-                                    | {k for k in empties if k.startswith(("CASE_BEGIN", "CASE_END"))})
-                pending = [(k, b) for k, b in pending if not k.startswith(("CASE_BEGIN", "CASE_END"))]
+                case_marks = sorted({k for k, _ in pending if is_case_marker(k)} | {k for k in empties if is_case_marker(k)})
+                pending = [(k, b) for k, b in pending if not is_case_marker(k)]
                 if case_marks:
                     print(f"  ⚠️  *CASE 구간 표지 {len(case_marks)}개({', '.join('*' + k for k in case_marks)})는 쓰지 않는다 — "
                           f"KMM 은 *CASE 를 지원하지 않아 구간 안 카드는 모든 케이스에 들어간다(덱 확인)")
@@ -2242,7 +2241,7 @@ class KooDynaImporter():
                 # 매니저가 같은 키워드를 쓰지 않았으면 키워드 줄만 원문대로 남긴다(쓴 것은 매니저 판이 우선).
                 # *CASE_BEGIN_n·*CASE_END_n 은 위치가 뜻(그 사이 카드만 그 케이스)이라 끝에 모아 쓰면 뜻이 바뀐다 —
                 # 옛 판처럼 되살리지 않는다(리뷰 D)
-                empties = [k for k in empties if k not in SKIP and not k.startswith(("CASE_BEGIN", "CASE_END"))]
+                empties = [k for k in empties if k not in SKIP and not is_case_marker(k)]
                 if empties:
                     written = index_written_blocks(stream.getvalue(), empties)
                     kept = []

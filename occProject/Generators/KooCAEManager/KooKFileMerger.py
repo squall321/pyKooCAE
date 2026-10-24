@@ -158,7 +158,7 @@ def _write_uninterpreted_raw_blocks(f, dynaImporter):
         interpreted = getattr(dynaImporter, 'keywordInterpreted', {}) or {}
         SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END"}
         # 이미 쓴 내용과 같은 카드는 건너뛴다 (공유 writer 와 같은 규약 — KooRawKeywordDedup)
-        from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks
+        from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks, is_case_marker
         written_so_far = ""
         try:
             pos = f.tell()
@@ -168,6 +168,8 @@ def _write_uninterpreted_raw_blocks(f, dynaImporter):
         except Exception:
             written_so_far = ""
         pending = filter_duplicate_raw_blocks(raw_dict, interpreted, written_so_far, SKIP)
+        # *CASE 표지는 공용 기록기가 일부러 빼고 이미 알렸다 — 여기서 다시 쓰면 짝 잃은 BEGIN 이 덱 끝에 남았다(리뷰 G)
+        pending = [(k, b) for k, b in pending if not is_case_marker(k)]
         wrote_header = False
         for kw_name, block in pending:
             if not wrote_header:

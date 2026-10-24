@@ -343,11 +343,14 @@ class KFileDecomposer:
         raw_dict = getattr(dyna_mgr, '_raw_keyword_dict', None) or {}
         interpreted = getattr(self.dynaImporter, 'keywordInterpreted', {}) or {}
         SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END"}
+        from KooCAEManager.KooRawKeywordDedup import is_case_marker
         for kw_name, blocks in raw_dict.items():
             if kw_name in SKIP:
                 continue
             if interpreted.get(kw_name, False):
                 continue
+            if is_case_marker(kw_name):
+                continue   # 위치 표지라 globals.k 끝에 쓰면 짝 잃은 BEGIN 이 남았다 — _write_uninterpreted_raw 가 알린다(리뷰 G)
             if prefix is not None and not kw_name.startswith(prefix):
                 continue
             if exclude_prefix is not None and kw_name.startswith(exclude_prefix):
@@ -548,6 +551,13 @@ class KFileDecomposer:
         SECTION_* 키워드는 제외 (sections.k에서 별도 처리하여 중복 정의 방지).
         """
         try:
+            from KooCAEManager.KooRawKeywordDedup import is_case_marker
+            dyna_mgr = self.dynaImporter.dynaManager
+            case_marks = sorted({k for k in (getattr(dyna_mgr, '_raw_keyword_dict', None) or {}) if is_case_marker(k)}
+                                | {k for k in (getattr(dyna_mgr, '_empty_keyword_names', None) or []) if is_case_marker(k)})
+            if case_marks:   # 공용 기록기와 같은 안내 — DECOMPOSE_K 는 그 기록기를 거치지 않는다
+                print(f"  ⚠️  *CASE 구간 표지 {len(case_marks)}개({', '.join('*' + k for k in case_marks)})는 쓰지 않는다 — "
+                      f"KMM 은 *CASE 를 지원하지 않아 구간 안 카드는 모든 케이스에 들어간다(덱 확인)")
             wrote_header = False
             for kw_name, block in self._iter_uninterpreted_filtered(exclude_prefix="SECTION_"):
                 if not wrote_header:
@@ -640,11 +650,14 @@ class KFileDecomposer:
         raw_dict = getattr(dyna_mgr, '_raw_keyword_dict', {}) or {}
         interpreted = getattr(self.dynaImporter, 'keywordInterpreted', {}) or {}
         SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END"}
+        from KooCAEManager.KooRawKeywordDedup import is_case_marker
         uninterpreted = []
         for kw_name, blocks in raw_dict.items():
             if kw_name in SKIP or interpreted.get(kw_name, False):
                 continue
             target = "sections.k (raw)" if kw_name.startswith("SECTION_") else "globals.k (raw)"
+            if is_case_marker(kw_name):
+                target = "not written (*CASE section marker — KMM does not support *CASE)"   # 실제로 안 쓴다(리뷰 G)
             uninterpreted.append({
                 "keyword": kw_name,
                 "block_count": len(blocks),

@@ -14,6 +14,15 @@ DATABASE_* 계열)로 매니저에 실려 **출력은 되는데 표시가 안 �
 """
 
 
+CASE_MARKER_PREFIXES = ("CASE_BEGIN", "CASE_END")
+
+
+def is_case_marker(kw):
+    """*CASE_BEGIN_n·*CASE_END_n — 그 사이 카드만 그 케이스에 든다는 위치 표지라, 원문 블록으로 끝에 모아 쓰면 뜻이 바뀐다.
+    KMM 은 *CASE 를 지원하지 않아 원문 기록기 모두(공용·MERGE_K·DECOMPOSE_K) 쓰지 않고 알린다(리뷰 F·G)."""
+    return isinstance(kw, str) and kw.startswith(CASE_MARKER_PREFIXES)
+
+
 def _normalize(lines):
     """카드 본문 비교용 정규화 — 주석·빈 줄 제거, 줄 끝 공백 제거"""
     out = []
