@@ -5986,6 +5986,33 @@ class ElementShellThickness(DynaKeyword):
         super(ElementShellThickness,self).__init__("ELEMENT_SHELL_THICKNESS")
         self.has_i10 = False
 
+    @staticmethod
+    def _walk_cards(lines, step, card1, thick):
+        """카드 자리를 따라 [카드1, 두께 카드…] 를 요소마다 step 장씩 낸다(R16 Appendix V).
+        - 카드 1(EID 기본값 없음) 자리의 빈 줄은 카드가 될 수 없어 건너뛰고 센다 — 쌍 사이·블록 끝 빈 줄이 카드 1 로
+          읽혀 짝이 어긋나 죽었다(리뷰 G).
+        - 두께 카드(THIC1~4·BETA 모두 기본값 0, THIC 0 은 섹션 두께) 자리의 빈 줄은 기본값 카드다(리뷰 F).
+        - 블록이 카드 1 뒤에서 끝나면 빠진 두께 카드는 기본값이다 — 마지막 선택 카드는 생략해도 같다. 예전엔 IndexError.
+        card1(line)·thick(line, t) 는 줄을 칸 목록으로 바꾼다. 빈 줄이 없는 블록은 예전과 같은 결과다."""
+        rows, state, skipped = [], 0, 0
+        for line in lines:
+            if state == 0:
+                if not str(line).strip():
+                    skipped += 1
+                    continue
+                rows.append(card1(line))
+                state = 1
+            else:
+                rows.append(thick(line, state))
+                state = (state + 1) % step
+        while state:
+            rows.append(thick('', state))
+            state = (state + 1) % step
+        if skipped:
+            print(f"  Warning: ELEMENT_SHELL_THICKNESS 블록의 빈 줄 {skipped}개를 건너뛰었다 — 요소 카드 자리라 "
+                  f"LS-DYNA 는 빈 줄을 EID 없는 카드로 읽는다(덱 확인)")
+        return rows
+
     def _parse_i10_block(self, block):
         # I10 THICKNESS: 정수줄 10칸 슬라이스, 두께(실수)줄 16칸 유지. 8노드(N5 존재) → 두께줄 2장(3줄 주기)
         lines = []
@@ -5993,38 +6020,35 @@ class ElementShellThickness(DynaKeyword):
             s = str(line).rstrip('\r\n').rstrip()
             if s.lstrip().startswith('$'):
                 continue
-            # 빈 줄도 제자리에 남긴다 — 두께 카드 자리의 빈 줄은 '섹션 두께' 라는 정상 카드다. 버리면 카드 짝이 어긋나
-            # 요소가 조용히 사라지거나 IndexError 였다(리뷰 F). 블록 앞뒤의 빈 줄만 카드가 아니다.
-            lines.append(s)
-        while lines and not lines[-1].strip():
-            lines.pop()
-        while lines and not lines[0].strip():
-            lines.pop(0)
+            lines.append(s)   # 빈 줄도 제자리에 둔다 — 카드인지는 자리로 정한다(_walk_cards)
         parameterList = []
-        if not lines:
+        first = next((s for s in lines if s.strip()), None)
+        if first is None:
             return parameterList
 
         def slice_w(s, w):
             nf = max(1, len(s) // w)
             return [s[k * w:(k + 1) * w].strip() for k in range(nf)]
 
-        f1 = slice_w(lines[0], 10)
+        f1 = slice_w(first, 10)
         try:
             three = len(f1) > 7 and int(f1[6] or 0) > 0
         except (TypeError, ValueError):
             three = False
         step = 3 if three else 2
         int_cols = len(f1)
-        for j in range(0, len(lines), step):
-            row = slice_w(lines[j], 10)
+
+        def card1(s):
+            row = slice_w(s, 10)
             row.extend([''] * (int_cols - len(row)))  # 레거시 '' 패딩 의미 재현
-            parameterList.append(row)
-            for t in range(1, step):
-                if j + t < len(lines):
-                    frow = slice_w(lines[j + t], 16)
-                    frow.extend([''] * (5 - len(frow)))  # BETA blank 절삭 대응(KooPart parameter2[4])
-                    parameterList.append(frow)
-        return parameterList
+            return row
+
+        def thick(s, t):
+            frow = slice_w(s, 16)
+            frow.extend([''] * (5 - len(frow)))  # BETA blank 절삭 대응(KooPart parameter2[4])
+            return frow
+
+        return self._walk_cards(lines, step, card1, thick)
 
     def parse(self, elementShellThickKeywords):
         fmts = getattr(self, 'block_formats', [])
@@ -6040,49 +6064,32 @@ class ElementShellThickness(DynaKeyword):
 
     def _parse_legacy_blocks(self, elementShellThickKeywords):
         for i in range(len(elementShellThickKeywords)):
-            spaceVector1 = []
-            spaceVector2 = []
-            spaceVector3 = [] 
-            parameterList = []
+            block = elementShellThickKeywords[i]
+            # 칸 폭은 예전처럼 첫 요소의 카드 1·카드 2 줄 길이로 정한다(빈 줄 없는 블록은 결과가 같다)
+            k0 = next((k for k, l in enumerate(block) if str(l).strip()), None)
+            if k0 is None:
+                self.parameters.append([])
+                continue
+            length = len(str(block[k0]))/8
+            spaceVector1 = [8] * int(length)
+            parameters1 = self.parse_whole(block[k0], spaceVector1)
             mode = 1
-            if len(elementShellThickKeywords[i])>1:
-                curStrVector = str(elementShellThickKeywords[i][0])
-                length = len(curStrVector)/8
-                spaceVector1 = [8] * int(length)
-                parameters1 = self.parse_whole(elementShellThickKeywords[i][0], spaceVector1)
-                if length > 7 and int(parameters1[6])>0:
+            try:
+                if length > 7 and int(parameters1[6] or 0) > 0:
                     mode = 2
+            except ValueError:
+                pass
             if mode == 1:
-                for j in range(0,len(elementShellThickKeywords[i]),2):
-                    if j == 0:
-                        curStrVector = str(elementShellThickKeywords[i][j])
-                        length = len(curStrVector)/8
-                        spaceVector1 = [8] * int(length)
-                        curStrVector2 = str(elementShellThickKeywords[i][j+1])
-                        length2 = len(curStrVector2)/16
-                        # THIC1~4·BETA 는 늘 5칸 — 첫 두께 줄이 빈 줄(=섹션 두께, R16 정상 카드)이거나 BETA 를
-                        # 생략한 64자면 칸이 모자라 KooPart 의 parameter2[4] 에서 IndexError 였다(리뷰 D)
-                        spaceVector2 = [16] * max(5, int(length2))
-                    parameters1 = self.parse_whole(elementShellThickKeywords[i][j], spaceVector1)
-                    parameters2 = self.parse_whole(elementShellThickKeywords[i][j+1], spaceVector2)
-                    parameterList.append(parameters1)
-                    parameterList.append(parameters2)
+                length2 = len(str(block[k0 + 1]))/16 if k0 + 1 < len(block) else 0
+                # THIC1~4·BETA 는 늘 5칸 — 첫 두께 줄이 빈 줄(=섹션 두께, R16 정상 카드)이거나 BETA 를
+                # 생략한 64자면 칸이 모자라 KooPart 의 parameter2[4] 에서 IndexError 였다(리뷰 D)
+                thickVectors = {1: [16] * max(5, int(length2))}
             else:
-                for j in range(0,len(elementShellThickKeywords[i]),3):
-                    if j == 0:
-                        curStrVector = str(elementShellThickKeywords[i][j])
-                        length = len(curStrVector)/8
-                        spaceVector1 = [8] * int(length)
-                        spaceVector2 = [16,16,16,16,16]
-                        spaceVector3 = [16,16,16,16]
-                    parameters1 = self.parse_whole(elementShellThickKeywords[i][j], spaceVector1)
-                    parameters2 = self.parse_whole(elementShellThickKeywords[i][j+1], spaceVector2)
-                    parameters3 = self.parse_whole(elementShellThickKeywords[i][j+2], spaceVector3)
-                    parameterList.append(parameters1)
-                    parameterList.append(parameters2)
-                    parameterList.append(parameters3)                    
-
-            self.parameters.append(parameterList)
+                thickVectors = {1: [16, 16, 16, 16, 16], 2: [16, 16, 16, 16]}
+            self.parameters.append(self._walk_cards(
+                block, 2 if mode == 1 else 3,
+                lambda l: self.parse_whole(l, spaceVector1),
+                lambda l, t: self.parse_whole(l, thickVectors[t])))
     
     def write(self, stream):
         for i in range(len(self.parameters)):
@@ -9942,10 +9949,19 @@ class DynaNode(DynaKeyword):
                 self.parameters.append(parameterList)
                 continue
             parameterList = []
+            n_blank = 0
             for j in range(len(node_keywords[i])):
+                # 빈 줄은 절점 카드가 아니다(R16 Appendix V — NID 는 기본값이 없다). 그대로 두면 원점의 절점 0 이
+                # 조용히 생겼다(블록 끝·*END 앞·파일 끝·Ctrl-Z 앞 어디든 — 리뷰 G). I10 경로는 이미 건너뛴다.
+                if not node_keywords[i][j].strip():
+                    n_blank += 1
+                    continue
                 #parameters = node_keywords[i][j].parse_whole([8, 16, 16, 16, 8, 8])
                 parameters = self.parse_whole(node_keywords[i][j], [8, 16, 16, 16, 8, 8])
                 parameterList.append(parameters)
+            if n_blank:
+                print(f"  Warning: NODE 블록의 빈 줄 {n_blank}개를 건너뛰었다 — "
+                      f"LS-DYNA 는 빈 줄을 NID 없는 카드로 읽는다(덱 확인)")
             self.parameters.append(parameterList)
 
     def NID(self,ith, jth):
@@ -11698,9 +11714,17 @@ class SetSegment(DynaKeyword):
             parameterList = []
             parameters = self.parse_whole(set_segment_keywords[i][0], [10, 10, 10, 10, 10, 10, 10])
             parameterList.append(parameters)
+            n_blank = 0
             for j in range(1,len(set_segment_keywords[i])):
+                # 빈 줄은 세그먼트가 아니다(N1~N4 는 절점 번호) — 절점 0·0·0·0 세그먼트가 셋마다 조용히 생겼다(리뷰 G 전수 점검)
+                if not set_segment_keywords[i][j].strip():
+                    n_blank += 1
+                    continue
                 parameters = self.parse_whole(set_segment_keywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
                 parameterList.append(parameters)
+            if n_blank:
+                print(f"  Warning: SET_SEGMENT 블록의 빈 줄 {n_blank}개를 건너뛰었다 — "
+                      f"LS-DYNA 는 빈 줄을 절점 없는 세그먼트로 읽는다(덱 확인)")
             self.parameters.append(parameterList)
     
     def getSetSegmentList(self):
@@ -11765,9 +11789,16 @@ class SetSegmentTitle(DynaKeyword):
             parameterList.append(parameters)
             parameters = self.parse_whole(set_segment_keywords[i][1], [10, 10, 10, 10, 10, 10, 10])
             parameterList.append(parameters)
+            n_blank = 0
             for j in range(2,len(set_segment_keywords[i])):
+                if not set_segment_keywords[i][j].strip():   # SET_SEGMENT 과 같다 — 빈 줄은 세그먼트가 아니다(리뷰 G)
+                    n_blank += 1
+                    continue
                 parameters = self.parse_whole(set_segment_keywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
                 parameterList.append(parameters)
+            if n_blank:
+                print(f"  Warning: SET_SEGMENT_TITLE 블록의 빈 줄 {n_blank}개를 건너뛰었다 — "
+                      f"LS-DYNA 는 빈 줄을 절점 없는 세그먼트로 읽는다(덱 확인)")
             self.parameters.append(parameterList)
             
     def getSetSegmentTitleList(self):

@@ -1,5 +1,21 @@
 from __future__ import annotations
 from KooCAEManager.KooOperator import *
+
+def _curve_points(rows, lcid):
+    """*DEFINE_CURVE 점 카드 → (A1 목록, O1 목록). 빈 칸은 기본값 0.0 이다(R16 점 카드 A1·O1 Default 0.0, Appendix V) —
+    LS-DYNA 도 빈 줄을 점 (0,0) 으로 읽는다. 예전엔 float('') 로 죽었다(리뷰 G). 빈 줄은 개수를 알린다."""
+    a1, o1, blank = [], [], 0
+    for points in rows:
+        x, y = str(points[0]).strip(), str(points[1]).strip()
+        if not x and not y:
+            blank += 1
+        a1.append(float(x) if x else 0.0)
+        o1.append(float(y) if y else 0.0)
+    if blank:
+        print(f"  Warning: DEFINE_CURVE {lcid} 의 빈 점 카드 {blank}개를 (0,0) 으로 읽었다 — LS-DYNA 도 같다"
+              f"(A1·O1 기본값 0.0). 블록 끝 빈 줄이라면 지울 것")
+    return a1, o1
+
  
 class KooDefine:
     def __init__(self, lcid):
@@ -314,12 +330,7 @@ class KooDefineManager:
             OFFO = KooDynaFloat(firstLine[5])
             DATTYP = KooDynaInt(firstLine[6])
             LCINT = KooDynaInt(firstLine[7])
-            A1 = []
-            O1 = []
-            for i in range(1, len(parameters)):
-                points = parameters[i]
-                A1.append(float(points[0]))
-                O1.append(float(points[1]))
+            A1, O1 = _curve_points(parameters[1:], LCID)
             define = self.CreateDefineCurvewithID(LCID,SIDR,SFA,SFO,OFFA,OFFO,DATTYP,LCINT,A1,O1)
         if dynaDefine[0] == "*DEFINE_CURVE_TITLE":
             parameters = dynaDefine[1] 
@@ -333,12 +344,7 @@ class KooDefineManager:
             OFFO = KooDynaFloat(firstLine[5])
             DATTYP = KooDynaInt(firstLine[6])
             LCINT = KooDynaInt(firstLine[7])
-            A1 = []
-            O1 = []
-            for i in range(2, len(parameters)):
-                points = parameters[i]
-                A1.append(float(points[0]))
-                O1.append(float(points[1]))
+            A1, O1 = _curve_points(parameters[2:], LCID)
             define = self.CreateDefineCurvewithID(LCID,SIDR,SFA,SFO,OFFA,OFFO,DATTYP,LCINT,A1,O1,name)
                             
             
