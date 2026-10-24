@@ -80,3 +80,34 @@
   - DWI DampingSpring + BoundaryDistance: RemoveOuterElement 가 공용 절점표를 이 파트가 남긴 절점으로 통째로 바꿔(RemoveComplementaryNodes), 시편 파트가 둘 이상이면 시편 절점이 *NODE 에서 빠졌다(재현: 42개 중 16개, 50개 중 20개). → 요소만 지우고, 호출부가 모든 파트를 처리한 뒤 남은 요소 어디에도 안 쓰이는 후보만 지운다. 복원 루프는 지운 것만 되돌린다.
 - 전수 점검(MinimumModel_drop.k, 키워드 36종, 블록 끝 빈 줄 하나): 죽은 것 0. 바뀐 것은 SET_SEGMENT_TITLE(위 결함)과 CONTROL_SHELL 둘이다. CONTROL_SHELL 은 빈 줄을 카드 4 로 읽어 기본값(비활성·비활성·0·0·0·0·1.0)을 명시해 쓴다. R16 카드 4 기본값과 같아 뜻은 같다.
 - 손대지 않은 것: DynaManager 재사용 때 ReadInputFile 은 파라미터 표(_param_resolver)를 비우지 않는다. IMPORT_MERGE 처럼 둘째 덱이 첫 덱의 파라미터를 쓰는 용도일 수 있어 그대로 둔다. DECOMPOSE_K 는 데이터 카드 없는 키워드를 되살리지 않는다(공용 기록기만 한다).
+- 회귀(리뷰 G 반영 뒤): 시험 26개 통과(test_drop_attitude_angles 는 venv 에 pytest 가 없어 parametrize 대역으로 30개 경우 통과 — venv312 는 4월 뒤로 바뀐 적이 없어 원래 없었다), MinimumModel model_trans.k·model_dump.k md5 그대로(ec4c907d·53d24150). 말뭉치 411건(C·D·F·G 재현 덱, 옛=adf6604 이전 HEAD 코드): 같음 350, 다름 61 — 새로 죽는 것 0, 고쳐진 크래시 18, 둘 다 실패 1(3카드 THICKNESS, 기존 결함), 바뀐 42건은 모두 이번 수정 범주(빈 줄·MERGE_K 줄 나누기·인클루드 파라미터·CASE·CONTROL_ADAPTIVE 덤프·SET_SHELL_TITLE). 배포판 v120 바이너리로 새 시험을 돌리면 44건 중 39건 실패(5건은 v120 뒤에 생긴 회귀라 v120 에는 없음).
+
+## 5차 리뷰 H 와 반영 (2026-10-24)
+- 메모리: 넓힌 제외 설정으로 다시 뜬 cpptools 도 1시간 19분에 25.7 GB, 2시간 24분에 42 GB 였다(earlyoom 이 다른 프로세스를 종료하기 시작). 사용자 승인으로 종료하고 그 작업 공간을 Tag Parser 로 바꿨다(백업 settings.json.bak_20261024b).
+- 확정 6건
+  1. (3dd79ae 회귀) 인클루드의 *PARAMETER_EXPRESSION 이 메인의 평문 *PARAMETER 를 이겼다. 해석기는 평문 값을 읽는 즉시, 식은 다 읽은 뒤 정하므로 한 번에 넘기면 위치와 상관없이 식이 이긴다. → 미리 읽은 정의에서 메인이 정의한 이름을 빼고(메인 값이 이김 — 이번 라운드 전 동작), 인클루드끼리는 먼저 정의만 남긴다(R16 *PARAMETER_DUPLICATION 기본 DFLAG=1 "ignore the new definition"). 이름·값은 해석기의 줄 해석을 그대로 쓴다(_param_definitions).
+     - 주의: LS-DYNA 는 읽는 차례로 먼저 정의를 쓰므로, 맨 위 인클루드가 먼저 정의한 이름은 LS-DYNA 에선 인클루드 값이다. KMM 은 '메인 값이 이김' 을 유지한다(파일 안 중복도 나중 값 — 이미 남긴 DFLAG 항목).
+  2. (40c4eab 가 드러냄) 셸·솔리드 셋의 빈 칸이 0 으로 들어가, IMPORT_MERGE_K 의 OffsetID 가 0+offset 을 실제 EID 로 만들었다(SET_SOLID 는 원래부터). → 빈 칸·0 은 건너뛴다(SET_BEAM 과 같음). 출력의 셋 마지막 카드에 0 이 더는 채워지지 않는다(뜻은 같음).
+  3. (40c4eab 가 드러냄) 같은 SID 의 *SET_SHELL·*SET_SOLID 가 사전 하나에 담겨 하나가 사라졌다. R16 *SET 서두 "Each set type must have a unique numeric identification" 이라 SID 는 종류마다 따로다. → 요소 셋 사전 키를 (종류, SID) 로 바꿨다(element_set_key — Create*Set 다섯 곳과 ImportMerger 다시 키 매기기). SID 로 셋을 직접 찾아 읽는 곳은 없었다.
+  4. (3dd79ae 불완전) *PARAMETER_NOECHO·_MUTABLE·_EXPRESSION_NOECHO 등 LOCAL 이 아닌 변형을 미리 읽지 않았다. → LOCAL·DUPLICATION 만 뺀다. 인클루드 이름에 &참조가 있으면 미리 읽기는 치환 전 이름을 봐 못 찾는다(드묾, 🔴 는 남).
+  5. (3dd79ae, 진단) 숫자 줄 규칙 때문에 글자 칸이 있는 카드(*DEFINE_TRANSFORMATION 'TRANSL &dx' 등)의 미치환 참조를 알리지 않는다. 고치지 않는다 — 그런 카드는 원문 보존이라 &dx 가 덱에 남아 LS-DYNA 가 입력 단계에서 멈춘다(값이 조용히 바뀌지 않음). 제목 오경보를 막는 쪽이 낫다고 봤다.
+  6. (96ba149 불완전) 빈 줄만 든 THICKNESS 블록이 덤프에서 죽었다. → 빈 블록은 건너뛴다. 같은 기록기의 N5 공백 int('') 도 막았다.
+- 함께 고친 기존 결함(옛 판부터)
+  - *ELEMENT_MASS(·_NODE_SET) 기록기가 MASS 를 8칸(17~24열, 유효숫자 3자리)에, PID 를 25~32열에 썼다. R16 은 MASS 17~32열(16칸)·PID 33~40열이다. KMM 리더(R16 대로 [8,8,16,8])가 자기 출력을 다시 읽으면 질량 요소를 잃었다 → 누적 체인 2단계부터 점 질량이 사라질 수 있었다(1월 첫 소스부터). 16.8e 로 쓴다. Examples 의 .k 51개에는 이 키워드가 없었다.
+  - THICKNESS: 요소 하나짜리 블록을 일반 셸로 읽어 죽었다(가져오는 쪽이 thickness=True 를 넘긴다). 8절점 3카드 형식은 카드 3(4칸)에서 두께 8개를 읽어 IndexError 였다(카드 2 의 4개 + 카드 3 의 4개). 절점 칸이 공백이면 int('') 로 죽었다 — 일반 *ELEMENT_SHELL 도 80칸까지 공백으로 채운 줄(N5~N8 공백)에서 죽었다(KooDynaInt 로 바꿈).
+- 남긴 것(보고)
+  - IMPORT_MERGE_K 의 커브 오프셋이 .id 로 계산돼(커브는 .lcid) 0 이다 → 가져온 커브 7 이 기준 커브 7 을 덮는다. 오프셋만 고치면 가져온 재질의 커브 참조(ImportMerger 는 MAT·EOS 를 건드리지 않음)가 거꾸로 기준 커브를 가리키게 돼, 참조까지 함께 옮기는 설계가 필요하다.
+  - DECOMPOSE_K 는 *SET_SHELL·*SET_SOLID 를 어느 파일에도 쓰지 않는다(옛 판부터).
+  - DWI BoundaryDistance 는 지운 요소 위 절점 가운데 *ELEMENT_MASS(PID 0)·*SET_NODE·*BOUNDARY_SPC_NODE 만 참조하는 것도 지운다(옛 판은 자유 절점까지 지워 더 나빴다).
+  - 보존 인클루드의 파라미터가 메인 원문 블록에 숫자로 박힌다(그 파일을 DOE 로 갈아 끼우면 메인은 따라가지 않음). *DEFINE_CURVE 블록 끝 빈 줄은 (0,0) 점이 된다(부록 V 근거, 실행 확인은 라이선스가 없어 못 함). 쉼표형 *SECTION_SHELL 두께·쉼표형 MAT_ADD_EROSION MID 가 0 이 되는 것, 제목이 '&x' 하나뿐인 *PART 오경보, 주석 안 홀로 쓴 CR 은 옛·새 같다.
+
+## 6차 리뷰 I 와 반영 (2026-10-24)
+- 파라미터(확정 C1~C4): 리뷰 H 반영의 '메인 값 우선·인클루드끼리 먼저 값' 이 R16 규칙을 반만 따라, DFLAG=2·4(새 정의 채택)·MUTABLE(재정의 허용)·중첩 인클루드 순서에서 틀렸고 메인 카드와 인클루드 카드 값이 엇갈렸다.
+  - R16 원문: *PARAMETER 정의는 "visible and available at any later point in the input processing"(읽는 차례). *PARAMETER_DUPLICATION DFLAG 1=경고 후 새 정의 무시(기본), 2=경고 후 새 정의 채택, 3=오류·무시, 4=조용히 채택, 5=조용히 무시. MUTABLE: "Redefinition is allowed regardless of the setting of *PARAMETER_DUPLICATION"(첫 정의에 붙어야 함). 매뉴얼의 LOCAL 예제는 인클루드가 VAL1 을 10.0 으로 다시 정의하면 받아들인다고 적어 DFLAG 기본과 어긋나 보인다 — DFLAG 표를 따랐다.
+  - → 인클루드의 정의를 그 *INCLUDE 자리에 끼워(중첩도 제자리) 읽는 차례대로 해석기에 주고, 해석기(_accept)가 처음 정의를 받고 재정의는 첫 정의가 MUTABLE 이거나 DFLAG 2·4 일 때만 받는다. 값이 다른 재정의를 버리면 알린다. 덱마다 이 상태를 새로 시작한다(ResetDuplicateState — 값 표는 예전처럼 이어 둠).
+  - 바뀌는 것: 메인 파일 안 중복도 이제 먼저 정의가 남는다(예전 나중 값 — 남겼던 DFLAG 항목이 풀림). 맨 위 인클루드가 먼저 정의한 이름은 인클루드 값이다(리뷰 H 반영의 '메인 우선' 을 R16 대로 뒤집음). KMM·KooChainRun 이 전역 *PARAMETER 를 덧붙여 값을 덮는 곳은 없다(IGA 의 LOCAL 생성뿐).
+  - 남는 근사: 값은 이름마다 하나다. MUTABLE·DFLAG 2 로 덱 중간에 값이 바뀌면 LS-DYNA 는 바뀌기 전 카드에 옛 값을 쓰지만 KMM 은 한 값만 쓴다.
+- C5(de57d98 회귀): 절점 칸을 KooDynaInt 로 바꾸자 첫 줄이 88자 이상(80열 뒤 공백·주석)인 블록에서 9번째 빈 칸까지 절점으로 들어가 8절점 셸이 조용히 빠졌다(예전엔 크래시). → N1~N8 만 쓴다(80열 뒤는 LS-DYNA 도 안 읽음).
+- C7(기존 결함): PID 칸이 빈 *ELEMENT_MASS 행을 int('') 에서 조용히 버렸다. R16 PID 는 생략 가능한 칸이다 → 0. MASS 빈 칸은 0.0, 못 읽는 행은 알린다.
+- 개연 반영: THICKNESS 블록이 더는 죽지 않으면서 요소별 두께가 출력에서 조용히 빠졌다 → 가져올 때 ⚠️ 로 알린다(출력기 미지원은 남긴 항목).
+- 남긴 것: C6 IMPORT_MERGE_K 에서 같은 종류·같은 SID 셋이 기준 셋을 덮는다(elem_set_sid 오프셋이 파트별 매니저에서 세어 늘 0, 접촉의 요소 셋 참조도 옮기지 않아 오프셋만 고치면 참조가 깨짐 — 커브와 같은 설계 과제). 모든 원소가 지워진 셋이 출력에서 빠지는 것(예전엔 0 채움이 있으면 남았음 — 그 셋을 참조하는 카드가 있으면 어긋남). THICKNESS 모드를 행 길이로 다시 추측하는 구조(I10 카드 1 길이가 요소마다 다르거나 4·8절점이 섞인 블록은 죽음, 옛 판도 같음).

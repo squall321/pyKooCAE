@@ -23,6 +23,11 @@
   - [x] (전수 점검) *SET_SEGMENT(_TITLE) 블록 끝 빈 줄 → 절점 0 세그먼트
   - [x] G7 *SET_SHELL·*SET_SHELL_TITLE SID 카드 + 셸 셋 기록기(셸 셋 든 덱은 7월 판부터 출력에서 죽음), MAT_ADD_EROSION 4·5번째 카드, CONTROL_ADAPTIVE 8번째 칸·ADPTYP 7 머리말
   - [x] (기존 결함) DWI DampingSpring 에서 BoundaryDistance>0 이고 시편 파트가 2개 이상이면 시편 절점이 *NODE 에서 빠짐
-- [ ] 전체 회귀(시험·MinimumModel·말뭉치) + 5차 리뷰 H(반영분만)
+- [x] 전체 회귀(시험 26·MinimumModel·말뭉치 411) + 5차 리뷰 H — 확정 6건(회귀 1: 인클루드 식이 메인 값을 이김)
+- [x] 리뷰 H 반영 — C1 메인 값 우선·인클루드끼리 먼저 값, C4 LOCAL 아닌 변형, C2 셋 빈 칸·0, C3 셋 키 (종류,SID), C6 빈 THICKNESS 블록
+  + 기존 결함: *ELEMENT_MASS 칸(MASS 17~32·PID 33~40), THICKNESS 요소 1개·3카드·공백 절점 칸, 일반 셸 80칸 공백 — 시험 tests/test_reader_review_h.py(수정 전 17건 모두 실패)
+- [x] 리뷰 H 반영 — 커밋 e4e37b3·1d133fe·0a8945e·de57d98·862d008·dced5fd
+- [x] 리뷰 H 반영분 회귀(시험 27·MinimumModel·말뭉치 525) + 6차 리뷰 I — 확정 7건(회귀 4: DFLAG·MUTABLE·중첩 순서·88자 8절점 셸)
+- [x] 리뷰 I 반영 — 파라미터를 R16 규칙(읽는 차례·DFLAG·MUTABLE·LOCAL 가림)으로(22b6e4b), 절점 N1~N8(31f5ae2), 질량 PID 공백(6648032), THICKNESS 두께 소실 안내(b3a5784) — 시험 27 통과·MinimumModel md5 동일·말뭉치 588(새 크래시 0, 바뀐 24건 모두 수정 범주)
 - [ ] 빌드 → 배포 폴더 GLIBC 전수(≤2.35) → 컴파일본 e2e(Test_E2E_v120 + 새 덱) → SIF v122(KooRemapper 세션이 v121 을 먼저 올림 — 굽기 전에 알림) → tar → Drive·메일
 - [ ] 메모리·노트·푸시
