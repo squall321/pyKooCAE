@@ -12341,9 +12341,10 @@ class DynaManager():
             _own = raw_lines if _end_at is None else raw_lines[:_end_at + 1]
             # 맨 위 파일이면 인클루드(재귀)의 *PARAMETER 줄을 먼저 둔다 — LS-DYNA 는 *INCLUDE 를 그 자리에서 읽어 맨 위에
             # 인클루드한 파라미터 파일 값이 메인 카드에 먹는다. KMM 은 인클루드를 메인 뒤에 읽어 메인의 &thk 가 0 이었다(리뷰 G).
-            # 메인 줄을 뒤에 두므로 같은 이름은 지금처럼 메인 값이 이긴다('*KEYWORD' 는 앞 블록을 끊는 구분 줄)
+            # 같은 이름은 메인 값이 이기고 인클루드끼리는 먼저 값이 이긴다(_filter_include_params). '*KEYWORD' 는 블록을 끊는 구분 줄
             try:
                 _pre = self._include_param_lines(path, _own) if len(self._include_stack) == 1 else []
+                _pre = self._filter_include_params(_pre, _own) if _pre else []
             except Exception as e:   # 미리 읽기가 실패해도 메인 파일 파라미터는 예전처럼 해석한다
                 print(f"  Warning: 인클루드 *PARAMETER 미리 읽기 실패 — 메인 파일 정의만 쓴다: {e}")
                 _pre = []
@@ -12536,7 +12537,9 @@ class DynaManager():
                             ikw = keyword_line_name(l)
                             if ikw == 'END':
                                 break
-                            take = ikw in ('PARAMETER', 'PARAMETER_EXPRESSION')
+                            # 파일 범위인 LOCAL 만 빼고 *PARAMETER 변형(NOECHO·MUTABLE·EXPRESSION_NOECHO …)은 모두 전역이다(리뷰 H)
+                            take = (ikw.startswith('PARAMETER') and 'LOCAL' not in ikw
+                                    and ikw != 'PARAMETER_DUPLICATION')
                             if take:
                                 own.append(l)
                             elif ikw == 'INCLUDE':
@@ -12550,6 +12553,51 @@ class DynaManager():
                 continue
             out.extend(own)
             out.extend(self._include_param_lines(inc, nested, seen))
+        return out
+
+    @staticmethod
+    def _param_definitions(lines, local=False):
+        """*PARAMETER 계열 블록의 정의를 차례로 낸다: (모드, 타입, 이름, 글). 'param' 의 글은 값, 'expr' 의 글은 원문 줄.
+        이름·값은 해석기(ParameterResolver)의 줄 해석을 그대로 쓴다. local=True 면 *PARAMETER_LOCAL 블록도 낸다."""
+        from KooCAEManager.KooParameterResolver import ParameterResolver
+        mode = None
+        for line in lines:
+            if line.startswith('*'):
+                n = keyword_line_name(line).upper()
+                if not n.startswith('PARAMETER') or n == 'PARAMETER_DUPLICATION':
+                    mode = None
+                elif 'LOCAL' in n:
+                    mode = 'local' if local else None
+                else:
+                    mode = 'expr' if n.startswith('PARAMETER_EXPRESSION') else 'param'
+                continue
+            if mode is None or not line.strip() or line.lstrip().startswith('$'):
+                continue
+            t = ParameterResolver()
+            if mode == 'expr':
+                t._parse_expression_line(line)
+                for name, ptype, _expr in t._expressions:
+                    yield 'expr', ptype, name, line
+            else:
+                (t._parse_line if mode == 'local' else t._parse_parameter_line)(line)
+                for name, val in t.params.items():
+                    yield mode, t.param_types.get(name, 'R'), name, val
+
+    def _filter_include_params(self, pre, own):
+        """미리 읽은 인클루드 정의(pre)에서 메인 파일(own)이 정의한 이름은 빼고, 같은 이름은 먼저 나온 것만 남긴다.
+        메인 값이 이기고(인클루드를 늦게 읽던 예전과 같음), 인클루드끼리는 R16 *PARAMETER_DUPLICATION 기본 DFLAG=1
+        ('새 정의를 무시')처럼 먼저 값이 이긴다. 한 번에 해석하면 평문 값은 읽는 즉시, 식은 다 읽은 뒤 정해져
+        인클루드의 *PARAMETER_EXPRESSION 이 메인의 평문 *PARAMETER 를 이겼다(리뷰 H)."""
+        main_names = {name for _m, _t, name, _x in self._param_definitions(own, local=True)}
+        out, seen = [], set()
+        for mode, ptype, name, text in self._param_definitions(pre):
+            if name in main_names or name in seen:
+                continue
+            seen.add(name)
+            if mode == 'expr':
+                out += ['*PARAMETER_EXPRESSION\n', text if text.endswith('\n') else text + '\n']
+            else:
+                out += ['*PARAMETER\n', f'{ptype} {name} {text}\n']
         return out
 
     # 숫자 줄 판정 — 모든 토큰이 수·&참조(붙어 있어도 됨, 고정폭에서 칸이 맞닿는다)면 숫자 카드다
