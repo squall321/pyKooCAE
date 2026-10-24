@@ -819,6 +819,9 @@ class KooDynaImporter():
         if elementShellThickKeyword is not None:
             parametersShellThick = elementShellThickKeyword.parameters
             self.partManager.AddShellElementsfromDyna(parametersShellThick, thickness=True)
+            if any(parametersShellThick):   # 예전엔 죽던 블록이 이제 읽히므로 두께가 빠지는 것을 조용히 두지 않는다(리뷰 I)
+                print("  ⚠️  *ELEMENT_SHELL_THICKNESS 의 요소별 두께(THIC1~·BETA)는 출력에 쓰지 않는다 — 출력 *ELEMENT_SHELL 은 "
+                      "섹션 두께를 쓴다(KMM 미지원, 덱 확인)")
                         
         if elementSolidKeyword is not None:
             parametersSolid = elementSolidKeyword.parameters
