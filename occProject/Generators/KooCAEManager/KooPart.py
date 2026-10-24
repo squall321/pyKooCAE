@@ -2241,9 +2241,12 @@ class KooPartManager():
                 try:
                     eid = int(parameters[0])
                     nid = int(parameters[1])
-                    mass = float(parameters[2])
-                    pid = int(parameters[3])
+                    # MASS·PID 는 기본값이 있는 칸이다(R16 Default 0.·0, PID "This input is optional") — 빈 칸이면
+                    # int('') 로 그 행을 조용히 버렸다(리뷰 I)
+                    mass = float(parameters[2]) if str(parameters[2]).strip() else 0.0
+                    pid = KooDynaInt(str(parameters[3]))
                 except (ValueError, IndexError):
+                    print(f"  Warning: *ELEMENT_MASS 행을 읽지 못해 건너뛴다: {parameters}")
                     continue
 
                 # part lookup: parts / partsRigid / constrainedParts 모두 확인
