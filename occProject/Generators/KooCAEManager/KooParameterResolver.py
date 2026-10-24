@@ -95,6 +95,33 @@ class ParameterResolver:
         self.params = {}       # {"bndout": "1.0000E-03", ...} (원문 리터럴 보존)
         self.param_types = {}  # {"bndout": "R", ...}
         self._expressions = [] # [(name, type, expr_str), ...] 미평가 표현식
+        self.ResetDuplicateState()
+
+    def ResetDuplicateState(self):
+        """중복 정의 규칙의 상태를 덱마다 새로 시작한다(R16 *PARAMETER_DUPLICATION·MUTABLE). 파라미터 값 표는 그대로 둔다."""
+        self.dflag = None          # *PARAMETER_DUPLICATION DFLAG(없으면 1)
+        self._defined = {}         # 이름 → 받아들인 정의 글 — 읽는 차례로 처음 본 정의부터
+        self._mutable = set()      # 첫 정의가 *PARAMETER…MUTABLE 인 이름
+        self._cur_mutable = False  # 지금 읽는 블록 키워드에 MUTABLE 이 붙었나
+
+    def _accept(self, name, text):
+        """name 의 새 정의를 받아들일지 정한다. 처음 보면 받는다. 이미 있으면 첫 정의가 MUTABLE 이거나(R16 Remark 6:
+        "Redefinition is allowed regardless of the setting of *PARAMETER_DUPLICATION") DFLAG 가 2·4 일 때만 받는다 —
+        기본 DFLAG=1 은 "ignore the new definition" 이다. 리더가 정의를 LS-DYNA 처럼 읽는 차례로 넘겨 준다(인클루드는
+        그 *INCLUDE 자리에 끼워 넣음). 예전엔 늘 나중 값이 이겼다(리뷰 I)."""
+        dflag = self.dflag or 1
+        if name not in self._defined:
+            self._defined[name] = text
+            if self._cur_mutable:
+                self._mutable.add(name)
+            return True
+        if name in self._mutable or dflag in (2, 4):
+            self._defined[name] = text
+            return True
+        if str(self._defined[name]).strip() != str(text).strip() and dflag in (1, 3):
+            print(f"  Warning: *PARAMETER {name} 재정의({str(text).strip()})를 무시했다 — 먼저 정의"
+                  f"({str(self._defined[name]).strip()})가 남는다(R16 *PARAMETER_DUPLICATION DFLAG={dflag})")
+        return False
 
     def ParseParameterLocal(self, lines):
         """*PARAMETER_LOCAL 블록에서 변수=값 추출
@@ -126,6 +153,7 @@ class ParameterResolver:
             if len(var_def) >= 2 and var_def[0] in ('I', 'R', 'i', 'r'):
                 var_name = var_def[1:].lower()  # "id", "mid", "xmin"
                 self.params[var_name] = val
+                return var_name, val
 
     # ── *PARAMETER / *PARAMETER_EXPRESSION (표준 문법) ──────────────────────
 
@@ -137,17 +165,19 @@ class ParameterResolver:
         *PARAMETER            → 고정폭 10칸 4쌍/라인 파서
         스캔 후 EvaluateExpressions() 로 표현식 일괄 평가.
         """
-        mode = None  # None | 'param' | 'expr' | 'local'
+        mode = None  # None | 'param' | 'expr' | 'local' | 'dup'
+        local_vals = {}  # 이 파일의 *PARAMETER_LOCAL — 같은 이름의 전역 정의를 가린다
         for line in raw_lines:
             stripped = line.strip()
             if stripped.startswith('*'):
                 u = stripped.upper().split()[0]
+                self._cur_mutable = 'MUTABLE' in u
                 if u.startswith('*PARAMETER_EXPRESSION'):
                     mode = 'expr'
                 elif u.startswith('*PARAMETER_LOCAL'):
                     mode = 'local'
                 elif u.startswith('*PARAMETER_DUPLICATION'):
-                    mode = None  # 중복 정책 카드 — 값 정의 아님
+                    mode = 'dup'   # 중복 정책 카드 — DFLAG 하나(R16: 카드는 하나만, 뒤의 것은 무시)
                 elif u.startswith('*PARAMETER'):
                     mode = 'param'
                 else:
@@ -155,12 +185,28 @@ class ParameterResolver:
                 continue
             if mode is None or not stripped or stripped.startswith('$'):
                 continue
+            if mode == 'dup':
+                if self.dflag is None:
+                    try:
+                        self.dflag = int(float(re.split(r'[,\s]+', stripped)[0]))
+                    except ValueError:
+                        pass
+                mode = None
+                continue
             if mode == 'param':
                 self._parse_parameter_line(line)
             elif mode == 'expr':
                 self._parse_expression_line(line)
             elif mode == 'local':
-                self._parse_line(line)
+                got = self._parse_line(line)
+                if got:
+                    local_vals[got[0]] = got[1]
+        # LOCAL 은 그 파일(과 그 안에서 읽는 인클루드)에서 같은 이름의 전역 정의를 가린다(R16 *PARAMETER Remark 5).
+        # 리더가 끼워 넣은 인클루드의 전역 정의가 덮지 않게 마지막에 다시 둔다. 가림은 중복 정의로 치지 않는다
+        # (*PARAMETER_DUPLICATION Remark 1) — 메인 LOCAL 이 인클루드 전역값에 덮였다(리뷰 I 반영 확인 중)
+        for name, val in local_vals.items():
+            self.params[name] = val
+        self._expressions = [e for e in self._expressions if e[0] not in local_vals]
         self.EvaluateExpressions()
 
     def _store(self, prmr_field, val):
@@ -175,8 +221,11 @@ class ParameterResolver:
             ptype = 'R'  # 타입 미표기 시 LS-DYNA 기본 real
             name = prmr.lower()
         if name:
+            if not self._accept(name, val):
+                return
             self.params[name] = str(val).strip()
             self.param_types[name] = ptype
+            self._expressions = [e for e in self._expressions if e[0] != name]   # 앞선 같은 이름의 식은 이 정의에 밀린다
 
     def _parse_parameter_line(self, line):
         """*PARAMETER 데이터 라인: PRMRi VALi 쌍(최대 4쌍).
@@ -232,6 +281,9 @@ class ParameterResolver:
             name = prmr.lower()
             expr = rest.strip()
         if name and expr:
+            if not self._accept(name, expr):
+                return
+            self._expressions = [e for e in self._expressions if e[0] != name]   # 앞선 같은 이름의 식은 이 식에 밀린다
             self._expressions.append((name, ptype, expr))
 
     @staticmethod

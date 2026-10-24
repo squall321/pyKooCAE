@@ -12344,16 +12344,15 @@ class DynaManager():
             _end_at = next((_i for _i, _l in enumerate(raw_lines)
                             if _l.startswith('*') and keyword_line_name(_l) == 'END'), None)
             _own = raw_lines if _end_at is None else raw_lines[:_end_at + 1]
-            # 맨 위 파일이면 인클루드(재귀)의 *PARAMETER 줄을 먼저 둔다 — LS-DYNA 는 *INCLUDE 를 그 자리에서 읽어 맨 위에
-            # 인클루드한 파라미터 파일 값이 메인 카드에 먹는다. KMM 은 인클루드를 메인 뒤에 읽어 메인의 &thk 가 0 이었다(리뷰 G).
-            # 같은 이름은 메인 값이 이기고 인클루드끼리는 먼저 값이 이긴다(_filter_include_params). '*KEYWORD' 는 블록을 끊는 구분 줄
+            # 맨 위 파일이면 인클루드(재귀)의 *PARAMETER 줄을 그 *INCLUDE 자리에 끼워 넣는다 — LS-DYNA 는 *INCLUDE 를 그
+            # 자리에서 읽어 맨 위에 인클루드한 파라미터 파일 값이 메인 카드에 먹는다. KMM 은 인클루드를 메인 뒤에 읽어 메인의
+            # &thk 가 0 이었다(리뷰 G). 중복 정의는 해석기가 읽는 차례·DFLAG·MUTABLE 로 고른다(리뷰 H·I)
             try:
-                _pre = self._include_param_lines(path, _own) if len(self._include_stack) == 1 else []
-                _pre = self._filter_include_params(_pre, _own) if _pre else []
+                _parse = self._splice_include_params(path, _own) if len(self._include_stack) == 1 else _own
             except Exception as e:   # 미리 읽기가 실패해도 메인 파일 파라미터는 예전처럼 해석한다
                 print(f"  Warning: 인클루드 *PARAMETER 미리 읽기 실패 — 메인 파일 정의만 쓴다: {e}")
-                _pre = []
-            self._param_resolver.ParseFromRawLines(_pre + ['*KEYWORD\n'] + _own if _pre else _own)
+                _parse = _own
+            self._param_resolver.ParseFromRawLines(_parse)
             if self._param_resolver.HasParams():
                 raw_lines = [self._param_resolver.SubstituteLine(line) for line in raw_lines]
         except Exception as e:
@@ -12515,15 +12514,18 @@ class DynaManager():
         self._include_stack.pop()
         return lines_with_asterisk, keyword_dict
 
-    def _include_param_lines(self, path, lines, seen=None):
-        """lines(그 파일의 *END 까지) 의 *INCLUDE 를 LS-DYNA 가 읽는 차례로 따라가 *PARAMETER·*PARAMETER_EXPRESSION 블록 줄을
-        모은다(재귀) — 맨 위 파일을 치환하기 전에 해석기에 먼저 준다(리뷰 G). *PARAMETER_LOCAL 은 그 파일 범위라 뺀다.
-        따라가는 인클루드·*END·순환·없는 파일 규칙은 리더와 같다. 큰 메시 인클루드도 있어 줄 단위로 훑는다."""
+    def _splice_include_params(self, path, lines, seen=None):
+        """lines 의 *INCLUDE 자리마다 그 인클루드의 *PARAMETER 계열 줄(LOCAL 제외)을 끼워 넣은 줄 목록 — 해석기가 LS-DYNA 처럼
+        읽는 차례대로 정의를 보게 한다(R16 *PARAMETER: 정의는 "visible and available at any later point in the input
+        processing"). 중첩 인클루드도 그 자리에 끼운다. 중복 정의는 해석기가 DFLAG·MUTABLE 로 고른다(_accept).
+        예전엔 인클루드 정의를 모두 메인 앞에 모아 순서·중복 규칙이 LS-DYNA 와 달랐다(리뷰 G·H·I).
+        따라가는 인클루드·*END·없는 파일 규칙은 리더와 같고, 같은 파일은 한 번만 끼운다(순환 방지). 줄 단위로 훑는다."""
         seen = seen if seen is not None else {os.path.realpath(path)}
         out, kw = [], ''
         for line in lines:
+            out.append(line)
             if line.startswith('*'):
-                kw = keyword_line_name(line)
+                kw = keyword_line_name(line).upper()
                 continue
             if kw != 'INCLUDE' or line.startswith('$') or not line.strip():
                 continue
@@ -12533,76 +12535,22 @@ class DynaManager():
             if real in seen or not os.path.isfile(inc):
                 continue
             seen.add(real)
-            own, nested, take, ikw = [], [], False, ''
+            sub, take = [], False
             try:
                 with open(inc, 'r', errors='replace') as f:
                     for l in f:
                         l = l.replace('\x1a', '')   # 파일 끝 Ctrl-Z — 파라미터 값·파일 이름에는 뜻이 없다
                         if l.startswith('*'):
-                            ikw = keyword_line_name(l)
-                            if ikw == 'END':
+                            n = keyword_line_name(l).upper()
+                            if n == 'END':
                                 break
-                            # 파일 범위인 LOCAL 만 빼고 *PARAMETER 변형(NOECHO·MUTABLE·EXPRESSION_NOECHO …)은 모두 전역이다(리뷰 H)
-                            take = (ikw.startswith('PARAMETER') and 'LOCAL' not in ikw
-                                    and ikw != 'PARAMETER_DUPLICATION')
-                            if take:
-                                own.append(l)
-                            elif ikw == 'INCLUDE':
-                                nested.append(l)
-                            continue
+                            # 파일 범위인 LOCAL 만 빼고 *PARAMETER 변형은 모두 전역이다. *INCLUDE 는 중첩을 제자리에 끼우려고 남긴다
+                            take = (n.startswith('PARAMETER') and 'LOCAL' not in n) or n == 'INCLUDE'
                         if take:
-                            own.append(l)
-                        elif ikw == 'INCLUDE':
-                            nested.append(l)
+                            sub.append(l)
             except OSError:
                 continue
-            out.extend(own)
-            out.extend(self._include_param_lines(inc, nested, seen))
-        return out
-
-    @staticmethod
-    def _param_definitions(lines, local=False):
-        """*PARAMETER 계열 블록의 정의를 차례로 낸다: (모드, 타입, 이름, 글). 'param' 의 글은 값, 'expr' 의 글은 원문 줄.
-        이름·값은 해석기(ParameterResolver)의 줄 해석을 그대로 쓴다. local=True 면 *PARAMETER_LOCAL 블록도 낸다."""
-        from KooCAEManager.KooParameterResolver import ParameterResolver
-        mode = None
-        for line in lines:
-            if line.startswith('*'):
-                n = keyword_line_name(line).upper()
-                if not n.startswith('PARAMETER') or n == 'PARAMETER_DUPLICATION':
-                    mode = None
-                elif 'LOCAL' in n:
-                    mode = 'local' if local else None
-                else:
-                    mode = 'expr' if n.startswith('PARAMETER_EXPRESSION') else 'param'
-                continue
-            if mode is None or not line.strip() or line.lstrip().startswith('$'):
-                continue
-            t = ParameterResolver()
-            if mode == 'expr':
-                t._parse_expression_line(line)
-                for name, ptype, _expr in t._expressions:
-                    yield 'expr', ptype, name, line
-            else:
-                (t._parse_line if mode == 'local' else t._parse_parameter_line)(line)
-                for name, val in t.params.items():
-                    yield mode, t.param_types.get(name, 'R'), name, val
-
-    def _filter_include_params(self, pre, own):
-        """미리 읽은 인클루드 정의(pre)에서 메인 파일(own)이 정의한 이름은 빼고, 같은 이름은 먼저 나온 것만 남긴다.
-        메인 값이 이기고(인클루드를 늦게 읽던 예전과 같음), 인클루드끼리는 R16 *PARAMETER_DUPLICATION 기본 DFLAG=1
-        ('새 정의를 무시')처럼 먼저 값이 이긴다. 한 번에 해석하면 평문 값은 읽는 즉시, 식은 다 읽은 뒤 정해져
-        인클루드의 *PARAMETER_EXPRESSION 이 메인의 평문 *PARAMETER 를 이겼다(리뷰 H)."""
-        main_names = {name for _m, _t, name, _x in self._param_definitions(own, local=True)}
-        out, seen = [], set()
-        for mode, ptype, name, text in self._param_definitions(pre):
-            if name in main_names or name in seen:
-                continue
-            seen.add(name)
-            if mode == 'expr':
-                out += ['*PARAMETER_EXPRESSION\n', text if text.endswith('\n') else text + '\n']
-            else:
-                out += ['*PARAMETER\n', f'{ptype} {name} {text}\n']
+            out += ['*KEYWORD\n'] + self._splice_include_params(inc, sub, seen) + ['*KEYWORD\n']   # '*KEYWORD' 는 블록을 끊는 구분 줄
         return out
 
     # 숫자 줄 판정 — 모든 토큰이 수·&참조(붙어 있어도 됨, 고정폭에서 칸이 맞닿는다)면 숫자 카드다
@@ -13750,6 +13698,8 @@ class DynaManager():
         self._keyword_line = ''
         self._empty_keyword_names = []   # 지난 덱의 빈 키워드가 다음 출력에 되살아나지 않게
         self._include_stack = []         # 예외로 끊긴 지난 읽기가 남긴 항목이 정상 인클루드를 순환으로 막지 않게
+        if getattr(self, '_param_resolver', None) is not None:
+            self._param_resolver.ResetDuplicateState()   # 중복 규칙은 덱마다 — 값 표는 예전처럼 이어 둔다
         lines_with_asterisk, keyword_dict = self.ReadKeywordsfromFile(path,lines_with_asterisk, keyword_dict)
         # 다운스트림 (DECOMPOSE_K, MERGE_K, fallback writer 등)에서 raw 키워드 데이터 접근용
         self._raw_keyword_dict = keyword_dict
