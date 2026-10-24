@@ -3,7 +3,7 @@ from KooCAEManager.KooOperator import *
 
 def _curve_points(rows, lcid):
     """*DEFINE_CURVE 점 카드 → (A1 목록, O1 목록). 빈 칸은 기본값 0.0 이다(R16 점 카드 A1·O1 Default 0.0, Appendix V) —
-    LS-DYNA 도 빈 줄을 점 (0,0) 으로 읽는다. 예전엔 float('') 로 죽었다(리뷰 G). 빈 줄은 개수를 알린다."""
+    부록 V 대로면 빈 줄은 점 (0,0) 이다(실행 확인은 라이선스가 없어 못 함). 예전엔 float('') 로 죽었다(리뷰 G). 빈 줄은 개수를 알린다."""
     a1, o1, blank = [], [], 0
     for points in rows:
         x, y = str(points[0]).strip(), str(points[1]).strip()
@@ -12,7 +12,7 @@ def _curve_points(rows, lcid):
         a1.append(float(x) if x else 0.0)
         o1.append(float(y) if y else 0.0)
     if blank:
-        print(f"  Warning: DEFINE_CURVE {lcid} 의 빈 점 카드 {blank}개를 (0,0) 으로 읽었다 — LS-DYNA 도 같다"
+        print(f"  Warning: DEFINE_CURVE {lcid} 의 빈 점 카드 {blank}개를 (0,0) 으로 읽었다 — R16 Appendix V"
               f"(A1·O1 기본값 0.0). 블록 끝 빈 줄이라면 지울 것")
     return a1, o1
 
