@@ -179,6 +179,7 @@ class KooMaterial:
 class KooMaterialAddErosion(KooMaterial):
     def __init__(self, mid = 0, EXCL=0.0, MXPRES=0.0, MNEPS=0.0, EFFEPS=0.0, VOLEPS=0.0, NUMFIP=1.0, NCS=1.0,MNPRES=0.0, SIGP1=0.0, SIGVM=0.0, MXEPS=0.0, EPSSH=0.0, SIGTH=0.0, IMPULSE=0.0, FAILTM=0.0, IDAM=0.0, LCREGD=0.0, LCFLD=0.0, NSFF=0.0, EPSTHIN=0.0, ENGCRT=0.0, RADCRT=0.0, LCEPS12=0, LCEPS13=0, LCEPSMX=0, DTEFLT=0.0, VOLFRAC=0.5, MXTMP=1.0e20, DTMIN=0.0):        
         super(KooMaterialAddErosion, self).__init__(mid, "Mat{0}".format(mid))
+        self.raw_cards = None   # 입력 덱의 원문 카드(카드 1~). 있으면 GenerateDynaKeyword 가 MID 칸만 다시 쓴다
         self.EXCL = EXCL
         self.MXPRES = MXPRES
         self.MNEPS = MNEPS
@@ -213,6 +214,14 @@ class KooMaterialAddErosion(KooMaterial):
         keyword.AddMatAddErosion(self.id, self.EXCL, self.MXPRES, self.MNEPS, self.EFFEPS, self.VOLEPS, self.NUMFIP, self.NCS, self.MNPRES, self.SIGP1, self.SIGVM, self.MXEPS, self.EPSSH, self.SIGTH, self.IMPULSE, self.FAILTM, self.IDAM, self.LCREGD, self.LCFLD, self.NSFF, self.EPSTHIN, self.ENGCRT, self.RADCRT, self.LCEPS12, self.LCEPS13, self.LCEPSMX, self.DTEFLT, self.VOLFRAC, self.MXTMP, self.DTMIN)
         
     def GenerateDynaKeyword(self):
+        if getattr(self, 'raw_cards', None):
+            # 입력 덱에서 온 카드는 원문 그대로 낸다(MID 칸만 현재 id — SECTION_BEAM raw_cards 와 같은 규약). 수치로
+            # 재구성하면 IDAM≠0 옛 GISSMO 카드·유효숫자를 잃는다(리뷰 G 확인 중 발견)
+            keywordString = "*MAT_ADD_EROSION\n"
+            for idx, line in enumerate(self.raw_cards):
+                keywordString += ("{:>10}".format(self.id) + line[10:] if idx == 0 else line) + "\n"
+            self.SetDynaKeyword(keywordString)
+            return keywordString
         keywordString = "*MAT_ADD_EROSION\n"
         # 10 digit for each float
         keywordString += format(self.id, ">10")
@@ -234,6 +243,7 @@ class KooMaterialAddErosion(KooMaterial):
         keywordString += format(self.FAILTM, ">10.3e")
         keywordString += "\n"        
         keywordString += format(self.IDAM, ">10.3e")
+        keywordString += " " * 60   # R16 카드 3 의 2~7번째 칸은 비고 LCREGD 는 8번째 칸이다
         keywordString += format(self.LCREGD, ">10.3e")
         keywordString += "\n"
         keywordString += format(self.LCFLD, ">10.3e")
@@ -1222,22 +1232,13 @@ class KooMaterialManager():
         if dynaMaterial[0] == "*MAT_ADD_EROSION":  
             curDynaMaterial = dynaMaterial[1]
             firstLine = curDynaMaterial[0]
-            if len(dynaMaterial) > 2:
-                secondLine = curDynaMaterial[1]
-            else:
-                secondLine = ["" for i in range(0,8)]
-            if len(curDynaMaterial) > 3:
-                thirdLine = curDynaMaterial[2]
-            else:
-                thirdLine = ["" for i in range(0,8)]
-            if len(curDynaMaterial) > 4:
-                fourthLine = curDynaMaterial[3]
-            else:
-                fourthLine = ["" for i in range(0,8)]
-            if len(curDynaMaterial) > 5:
-                fifthLine = curDynaMaterial[4]
-            else:
-                fifthLine = ["" for i in range(0,8)]
+            # 카드 k 는 curDynaMaterial[k-1] 이다. 예전엔 len(dynaMaterial)(늘 2)·한 장 밀린 길이로 골라 필수 카드 2(MXEPS 등)를
+            # 늘 버리고 카드 3~5 도 밀려 읽어, 출력 덱의 파괴 기준이 조용히 꺼졌다(1월 첫 소스부터 — 리뷰 G 확인 중 발견)
+            _blank = ["" for i in range(0,8)]
+            secondLine = curDynaMaterial[1] if len(curDynaMaterial) > 1 else _blank
+            thirdLine = curDynaMaterial[2] if len(curDynaMaterial) > 2 else _blank
+            fourthLine = curDynaMaterial[3] if len(curDynaMaterial) > 3 else _blank
+            fifthLine = curDynaMaterial[4] if len(curDynaMaterial) > 4 else _blank
             mid = KooDynaInt(firstLine[0])            
             EXCL = KooDynaFloat(firstLine[1])
             MXPRES = KooDynaFloat(firstLine[2])
@@ -1255,15 +1256,15 @@ class KooMaterialManager():
             IMPULSE = KooDynaFloat(secondLine[6],0.0)
             FAILTM = KooDynaFloat(secondLine[7],0.0)
             IDAM = KooDynaFloat(thirdLine[0],0.0)
-            LCREGD = KooDynaFloat(thirdLine[1],0.0)
-            LCFLD = KooDynaFloat(thirdLine[2],0.0)
-            NSFF = KooDynaFloat(thirdLine[3],0.0)
-            EPSTHIN = KooDynaFloat(fourthLine[0],0.0)
-            ENGCRT = KooDynaFloat(fourthLine[1],0.0)
-            RADCRT = KooDynaFloat(fourthLine[2],0.0)
-            LCEPS12 = KooDynaInt(fourthLine[3],0)
-            LCEPS13 = KooDynaInt(fourthLine[4],0)
-            LCEPSMX = KooDynaInt(fourthLine[5],0)
+            LCREGD = KooDynaFloat(thirdLine[7],0.0)   # R16 카드 3 은 IDAM(1번째)·LCREGD(8번째)
+            LCFLD = KooDynaFloat(fourthLine[0],0.0)
+            NSFF = KooDynaFloat(fourthLine[1],0.0)
+            EPSTHIN = KooDynaFloat(fourthLine[2],0.0)
+            ENGCRT = KooDynaFloat(fourthLine[3],0.0)
+            RADCRT = KooDynaFloat(fourthLine[4],0.0)
+            LCEPS12 = KooDynaInt(fourthLine[5],0)
+            LCEPS13 = KooDynaInt(fourthLine[6],0)
+            LCEPSMX = KooDynaInt(fourthLine[7],0)
             DTEFLT = KooDynaFloat(fifthLine[0],0.0)
             VOLFRAC = KooDynaFloat(fifthLine[1],0.5)
             MXTMP = KooDynaFloat(fifthLine[2],1.0E20)
@@ -1271,6 +1272,7 @@ class KooMaterialManager():
             if forcedid != 0:
                 mid = forcedid
             mat = self.CreateAddErosionMaterial(mid, EXCL, MXPRES, MNEPS, EFFEPS, VOLEPS, NUMFIP, NCS,MNPRES, SIGP1, SIGVM, MXEPS, EPSSH, SIGTH, IMPULSE, FAILTM, IDAM, LCREGD, LCFLD, NSFF, EPSTHIN, ENGCRT, RADCRT, LCEPS12, LCEPS13, LCEPSMX, DTEFLT, VOLFRAC, MXTMP, DTMIN)                    
+            mat.raw_cards = ["".join(str(v) for v in line).rstrip("\n") for line in curDynaMaterial]
         elif dynaMaterial[0] == "*MAT_ADD_PZELECTRIC":
             curDynaMaterial = dynaMaterial[1]
             firstLine = curDynaMaterial[0]

@@ -7738,28 +7738,16 @@ class MatAddErosion(DynaKeyword):
     
     def parse(self, matAddErosionKeywords):
         for i in range(len(matAddErosionKeywords)):
-            curMatErosion = matAddErosionKeywords[i]
-            parameterList = [] 
-            parameters = self.parse_whole(curMatErosion[0], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            parameters = self.parse_whole(curMatErosion[1], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            if len(curMatErosion) > 2:
-                parameters = self.parse_whole(curMatErosion[2], [10, 10])
-                parameterList.append(parameters)
-            if len(curMatErosion) > 3:
-                parameters = self.parse_whole(curMatErosion[i][3], [10, 10, 10, 10, 10, 10, 10, 10])
-                parameterList.append(parameters)
-            if len(curMatErosion) > 4:
-                parameters = self.parse_whole(curMatErosion[i][4], [10, 10, 10, 10])
-                parameterList.append(parameters)
-            self.parameters.append(parameterList)
+            # 카드마다 80칸(10칸×8)을 다 읽는다 — KooMaterial 이 원문 카드 그대로 다시 쓴다(raw_cards). 예전엔 카드 3 을
+            # 2칸만 읽어 LCREGD(R16 8번째 칸)를 잃었고, 4·5번째 카드를 curMatErosion[i][3](i 번째 줄의 네 번째 글자)으로
+            # 읽어 카드가 4장 이상이면 죽었다(리뷰 G). 빈 줄은 기본값 카드라 제자리에 둔다
+            self.parameters.append([self.parse_whole(line, [10] * 8) for line in matAddErosionKeywords[i]])
     
     def AddMatAddErosion(self, MID, EXCL, MXPRES, MNEPS, EFFEPS, VOLEPS, NUMFIP, NCS, MNPRES, SIGP1, SIGVM, MXEPS, EPSSH, SIGTH, IMPULSE, FAILTM, IDAM, LCREGD, LCFLD, NSFF, EPSTHIN, ENGCRT, RADCRT, LCEPS12, LCEPS13, LCEPSMX, DTEFLT, VOLFRAC, MXTMP, DTMIN):
         parameterList = []
         parameterList.append([MID, EXCL, MXPRES, MNEPS, EFFEPS, VOLEPS, NUMFIP, NCS])    
         parameterList.append([MNPRES, SIGP1, SIGVM, MXEPS, EPSSH, SIGTH, IMPULSE, FAILTM])
-        parameterList.append([IDAM, LCREGD])
+        parameterList.append([IDAM, "", "", "", "", "", "", LCREGD])   # R16 카드 3: LCREGD 는 8번째 칸
         parameterList.append([LCFLD, NSFF, EPSTHIN, ENGCRT, RADCRT, LCEPS12, LCEPS13, LCEPSMX])
         parameterList.append([DTEFLT, VOLFRAC, MXTMP, DTMIN])
         self.parameters.append(parameterList)
@@ -7784,18 +7772,15 @@ class MatAddErosion(DynaKeyword):
             stream.write("$$  MNPRES     SIGP1     SIGVM     MXEPS     EPSSH     SIGTH   IMPULSE    FAILTM\n")
             formatted_elements = f"{str(parameter[1][0]):>10}{str(parameter[1][1]):>10}{str(parameter[1][2]):>10}{str(parameter[1][3]):>10}{str(parameter[1][4]):>10}{str(parameter[1][5]):>10}{str(parameter[1][6]):>10}{str(parameter[1][7]):>10}\n"
             stream.write(formatted_elements)
-            if len(parameter) > 2:
-                stream.write("$$    IDAM    LCREGD\n")
-                formatted_elements = f"{str(parameter[2][0]):>10}{str(parameter[2][1]):>10}\n"
-                stream.write(formatted_elements)
-            if len(parameter) > 3:
-                stream.write("$$   LCFLD      NSFF   EPSTHIN   ENGCRT    RADCRT   LCEPS12   LCEPS13   LCEPSMX\n")
-                formatted_elements = f"{str(parameter[3][0]):>10}{str(parameter[3][1]):>10}{str(parameter[3][2]):>10}{str(parameter[3][3]):>10}{str(parameter[3][4]):>10}{str(parameter[3][5]):>10}{str(parameter[3][6]):>10}{str(parameter[3][7]):>10}\n"
-                stream.write(formatted_elements)
-            if len(parameter) > 4:
-                stream.write("$$  DTEFLT   VOLFRAC     MXTMP    DTMIN\n")
-                formatted_elements = f"{str(parameter[4][0]):>10}{str(parameter[4][1]):>10}{str(parameter[4][2]):>10}{str(parameter[4][3]):>10}\n"
-                stream.write(formatted_elements)
+            # 카드 3~ 은 가진 칸을 다 쓴다 — R16 카드 3 은 IDAM(1번째)·LCREGD(8번째) 이고, IDAM≠0 옛 GISSMO 카드가
+            # 더 붙을 수 있다(예전엔 카드 3 을 2칸만 써 LCREGD 를 잃었다 — 리뷰 G)
+            headers = {2: "$$    IDAM                                                                LCREGD\n",
+                       3: "$$   LCFLD      NSFF   EPSTHIN   ENGCRT    RADCRT   LCEPS12   LCEPS13   LCEPSMX\n",
+                       4: "$$  DTEFLT   VOLFRAC     MXTMP    DTMIN\n"}
+            for k in range(2, len(parameter)):
+                if k in headers:
+                    stream.write(headers[k])
+                stream.write("".join(f"{str(v):>10}" for v in parameter[k]) + "\n")
                 
 class MatAddPZElectric(DynaKeyword):
     def __init__(self):
