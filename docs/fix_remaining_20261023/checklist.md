@@ -29,5 +29,12 @@
 - [x] 리뷰 H 반영 — 커밋 e4e37b3·1d133fe·0a8945e·de57d98·862d008·dced5fd
 - [x] 리뷰 H 반영분 회귀(시험 27·MinimumModel·말뭉치 525) + 6차 리뷰 I — 확정 7건(회귀 4: DFLAG·MUTABLE·중첩 순서·88자 8절점 셸)
 - [x] 리뷰 I 반영 — 파라미터를 R16 규칙(읽는 차례·DFLAG·MUTABLE·LOCAL 가림)으로(22b6e4b), 절점 N1~N8(31f5ae2), 질량 PID 공백(6648032), THICKNESS 두께 소실 안내(b3a5784) — 시험 27 통과·MinimumModel md5 동일·말뭉치 588(새 크래시 0, 바뀐 24건 모두 수정 범주)
-- [ ] 빌드 → 배포 폴더 GLIBC 전수(≤2.35) → 컴파일본 e2e(Test_E2E_v120 + 새 덱) → SIF v122(KooRemapper 세션이 v121 을 먼저 올림 — 굽기 전에 알림) → tar → Drive·메일
+- [x] 7차 리뷰 J(22b6e4b·31f5ae2·6648032·b3a5784) — 확정 회귀 4건(인클루드 식이 자기 LOCAL 을 못 봐 0, MUTABLE·DFLAG 2 식 사슬, 재정의 앞 카드가 나중 값, EXPRESSION_LOCAL 을 전역으로) + 예전 결함(띄운 형식 LOCAL 줄 통째 무시, LOCAL 이 형제 인클루드로 샘, MUTABLE 문자형, 같은 파일 LOCAL 두 번, DFLAG 3, 경고 두 번)
+- [x] 리뷰 J 반영 — 덱을 읽는 차례로 한 번 훑어 줄마다 그 자리 값으로 치환(_param_walk, 파일마다 계획), 해석기는 파일 범위(LOCAL)·그 자리 식 평가·옵션 순서 무관·DFLAG 1~5. 시험 tests/test_parameter_positional.py(수정 전 45건 실패, 지금 81건 통과)
+- [x] 리뷰 J 반영 커밋 f8fe5a0 + 메모리 수정 8cde1f0(큰 파일 줄 나누기 io.StringIO → 글자당 4바이트, 217 MB 에 +1.3 GB → 0.46 GB)
+- [x] 회귀 — 시험 28개 통과, MinimumModel md5 동일(ec4c907d·53d24150), 말뭉치 664(같음 641, 바뀜 23 = 리뷰 J 사례 22 + H_t3 문자 파라미터 인클루드 이름 1, 모두 R16 값 쪽, 새 크래시 0)
+- [ ] 8차 리뷰 K(읽는 차례 훑기·해석기) → 반영
+- [ ] 빌드(KMM·KAM·KCR 전체 --clean) → 배포 폴더 GLIBC 전수(≤2.35) → 컴파일본 e2e(Test_E2E_v123/run_e2e_host.sh) → SIF v124 → tar → Drive·메일
+  - v121·v123 은 KooRemapper 세션이 구웠다(v123 = 10-24 06:13~06:23, KooRemapper 5ff6f6e1·f111752, SIF sha256 f3242218, 헤드 /opt/apptainers 도 06:24 에 그 사본으로 바뀜). tar 는 SIF 소스 트리(KMM·KAM·KCR)만 묶어서 v120~v123 tar 가 바이트까지 같다 — 정상.
+  - v124 뒤 헤드 /opt/apptainers 교체는 사용자 승인 대기, 노드 배포는 보류(VM 꺼짐)
 - [ ] 메모리·노트·푸시
