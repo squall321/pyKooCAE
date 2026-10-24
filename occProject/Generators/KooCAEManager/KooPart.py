@@ -2349,7 +2349,7 @@ class KooPartManager():
                     # integer
                     nids = parameter[2:]
                     # nids to integer list 
-                    nids = [KooDynaInt(str(i)) for i in nids]   # 빈 칸(80칸까지 채운 N5~N8)은 0 — int('') 로 죽었다(리뷰 H)
+                    nids = [KooDynaInt(str(i)) for i in nids[:8]]   # N1~N8 만(80열 뒤는 LS-DYNA 도 안 읽음 — 리뷰 I), 빈 칸은 0(리뷰 H)
                     if pid in self.parts:
                         part : KooPart = self.parts[pid]
                         if len(nids) == 3 or nids[3] == 0:
@@ -2390,7 +2390,7 @@ class KooPartManager():
                     # integer
                     nids = parameter1[2:]
                     # nids to integer list
-                    nids = [KooDynaInt(str(i)) for i in nids]   # 빈 칸(80칸까지 채운 N5~N8)은 0 — int('') 로 죽었다(리뷰 H)
+                    nids = [KooDynaInt(str(i)) for i in nids[:8]]   # N1~N8 만(80열 뒤는 LS-DYNA 도 안 읽음 — 리뷰 I), 빈 칸은 0(리뷰 H)
                     # floats
                     thickness = parameter2[0:-1]                    
                     beta = parameter2[4]
@@ -2418,7 +2418,7 @@ class KooPartManager():
                     # integer
                     nids = parameter1[2:]
                     # nids to integer list
-                    nids = [KooDynaInt(str(i)) for i in nids]   # 빈 칸(80칸까지 채운 N5~N8)은 0 — int('') 로 죽었다(리뷰 H)
+                    nids = [KooDynaInt(str(i)) for i in nids[:8]]   # N1~N8 만(80열 뒤는 LS-DYNA 도 안 읽음 — 리뷰 I), 빈 칸은 0(리뷰 H)
                     # floats
                     thickness = parameter2[0:-1]                    
                     beta = parameter2[4]
