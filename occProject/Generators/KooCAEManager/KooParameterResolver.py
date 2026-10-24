@@ -11,8 +11,10 @@ K파일 내의 &variable 참조를 실제 값으로 치환합니다.
 
 *PARAMETER            : 고정폭 10칸 필드, 라인당 최대 4쌍(PRMRi VALi)
 *PARAMETER_EXPRESSION : PRMR(10칸) + 표현식(11칸~). 다른 파라미터를 bare name
-                        으로 참조 가능 → 의존 순서 반복 평가
-*PARAMETER_LOCAL      : 공백 구분 1쌍/라인 (기존 IGA 경로 호환)
+                        으로 참조 가능 → 그 자리에서 앞서 정의된 값으로 평가
+*PARAMETER_LOCAL      : *PARAMETER 와 같은 문법. 그 파일(과 그 안에서 읽는 인클루드)에서만 보임
+옵션(LOCAL·MUTABLE·NOECHO·EXPRESSION)은 순서 무관. 리더가 LS-DYNA 처럼 읽는 차례로
+정의를 넘기고(BeginFile/DefineLine/EndFile), 줄마다 그 자리에서 보이는 값(Visible)으로 치환한다.
 
 치환(SubstituteLine)은 &name 을 정규식 토큰 단위로 매칭하므로
 termin/termin_/termin__/terminA 같은 접두 충돌이 없고, 대소문자 무시,
@@ -22,6 +24,7 @@ termin/termin_/termin__/terminA 같은 접두 충돌이 없고, 대소문자 무
 import re
 import ast
 import math
+from collections import ChainMap
 
 # 표현식 평가용 화이트리스트 함수 (LS-DYNA *PARAMETER_EXPRESSION 서브셋). 소문자 키.
 _EXPR_FUNCS = {
@@ -90,38 +93,30 @@ def _expr_param_deps(tree):
     return deps
 
 
+_PENDING = object()   # 식의 참조가 아직 정의 전 — 정의가 늘 때마다 다시 센다
+_FAILED = object()    # 구문·평가 오류 — 다시 세지 않는다(경고는 이미 냈다)
+_DFLAGS = (1, 2, 3, 4, 5)
+
+
 class ParameterResolver:
     def __init__(self):
-        self.params = {}       # {"bndout": "1.0000E-03", ...} (원문 리터럴 보존)
+        self.params = {}       # 전역 값 {"bndout": "1.0000E-03", ...} (원문 리터럴 보존)
         self.param_types = {}  # {"bndout": "R", ...}
-        self._expressions = [] # [(name, type, expr_str), ...] 미평가 표현식
         self.ResetDuplicateState()
 
     def ResetDuplicateState(self):
-        """중복 정의 규칙의 상태를 덱마다 새로 시작한다(R16 *PARAMETER_DUPLICATION·MUTABLE). 파라미터 값 표는 그대로 둔다."""
+        """덱마다 새로 시작하는 상태 — 중복 규칙(R16 *PARAMETER_DUPLICATION·MUTABLE), LOCAL 범위, 아직 못 센 식.
+        전역 값 표(params)는 그대로 둔다(같은 매니저가 이어 읽는 덱 — 예전 동작)."""
         self.dflag = None          # *PARAMETER_DUPLICATION DFLAG(없으면 1)
-        self._defined = {}         # 이름 → 받아들인 정의 글 — 읽는 차례로 처음 본 정의부터
-        self._mutable = set()      # 첫 정의가 *PARAMETER…MUTABLE 인 이름
-        self._cur_mutable = False  # 지금 읽는 블록 키워드에 MUTABLE 이 붙었나
+        self._defined = {}         # 전역 이름 → 받아들인 정의 글(이 덱에서 처음 본 것부터)
+        self._mutable = set()      # 첫 정의가 MUTABLE 인 전역 이름(문자형은 빼고 — R16 Remark 6)
+        self.BeginDeck()
 
-    def _accept(self, name, text):
-        """name 의 새 정의를 받아들일지 정한다. 처음 보면 받는다. 이미 있으면 첫 정의가 MUTABLE 이거나(R16 Remark 6:
-        "Redefinition is allowed regardless of the setting of *PARAMETER_DUPLICATION") DFLAG 가 2·4 일 때만 받는다 —
-        기본 DFLAG=1 은 "ignore the new definition" 이다. 리더가 정의를 LS-DYNA 처럼 읽는 차례로 넘겨 준다(인클루드는
-        그 *INCLUDE 자리에 끼워 넣음). 예전엔 늘 나중 값이 이겼다(리뷰 I)."""
-        dflag = self.dflag or 1
-        if name not in self._defined:
-            self._defined[name] = text
-            if self._cur_mutable:
-                self._mutable.add(name)
-            return True
-        if name in self._mutable or dflag in (2, 4):
-            self._defined[name] = text
-            return True
-        if str(self._defined[name]).strip() != str(text).strip() and dflag in (1, 3):
-            print(f"  Warning: *PARAMETER {name} 재정의({str(text).strip()})를 무시했다 — 먼저 정의"
-                  f"({str(self._defined[name]).strip()})가 남는다(R16 *PARAMETER_DUPLICATION DFLAG={dflag})")
-        return False
+    def BeginDeck(self):
+        """덱 하나를 처음부터 훑기 전 — 열린 LOCAL 범위와 못 센 식을 비운다."""
+        self._scopes = []          # 읽는 중인 파일마다 LOCAL 정의 — 바깥 파일부터 안쪽 파일 차례
+        self._pending = []         # [(이름, 형, 식, 범위 또는 None)] 참조가 아직 정의 전인 식
+        self._visible = None       # 지금 보이는 값 표(ChainMap) — 범위가 바뀔 때만 다시 만든다
 
     def ParseParameterLocal(self, lines):
         """*PARAMETER_LOCAL 블록에서 변수=값 추출
@@ -155,196 +150,258 @@ class ParameterResolver:
                 self.params[var_name] = val
                 return var_name, val
 
-    # ── *PARAMETER / *PARAMETER_EXPRESSION (표준 문법) ──────────────────────
+    # ── 읽는 차례대로 정의 받기 (리더가 파일·인클루드 차례를 몰고 온다) ─────────────
+
+    def BeginFile(self):
+        """파일 읽기 시작 — 이 파일의 LOCAL 범위를 연다(R16 *PARAMETER Remark 5)."""
+        self._scopes.append({'vals': {}, 'types': {}, 'text': {}, 'mutable': set()})
+        self._visible = None
+
+    def EndFile(self):
+        """파일 끝 — 그 파일의 LOCAL 은 사라진다("disappear when the input parser finishes reading the file in which
+        they appear"). 그 범위에서 끝내 못 센 식은 버리고 알린다."""
+        if not self._scopes:
+            return
+        sc = self._scopes.pop()
+        for name, _, expr, target in self._pending:
+            if target is sc:
+                print(f"  Warning: PARAMETER_EXPRESSION_LOCAL '{name}={expr}' 미해결 참조 — 파일이 끝나 미치환 유지")
+        self._pending = [p for p in self._pending if p[3] is not sc]
+        self._visible = None
+
+    def ReportPending(self):
+        """덱 끝 — 끝내 참조를 못 푼 전역 식을 알리고 비운다."""
+        for name, _, expr, _ in self._pending:
+            print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 미해결 참조 — 미치환 유지")
+        self._pending = []
+
+    def Visible(self):
+        """지금 보이는 값 표 — 안쪽 파일의 LOCAL 부터 바깥 파일의 LOCAL, 끝에 전역(LOCAL 이 같은 이름 전역을 가린다).
+        ChainMap 이라 정의가 늘어도 다시 만들 필요가 없다."""
+        if self._visible is None:
+            self._visible = ChainMap(*[sc['vals'] for sc in reversed(self._scopes)], self.params)
+        return self._visible
+
+    @staticmethod
+    def ParseHeader(kwname):
+        """키워드 이름(대문자, '*' 뺌) → ('param'|'expr'|'dup', 옵션 집합), *PARAMETER 계열이 아니면 None.
+        R16: 옵션은 "any combination … in any order" — 예전엔 앞부분만 봐서 *PARAMETER_EXPRESSION_LOCAL 과
+        *PARAMETER_NOECHO_LOCAL 을 전역으로 읽었다(리뷰 J)."""
+        n = kwname.upper()
+        if n != 'PARAMETER' and not n.startswith('PARAMETER_'):
+            return None
+        opts = frozenset(p for p in n[len('PARAMETER'):].split('_') if p)
+        if 'DUPLICATION' in opts:
+            return ('dup', opts)
+        return ('expr' if 'EXPRESSION' in opts else 'param', opts)
+
+    def DefineLine(self, hdr, line):
+        """hdr(ParseHeader) 블록의 데이터 줄 하나를 정의로 받는다. 'end' 를 돌려주면 블록의 나머지 줄은 정의가 아니다
+        (*PARAMETER_DUPLICATION 은 카드 하나)."""
+        kind, opts = hdr
+        s = line.strip()
+        if not s or s.startswith('$'):
+            return None
+        if kind == 'dup':
+            try:
+                v = int(float(re.split(r'[,\s]+', s)[0]))
+            except ValueError:
+                return 'end'
+            if self.dflag is None:
+                self.dflag = v
+            else:   # R16 Remark 2 "Only one *PARAMETER_DUPLICATION card is allowed … any after the first are ignored"
+                print(f"  Warning: *PARAMETER_DUPLICATION 이 또 있다(DFLAG={v}) — 첫 카드(DFLAG={self.dflag})만 쓴다")
+            return 'end'
+        local, mutable = 'LOCAL' in opts, 'MUTABLE' in opts
+        if kind == 'expr':
+            got = self._split_expression_line(line)
+            if got:
+                self._define(got[1], got[0], got[2], local, mutable, is_expr=True)
+        else:
+            for ptype, name, val in self._split_parameter_line(line):
+                self._define(name, ptype, val, local, mutable, is_expr=False)
+        return None
 
     def ParseFromRawLines(self, raw_lines):
-        """파일 raw 라인 전체에서 *PARAMETER 계열 블록을 스캔해 테이블 구축.
-
-        *PARAMETER_EXPRESSION → 표현식 수집(뒤에서 의존 순서 평가)
-        *PARAMETER_LOCAL      → 기존 공백구분 파서(_parse_line, IGA 경로 호환)
-        *PARAMETER            → 고정폭 10칸 4쌍/라인 파서
-        스캔 후 EvaluateExpressions() 로 표현식 일괄 평가.
-        """
-        mode = None  # None | 'param' | 'expr' | 'local' | 'dup'
-        local_vals = {}  # 이 파일의 *PARAMETER_LOCAL — 같은 이름의 전역 정의를 가린다
+        """한 파일 줄 목록의 *PARAMETER 계열 정의를 차례대로 받는다. 인클루드는 따라가지 않는다 — 리더가 읽는 차례
+        훑기를 못 했을 때의 대비 경로다. LOCAL 범위는 부르는 쪽이 BeginFile/EndFile 로 연다."""
+        hdr = None
         for line in raw_lines:
-            stripped = line.strip()
-            if stripped.startswith('*'):
-                u = stripped.upper().split()[0]
-                self._cur_mutable = 'MUTABLE' in u
-                if u.startswith('*PARAMETER_EXPRESSION'):
-                    mode = 'expr'
-                elif u.startswith('*PARAMETER_LOCAL'):
-                    mode = 'local'
-                elif u.startswith('*PARAMETER_DUPLICATION'):
-                    mode = 'dup'   # 중복 정책 카드 — DFLAG 하나(R16: 카드는 하나만, 뒤의 것은 무시)
-                elif u.startswith('*PARAMETER'):
-                    mode = 'param'
-                else:
-                    mode = None
+            if line.startswith('*'):
+                m = re.match(r'\*([A-Za-z0-9_]+)', line)
+                hdr = self.ParseHeader(m.group(1)) if m else None
                 continue
-            if mode is None or not stripped or stripped.startswith('$'):
-                continue
-            if mode == 'dup':
-                if self.dflag is None:
-                    try:
-                        self.dflag = int(float(re.split(r'[,\s]+', stripped)[0]))
-                    except ValueError:
-                        pass
-                mode = None
-                continue
-            if mode == 'param':
-                self._parse_parameter_line(line)
-            elif mode == 'expr':
-                self._parse_expression_line(line)
-            elif mode == 'local':
-                got = self._parse_line(line)
-                if got:
-                    local_vals[got[0]] = got[1]
-        # LOCAL 은 그 파일(과 그 안에서 읽는 인클루드)에서 같은 이름의 전역 정의를 가린다(R16 *PARAMETER Remark 5).
-        # 리더가 끼워 넣은 인클루드의 전역 정의가 덮지 않게 마지막에 다시 둔다. 가림은 중복 정의로 치지 않는다
-        # (*PARAMETER_DUPLICATION Remark 1) — 메인 LOCAL 이 인클루드 전역값에 덮였다(리뷰 I 반영 확인 중)
-        for name, val in local_vals.items():
-            self.params[name] = val
-        self._expressions = [e for e in self._expressions if e[0] not in local_vals]
-        self.EvaluateExpressions()
+            if hdr is not None and self.DefineLine(hdr, line) == 'end':
+                hdr = None
 
-    def _store(self, prmr_field, val):
-        """PRMR 필드(타입문자+이름)와 값 문자열을 테이블에 저장."""
-        prmr = prmr_field.strip()
-        if not prmr:
-            return
-        if prmr[0] in _TYPE_CHARS and len(prmr) >= 2:
-            ptype = prmr[0].upper()
-            name = prmr[1:].strip().lower()
-        else:
-            ptype = 'R'  # 타입 미표기 시 LS-DYNA 기본 real
-            name = prmr.lower()
-        if name:
-            if not self._accept(name, val):
+    def _define(self, name, ptype, text, local, mutable, is_expr):
+        """이름 하나의 정의를 R16 규칙으로 받는다.
+        - 전역 재정의는 첫 정의가 MUTABLE(문자형 제외)이거나 DFLAG 2·4 일 때만 받는다(*PARAMETER_DUPLICATION: 1=경고 후
+          무시(기본), 2=경고 후 채택, 3=오류·무시, 4=조용히 채택, 5=조용히 무시).
+        - LOCAL 이 같은 이름 전역을 가리는 것은 중복이 아니다. 보이는 LOCAL 을 다시 가리면 중복이다(DUPLICATION Remark 1).
+        - 식은 그 자리에서 그때 보이는 값으로 센다("can reference previously defined parameters"). 참조가 아직 정의 전이면
+          미뤄 두고 정의가 늘 때마다 다시 센다(예전 KMM 이 받아 주던 앞 참조 — LS-DYNA 라면 오류다).
+        예전엔 식을 파일 끝에 몰아 셌고, 메인 해석에 끼워 넣은 인클루드 정의를 다시 읽을 때 거절해 인클루드 식이 자기 LOCAL
+        을 못 보고 0 이 됐다(리뷰 J)."""
+        dflag = self.dflag if self.dflag in _DFLAGS else 1
+        if local:
+            if not self._scopes:
+                self.BeginFile()
+            prev = next((sc for sc in reversed(self._scopes) if name in sc['text']), None)
+            if prev is not None and not self._redefine_ok(name, text, prev['text'][name], name in prev['mutable'], dflag):
                 return
-            self.params[name] = str(val).strip()
+            target = self._scopes[-1]
+            if (prev is None and mutable and ptype != 'C') or (prev is not None and name in prev['mutable']):
+                target['mutable'].add(name)
+            target['text'][name] = text
+        else:
+            if name in self._defined:
+                if not self._redefine_ok(name, text, self._defined[name], name in self._mutable, dflag):
+                    return
+            elif mutable and ptype != 'C':
+                self._mutable.add(name)
+            self._defined[name] = text
+            target = None
+        # 같은 자리에 미뤄 둔 같은 이름의 식은 이 정의에 밀린다
+        self._pending = [p for p in self._pending if not (p[0] == name and p[3] is target)]
+        value = self._evaluate(name, ptype, text) if is_expr else str(text).strip()
+        if value is _PENDING:
+            self._pending.append((name, ptype, text, target))
+        elif value is not _FAILED:
+            self._store_value(name, ptype, value, target)
+            self._retry_pending()
+
+    @staticmethod
+    def _redefine_ok(name, text, prev_text, prev_mutable, dflag):
+        """이미 정의된 name 의 재정의를 받을지 — 받지 않으면 DFLAG 대로 알린다."""
+        new, old = str(text).strip(), str(prev_text).strip()
+        if prev_mutable or dflag in (2, 4):
+            if dflag == 2 and not prev_mutable and new != old:
+                print(f"  Warning: *PARAMETER {name} 재정의({new})를 받아들였다 — 앞 정의({old})는 이 자리부터 바뀐다"
+                      f"(R16 *PARAMETER_DUPLICATION DFLAG=2)")
+            return True
+        if dflag == 3:
+            print(f"  🔴 *PARAMETER {name} 재정의({new}) — R16 DFLAG=3 은 오류다(LS-DYNA 는 입력 끝에서 멈춘다). "
+                  f"먼저 정의({old})를 남기고 계속한다")
+        elif dflag == 1 and new != old:
+            print(f"  Warning: *PARAMETER {name} 재정의({new})를 무시했다 — 먼저 정의({old})가 남는다"
+                  f"(R16 *PARAMETER_DUPLICATION DFLAG=1, 첫 정의가 MUTABLE 아님)")
+        return False
+
+    def _store_value(self, name, ptype, value, target):
+        if target is None:
+            self.params[name] = value
             self.param_types[name] = ptype
-            self._expressions = [e for e in self._expressions if e[0] != name]   # 앞선 같은 이름의 식은 이 정의에 밀린다
+        else:
+            target['vals'][name] = value
+            target['types'][name] = ptype
 
-    def _parse_parameter_line(self, line):
-        """*PARAMETER 데이터 라인: PRMRi VALi 쌍(최대 4쌍).
+    def _evaluate(self, name, ptype, expr):
+        """식 → 값 글. 참조가 아직 정의 전이면 _PENDING, 구문·평가 오류면 _FAILED(경고).
+        AST 화이트리스트 평가 — 지수표기 리터럴(2.1e5)을 식별자로 오인하지 않고, 파라미터가 pi/e/함수명과 겹쳐도
+        파라미터 우선, hang·dunder 탈출 불가."""
+        if ptype == 'C':   # R16: 'For type "C" parameters, the expression is not evaluated in any sense, just stored as a string'
+            return str(expr).strip()
+        try:
+            tree = ast.parse(expr, mode='eval').body
+        except SyntaxError as e:
+            print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 구문 오류 ({e}) — 미치환 유지")
+            return _FAILED
+        vis = self.Visible()
+        deps = _expr_param_deps(tree)
+        if not all(d in vis or d in _EXPR_CONSTS for d in deps):
+            return _PENDING
+        try:
+            value = _eval_ast_node(tree, {d: float(vis[d]) for d in deps if d in vis})
+        except Exception as e:
+            print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 평가 실패 ({e}) — 미치환 유지")
+            return _FAILED
+        return str(self._nint(value)) if ptype == 'I' else repr(float(value))
 
-        LS-DYNA 파라미터 이름·값에는 공백이 없으므로 토큰 분리가 안전하다
-        (HM 등이 값을 10칸 경계 밖으로 흘려 쓰는 관대한 포맷도 수용 —
-        고정폭 슬라이스는 'R   bndout 1.0000E-03' 의 값을 잘라먹는다).
-        타입 문자가 'R    dt2ms' 처럼 이름과 분리된 토큰이어도 처리.
-        """
-        s = line.strip().rstrip('\n')
-        if not s:
-            return
-        toks = [t for t in re.split(r'[,\s]+', s) if t]
-        i = 0
-        n = len(toks)
+    def _retry_pending(self):
+        """미뤄 둔 식 가운데 이제 참조가 다 정의된 것을 센다(하나가 풀리면 다른 것이 풀릴 수 있어 진전이 없을 때까지)."""
+        progressed = True
+        while progressed and self._pending:
+            progressed = False
+            for p in list(self._pending):
+                name, ptype, expr, target = p
+                value = self._evaluate(name, ptype, expr)
+                if value is _PENDING:
+                    continue
+                self._pending.remove(p)
+                progressed = True
+                if value is not _FAILED:
+                    self._store_value(name, ptype, value, target)
+
+    @staticmethod
+    def _prmr(field):
+        """PRMR 칸(형 글자+이름) → (형, 이름 소문자). 형 글자가 없으면 R(LS-DYNA 기본 real)."""
+        prmr = field.strip()
+        if len(prmr) >= 2 and prmr[0] in _TYPE_CHARS:
+            return prmr[0].upper(), prmr[1:].strip().lower()
+        return 'R', prmr.lower()
+
+    def _split_parameter_line(self, line):
+        """*PARAMETER(·_LOCAL·_MUTABLE·_TYPE) 데이터 줄 → [(형, 이름, 값)] — 한 줄 최대 4쌍.
+        LS-DYNA 파라미터 이름·값에는 공백이 없으므로 토큰 분리가 안전하다(HM 등이 값을 10칸 경계 밖으로 흘려 쓰는 관대한
+        포맷도 수용 — 고정폭 슬라이스는 'R   bndout 1.0000E-03' 의 값을 잘라먹는다). 'R    dt2ms' 처럼 형 글자가 이름과
+        떨어져 있어도 된다(R16 "RSHLTHK", "R␣␣␣SHLTHK" 는 같다). LOCAL 도 같은 문법이다 — 예전 LOCAL 파서는 붙여 쓴
+        형식의 첫 쌍만 읽어 'R thk 1.0' 줄을 통째로 버렸다(리뷰 J)."""
+        toks = [t for t in re.split(r'[,\s]+', line.strip()) if t]
+        out, i, n = [], 0, len(toks)
         while i < n - 1:
             tok = toks[i]
             if len(tok) == 1 and tok in _TYPE_CHARS and i + 2 < n:
-                # 타입문자 단독 토큰 + 이름 + 값 → 합쳐 기존 로직으로
-                self._store(tok + toks[i + 1], toks[i + 2])
+                (ptype, name), val = self._prmr(tok + toks[i + 1]), toks[i + 2]
                 i += 3
             else:
-                self._store(tok, toks[i + 1])
+                (ptype, name), val = self._prmr(tok), toks[i + 1]
                 i += 2
+            if name:
+                out.append((ptype, name, val))
+        return out
 
-    def _parse_expression_line(self, line):
-        """*PARAMETER_EXPRESSION 데이터 라인: PRMR + 표현식(나머지 전부).
-
-        표현식에는 공백이 올 수 있으므로 이름부만 토큰 분리하고
-        나머지 전체를 식으로 취급한다.
-        """
-        s = line.strip().rstrip('\n')
-        if not s:
-            return
-        parts = s.split(None, 1)
+    def _split_expression_line(self, line):
+        """*PARAMETER_EXPRESSION 데이터 줄 → (형, 이름, 식) 또는 None. 식에는 공백이 올 수 있어 이름부만 토큰 분리하고
+        나머지 전체를 식으로 쓴다. 식 안 참조의 '&' 는 뗀다(R16 "with or without the leading &")."""
+        parts = line.strip().split(None, 1)
         if len(parts) < 2:
-            return
-        prmr, rest = parts[0], parts[1]
+            return None
+        prmr, rest = parts
         if len(prmr) == 1 and prmr in _TYPE_CHARS:
-            # 타입문자 단독 토큰 → 다음 토큰이 이름
             sub = rest.split(None, 1)
             if len(sub) < 2:
-                return
-            ptype = prmr.upper()
-            name = sub[0].strip().lower()
-            expr = sub[1].strip()
-        elif prmr[0] in _TYPE_CHARS and len(prmr) >= 2:
-            ptype = prmr[0].upper()
-            name = prmr[1:].strip().lower()
-            expr = rest.strip()
+                return None
+            ptype, name, expr = prmr.upper(), sub[0].strip().lower(), sub[1].strip()
         else:
-            ptype = 'R'
-            name = prmr.lower()
-            expr = rest.strip()
-        if name and expr:
-            if not self._accept(name, expr):
-                return
-            self._expressions = [e for e in self._expressions if e[0] != name]   # 앞선 같은 이름의 식은 이 식에 밀린다
-            self._expressions.append((name, ptype, expr))
+            (ptype, name), expr = self._prmr(prmr), rest.strip()
+        if not name or not expr:
+            return None
+        if ptype != 'C':
+            expr = re.sub(r'&(?=[A-Za-z_])', '', expr)
+        return ptype, name, expr
 
     @staticmethod
     def _nint(value):
         """Fortran NINT (반올림 반은 0에서 먼 쪽) — LS-DYNA 정수 파라미터 규약."""
         return int(math.floor(value + 0.5)) if value >= 0 else int(math.ceil(value - 0.5))
 
-    def EvaluateExpressions(self):
-        """수집된 표현식을 의존 순서로 반복 평가 (미해결 참조는 다음 패스로).
-
-        AST 화이트리스트 평가 — 지수표기 리터럴(2.1e5)을 식별자로 오인하지 않고,
-        파라미터가 pi/e/함수명과 겹쳐도 파라미터 우선, hang·dunder 탈출 불가.
-        """
-        pending = []
-        for name, ptype, expr in self._expressions:
-            try:
-                tree = ast.parse(expr, mode='eval').body
-                pending.append((name, ptype, expr, tree))
-            except SyntaxError as e:
-                print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 구문 오류 ({e}) — 미치환 유지")
-        self._expressions = []
-        for _ in range(len(pending) + 1):
-            if not pending:
-                break
-            remaining = []
-            progressed = False
-            for name, ptype, expr, tree in pending:
-                deps = _expr_param_deps(tree)
-                # 각 dep 는 파라미터(우선) 또는 상수여야 해결 가능. 그 외 → 미해결(전방참조/미정의)
-                if not all(d in self.params or d in _EXPR_CONSTS for d in deps):
-                    remaining.append((name, ptype, expr, tree))
-                    continue
-                try:
-                    resolved = {d: float(self.params[d]) for d in deps if d in self.params}
-                    value = _eval_ast_node(tree, resolved)
-                    if ptype == 'I':
-                        self.params[name] = str(self._nint(value))
-                    else:
-                        self.params[name] = repr(float(value))
-                    self.param_types[name] = ptype
-                    progressed = True
-                except Exception as e:
-                    print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 평가 실패 ({e}) — 미치환 유지")
-                    progressed = True  # 시끄러운 실패도 진전으로 간주(무한루프 방지)
-            if not progressed:
-                for name, _, expr, _ in remaining:
-                    print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 미해결 참조 — 미치환 유지")
-                break
-            pending = remaining
-
     _REF_RE = re.compile(r'&([A-Za-z_][A-Za-z0-9_]*)')
 
-    def _sub_token(self, body):
+    def RefNames(self, line):
+        """줄 안 &참조 이름(소문자) 집합."""
+        return {m.group(1).lower() for m in self._REF_RE.finditer(line)}
+
+    def _sub_token(self, body, params=None):
         """토큰 단위 치환 (필드폭 없는 라인: 코멘트/free-format). 길이 가변 허용."""
+        params = self.params if params is None else params
         def repl(m):
             name = m.group(1).lower()
-            return str(self.params[name]).strip() if name in self.params else m.group(0)
+            return str(params[name]).strip() if name in params else m.group(0)
         return self._REF_RE.sub(repl, body)
 
-    def SubstituteLine(self, line):
-        """라인 내 &name 참조를 파라미터 값으로 치환 (필드폭 비가정).
+    def SubstituteLine(self, line, params=None):
+        """라인 내 &name 참조를 파라미터 값으로 치환 (필드폭 비가정). params 를 주면 그 표(예: Visible())로, 없으면 전역 표로.
 
         규칙(고정폭 데이터 라인):
         - 값이 토큰폭 이내 → 토큰 span 안에서 우측정렬(val.rjust(tok)). 이는 구
@@ -356,7 +413,8 @@ class ParameterResolver:
         코멘트($)·키워드(*)·free-format(콤마) 라인은 필드폭 개념이 없어 토큰 치환.
         정규식 토큰 매칭 → termin/termin_/terminA 접두 충돌 없음, 대소문자 무시.
         """
-        if '&' not in line or not self.params:
+        params = self.params if params is None else params
+        if '&' not in line or not params:
             return line
         eol = ''
         body = line
@@ -364,16 +422,16 @@ class ParameterResolver:
             body, eol = body[:-1], '\n'
         lstrip = body.lstrip()
         if lstrip[:1] in ('$', '*') or ',' in body:
-            return self._sub_token(body) + eol
+            return self._sub_token(body, params) + eol
         result = body
         # 오른쪽→왼쪽 처리: 각 치환은 span 길이 == 값 길이(길이 보존)라 좌측 인덱스 안정
         for m in reversed(list(self._REF_RE.finditer(body))):
             name = m.group(1).lower()
-            if name not in self.params:
+            if name not in params:
                 continue
             start, end = m.span()
             tok = end - start
-            val = str(self.params[name]).strip()
+            val = str(params[name]).strip()
             if len(val) <= tok:
                 result = result[:start] + val.rjust(tok) + result[end:]
                 continue

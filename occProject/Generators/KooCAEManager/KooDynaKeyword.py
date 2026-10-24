@@ -12331,30 +12331,32 @@ class DynaManager():
         raw_lines = strip_trailing_ctrl_z(raw_lines)
 
         # *PARAMETER / *PARAMETER_EXPRESSION / *PARAMETER_LOCAL 해석 + &변수 치환.
-        # resolver 를 self 에 공유해 메인 파일 파라미터가 include 라인(재귀 호출)에도 적용.
-        # 파라미터 블록이 전혀 없으면 HasParams()=False → 라인 불변(기존 모델 무영향).
+        # 맨 위 파일을 읽을 때 덱 전체를 LS-DYNA 가 읽는 차례로 한 번 훑어(_param_walk) 파일마다 줄을 그 자리에서 보이는 값으로
+        # 바꾼 계획을 만들고, 각 파일(인클루드는 재귀 호출)을 읽을 때 그 계획을 쓴다. resolver 는 self 에 공유한다.
+        # 파라미터가 전혀 없으면 계획이 비어 줄이 그대로다(기존 모델 무영향).
         # 치환된 리터럴이 모든 리더/매니저로 흐르고, *PARAMETER 카드 자체는
         # 미인터프리트 raw 보존으로 출력 덱에 원문 유지된다(의미 보존 round-trip).
         try:
             from KooCAEManager.KooParameterResolver import ParameterResolver
             if getattr(self, '_param_resolver', None) is None:
                 self._param_resolver = ParameterResolver()
-            # *END 뒤의 *PARAMETER 정의는 LS-DYNA 가 읽지 않는다 — 해석기에도 이 파일의 *END 까지만 준다
-            # (아래 키워드 루프와 같은 판정. 예전엔 *END 뒤에 둔 R thk 2.0 이 앞의 1.0 을 덮었다 — 리뷰 D)
-            _end_at = next((_i for _i, _l in enumerate(raw_lines)
-                            if _l.startswith('*') and keyword_line_name(_l) == 'END'), None)
-            _own = raw_lines if _end_at is None else raw_lines[:_end_at + 1]
-            # 맨 위 파일이면 인클루드(재귀)의 *PARAMETER 줄을 그 *INCLUDE 자리에 끼워 넣는다 — LS-DYNA 는 *INCLUDE 를 그
-            # 자리에서 읽어 맨 위에 인클루드한 파라미터 파일 값이 메인 카드에 먹는다. KMM 은 인클루드를 메인 뒤에 읽어 메인의
-            # &thk 가 0 이었다(리뷰 G). 중복 정의는 해석기가 읽는 차례·DFLAG·MUTABLE 로 고른다(리뷰 H·I)
-            try:
-                _parse = self._splice_include_params(path, _own) if len(self._include_stack) == 1 else _own
-            except Exception as e:   # 미리 읽기가 실패해도 메인 파일 파라미터는 예전처럼 해석한다
-                print(f"  Warning: 인클루드 *PARAMETER 미리 읽기 실패 — 메인 파일 정의만 쓴다: {e}")
-                _parse = _own
-            self._param_resolver.ParseFromRawLines(_parse)
-            if self._param_resolver.HasParams():
-                raw_lines = [self._param_resolver.SubstituteLine(line) for line in raw_lines]
+            _plan = None
+            if len(self._include_stack) == 1:
+                self._param_resolver.BeginDeck()
+                self._param_plans = {}
+                try:
+                    _late = []
+                    _plan = self._param_walk(path, raw_lines, self._param_plans, [os.path.realpath(path)], True, _late)
+                    self._param_fill_late(_late, '덱 끝')
+                    self._param_resolver.ReportPending()
+                except Exception as e:   # 훑지 못하면 파일마다 그 파일 정의로만 치환한다(_apply_param_plan)
+                    print(f"  Warning: *PARAMETER 를 읽는 차례로 훑지 못했다 — 파일마다 따로 해석한다: {e}")
+                    self._param_resolver.ResetDuplicateState()   # 훑다 만 정의를 다시 받을 때 중복으로 치지 않게
+                    self._param_plans, _plan = None, None
+            elif getattr(self, '_param_plans', None):
+                _q = self._param_plans.get(os.path.realpath(path))
+                _plan = _q.pop(0) if _q else None
+            raw_lines = self._apply_param_plan(path, raw_lines, _plan, getattr(self, '_param_plans', None) is not None)
         except Exception as e:
             print(f"  Warning: PARAMETER 해석 실패 (원본 유지): {e}")
 
@@ -12475,18 +12477,8 @@ class DynaManager():
                     with open(include_path, 'r', errors='replace') as inc_f:
                         inc_content = inc_f.read()
 
-                    user_preserve = self.matchesPreservePattern(include_path)
-                    # 분해 출력 파일은 자동 IGA passthrough 우회 (raw 보존된 IGA 키워드가
-                    # 자기 자신을 IGA로 오인식해 통째 passthrough되는 문제 방지)
-                    no_auto_passthrough = (
-                        "KOO_DECOMPOSED_NO_AUTO_PASSTHROUGH" in inc_content[:500]
-                        or getattr(self, '_disable_auto_iga_passthrough', False)
-                    )
-                    has_iga = (not no_auto_passthrough) and any(
-                        kw in inc_content for kw in ['*IGA_', '*SECTION_IGA_', '*PARAMETER_LOCAL']
-                    )
-
-                    if user_preserve or has_iga:
+                    reason = self._include_passthrough_reason(include_path, inc_content)
+                    if reason:
                         # passthrough → *INCLUDE 참조로 보존
                         if "_INCLUDE_PASSTHROUGH" not in keyword_dict:
                             keyword_dict["_INCLUDE_PASSTHROUGH"] = []
@@ -12494,7 +12486,6 @@ class DynaManager():
                         keyword_dict["_INCLUDE_PASSTHROUGH"].append(entry)
                         self._include_passthrough_data.append(entry)
                         lines_with_asterisk.append("_INCLUDE_PASSTHROUGH")
-                        reason = "user-specified" if user_preserve else "IGA"
                         print(f"  Include passthrough ({reason}): {os.path.basename(include_path)}")
                     else:
                         # 일반 include → 재귀적으로 읽기 (인라인)
@@ -12511,47 +12502,138 @@ class DynaManager():
             lines_with_asterisk.remove(keyword)
         if len(self._include_stack) == 1:   # 맨 위 파일 — 인클루드까지 다 읽은 뒤
             self._warn_unresolved_params(keyword_dict)
+            self._param_plans = None         # 이 덱의 치환 계획은 다 썼다
         self._include_stack.pop()
         return lines_with_asterisk, keyword_dict
 
-    def _splice_include_params(self, path, lines, seen=None):
-        """lines 의 *INCLUDE 자리마다 그 인클루드의 *PARAMETER 계열 줄(LOCAL 제외)을 끼워 넣은 줄 목록 — 해석기가 LS-DYNA 처럼
-        읽는 차례대로 정의를 보게 한다(R16 *PARAMETER: 정의는 "visible and available at any later point in the input
-        processing"). 중첩 인클루드도 그 자리에 끼운다. 중복 정의는 해석기가 DFLAG·MUTABLE 로 고른다(_accept).
-        예전엔 인클루드 정의를 모두 메인 앞에 모아 순서·중복 규칙이 LS-DYNA 와 달랐다(리뷰 G·H·I).
-        따라가는 인클루드·*END·없는 파일 규칙은 리더와 같고, 같은 파일은 한 번만 끼운다(순환 방지). 줄 단위로 훑는다."""
-        seen = seen if seen is not None else {os.path.realpath(path)}
-        out, kw = [], ''
-        for line in lines:
-            out.append(line)
-            if line.startswith('*'):
-                kw = keyword_line_name(line).upper()
-                continue
-            if kw != 'INCLUDE' or line.startswith('$') or not line.strip():
-                continue
-            name = line.strip()
-            inc = name if os.path.isabs(name) else os.path.join(os.path.dirname(path), name)
-            real = os.path.realpath(inc)
-            if real in seen or not os.path.isfile(inc):
-                continue
-            seen.add(real)
-            sub, take = [], False
-            try:
-                with open(inc, 'r', errors='replace') as f:
-                    for l in f:
-                        l = l.replace('\x1a', '')   # 파일 끝 Ctrl-Z — 파라미터 값·파일 이름에는 뜻이 없다
-                        if l.startswith('*'):
-                            n = keyword_line_name(l).upper()
-                            if n == 'END':
-                                break
-                            # 파일 범위인 LOCAL 만 빼고 *PARAMETER 변형은 모두 전역이다. *INCLUDE 는 중첩을 제자리에 끼우려고 남긴다
-                            take = (n.startswith('PARAMETER') and 'LOCAL' not in n) or n == 'INCLUDE'
-                        if take:
-                            sub.append(l)
-            except OSError:
-                continue
-            out += ['*KEYWORD\n'] + self._splice_include_params(inc, sub, seen) + ['*KEYWORD\n']   # '*KEYWORD' 는 블록을 끊는 구분 줄
-        return out
+    def _include_passthrough_reason(self, include_path, inc_content):
+        """인클루드를 읽지 않고 *INCLUDE 로 남길 이유 — 'user-specified'(사용자 보존 패턴)·'IGA'(자동 보존), 인라인으로 읽으면
+        None. 리더와 파라미터 훑기(_param_walk)가 같은 판정을 쓴다(어긋나면 파일마다 치환 계획이 엇갈린다)."""
+        if self.matchesPreservePattern(include_path):
+            return "user-specified"
+        # 분해 출력 파일은 자동 IGA passthrough 우회 (raw 보존된 IGA 키워드가
+        # 자기 자신을 IGA로 오인식해 통째 passthrough되는 문제 방지)
+        no_auto_passthrough = (
+            "KOO_DECOMPOSED_NO_AUTO_PASSTHROUGH" in inc_content[:500]
+            or getattr(self, '_disable_auto_iga_passthrough', False)
+        )
+        if not no_auto_passthrough and any(kw in inc_content for kw in ['*IGA_', '*SECTION_IGA_', '*PARAMETER_LOCAL']):
+            return "IGA"
+        return None
+
+    def _param_walk(self, path, lines, plans, stack, inline, deck_late):
+        """덱을 LS-DYNA 가 읽는 차례로 훑으며(인클루드는 그 *INCLUDE 자리에서 들어간다) *PARAMETER 정의를 받고, 이 파일 줄을
+        그 자리에서 보이는 값으로 치환한 계획 {줄 번호: (원문, 치환문)} 을 돌려준다. R16: 정의는 "visible and available at any
+        later point in the input processing", LOCAL 은 "disappear when the input parser finishes reading the file in which
+        they appear", 식은 "previously defined parameters" 를 쓴다.
+        리더는 인클루드를 메인 다음에 읽고 파일을 통째 한 표로 치환해, 재정의 앞 카드가 나중 값을 받고 인클루드 식이 자기
+        LOCAL 을 못 봐 0 이 됐다(리뷰 J). 리더가 인라인으로 읽을 인클루드(조상까지 모두 인라인)의 계획은 plans[실경로] 에 읽는
+        차례로 쌓는다 — 리더도 같은 차례(깊이 우선)로 파일을 읽는다. 따라가는 인클루드·*END·없는 파일·순환 규칙은 리더와
+        같다. 정의보다 앞 줄에서 쓴 참조는 예전처럼 채우고 알린다 — 이 파일 끝 값, 그래도 없으면 덱 끝 값(deck_late)."""
+        import io
+        res = self._param_resolver
+        res.BeginFile()
+        plan, late = {}, []
+        hdr, in_include = None, False
+        try:
+            for i, line in enumerate(lines):
+                if line.startswith('*'):
+                    name = keyword_line_name(line)
+                    if '&' in line:
+                        self._param_sub(path, lines, i, plan, late, False)
+                    if name == 'END':
+                        break
+                    hdr, in_include = res.ParseHeader(name), name == 'INCLUDE'
+                    continue
+                if line.startswith('$'):
+                    if '&' in line:
+                        self._param_sub(path, lines, i, plan, late, False)
+                    continue
+                if hdr is not None:   # 정의 줄 — 그 자리 값으로 치환해 두고(식 안 &참조), 정의는 원문으로 받는다
+                    if '&' in line:
+                        self._param_sub(path, lines, i, plan, None, False)
+                    if res.DefineLine(hdr, line) == 'end':
+                        hdr = None
+                    continue
+                if not in_include:
+                    if '&' in line:
+                        self._param_sub(path, lines, i, plan, late, True)
+                    continue
+                inc_name = (self._param_sub(path, lines, i, plan, None, False) if '&' in line else line).strip()
+                if not inc_name:
+                    continue
+                inc = inc_name if os.path.isabs(inc_name) else os.path.join(os.path.dirname(path), inc_name)
+                real = os.path.realpath(inc)
+                if real in stack or not os.path.isfile(inc):
+                    continue
+                try:
+                    with open(inc, 'r', errors='replace') as f:
+                        content = f.read()
+                except OSError:
+                    continue
+                sub_inline = (inline and not getattr(self, 'preserve_includes', False)
+                              and self._include_passthrough_reason(inc, content) is None)
+                sub_plan = self._param_walk(inc, strip_trailing_ctrl_z(io.StringIO(content).readlines()),
+                                            plans, stack + [real], sub_inline, deck_late)
+                if sub_inline:
+                    plans.setdefault(real, []).append(sub_plan)
+            deck_late.extend(self._param_fill_late(late, '이 파일 끝'))
+        finally:
+            res.EndFile()
+        return plan
+
+    def _param_sub(self, path, lines, i, plan, late, warn):
+        """lines[i] 를 지금 보이는 값으로 치환해 바뀌었으면 plan 에 적는다. 정의 전이라 못 푼 참조가 남으면 late 에 넣는다."""
+        res = self._param_resolver
+        vis = res.Visible()
+        new = res.SubstituteLine(lines[i], vis)
+        if new != lines[i]:
+            plan[i] = (lines[i], new)
+        if late is not None and any(n not in vis for n in res.RefNames(new)):
+            late.append((plan, i, lines[i], new, warn, path))
+        return new
+
+    def _param_fill_late(self, entries, label):
+        """앞 참조가 남은 줄(entries)을 지금 보이는 값으로 다시 치환한다 — 예전 KMM 이 파일을 한 표로 치환해 받아 주던 값.
+        풀린 이름은 파일마다 알리고, 아직 못 푼 항목을 돌려준다."""
+        res = self._param_resolver
+        vis = res.Visible()
+        left, named = [], {}
+        for plan, i, orig, cur, warn, path in entries:
+            new = res.SubstituteLine(cur, vis)
+            if new != cur:
+                plan[i] = (orig, new)
+                if warn:
+                    named.setdefault(path, set()).update(res.RefNames(cur) - res.RefNames(new))
+            if any(n not in vis for n in res.RefNames(new)):
+                left.append((plan, i, orig, new, warn, path))
+        for path, names in named.items():
+            names = sorted(names)
+            print(f"  Warning: {os.path.basename(path)}: &{', &'.join(names[:5])}{' …' if len(names) > 5 else ''} 을(를) "
+                  f"정의보다 앞 줄에서 썼다 — LS-DYNA 는 읽는 차례로 정의를 본다(R16). 예전처럼 {label} 값을 넣었다")
+        return left
+
+    def _apply_param_plan(self, path, raw_lines, plan, walked):
+        """_param_walk 가 만든 계획으로 이 파일 줄을 치환한다. 계획이 없거나 원문이 다르면(훑기와 리더의 인클루드 판정이
+        어긋난 경우 — 있어서는 안 됨) 덱 끝 값으로 파일을 통째 치환하고 알린다. 훑기를 못 했으면(walked=False) 이 파일
+        정의(*END 까지 — LS-DYNA 는 *END 뒤를 읽지 않는다, 리뷰 D)만 차례로 받아 파일을 통째 치환한다."""
+        res = self._param_resolver
+        if plan is not None and all(i < len(raw_lines) and raw_lines[i] == old for i, (old, _) in plan.items()):
+            for i, (_, new) in plan.items():
+                raw_lines[i] = new
+            return raw_lines
+        if walked:
+            print(f"  Warning: {os.path.basename(path)}: 읽는 차례 파라미터 치환 계획이 이 파일과 맞지 않는다 — 덱 끝 값으로 치환한다")
+            vis = res.Visible()
+            return [res.SubstituteLine(l, vis) for l in raw_lines]
+        end_at = next((i for i, l in enumerate(raw_lines) if l.startswith('*') and keyword_line_name(l) == 'END'), None)
+        res.BeginFile()
+        try:
+            res.ParseFromRawLines(raw_lines if end_at is None else raw_lines[:end_at + 1])
+            vis = res.Visible()
+            return [res.SubstituteLine(l, vis) for l in raw_lines]
+        finally:
+            res.EndFile()
 
     # 숫자 줄 판정 — 모든 토큰이 수·&참조(붙어 있어도 됨, 고정폭에서 칸이 맞닿는다)면 숫자 카드다
     _NUMERIC_TOKEN = re.compile(r'(?:[-+]?(?:\d+\.?\d*|\.\d+)(?:[eEdD][-+]?\d+)?|[-+]?&[A-Za-z_][A-Za-z0-9_]*)+')
