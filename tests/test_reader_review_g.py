@@ -2,6 +2,7 @@
 """
 실행: venv312/bin/python tests/test_reader_review_g.py
 수정 전 코드로 돌려 실패하는지 볼 때: KMM_GEN=<옛 occProject/Generators> venv312/bin/python tests/test_reader_review_g.py
+컴파일본(Nuitka)으로 같은 검사를 할 때: KMM_BIN=<KooMeshModifier 실행 파일> venv312/bin/python tests/test_reader_review_g.py
 
 배경 (2026-10-24, 리뷰 G 와 그 확인 중 찾은 기존 결함 — 판정 근거는 R16 원문)
   [1] 빈 줄(Appendix V: 빈 줄은 기본값 카드, 기본값 없는 칸이 있으면 카드가 될 수 없다)
@@ -28,6 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 GEN = Path(os.environ.get("KMM_GEN", ROOT / "occProject" / "Generators"))
 PY = str(ROOT / "venv312" / "bin" / "python")
+KMM_CMD = [os.environ["KMM_BIN"]] if os.environ.get("KMM_BIN") else [PY, str(GEN / "KooMeshModifier.py")]
 ENV = dict(os.environ, PATH=str(ROOT / "venv312" / "bin") + ":" + os.environ.get("PATH", ""))   # ~/.local/bin/gmsh 회피
 OPT = "*Inputfile\nmodel.k\n*Mode\nTRANSFORM,1\n**Transform,1\nTranslation,0,0,0\n**EndTransform\n*End\n"
 MERGE_OPT = ("*Inputfile\nmodel.k\n*Mode\nMERGE_K,1\n**MergeK,1\nForceInlinePreserved,true\n**EndMergeK\n"
@@ -72,7 +74,7 @@ def run(files, opt=OPT, outname="model_trans.k"):
     for name, text in files.items():
         Path(d, name).write_bytes(text.encode())
     Path(d, "opt.txt").write_text(opt)
-    r = subprocess.run([PY, str(GEN / "KooMeshModifier.py"), "opt.txt"], cwd=d, capture_output=True, text=True,
+    r = subprocess.run(KMM_CMD + ["opt.txt"], cwd=d, capture_output=True, text=True,
                        timeout=900, env=ENV)
     out = Path(d, outname)
     return r.returncode, r.stdout + r.stderr, (out.read_text(errors="replace") if out.exists() else ""), d
