@@ -151,3 +151,8 @@
   - 평문 *PARAMETER 값의 &참조는 그 자리 값으로 받는다(P7 — R16 "referenced anywhere", 출력 원문 블록과도 맞음). 식은 원문으로(&a 를 글자로 바꾸면 -3**2 처럼 우선순위가 바뀐다).
 - 그대로 둔 것: P8 안쪽 파일 LOCAL 이 바깥 LOCAL 과 같은 이름이면 DFLAG 1 로 무시(DUPLICATION Remark 1 "a LOCAL that masks another LOCAL … will" 문자 그대로 — 옛 판은 안쪽 값). P6 성능은 모든 줄에 & 가 있는 300만 줄에서 KMM 전체 +17%(정점 같음), 못 푼 참조 검사는 & 가 남은 줄에만 한다. preserve_includes=True 는 보존 인클루드도 훑기가 통째로 읽는다(그 플래그는 코드 어디서도 켜지 않는다).
 - 범위 밖(모든 판 같음): 식 의미(-3**2, 2/5 정수 나눗셈, sign·csc 등 함수 없음, 이어 쓰기), '-&' 부호 바꾸기, 문자형 '^' 구분자, 인라인 인클루드의 *_LOCAL 블록이 메인 원문으로 옮겨지는 출력 배치·DECOMPOSE 출력에서 식이 그 참조의 정의 인클루드보다 앞에 오는 것, 읽기 권한 없는 인클루드 PermissionError.
+
+## 사용자 결정 (2026-10-24)
+- P1 DFLAG 기본: DFLAG 표대로(재정의 무시 + 경고) 유지 — Remark 5 예제 쪽으로 바꾸지 않는다.
+- 헤드 /opt/apptainers 를 v124 로 교체(v123 은 하드 링크 백업 SmartTwinPreprocessor_backup_20261024_193908.sif).
+- KooD3plotReader 창의 C/C++ IntelliSense 는 꺼 둔 채 둔다("C_Cpp.intelliSenseEngine": "disabled").

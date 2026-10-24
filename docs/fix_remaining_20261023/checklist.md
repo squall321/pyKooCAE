@@ -39,7 +39,8 @@
 - [x] 빌드 v124(658965c, 12:18~13:57, BUILD_RC 0, 최저 가용 35.6 GB) — 배포 폴더 GLIBC ≤2.35 세 모듈 통과, NFS == SIF 소스 트리(cmp), 컴파일본 e2e: 10절점·파일 끝 8종 ALL PASS·KMM_BIN 리뷰 G 44·H 26·파라미터 8 통과·KAM AIRMESH rc 0(사면체 10,737)·KCR --help rc 0
 - [x] SIF v124(sha256 63ca7762, 14:02, KooRemapper 5ff6f6e1 그대로 — 굽기 검사 기대=실제·그림 op 3/3) → compute-node-images(바이트 같음) → tar v124(1,345,833,424 B) → Drive·메일
 - [x] 새 SIF 헤드 e2e — 10절점·파일 끝 8종 ALL PASS, SIF 안 KMM 으로 파라미터 8·리뷰 H 26·리뷰 G 44 통과
-- [ ] 헤드 /opt/apptainers 를 v124 로(지금 v123 f3242218 — 사용자 승인 대기), 노드 배포(VM 꺼짐 — 보류)
+- [x] 헤드 /opt/apptainers 를 v124 로(사용자 승인 — v123 은 하드 링크 SmartTwinPreprocessor_backup_20261024_193908.sif, rename 교체, apptainer exec 확인)
+- [ ] 노드 배포(VM 꺼짐 — 보류): VM 을 켜면 compute-node-images 의 v124 를 deploy_apptainers.sh 로
   - v121·v123 은 KooRemapper 세션이 구웠다(v123 = 10-24 06:13~06:23, KooRemapper 5ff6f6e1·f111752, SIF sha256 f3242218, 헤드 /opt/apptainers 도 06:24 에 그 사본으로 바뀜). tar 는 SIF 소스 트리(KMM·KAM·KCR)만 묶어서 v120~v123 tar 가 바이트까지 같다 — 정상.
   - v124 뒤 헤드 /opt/apptainers 교체는 사용자 승인 대기, 노드 배포는 보류(VM 꺼짐)
 - [x] 메모리·노트·푸시(22901d1..658965c)
