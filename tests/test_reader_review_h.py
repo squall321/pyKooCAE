@@ -5,9 +5,10 @@
 
 배경 (2026-10-24, 리뷰 H)
   [1] 인클루드 미리 읽기(3dd79ae)가 인클루드 *PARAMETER_EXPRESSION 을 메인의 평문 *PARAMETER 보다 늦게 평가해, 같은 이름이면
-      인클루드 값이 메인 카드에 들어갔다(평문 값은 읽는 즉시, 식은 다 읽은 뒤 정해지는 해석기 순서). 이제 메인이 정의한 이름은
-      미리 읽기에서 빼고, 인클루드끼리는 먼저 값(R16 *PARAMETER_DUPLICATION 기본 DFLAG=1)을 쓴다. LOCAL 이 아닌 변형
-      (NOECHO·MUTABLE·EXPRESSION_NOECHO)도 전역이라 미리 읽는다.
+      인클루드 값이 메인 카드에 들어갔다(리뷰 H). 리뷰 I 는 DFLAG 2·4·MUTABLE·중첩 순서·덱 안 불일치를 더 찾았다. 이제
+      인클루드 정의를 그 *INCLUDE 자리에 끼워 LS-DYNA 처럼 읽는 차례대로 해석기에 주고, 해석기는 R16 규칙으로 고른다 —
+      처음 정의가 남고(DFLAG=1 기본), DFLAG 2·4 이거나 첫 정의가 MUTABLE 이면 재정의를 받는다. LOCAL 이 아닌 변형
+      (NOECHO·MUTABLE·EXPRESSION_NOECHO)도 전역이라 읽는다.
   [2] 셸·솔리드 셋의 빈 칸이 0 으로 들어가 IMPORT_MERGE_K 의 OffsetID 가 0+offset 을 실제 EID 로 만들었다. 같은 SID 의
       *SET_SHELL 과 *SET_SOLID 는 사전 하나에 담겨 하나가 사라졌다(R16: 셋 ID 는 셋 종류마다 따로).
   [3] 빈 줄만 든 *ELEMENT_SHELL_THICKNESS 블록, N5 칸이 공백인 80자 카드 1 이 덤프 기록기에서 죽었다.
@@ -84,7 +85,7 @@ def sec_thick(text):
     return tuple(float(x) for x in vals[1].split()[:2]) if len(vals) > 1 else None
 
 
-print("[1] 인클루드 *PARAMETER — 메인이 정의한 이름은 메인 값, 인클루드끼리는 먼저 값, LOCAL 아닌 변형은 모두 읽는다")
+print("[1] 인클루드 *PARAMETER — LS-DYNA 처럼 읽는 차례로 먼저 정의가 남고(DFLAG=1), DFLAG 2·4·MUTABLE 은 재정의를 받는다")
 SECP = "*SECTION_SHELL\n" + f10(2, 2) + f10("&thk", "&t2", "&thk", "&thk")
 
 
@@ -98,11 +99,26 @@ T2 = "*PARAMETER_EXPRESSION\nR t2 thk*2.0\n"
 for label, files, want in (
         ("메인 *PARAMETER thk 1.0 뒤 인클루드 식 thk 2.5 — 리뷰 H C1",
          {"model.k": pdeck("*PARAMETER\nR thk 1.0\n" + T2 + "*INCLUDE\nparams.k\n"), "params.k": EXPR_INC}, (1.0, 2.0)),
-        ("인클루드 식 thk 2.5 가 맨 위, 메인 thk 1.0 이 뒤 — 메인 값(지금 규칙)",
-         {"model.k": pdeck("*INCLUDE\nparams.k\n*PARAMETER\nR thk 1.0\n" + T2), "params.k": EXPR_INC}, (1.0, 2.0)),
+        ("인클루드 식 thk 2.5 가 맨 위, 메인 thk 1.0 이 뒤 — 읽는 차례로 먼저 정의 2.5(R16 DFLAG=1)",
+         {"model.k": pdeck("*INCLUDE\nparams.k\n*PARAMETER\nR thk 1.0\n" + T2), "params.k": EXPR_INC}, (2.5, 5.0)),
         ("인클루드 둘이 thk 를 1.0·2.0 으로 정의 — 먼저 값 1.0(DFLAG=1)",
          {"model.k": pdeck("*INCLUDE\na.k\n*INCLUDE\nb.k\n" + T2), "a.k": "*KEYWORD\n*PARAMETER\nR thk 1.0\n*END\n",
           "b.k": "*KEYWORD\n*PARAMETER\nR thk 2.0\n*END\n"}, (1.0, 2.0)),
+        ("*PARAMETER_DUPLICATION DFLAG=2 + 인클루드 둘(1.0·2.0) — 새 정의 2.0 — 리뷰 I C1",
+         {"model.k": pdeck("*PARAMETER_DUPLICATION\n         2\n*INCLUDE\na.k\n*INCLUDE\nb.k\n" + T2), "a.k": "*KEYWORD\n*PARAMETER\nR thk 1.0\n*END\n",
+          "b.k": "*KEYWORD\n*PARAMETER\nR thk 2.0\n*END\n"}, (2.0, 4.0)),
+        ("*PARAMETER_DUPLICATION DFLAG=4 — 새 정의 2.0",
+         {"model.k": pdeck("*PARAMETER_DUPLICATION\n         4\n*INCLUDE\na.k\n*INCLUDE\nb.k\n" + T2), "a.k": "*KEYWORD\n*PARAMETER\nR thk 1.0\n*END\n",
+          "b.k": "*KEYWORD\n*PARAMETER\nR thk 2.0\n*END\n"}, (2.0, 4.0)),
+        ("첫 정의가 *PARAMETER_MUTABLE — 재정의 2.0 을 받는다(R16 Remark 6) — 리뷰 I C2",
+         {"model.k": pdeck("*INCLUDE\na.k\n*INCLUDE\nb.k\n" + T2),
+          "a.k": "*KEYWORD\n*PARAMETER_MUTABLE\nR thk 1.0\n*END\n", "b.k": "*KEYWORD\n*PARAMETER\nR thk 2.0\n*END\n"}, (2.0, 4.0)),
+        ("중첩 인클루드가 자기 *PARAMETER 보다 앞 — 중첩 값 2.0 이 먼저 — 리뷰 I C3",
+         {"model.k": pdeck("*INCLUDE\na.k\n" + T2), "a.k": "*KEYWORD\n*INCLUDE\nb.k\n*PARAMETER\nR thk 1.0\n*END\n",
+          "b.k": "*KEYWORD\n*PARAMETER\nR thk 2.0\n*END\n"}, (2.0, 4.0)),
+        ("메인 *PARAMETER_LOCAL thk 1.0 이 인클루드 전역 thk 2.0 을 가린다(R16 Remark 5)",
+         {"model.k": pdeck("*PARAMETER_LOCAL\nRthk      1.0\n*INCLUDE\np.k\n" + T2),
+          "p.k": "*KEYWORD\n*PARAMETER\nR thk 2.0\n*END\n"}, (1.0, 2.0)),
         ("인클루드 *PARAMETER_NOECHO — 리뷰 H C4",
          {"model.k": pdeck("*INCLUDE\nparams.k\n" + T2), "params.k": "*KEYWORD\n*PARAMETER_NOECHO\nR thk 2.5\n*END\n"}, (2.5, 5.0)),
         ("인클루드 *PARAMETER_MUTABLE",
@@ -114,6 +130,17 @@ for label, files, want in (
     got = sec_thick(text)
     check(f"{label} — 두께 {want}·🔴 없음", rc == 0 and got == want and "🔴" not in log,
           f"rc={rc} got={got} {[ln for ln in log.splitlines() if '🔴' in ln]}")
+
+BK = ("*KEYWORD\n*PARAMETER\nR thk 2.0\n*PART\nskin3\n" + f10(3, 3, 1) + "*SECTION_SHELL\n" + f10(3, 2)
+      + f10("&thk", "&thk", "&thk", "&thk") + "*ELEMENT_SHELL\n" + f"{11:8d}{3:8d}{5:8d}{6:8d}{7:8d}{8:8d}\n" + "*END\n")
+rc, log, text, _ = run({"model.k": pdeck("*PARAMETER\nR thk 1.0\n" + T2 + "*INCLUDE\nb.k\n"), "b.k": BK})
+t1s = []
+for blk in blocks(text, "SECTION_SHELL_TITLE"):
+    vals = [ln for ln in blk if ln.split() and re.match(r"\s*[-0-9.]", ln)]
+    if len(vals) > 1:
+        t1s.append(float(vals[1].split()[0]))
+check("메인 thk 1.0 뒤 인클루드가 2.0 으로 재정의 — 메인·인클루드 섹션 모두 1.0(DFLAG=1) — 리뷰 I C4",
+      rc == 0 and t1s == [1.0, 1.0] and "재정의(2.0)를 무시했다" in log, f"rc={rc} t1={t1s}")
 
 print("[2] 요소 셋 — 빈 칸·0 은 요소가 아니고, *SET_SHELL·*SET_SOLID 는 같은 SID 여도 둘 다 남는다")
 OTHER = ("*KEYWORD\n" + nodes() + SHELLP + "*MAT_ELASTIC\n"
@@ -166,6 +193,10 @@ for label, kw, data, want in (
          f"{10:8d}{2:8d}{1:8d}{2:8d}{3:8d}{4:8d}\n" + TH + "\n", [["10", "2"]]),
         ("8절점 3카드 THICKNESS — 리뷰 H 기존 결함", "*ELEMENT_SHELL_THICKNESS\n",
          C8 + "\n" + TH + f"{0.0:>16}\n" + TH + "\n", [["10", "2"]]),
+        ("8절점 셸 줄이 88자(80열 뒤 공백) — 조용히 빠지지 않는다 — 리뷰 I C5", "*ELEMENT_SHELL\n", C8 + " " * 8 + "\n",
+         [["10", "2"]]),
+        ("8절점 3카드 THICKNESS 카드 1 이 88자 — 리뷰 I C5", "*ELEMENT_SHELL_THICKNESS\n",
+         C8 + " " * 8 + "\n" + TH + f"{0.0:>16}\n" + TH + "\n", [["10", "2"]]),
         ("일반 *ELEMENT_SHELL 80칸 공백 채움(N5~N8 공백)", "*ELEMENT_SHELL\n",
          f"{10:8d}{2:8d}{1:8d}{2:8d}{3:8d}{4:8d}" + " " * 32 + "\n" + f"{11:8d}{2:8d}{5:8d}{6:8d}{7:8d}{8:8d}" + " " * 32 + "\n",
          [["10", "2"], ["11", "2"]])):
@@ -199,6 +230,15 @@ except ValueError as e:
     m2 = f"ValueError {e}"
 check("1차 출력을 다시 읽은 2차 출력 — 질량 요소가 그대로(누적 체인)", rc2 == 0 and m2 == [(800, 5, 1.2345678e-3, 1)],
       f"rc={rc2} {m2}")
+
+rc, log, text3, _ = run({"model.k": "*KEYWORD\n" + nodes() + PROPS + SOLID + "*ELEMENT_MASS\n"
+                         + f"{801:8d}{6:8d}{'2.5e-03':>16}\n" + "*END\n"})
+try:
+    m3 = masses(text3)
+except ValueError as e:
+    m3 = f"ValueError {e}"
+check("PID 칸이 빈 *ELEMENT_MASS — 버리지 않고 PID 0 으로 읽는다(R16 PID 생략 가능) — 리뷰 I C7",
+      rc == 0 and m3 == [(801, 6, 2.5e-3, 0)], f"rc={rc} {m3}")
 
 print()
 if FAILS:
