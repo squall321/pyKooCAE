@@ -241,12 +241,12 @@ for i, ln in enumerate(lines2):
 check("'*END ,' 뒤 R thk 2.0 — 두께 1.0", rc == 0 and shell_t2 == 1.0, f"rc={rc} t={shell_t2}")
 only_after = par.replace("*PARAMETER\nR      thk       1.0\n", "", 1)
 rc, log, text, els = run_kmm({"model.k": only_after})
-check("&thk 를 *END 뒤에서만 정의 — '정의되지 않은 &참조' 🔴", rc == 0 and "정의되지 않은 &참조" in log and "&thk" in log,
+check("&thk 를 *END 뒤에서만 정의 — '치환되지 않은 &참조' 🔴", rc == 0 and "치환되지 않은 &참조" in log and "&thk" in log,
       [ln for ln in log.splitlines() if "&" in ln][:3])
 rc, log, text, els = run_kmm({"model.k": par})
-check("  정상 덱(정의가 앞) — 경고 없음", rc == 0 and "정의되지 않은 &참조" not in log, f"rc={rc}")
+check("  정상 덱(정의가 앞) — 경고 없음", rc == 0 and "치환되지 않은 &참조" not in log, f"rc={rc}")
 rc, log, text, els = run_kmm({"model.k": "*KEYWORD\n*TITLE\nR&D test &model\n" + nodes() + PROPS + SOLID + "*END\n"})
-check("  제목의 'R&D'·'&model' — 경고 없음", rc == 0 and "정의되지 않은 &참조" not in log, f"rc={rc}")
+check("  제목의 'R&D'·'&model' — 경고 없음", rc == 0 and "치환되지 않은 &참조" not in log, f"rc={rc}")
 
 print("[6] 덤프 *CONTROL_BULK_VISCOSITY — 값이 주석 줄에 붙지 않는다 — 리뷰 D")
 d = Path(tempfile.mkdtemp(dir=BASE))

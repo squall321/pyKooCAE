@@ -12355,7 +12355,16 @@ class DynaManager():
             # (아래 키워드 루프와 같은 판정. 예전엔 *END 뒤에 둔 R thk 2.0 이 앞의 1.0 을 덮었다 — 리뷰 D)
             _end_at = next((_i for _i, _l in enumerate(raw_lines)
                             if _l.startswith('*') and keyword_line_name(_l) == 'END'), None)
-            self._param_resolver.ParseFromRawLines(raw_lines if _end_at is None else raw_lines[:_end_at + 1])
+            _own = raw_lines if _end_at is None else raw_lines[:_end_at + 1]
+            # 맨 위 파일이면 인클루드(재귀)의 *PARAMETER 줄을 먼저 둔다 — LS-DYNA 는 *INCLUDE 를 그 자리에서 읽어 맨 위에
+            # 인클루드한 파라미터 파일 값이 메인 카드에 먹는다. KMM 은 인클루드를 메인 뒤에 읽어 메인의 &thk 가 0 이었다(리뷰 G).
+            # 메인 줄을 뒤에 두므로 같은 이름은 지금처럼 메인 값이 이긴다('*KEYWORD' 는 앞 블록을 끊는 구분 줄)
+            try:
+                _pre = self._include_param_lines(path, _own) if len(self._include_stack) == 1 else []
+            except Exception as e:   # 미리 읽기가 실패해도 메인 파일 파라미터는 예전처럼 해석한다
+                print(f"  Warning: 인클루드 *PARAMETER 미리 읽기 실패 — 메인 파일 정의만 쓴다: {e}")
+                _pre = []
+            self._param_resolver.ParseFromRawLines(_pre + ['*KEYWORD\n'] + _own if _pre else _own)
             if self._param_resolver.HasParams():
                 raw_lines = [self._param_resolver.SubstituteLine(line) for line in raw_lines]
         except Exception as e:
@@ -12517,16 +12526,61 @@ class DynaManager():
         self._include_stack.pop()
         return lines_with_asterisk, keyword_dict
 
+    def _include_param_lines(self, path, lines, seen=None):
+        """lines(그 파일의 *END 까지) 의 *INCLUDE 를 LS-DYNA 가 읽는 차례로 따라가 *PARAMETER·*PARAMETER_EXPRESSION 블록 줄을
+        모은다(재귀) — 맨 위 파일을 치환하기 전에 해석기에 먼저 준다(리뷰 G). *PARAMETER_LOCAL 은 그 파일 범위라 뺀다.
+        따라가는 인클루드·*END·순환·없는 파일 규칙은 리더와 같다. 큰 메시 인클루드도 있어 줄 단위로 훑는다."""
+        seen = seen if seen is not None else {os.path.realpath(path)}
+        out, kw = [], ''
+        for line in lines:
+            if line.startswith('*'):
+                kw = keyword_line_name(line)
+                continue
+            if kw != 'INCLUDE' or line.startswith('$') or not line.strip():
+                continue
+            name = line.strip()
+            inc = name if os.path.isabs(name) else os.path.join(os.path.dirname(path), name)
+            real = os.path.realpath(inc)
+            if real in seen or not os.path.isfile(inc):
+                continue
+            seen.add(real)
+            own, nested, take, ikw = [], [], False, ''
+            try:
+                with open(inc, 'r', errors='replace') as f:
+                    for l in f:
+                        l = l.replace('\x1a', '')   # 파일 끝 Ctrl-Z — 파라미터 값·파일 이름에는 뜻이 없다
+                        if l.startswith('*'):
+                            ikw = keyword_line_name(l)
+                            if ikw == 'END':
+                                break
+                            take = ikw in ('PARAMETER', 'PARAMETER_EXPRESSION')
+                            if take:
+                                own.append(l)
+                            elif ikw == 'INCLUDE':
+                                nested.append(l)
+                            continue
+                        if take:
+                            own.append(l)
+                        elif ikw == 'INCLUDE':
+                            nested.append(l)
+            except OSError:
+                continue
+            out.extend(own)
+            out.extend(self._include_param_lines(inc, nested, seen))
+        return out
+
+    # 숫자 줄 판정 — 모든 토큰이 수·&참조(붙어 있어도 됨, 고정폭에서 칸이 맞닿는다)면 숫자 카드다
+    _NUMERIC_TOKEN = re.compile(r'(?:[-+]?(?:\d+\.?\d*|\.\d+)(?:[eEdD][-+]?\d+)?|[-+]?&[A-Za-z_][A-Za-z0-9_]*)+')
+    _REF_IN_FIELD = re.compile(r'(?:^|(?<=[\s,0-9.+\-]))&([A-Za-z_][A-Za-z0-9_]*)')
+
     def _warn_unresolved_params(self, keyword_dict):
         """치환되지 않은 &참조를 알린다. 숫자 칸의 '&thk' 는 0 으로 읽혀 조용히 값이 바뀐다(리뷰 F).
-        KMM 은 파라미터를 그 파일을 읽을 때 치환하고 인클루드는 메인을 다 읽은 뒤 읽으므로, 메인 파일이 인클루드에서
-        정의한 파라미터를 쓰면 여기서 알린다. 칸 첫머리(줄 처음·공백·쉼표 뒤)의 &이름만 센다 — 제목의 'R&D' 등은 뺀다."""
-        res = getattr(self, '_param_resolver', None)
-        known = set(getattr(res, 'params', {}) or {})
-        pat = re.compile(r'(?:^|(?<=[\s,]))&([A-Za-z_][A-Za-z0-9_]*)')
+        블록에 남은 &참조는 곧 치환되지 않은 것이다 — 예전엔 인클루드까지 읽은 뒤의 표와 대조해, 치환 때 몰랐던 이름을
+        놓쳤다(리뷰 G). 숫자 줄만 센다: 제목·인클루드 이름의 '&' 는 0 으로 읽히는 칸이 아니다(오경보 — 리뷰 G).
+        '1.0&thk' 처럼 앞 칸에 붙은 참조도 센다. 'R&D' 같은 글자 뒤 &는 참조가 아니다."""
         seen = {}
         for kw, blocks in keyword_dict.items():
-            if not isinstance(kw, str) or kw.startswith(('PARAMETER', 'TITLE', 'COMMENT', '_')):
+            if not isinstance(kw, str) or kw.startswith(('PARAMETER', 'TITLE', 'COMMENT', 'INCLUDE', '_')):
                 continue
             for block in blocks:
                 if not isinstance(block, list):
@@ -12535,14 +12589,15 @@ class DynaManager():
                     s = str(line)
                     if '&' not in s or s.lstrip().startswith('$'):
                         continue
-                    for m in pat.finditer(s):
+                    if not all(self._NUMERIC_TOKEN.fullmatch(t) for t in re.split(r'[\s,]+', s.strip()) if t):
+                        continue
+                    for m in self._REF_IN_FIELD.finditer(s):
                         n = m.group(1).lower()
-                        if n not in known:
-                            seen[n] = seen.get(n, 0) + 1
+                        seen[n] = seen.get(n, 0) + 1
         if seen:
             names = ', '.join(f"&{n}" for n in list(seen)[:8]) + (' …' if len(seen) > 8 else '')
-            print(f"  🔴 정의되지 않은 &참조 {len(seen)}개({names}) — 그 칸은 0 으로 읽힌다. *PARAMETER 정의(위치·*END 앞인지)를 "
-                  f"확인할 것(KMM 은 인클루드에서 정의한 파라미터를 메인 파일에 치환하지 못한다)")
+            print(f"  🔴 치환되지 않은 &참조 {len(seen)}개({names}) — 그 칸은 0 으로 읽힌다. *PARAMETER 정의가 있는지 확인할 것"
+                  f"(*END 뒤·다른 파일의 *PARAMETER_LOCAL 정의는 먹지 않는다)")
 
     def WriteOutputFile(self, outputFileName,controlKeywords="", contactKeywords="", initialKeywords="", setKeywords="",rigidKeywords="",boundaryKeywords="",interfaceKeywords="",defineKeywords="",sectionKeywords="",materialKeywords="",loadKeywords="",meshKeywords="",databaseKeywords=""):
         dynaKeywords = self.dynaKeywordMan.keywords
