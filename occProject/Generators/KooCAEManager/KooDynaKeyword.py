@@ -12149,6 +12149,22 @@ def keyword_line_name(line):
     return line.split(' ')[0].strip().rstrip('%+-')[1:].strip()
 
 
+def strip_trailing_ctrl_z(lines):
+    """파일 끝의 Ctrl-Z(0x1A, DOS 파일 끝 표시)와 그 뒤만 지운 줄 목록 — ReadKeywordsfromFile 과 KooKFileMerger 가 같이 쓴다
+    (둘이 따로 지우다 MERGE_K 만 그 앞 빈 카드까지 지워, 펼친 덱을 다시 읽으면 죽었다 — 리뷰 G).
+    파일 중간의 0x1A 는 리눅스 LS-DYNA 에게 보통 글자라 그대로 둔다(첫 0x1A 에서 자르면 주석 뒤가 사라졌다 — 리뷰 D).
+    Ctrl-Z 앞의 빈 줄은 남긴다 — 빈 카드(기본값)일 수 있다(리뷰 F). 빈 줄을 어떻게 읽을지는 각 파서가 정한다."""
+    k = len(lines)
+    while k > 0 and not lines[k - 1].replace('\x1a', '').strip():
+        k -= 1   # 파일 끝의 공백·0x1A 만 있는 줄들
+    if k > 0 and lines[k - 1].rstrip().endswith('\x1a'):   # 마지막 줄 끝에 붙은 Ctrl-Z
+        out = lines[:k]
+        out[-1] = out[-1].rstrip().rstrip('\x1a') + '\n'
+        return out
+    z = next((i for i in range(k, len(lines)) if '\x1a' in lines[i]), None)
+    return lines if z is None else lines[:z]
+
+
 class DynaKeywordManager():
     def __init__(self):
         self.keywords = {}
@@ -12292,19 +12308,8 @@ class DynaManager():
         # 파일 읽기
         with open(path, 'r', errors='replace') as f:
             raw_lines = f.readlines()
-        # 파일 끝의 Ctrl-Z(0x1A, DOS 파일 끝 표시)만 지운다 — 데이터 줄로 들어가 파서가 죽었다.
-        # 파일 중간의 0x1A 는 리눅스 LS-DYNA 에게 보통 글자라 그대로 둔다(주석·제목 안이면 무해, 데이터 줄이면 옛 판처럼
-        # 오류). 처음엔 첫 0x1A 에서 잘라 주석 안 0x1A 뒤가 조용히 사라졌다(리뷰 D).
-        _k = len(raw_lines)
-        while _k > 0 and not raw_lines[_k - 1].replace('\x1a', '').strip():
-            _k -= 1   # 파일 끝의 공백·0x1A 만 있는 줄들
-        if _k > 0 and raw_lines[_k - 1].rstrip().endswith('\x1a'):   # 마지막 줄 끝에 붙은 Ctrl-Z
-            raw_lines = raw_lines[:_k]
-            raw_lines[-1] = raw_lines[-1].rstrip().rstrip('\x1a') + '\n'
-        else:
-            _z = next((_i for _i in range(_k, len(raw_lines)) if '\x1a' in raw_lines[_i]), None)
-            if _z is not None:
-                raw_lines = raw_lines[:_z]   # Ctrl-Z 앞의 빈 줄은 남긴다 — 빈 카드(기본값)일 수 있다(리뷰 F)
+        # 파일 끝의 Ctrl-Z(0x1A, DOS 파일 끝 표시)만 지운다 — 데이터 줄로 들어가 파서가 죽었다(규칙은 함수 설명)
+        raw_lines = strip_trailing_ctrl_z(raw_lines)
 
         # *PARAMETER / *PARAMETER_EXPRESSION / *PARAMETER_LOCAL 해석 + &변수 치환.
         # resolver 를 self 에 공유해 메인 파일 파라미터가 include 라인(재귀 호출)에도 적용.
