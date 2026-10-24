@@ -11,20 +11,11 @@ from KooCAEManager.KooNode import Node, NodeManager
 from KooCAEManager.KooOperator import *
 
 
-def _format_mass8(value: float) -> str:
-    """*ELEMENT_MASS 8자리 고정폭 포맷.
-    기본: 8.2e (예: 1.23e+05). 음수/3자리 지수로 8자를 넘으면
-    mantissa 자릿수를 줄여 8자 안에 맞춘다.
-    """
-    s = format(value, "8.2e")
-    if len(s) <= 8:
-        return s
-    s = format(value, ".1e")
-    if len(s) <= 8:
-        return s
-    # 극단값: 지수만 표기
-    s = format(value, ".0e")
-    return s[:8]
+def _format_mass16(value: float) -> str:
+    """*ELEMENT_MASS 의 MASS 칸(R16: 17~32열, 16칸) — 예전엔 8칸(8.2e, 유효숫자 3자리)으로 써 PID 가 MASS 칸 뒤쪽에
+    들어갔다. R16 칸과 어긋나 KMM 리더([8,8,16,8])는 자기 출력을 다시 읽으면 질량 요소를 잃었다(1월 첫 소스부터 — 리뷰 H).
+    16.8e 는 늘 16자 이내다."""
+    return format(value, "16.8e")
 
 
 def element_set_key(aSet):
@@ -4293,9 +4284,9 @@ class ElementManager:
                     i = i + 1
                     if i == 1:
                         dynaString += "*ELEMENT_MASS\n"
-                    massStr = _format_mass8(element.mass)
+                    massStr = _format_mass16(element.mass)
                     ePid = getattr(element, "pid", 0) or pid
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{massStr:>8}{str(ePid):>8}\n"
+                    formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{massStr:>16}{str(ePid):>8}\n"
                     dynaString += formatString
             i = 0
             for key in self.elements:
@@ -4304,9 +4295,9 @@ class ElementManager:
                     i = i + 1
                     if i == 1:
                         dynaString += "*ELEMENT_MASS_NODE_SET\n"
-                    massStr = _format_mass8(element.mass)
+                    massStr = _format_mass16(element.mass)
                     ePid = getattr(element, "pid", 0) or pid
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{massStr:>8}{str(ePid):>8}\n"
+                    formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{massStr:>16}{str(ePid):>8}\n"
                     dynaString += formatString
         return dynaString
 
@@ -4319,9 +4310,9 @@ class ElementManager:
                     i = i + 1
                     if i == 1:
                         stream.write("*ELEMENT_MASS\n")
-                    massStr = _format_mass8(element.mass)
+                    massStr = _format_mass16(element.mass)
                     ePid = getattr(element, "pid", 0) or pid
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{massStr:>8}{str(ePid):>8}\n"
+                    formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{massStr:>16}{str(ePid):>8}\n"
                     stream.write(formatString)
             i = 0
             for key in self.elements:
@@ -4330,9 +4321,9 @@ class ElementManager:
                     i = i + 1
                     if i == 1:
                         stream.write("*ELEMENT_MASS_NODE_SET\n")
-                    massStr = _format_mass8(element.mass)
+                    massStr = _format_mass16(element.mass)
                     ePid = getattr(element, "pid", 0) or pid
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{massStr:>8}{str(ePid):>8}\n"
+                    formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{massStr:>16}{str(ePid):>8}\n"
                     stream.write(formatString)
                     
             
