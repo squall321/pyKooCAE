@@ -1598,12 +1598,13 @@ class KooMaterialManager():
             ETAN = KooDynaFloat(firstLine[5])
             FS = KooDynaFloat(firstLine[6])
             PRF = KooDynaFloat(firstLine[7])
-            secondLine = dynaMaterial[2]
+            # 카드 2(SOFT CVELO)는 R16 "Optional card" — 생략하면 기본값(빈 칸 = SOFT 1.0·CVELO 0.0). 예전엔 IndexError
+            secondLine = dynaMaterial[2] if len(dynaMaterial) > 2 else ""
             if type(secondLine) == list:
                 pass
             else:
                 secondLine = self.parse_whole(secondLine, [10,10])
-            SOFT = KooDynaFloat(secondLine[0])
+            SOFT = KooDynaFloat(secondLine[0], 1.0)
             CVELO = KooDynaFloat(secondLine[1])
             if forcedid != 0:
                 mid = forcedid
