@@ -161,6 +161,32 @@ def test_sizing():
     check("새 도구 + 명시 300G(어느 노드도 못 받음) → 16워커·128G 로 깎고 🔴", (c, m) == ("16", "128G") and "🔴" in out, str((c, m, t)))
     (c, m, t), out = build(979, {"--parallel-runs"}, limits={"nodes": [(64, 6.0), (64, 0.0)]})
     check("--mem=0 이 메모리 모자란 아는 노드(6G)에도 앉을 수 있으면 🔴", m == "0" and "🔴" in out and "6G" in out, f"{(c, m, t)} {out[-200:]}")
+    # 성질 — 무작위 노드 모양·명시값에서 요청은 늘 한 노드가 받는다(코어 ≤ 노드 코어, --mem=0 이거나 메모리 ≤ RealMemory,
+    # 미설정 노드는 --mem=0 만). 리뷰 L~O 가 이 규칙을 깬 꼴을 차례로 찾았다 — 고정 시드로 굳힌다.
+    import random
+    rng = random.Random(20261026)
+
+    def fits(cpus, mem, node):
+        c, mm = node
+        if c and int(cpus) > c:
+            return False
+        if mem == "0":
+            return True
+        return mm is None or (mm > 0 and mm >= P._mem_gb(mem))
+    bad = []
+    for _ in range(3000):
+        nodes = [(rng.choice([None, 1, 2, 4, 8, 16, 32, 64, 96]),
+                  rng.choice([None, 0.0001, 2.0, 4.0, 6.0, 8.0, 16.0, 31.25, 64.0, 96.0, 128.0, 256.0]))
+                 for _ in range(rng.randint(1, 4))]
+        par = rng.random() < 0.5
+        n, ncpu = rng.choice([10, 100, 979, 3000]), rng.choice([None, None, 2, 8, 32, "8.0", "auto"])
+        mem = rng.choice([None, None, "0", "16G", "64G", "200G", "1T"])
+        with _c.redirect_stdout(io.StringIO()):
+            cpus_, mem_, _, _ = P._sphere_auto_resources(n, "/x.sif", "", ncpu, mem, None,
+                                                         tool_flags={"--parallel-runs"} if par else set(), limits={"nodes": nodes})
+        if not any(fits(cpus_, mem_, x) for x in P._node_shapes({"nodes": nodes})):
+            bad.append((nodes, par, n, ncpu, mem, cpus_, mem_))
+    check("성질: 무작위 3,000 입력에서 요청을 받는 노드가 늘 있다", not bad, str(bad[:3]))
     # 명시 '제한 없음' — man sbatch: 시간 0·UNLIMITED 는 제한 없음, --mem=0 은 노드 메모리 전부
     (c, m, t), _ = build(979, {"--parallel-runs"}, opts={"sphere_time_limit": "UNLIMITED"})
     check("명시 UNLIMITED 는 무제한 — 그대로", t == "UNLIMITED", t)
