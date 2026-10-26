@@ -85,6 +85,25 @@ def test_sizing():
     check("_slurm_minutes", [P._slurm_minutes(x) for x in ("1-00:00:00", "06:00:00", "30:00", "45", "2-12", "UNLIMITED")]
           == [1440, 360, 30, 45, 3600, None])
     check("_mem_gb", [P._mem_gb(x) for x in ("32G", "32000M", "1T", "16000", "x")] == [32.0, 31.25, 1024.0, 15.625, None])
+    # 파티션 한도 — 시나리오가 파티션을 안 주면 잡은 기본 파티션(Default=YES)으로 간다(sbatch 에 --partition 없음)
+    fb = BASE / "fake_slurm"
+    fb.mkdir()
+    (fb / "scontrol").write_text(
+        '#!/bin/bash\n[ "$1" = -o ] && shift\n[ "$1" = show ] && [ "$2" = partition ] || exit 0\n'
+        'n="PartitionName=normal AllowGroups=ALL Default=YES MaxNodes=UNLIMITED MaxTime=2-00:00:00 State=UP"\n'
+        'v="PartitionName=viz AllowGroups=ALL Default=NO MaxNodes=UNLIMITED MaxTime=60-00:00:00 State=UP"\n'
+        'case "$3" in "") echo "$n"; echo "$v";; normal) echo "$n";; viz) echo "$v";; esac\n')
+    (fb / "sinfo").write_text('#!/bin/bash\ncase " $* " in *viz*) echo "3584+";; *normal*) echo "64000";; esac\n')
+    for f in ("scontrol", "sinfo"):
+        (fb / f).chmod(0o755)
+    old_path = os.environ["PATH"]
+    os.environ["PATH"] = f"{fb}:{old_path}"
+    try:
+        lim_default, lim_viz = P.partition_limits(""), P.partition_limits("viz")
+    finally:
+        os.environ["PATH"] = old_path
+    check("파티션 없음 → 기본 파티션(normal) 한도 2일·62.5G", lim_default == {"max_minutes": 2880, "max_mem_gb": 62.5}, str(lim_default))
+    check("파티션 viz → 60일·3.5G(3584+)", lim_viz == {"max_minutes": 86400, "max_mem_gb": 3.5}, str(lim_viz))
 
 
 FAKE_APPTAINER = """#!/bin/bash

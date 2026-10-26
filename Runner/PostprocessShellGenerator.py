@@ -682,13 +682,18 @@ def _mem_gb(text):
 
 def partition_limits(partitions, timeout=30):
     """쉼표로 준 파티션들 가운데 가장 넉넉한 MaxTime(분)·노드 메모리(GB) — Slurm 은 잡이 들어가는 파티션을 고른다.
+    파티션을 주지 않으면(sbatch 에 --partition 이 없으면) 잡이 가는 기본 파티션(Default=YES)을 본다.
     {'max_minutes': 분 또는 None(무제한), 'max_mem_gb': GB}. 읽지 못하면 빈 dict(상한을 걸지 않는다)."""
     import subprocess
     names = [p.strip() for p in str(partitions or "").split(",") if p.strip()]
-    if not names:
-        return {}
     out = {}
     try:
+        if not names:
+            r = subprocess.run(["scontrol", "-o", "show", "partition"], capture_output=True, text=True, timeout=timeout,
+                               encoding='utf-8', errors='replace')
+            names = re.findall(r"^PartitionName=(\S+).*\bDefault=YES\b", r.stdout or "", re.M)
+            if not names:
+                return {}
         times = []
         for p in names:
             r = subprocess.run(["scontrol", "show", "partition", p], capture_output=True, text=True, timeout=timeout,
