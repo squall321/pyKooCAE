@@ -161,7 +161,64 @@ class KooDynaImporter():
             print(f"Warning: UpdateContactGraph failed ({e}), skipping contact graph")
             self.metaData["model"]["ptos_contact"] = {}
             self.metaData["model"]["stop_contact"] = {}
-    
+        # 파트별 항복응력 — sphere 리포트가 파트마다 안전율을 낸다(예전엔 350 하나로 칠해 항복 38% 초과 파트가 '안전').
+        # model.parts(pid→이름) 는 그대로 두고 새 키로 더한다 — 옛 도구는 이 키를 모른 채 그대로 돈다.
+        try:
+            self.metaData["model"]["part_yield"] = self.PartYieldMap()
+        except Exception as e:
+            print(f"Warning: 파트별 항복응력 맵을 만들지 못했다 ({e}) — sphere 리포트는 단일 항복응력으로 판정한다")
+
+    def PartYieldMap(self):
+        """파트별 초기 항복응력(덱 단위 그대로) — {'unit': 'MPa'|'Pa'|None, 'parts': {pid: {yield, source, mid}}}.
+        R16 근거: MAT_003·MAT_ORIENTED_CRACK 은 SIGY. MAT_024 는 "SIGY … ignored if LCSS > 0" 라 LCSS 커브면 가장 작은 변형률 점의
+        응력(커브는 "Ordinate value = SFO × (Defined value + OFFO)"), EPS·ES 점으로 주면 ES1, 아니면 SIGY.
+        그 밖의 재질형·표(TABLE)·찾지 못한 커브·0 이하·강체 파트는 넣지 않는다 — 리포트가 기본값을 쓰고 그렇다고 적는다.
+        unit 은 재질 밀도 중앙값으로 고른 덱 응력 단위 힌트(_DwiFallbacks 와 같은 문턱 — < 1e-7 ton-mm-s, 100~1e5 SI)."""
+        from KooCAEManager.KooMaterial import (KooMaterialPlasticKinematic, KooMaterialPiecewiseLinearPlasticity,
+                                              KooMaterialOrientedCrack)
+        from KooCAEManager.KooDefine import KooDefineCurve
+        matMan = self.matManager
+        by_id = {m.id: m for m in getattr(matMan, "materials", {}).values()}
+        curves = getattr(self.defineManager, "defines", {}) if self.defineManager is not None else {}
+        rhos = []
+        for coll in (getattr(matMan, "materials", {}), getattr(matMan, "rigidMaterials", {})):
+            for m in coll.values():
+                try:
+                    r = float(m.GetRho())
+                except Exception:
+                    continue
+                if r > 0.0:
+                    rhos.append(r)
+        unit = None
+        if rhos:
+            rhos.sort()
+            med = rhos[len(rhos) // 2]
+            unit = "MPa" if med < 1.0e-7 else ("Pa" if 100.0 <= med <= 1.0e5 else None)
+        parts = {}
+        for part in self.partManager.parts.values():
+            mat = by_id.get(getattr(part, "mid", None))
+            got = None
+            if isinstance(mat, KooMaterialPiecewiseLinearPlasticity):
+                lcss = int(getattr(mat, "lcss", 0) or 0)
+                es = [float(v) for v in (getattr(mat, "es", None) or [])]
+                if lcss > 0:
+                    cv = curves.get(lcss)
+                    if isinstance(cv, KooDefineCurve) and cv.a1 and cv.o1:
+                        a0, o0 = min(zip(cv.a1, cv.o1), key=lambda t: float(t[0]))
+                        sfo = float(cv.sfo) or 1.0
+                        got = (sfo * (float(o0) + float(cv.offo)), f"MAT_024 LCSS {lcss} 첫 점(SFO·OFFO 적용)")
+                elif any(v > 0 for v in es):
+                    got = (es[0], "MAT_024 ES1")
+                elif float(mat.sigy) > 0:
+                    got = (float(mat.sigy), "MAT_024 SIGY")
+            elif isinstance(mat, KooMaterialPlasticKinematic) and float(mat.sigy) > 0:
+                got = (float(mat.sigy), "MAT_003 SIGY")
+            elif isinstance(mat, KooMaterialOrientedCrack) and float(mat.SIGY) > 0:
+                got = (float(mat.SIGY), "MAT_ORIENTED_CRACK SIGY")
+            if got and got[0] > 0:
+                parts[str(part.id)] = {"yield": got[0], "source": got[1], "mid": int(mat.id)}
+        return {"unit": unit, "parts": parts}
+
     def ImportMetaDatafromPreviousStep(self, jsonData):
         if "stage" in jsonData:
             self.metaData["stage"] = jsonData["stage"]
