@@ -6427,7 +6427,9 @@ class KooDynaAdvancedModification:
         numofSamples = len(first_value)
         lengthDict = {}
         if self.dynaImporter.controlManager.controlDynamicRelaxation == None:
-            self.dynaImporter.controlManager.SetControlDynamicRelaxation(250,0.00001,0.35,1.0e+99,0.3,0,0.0001,-1)            
+            # DRTOL·EDTTL 은 >10.3f 출력에 0.000 으로 잘려 늘 기본값(DRTOL 0.001)으로 돌았다(d83a1af 실측, 이 경로는 미변경으로 둠).
+            # 출력이 값을 지키게(2128309) 되면서 1E-5·1E-4 가 그대로 나가 동작이 바뀌지 않도록, 실제로 쓰이던 값(0 = 기본값)을 적는다.
+            self.dynaImporter.controlManager.SetControlDynamicRelaxation(250,0.0,0.35,1.0e+99,0.3,0,0.0,-1)
         for pid in partOptions.keys():
             if pid in self.dynaImporter.partManager.parts:
                 part : KooPart = self.dynaImporter.partManager.parts[pid]

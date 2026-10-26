@@ -8,8 +8,12 @@
   1. 이라 하중이 10⁴ 배. kg-mm-ms 중력 9.81E-3 → 0.010(+1.9%).
 - *CONTROL_DYNAMIC_RELAXATION DRTOL 1.0E-4 → 0.000(기본값 0.001 — 수렴 기준 10배 느슨), DRFCTR 0.9995 → 1.000(감쇠 없음 —
   기본값 .995). KooChainRun dynamic_relaxation 옵션으로 사용자가 주는 값이다.
+리뷰 O: DimensionalTolerance 경로가 넣는 DR 상수(DRTOL 1E-5·EDTTL 1E-4)는 예전 출력에서 0.000 으로 잘려 늘 기본값으로 돌았다
+(d83a1af 실측, 그 경로는 미변경으로 둠). 출력이 값을 지키면서 동작이 바뀌지 않게 그 상수를 실제로 쓰이던 0(기본값)으로 적었다 —
+예제(dist/Examples/5.SimulationModify/DimensionalTolerance)의 DR 카드가 예전 바이트 그대로여야 한다.
 """
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -79,6 +83,17 @@ def main():
         row = first_data(t, "*CONTROL_DYNAMIC_RELAXATION")
         got = (fnum(row[10:20]), fnum(row[20:30]), fnum(row[60:70]))
         check("DR DRTOL 1.0E-4·DRFCTR 0.9995·EDTTL 0.04 그대로", got == (1.0e-4, 0.9995, 0.04), repr(row))
+    ex = ROOT / "occProject" / "Generators" / "dist" / "Examples" / "5.SimulationModify" / "DimensionalTolerance"
+    d2 = Path(tempfile.mkdtemp(prefix="dimtol_dr_"))
+    for f in ("PlateSolid.k", "DimensionalTolerance.txt"):
+        shutil.copy(ex / f, d2 / f)
+    r = subprocess.run(KMM_CMD + ["DimensionalTolerance.txt"], cwd=d2, capture_output=True, text=True, timeout=900, env=ENV)
+    dt = d2 / "PlateSolid_dt.k"
+    check("DimensionalTolerance 예제: rc 0·출력", r.returncode == 0 and dt.exists(), (r.stdout + r.stderr)[-400:])
+    if dt.exists():
+        row = first_data(dt.read_text(errors="replace"), "*CONTROL_DYNAMIC_RELAXATION")
+        old = "       250     0.000     0.350 1.000e+99     0.300         0     0.000        -1"
+        check("DimensionalTolerance DR 카드 예전 바이트 그대로(DRTOL·EDTTL = 0 → 기본값)", row.rstrip() == old, repr(row))
     print()
     if FAILS:
         print(f"FAILED {len(FAILS)}")

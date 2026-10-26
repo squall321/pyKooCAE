@@ -251,18 +251,18 @@ class KooLoadBodyVector(KooLoadBody):
     def WritetoDynaKeyword(self):
         keyword = "*LOAD_BODY_VECTOR\n"
         keyword += super().WritetoDynaKeyword()
-        keyword += format(self.fx, ">10.3f")
-        keyword += format(self.fy, ">10.3f")
-        keyword += format(self.fz, ">10.3f")
+        keyword += _real10(self.fx)
+        keyword += _real10(self.fy)
+        keyword += _real10(self.fz)
         keyword += "\n"
         return keyword
     
     def WriteStreamDynaKeyword(self, stream):
         stream.write("*LOAD_BODY_VECTOR\n")
         super().WriteStreamDynaKeyword(stream)
-        stream.write(format(self.fx, ">10.3f"))
-        stream.write(format(self.fy, ">10.3f"))
-        stream.write(format(self.fz, ">10.3f"))
+        stream.write(_real10(self.fx))
+        stream.write(_real10(self.fy))
+        stream.write(_real10(self.fz))
         stream.write("\n")
     
 class KooLoad:
