@@ -134,6 +134,23 @@ def test_sizing():
     check("sphere_ncpu '8.0' → 8워커(22G·09:21:00)", (c, m, t) == ("8", "22G", "09:21:00"), str((c, m, t)))
     (c, m, t), out = build(979, {"--parallel-runs"}, opts={"sphere_ncpu": "auto"})
     check("sphere_ncpu 'auto' → 무시하고 산출값(16)·알림", c == "16" and "읽지 못해" in out, f"{c} {out[-300:]}")
+    # --help 탐지 — 실제 argparse 출력으로(metavar 없음 → 'PARALLEL_RUNS', 별칭, nargs='?', 다른 옵션 설명 글 속 언급만)
+    import argparse
+
+    def ap_help(kind):
+        ap = argparse.ArgumentParser(prog="koo_sphere_report")
+        ap.add_argument("--yield-stress", type=float, help="항복응력 (--parallel-runs·--yield-map 은 새 판에만)")
+        if kind == "plain":
+            ap.add_argument("--parallel-runs", type=int)
+            ap.add_argument("--yield-map")
+        elif kind == "alias":
+            ap.add_argument("-j", "--parallel-runs", type=int, help="런 병렬 수 " * 8)
+        elif kind == "optional":
+            ap.add_argument("--parallel-runs", nargs="?", const=4, type=int)
+        return ap.format_help()
+    want = {"plain": (True, True), "alias": (True, False), "optional": (True, False), "old": (False, False)}
+    got = {k: (P._help_has_option(ap_help(k), "--parallel-runs"), P._help_has_option(ap_help(k), "--yield-map")) for k in want}
+    check("argparse 도움말: metavar 없음·별칭·nargs='?' 는 잡고, 설명 글 속 언급만 있으면 안 잡음", got == want, str(got))
     with _c.redirect_stdout(io.StringIO()):
         t1 = P.build_sphere_sbatch("/data/x/output", sif_path="/x.sif", options={}, environment={}, n_runs=979,
                                    tool_flags={"--parallel-runs"}, limits={})
@@ -147,6 +164,7 @@ for a in "$@"; do
   if [ "$a" = "--help" ]; then
     echo "usage: koo_sphere_report [-h] (--test-dir TEST_DIR | --from-json JSON_FILE)"
     if [ "$FAKE_TOOL" = new ]; then echo "  --parallel-runs N"; echo "  --yield-map FILE"; fi
+    if [ "$FAKE_TOOL" = newdefault ]; then echo "  --parallel-runs PARALLEL_RUNS"; echo "  --yield-map YIELD_MAP"; fi
     if [ "$FAKE_TOOL" = oldmention ]; then echo "  --yield-stress MPA   항복응력 (--parallel-runs·--yield-map 은 새 판에만)"; fi
     exit 0
   fi
@@ -203,6 +221,9 @@ def test_shell_wiring():
     sh, td = make(1)
     rc, log, args = run(sh, td, "new")
     check("새 도구: rc 0 · --parallel-runs $SLURM_CPUS_PER_TASK(4)", rc == 0 and flag_after(args, "--parallel-runs") == "4",
+          f"rc={rc} {args} {log[-300:]}")
+    rc, log, args = run(sh, td, "newdefault")
+    check("새 도구(metavar 없이 'PARALLEL_RUNS'): --parallel-runs 4", rc == 0 and flag_after(args, "--parallel-runs") == "4",
           f"rc={rc} {args} {log[-300:]}")
     rc, log, args = run(sh, td, "new", cpus=None)
     check("Slurm 밖(수동 실행): --parallel-runs 1", flag_after(args, "--parallel-runs") == "1", str(args))
