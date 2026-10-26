@@ -28,6 +28,23 @@ from KooCAEManager.KooDamping import *
 from KooCAEManager.KooConstrained import *
 from KooCAEManager.KooD3plot import *
 
+def _value_at_zero(xs, ys):
+    """점 (x, y) 들을 x 순으로 놓고 x=0 에서의 값 — 사이면 선형 보간, 밖이면 끝 두 점으로 선형 외삽, 한 점이면 그 값.
+    MAT_024 초기 항복(εp=0) 용 — R16 EPS1 "If the first point is nonzero, the yield stress is extrapolated", 구성식 커브는 외삽."""
+    pts = sorted(zip(xs, ys))
+    if not pts:
+        return None
+    if len(pts) == 1:
+        return pts[0][1]
+    if pts[0][0] >= 0:
+        (x0, y0), (x1, y1) = pts[0], pts[1]
+    elif pts[-1][0] <= 0:
+        (x0, y0), (x1, y1) = pts[-2], pts[-1]
+    else:
+        i = max(k for k in range(len(pts) - 1) if pts[k][0] <= 0)
+        (x0, y0), (x1, y1) = pts[i], pts[i + 1]
+    return y0 if x1 == x0 else y0 + (0.0 - x0) * (y1 - y0) / (x1 - x0)
+
 class KooDynaImporter():
     def __init__(self, nodeManager = None, partManager = None, resultManager = None, matManager = None, sectionManager = None, nodeSetManager = None, loadManager = None, boundaryNodeManager = None, defineManager = None, contactManager = None, segmentSetManager = None, dynaResultManager = None, controlManager = None, dampingManager = None, databaseManager = None, initialManager = None, additionalManager = None, constrainedManager = None):
         self.title = ""
@@ -170,8 +187,10 @@ class KooDynaImporter():
 
     def PartYieldMap(self):
         """파트별 초기 항복응력(덱 단위 그대로) — {'unit': 'MPa'|'Pa'|None, 'parts': {pid: {yield, source, mid}}}.
-        R16 근거: MAT_003·MAT_ORIENTED_CRACK 은 SIGY. MAT_024 는 "SIGY … ignored if LCSS > 0" 라 LCSS 커브면 가장 작은 변형률 점의
-        응력(커브는 "Ordinate value = SFO × (Defined value + OFFO)"), EPS·ES 점으로 주면 ES1, 아니면 SIGY.
+        R16 근거: MAT_003·MAT_ORIENTED_CRACK 은 SIGY. MAT_024 는 "SIGY … ignored if LCSS > 0" 라 LCSS 커브의 εp=0 값(커브는
+        "Abscissa value = SFA × (Defined value + OFFA)", "Ordinate value = SFO × (Defined value + OFFO)"), EPS·ES 점으로 주면
+        그 점들의 εp=0 값, 아니면 SIGY. εp=0 값은 사이면 보간, 밖이면 끝 두 점으로 외삽한다 — EPS1: "If the first point is
+        nonzero, the yield stress is extrapolated to determine the initial yield". (예전엔 '가장 작은 변형률 점'·ES1 — 리뷰 L)
         그 밖의 재질형·표(TABLE)·찾지 못한 커브·0 이하·강체 파트는 넣지 않는다 — 리포트가 기본값을 쓰고 그렇다고 적는다.
         unit 은 재질 밀도 중앙값으로 고른 덱 응력 단위 힌트(_DwiFallbacks 와 같은 문턱 — < 1e-7 ton-mm-s, 100~1e5 SI)."""
         from KooCAEManager.KooMaterial import (KooMaterialPlasticKinematic, KooMaterialPiecewiseLinearPlasticity,
@@ -200,15 +219,23 @@ class KooDynaImporter():
             got = None
             if isinstance(mat, KooMaterialPiecewiseLinearPlasticity):
                 lcss = int(getattr(mat, "lcss", 0) or 0)
+                eps = [float(v) for v in (getattr(mat, "eps", None) or [])]
                 es = [float(v) for v in (getattr(mat, "es", None) or [])]
                 if lcss > 0:
                     cv = curves.get(lcss)
-                    if isinstance(cv, KooDefineCurve) and cv.a1 and cv.o1:
-                        a0, o0 = min(zip(cv.a1, cv.o1), key=lambda t: float(t[0]))
-                        sfo = float(cv.sfo) or 1.0
-                        got = (sfo * (float(o0) + float(cv.offo)), f"MAT_024 LCSS {lcss} 첫 점(SFO·OFFO 적용)")
+                    # DATTYP 0 + OFFA > 0 이면 LS-DYNA 가 0·0.999×OFFA 에 값 0 인 점을 더한다(Remark 4a) — 맵에서 뺀다
+                    if (isinstance(cv, KooDefineCurve) and cv.a1 and cv.o1
+                            and not (int(cv.dattyp or 0) == 0 and float(cv.offa) > 0)):
+                        sfa, sfo = float(cv.sfa) or 1.0, float(cv.sfo) or 1.0
+                        y0 = _value_at_zero([sfa * (float(a) + float(cv.offa)) for a in cv.a1],
+                                            [sfo * (float(o) + float(cv.offo)) for o in cv.o1])
+                        if y0 is not None:
+                            got = (y0, f"MAT_024 LCSS {lcss} εp=0(SFA·OFFA·SFO·OFFO 적용)")
                 elif any(v > 0 for v in es):
-                    got = (es[0], "MAT_024 ES1")
+                    n = max(i for i, v in enumerate(es) if v > 0) + 1      # 끝의 0 은 안 쓰는 점
+                    y0 = _value_at_zero((eps + [0.0] * 8)[:n], es[:n])
+                    if y0 is not None:
+                        got = (y0, "MAT_024 EPS·ES εp=0")
                 elif float(mat.sigy) > 0:
                     got = (float(mat.sigy), "MAT_024 SIGY")
             elif isinstance(mat, KooMaterialPlasticKinematic) and float(mat.sigy) > 0:

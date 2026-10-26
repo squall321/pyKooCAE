@@ -9,7 +9,8 @@
   [1] build_sphere_sbatch 가 런 수로 자원을 잰다 — 옛 도구 32+0.10 GB/런·2코어, 새 도구(--parallel-runs) 6+2 GB/워커,
       시간 2h+0.06h×N/W(최소 4h). 명시값보다 산출값이 크면 산출값, 파티션 한도를 넘으면 한도로(알림).
   [2] sphere_report.sh 가 실행 시점에 --help 로 --parallel-runs·--yield-map 을 확인해 넘기고, 'Loaded 0 results' 면 비 0 종료.
-  [3] KMM 이 DropSet.json 에 model.part_yield 를 쓴다(R16: MAT_024 SIGY 는 LCSS>0 이면 무시 — 커브 첫 점 × SFO + OFFO).
+  [3] KMM 이 DropSet.json 에 model.part_yield 를 쓴다(R16: MAT_024 SIGY 는 LCSS>0 이면 무시 — 커브의 εp=0 값, 가로축
+      SFA×(x+OFFA)·세로축 SFO×(y+OFFO), 사이면 보간·밖이면 외삽 — EPS1 이 0 이 아니면 외삽한다).
 """
 import json
 import os
@@ -245,7 +246,7 @@ def f10(*v):
 
 def yield_deck():
     nodes, elems, nid = [], [], 0
-    for k in range(5):
+    for k in range(8):
         base = nid
         for (x, y, z) in [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)]:
             nid += 1
@@ -253,7 +254,7 @@ def yield_deck():
         elems.append(f"{k + 1:8d}{k + 1:8d}" + "".join(f"{base + i:8d}" for i in range(1, 9)))
     z8 = f10(*([0.0] * 8))
     deck = "*KEYWORD\n*NODE\n" + "\n".join(nodes) + "\n"
-    deck += "".join(f"*PART\npart{k + 1}\n" + f10(k + 1, 1, k + 1) for k in range(5))
+    deck += "".join(f"*PART\npart{k + 1}\n" + f10(k + 1, 1, k + 1) for k in range(8))
     deck += "*SECTION_SOLID\n" + f10(1, 1)
     deck += "*MAT_PLASTIC_KINEMATIC\n" + f10(1, "7.85E-09", 210000, 0.3, 250.0, 1000.0, 0.0) + f10(0.0, 0.0, "1.0E20", 0.0)
     deck += ("*MAT_PIECEWISE_LINEAR_PLASTICITY_TITLE\ncurve_mat\n" + f10(2, "7.85E-09", 210000, 0.3, 999.0, 0.0, 0.0, 0.0)
@@ -265,6 +266,17 @@ def yield_deck():
              + f10(0.0, 0.0, 0, 0, 0.0) + z8 + z8)
     deck += ("*DEFINE_CURVE\n" + f10(7, 0, 1.0, 2.0, 0.0, 5.0)
              + f"{0.05:>20}{110.0:>20}\n{0.0:>20}{100.0:>20}\n{0.5:>20}{200.0:>20}\n")
+    # 리뷰 L — 초기 항복은 εp=0 값: 6) SFA 2·OFFA -0.05 로 가로축이 옮겨진 커브, 7) 음의 변형률 점이 있는 커브,
+    # 8) EPS1 이 0 이 아닌 점 입력(외삽). 예전 '가장 작은 변형률 점'·ES1 이면 100·90·255 가 나온다.
+    for mid, lc in ((6, 8), (7, 9)):
+        deck += (f"*MAT_PIECEWISE_LINEAR_PLASTICITY\n" + f10(mid, "7.85E-09", 210000, 0.3, 999.0, 0.0, 0.0, 0.0)
+                 + f10(0.0, 0.0, lc, 0, 0.0) + z8 + z8)
+    deck += ("*MAT_PIECEWISE_LINEAR_PLASTICITY\n" + f10(8, "7.85E-09", 210000, 0.3, 0.0, 0.0, 0.0, 0.0) + f10(0.0, 0.0, 0, 0, 0.0)
+             + f10("0.002", "0.1") + f10("255.0", "300.0"))
+    deck += ("*DEFINE_CURVE\n" + f10(8, 0, 2.0, 1.0, -0.05, 0.0)
+             + f"{0.0:>20}{100.0:>20}\n{0.1:>20}{110.0:>20}\n{0.5:>20}{150.0:>20}\n")
+    deck += ("*DEFINE_CURVE\n" + f10(9, 0, 1.0, 1.0, 0.0, 0.0)
+             + f"{-0.1:>20}{90.0:>20}\n{0.0:>20}{100.0:>20}\n{0.2:>20}{150.0:>20}\n")
     return deck + "*ELEMENT_SOLID\n" + "\n".join(elems) + "\n*END\n"
 
 
@@ -313,10 +325,15 @@ def test_part_yield():
     check("MAT_003 SIGY 250", got.get("1") == (250.0, "MAT_003 SIGY"), str(got.get("1")))
     check("MAT_024 LCSS: SIGY 999 무시, 2.0×(100+5)=210", got.get("2", (None,))[0] == 210.0 and "LCSS 7" in got.get("2", ("", ""))[1],
           str(got.get("2")))
-    check("MAT_024 점 입력(제목 없음): ES1 300", got.get("3") == (300.0, "MAT_024 ES1"), str(got.get("3")))
+    check("MAT_024 점 입력(제목 없음): εp=0 값 300", got.get("3") == (300.0, "MAT_024 EPS·ES εp=0"), str(got.get("3")))
     check("MAT_ELASTIC 은 맵에 없음", "4" not in parts, str(parts.keys()))
     check("MAT_024 SIGY 120", got.get("5") == (120.0, "MAT_024 SIGY"), str(got.get("5")))
-    check("KMM 이 더한 바닥판(6)은 맵에 없음", "6" not in parts, str(parts.keys()))
+    y6, y7, y8 = (got.get(k, (None, ""))[0] for k in ("6", "7", "8"))
+    check("MAT_024 LCSS SFA 2·OFFA -0.05: 가로축 (-0.1,0.1) 사이 보간 105", y6 is not None and abs(y6 - 105.0) < 1e-9, str(got.get("6")))
+    check("MAT_024 LCSS 음의 변형률 점 (-0.1,90)(0,100): εp=0 값 100", y7 is not None and abs(y7 - 100.0) < 1e-9, str(got.get("7")))
+    check("MAT_024 EPS1 0.002 (255,300): 외삽 254.08", y8 is not None and abs(y8 - (255.0 - 0.002 * 45.0 / 0.098)) < 1e-9,
+          str(got.get("8")))
+    check("KMM 이 더한 바닥판(9)은 맵에 없음", "9" not in parts, str(parts.keys()))
     check("model.parts 는 예전 형식(pid → 이름 글)", isinstance(model.get("parts"), dict)
           and all(isinstance(v, str) for v in model["parts"].values()), str(model.get("parts")))
 
