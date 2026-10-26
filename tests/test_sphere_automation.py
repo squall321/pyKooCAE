@@ -324,7 +324,7 @@ def f10(*v):
 
 def yield_deck():
     nodes, elems, nid = [], [], 0
-    for k in range(8):
+    for k in range(9):
         base = nid
         for (x, y, z) in [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)]:
             nid += 1
@@ -332,7 +332,7 @@ def yield_deck():
         elems.append(f"{k + 1:8d}{k + 1:8d}" + "".join(f"{base + i:8d}" for i in range(1, 9)))
     z8 = f10(*([0.0] * 8))
     deck = "*KEYWORD\n*NODE\n" + "\n".join(nodes) + "\n"
-    deck += "".join(f"*PART\npart{k + 1}\n" + f10(k + 1, 1, k + 1) for k in range(8))
+    deck += "".join(f"*PART\npart{k + 1}\n" + f10(k + 1, 1, k + 1) for k in range(9))
     deck += "*SECTION_SOLID\n" + f10(1, 1)
     deck += "*MAT_PLASTIC_KINEMATIC\n" + f10(1, "7.85E-09", 210000, 0.3, 250.0, 1000.0, 0.0) + f10(0.0, 0.0, "1.0E20", 0.0)
     deck += ("*MAT_PIECEWISE_LINEAR_PLASTICITY_TITLE\ncurve_mat\n" + f10(2, "7.85E-09", 210000, 0.3, 999.0, 0.0, 0.0, 0.0)
@@ -355,6 +355,11 @@ def yield_deck():
              + f"{0.0:>20}{100.0:>20}\n{0.1:>20}{110.0:>20}\n{0.5:>20}{150.0:>20}\n")
     deck += ("*DEFINE_CURVE\n" + f10(9, 0, 1.0, 1.0, 0.0, 0.0)
              + f"{-0.1:>20}{90.0:>20}\n{0.0:>20}{100.0:>20}\n{0.2:>20}{150.0:>20}\n")
+    # 리뷰 M — 커브 끝 빈 줄은 (0,0) 점으로 읽힌다(부록 V: 빈 줄도 데이터). x 가 같으면 덱 차례 — 앞 점(0,100)이 εp=0 값
+    deck += (f"*MAT_PIECEWISE_LINEAR_PLASTICITY\n" + f10(9, "7.85E-09", 210000, 0.3, 999.0, 0.0, 0.0, 0.0)
+             + f10(0.0, 0.0, 10, 0, 0.0) + z8 + z8)
+    deck += ("*DEFINE_CURVE\n" + f10(10, 0, 1.0, 1.0, 0.0, 0.0)
+             + f"{0.0:>20}{100.0:>20}\n{0.1:>20}{110.0:>20}\n{0.5:>20}{150.0:>20}\n\n")
     return deck + "*ELEMENT_SOLID\n" + "\n".join(elems) + "\n*END\n"
 
 
@@ -411,7 +416,10 @@ def test_part_yield():
     check("MAT_024 LCSS 음의 변형률 점 (-0.1,90)(0,100): εp=0 값 100", y7 is not None and abs(y7 - 100.0) < 1e-9, str(got.get("7")))
     check("MAT_024 EPS1 0.002 (255,300): 외삽 254.08", y8 is not None and abs(y8 - (255.0 - 0.002 * 45.0 / 0.098)) < 1e-9,
           str(got.get("8")))
-    check("KMM 이 더한 바닥판(9)은 맵에 없음", "9" not in parts, str(parts.keys()))
+    y9 = got.get("9", (None, ""))[0]
+    check("MAT_024 LCSS 커브 끝 빈 줄((0,0) 점) — εp=0 값은 덱 차례 앞 점 100", y9 is not None and abs(y9 - 100.0) < 1e-9,
+          str(got.get("9")))
+    check("KMM 이 더한 바닥판(10)은 맵에 없음", "10" not in parts, str(parts.keys()))
     check("model.parts 는 예전 형식(pid → 이름 글)", isinstance(model.get("parts"), dict)
           and all(isinstance(v, str) for v in model["parts"].values()), str(model.get("parts")))
 

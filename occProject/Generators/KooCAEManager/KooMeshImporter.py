@@ -31,7 +31,7 @@ from KooCAEManager.KooD3plot import *
 def _value_at_zero(xs, ys):
     """점 (x, y) 들을 x 순으로 놓고 x=0 에서의 값 — 사이면 선형 보간, 밖이면 끝 두 점으로 선형 외삽, 한 점이면 그 값.
     MAT_024 초기 항복(εp=0) 용 — R16 EPS1 "If the first point is nonzero, the yield stress is extrapolated", 구성식 커브는 외삽."""
-    pts = sorted(zip(xs, ys))
+    pts = sorted(zip(xs, ys), key=lambda t: t[0])     # x 가 같으면 덱 차례(커브 끝 빈 줄 (0,0) 이 앞 점을 가리지 않게)
     if not pts:
         return None
     if len(pts) == 1:
