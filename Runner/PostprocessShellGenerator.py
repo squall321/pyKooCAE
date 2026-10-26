@@ -404,6 +404,7 @@ TOOL_HELP="$(apptainer exec "$SIF_PATH" python3 -m koo_sphere_report --help 2>&1
 # (Python _help_has_option 과 같은 규칙: 옵션 부분을 ', ' 로 갈라 각 조각의 첫 낱말이 그 옵션과 같은가)
 has_opt() {{
     printf '%s\\n' "$TOOL_HELP" | awk -v f="$1" '
+        {{ sub(/\\r$/, "") }}
         substr($0, 1, 3) == "  -" && substr($0, 1, 4) != "  - " {{
             inv = substr($0, 3); sub(/  .*/, "", inv)
             n = split(inv, parts, ", ")
@@ -718,7 +719,7 @@ def partition_limits(partitions, timeout=30):
     """쉼표로 준 파티션들 가운데 가장 넉넉한 MaxTime(분)·노드 코어 수·노드 메모리(GB) — Slurm 은 잡이 들어가는 파티션·노드를 고른다.
     노드 값은 노드마다 읽는다 — `sinfo -o %m` 는 노드가 섞인 파티션에서 최솟값에 '+' 를 붙인다(man sinfo).
     파티션을 주지 않으면(sbatch 에 --partition 이 없으면) 잡이 가는 기본 파티션(Default=YES)을 본다.
-    {'max_minutes': 분 또는 None(무제한), 'nodes': [(코어, 메모리 GB 또는 None)], 'max_cpus': 코어, 'max_mem_gb': GB}.
+    {'max_minutes': 분 또는 None(무제한), 'nodes': [(코어, 메모리 GB — 1GB 밑은 0.0)], 'max_cpus': 코어, 'max_mem_gb': GB}.
     잡은 한 노드에 들어가야 하므로 자원 산정은 nodes(노드 모양)를 쓴다 — 코어 최대 노드와 메모리 최대 노드가 다를 수 있다.
     읽지 못하면 빈 dict(상한을 걸지 않는다)."""
     import subprocess
@@ -745,8 +746,8 @@ def partition_limits(partitions, timeout=30):
         rows = [ln.split() for ln in (r.stdout or "").splitlines()]
         rows = [(int(c), float(m.rstrip("+"))) for c, m in (x for x in rows if len(x) == 2)
                 if re.fullmatch(r"\d+", c) and re.fullmatch(r"\d+(\.\d+)?\+?", m)]
-        # 노드 모양(코어, 메모리 GB) — 요청은 한 노드에 들어가야 한다. 1GB 밑(RealMemory 미설정 1MB 등)은 메모리를 모름(None)
-        nodes = sorted({(c, m / 1024.0 if m >= 1024 else None) for c, m in rows}, key=lambda s: (s[0], s[1] or 0.0))
+        # 노드 모양(코어, 메모리 GB) — 요청은 한 노드에 들어가야 한다. 1GB 밑(RealMemory 미설정이면 1MB)은 0.0 — --mem=0 만 받는다
+        nodes = sorted({(c, m / 1024.0 if m >= 1024 else 0.0) for c, m in rows})
         if nodes:
             out["nodes"] = nodes
             out["max_cpus"] = max(c for c, _ in nodes)
@@ -788,11 +789,13 @@ def _time_unlimited(text):
 
 
 def _node_shapes(lim):
-    """partition_limits 결과의 노드 모양 [(코어, 메모리 GB)] — None 칸은 모름(상한 없음), 1GB 밑 메모리도 모름으로 본다.
+    """partition_limits 결과의 노드 모양 [(코어, 메모리 GB)]. 코어·메모리 None 은 모름(상한 없음). 메모리 0.0 은 RealMemory 가
+    1GB 밑인 노드(미설정이면 1MB — slurm.conf "RealMemory … The default value is 1") — Slurm 은 설정된 RealMemory 로 노드를
+    거르므로(node_scheduler.c _build_node_list) 그 노드는 --mem=0(노드 메모리 전부)만 받는다.
     nodes 가 없으면(시험 주입) max_cpus·max_mem_gb 를 노드 하나로 본다."""
     raw = lim.get("nodes") or ([(lim.get("max_cpus"), lim.get("max_mem_gb"))]
-                               if (lim.get("max_cpus") or lim.get("max_mem_gb")) else [])
-    return [(c or None, m if m and m >= 1 else None) for c, m in raw]
+                               if (lim.get("max_cpus") or lim.get("max_mem_gb") is not None) else [])
+    return [(c or None, None if m is None else (float(m) if m >= 1 else 0.0)) for c, m in raw]
 
 
 def _sphere_auto_resources(n_runs, sif_path, partition, explicit_ncpu, explicit_mem, explicit_time,
@@ -800,8 +803,11 @@ def _sphere_auto_resources(n_runs, sif_path, partition, explicit_ncpu, explicit_
     """sphere 잡 자원을 런 수로 잰다. 명시값이 산출값보다 크면 명시값, 작으면 산출값을 쓰고 알린다(MCP 가 모든 캠페인에
     sphere_time_limit 04:00:00 을 넣어 '명시값 우선' 이면 고침이 먹지 않는다). 노드가 감당하지 못하면 줄이고 알린다 —
     요청(CPU·메모리)은 한 노드에 함께 들어가야 한다(아니면 Slurm 이 "Requested node configuration is not available" 로
-    거절한다). 새 도구는 노드마다 코어·메모리(6+2W)에 맞는 가장 큰 W 를 골라 다시 재고, 옛 도구는 들어가는 노드가 없을 때만
-    메모리가 가장 큰 노드에 맞춘다.
+    거절한다).
+    - 새 도구: 노드마다 코어·메모리(6+2W, 명시 메모리가 더 크면 그것)에 맞는 가장 큰 W 를 골라 다시 잰다.
+    - 옛 도구: 들어가는 노드가 없을 때만 줄인다.
+    - 어느 쪽이든 메모리를 아는 노드에 못 들어가고 RealMemory 미설정 노드(--mem=0 만 받음)가 있으면 --mem=0 으로 낸다.
+      그것도 없으면 메모리가 가장 큰 노드에 맞추고 🔴 로 알린다.
     Returns: (cpus, memory, time_limit, parallel)"""
     flags = sphere_tool_flags(sif_path) if tool_flags is None else tool_flags
     parallel = "--parallel-runs" in flags
@@ -813,32 +819,64 @@ def _sphere_auto_resources(n_runs, sif_path, partition, explicit_ncpu, explicit_
             notes.append(f"sphere_ncpu {explicit_ncpu!r} 를 정수로 읽지 못해 무시한다")
     lim = partition_limits(partition) if limits is None else limits
     shapes = _node_shapes(lim)
+    known = [x for x in shapes if x[1] != 0.0]      # 메모리를 알거나(>0) 모름(None)
+    zero = [x for x in shapes if x[1] == 0.0]       # RealMemory 미설정 — --mem=0 만 받는다
+    em = _mem_gb(explicit_mem) if explicit_mem is not None else None    # 0 = 노드 메모리 전부(man sbatch)
     cpus, mem_gb, minutes = sphere_resources(n_runs, parallel, ncpu)
-    node = None     # 요청을 맞춘 노드 모양 (코어, 메모리 GB) — None 칸은 모름
+    node, whole = None, em == 0     # 맞춘 노드 모양, --mem=0 으로 낼까
+
+    def _gb(m):
+        return "모름" if m is None else f"{int(m)}G"
+
     if parallel and shapes:
-        # 한 노드가 코어와 메모리(6+2W)를 함께 감당하는 가장 큰 W — 코어 최대 노드와 메모리 최대 노드가 다를 수 있다
-        best = None
-        for c, m in shapes:
+        def fit_w(c, m, use_em=True):   # 이 노드에 들어가는 가장 큰 워커 수(0 이면 못 들어감)
             w = min(cpus, c) if c else cpus
             if m:
+                if use_em and em and em > m:
+                    return 0
                 w = min(w, int((m - SPHERE_NEW_MEM_BASE_GB) // SPHERE_NEW_MEM_PER_WORKER_GB))
-            if w >= 1 and (best is None or (w, m or math.inf) > (best[0], best[2] or math.inf)):
-                best = (w, c, m)
-        if best is None:    # 워커 하나도 못 들이는 노드뿐 — 메모리가 가장 큰 노드로 하고 아래서 메모리를 줄인다(🔴)
-            c, m = max(shapes, key=lambda x: (x[1] or math.inf, x[0] or math.inf))
-            best = (min(cpus, c) if c else cpus, c, m)
-        w, node = best[0], (best[1], best[2])
+            return max(w, 0)
+        cand = [(fit_w(c, m), math.inf if m is None else m, c, m) for c, m in known]
+        cand = [x for x in cand if x[0] >= 1]
+        if cand:
+            w, _, nc, nm = max(cand, key=lambda x: (x[0], x[1]))
+            node = (nc, nm)
+        elif zero:
+            nc = max(zero, key=lambda x: x[0] or math.inf)[0]
+            w, node, whole = (min(cpus, nc) if nc else cpus), (nc, 0.0), True
+        else:   # 워커 하나도 못 들이는 노드뿐 — 메모리가 가장 큰 노드, 그 노드 기준 워커(적어도 1), 아래서 메모리를 줄인다(🔴)
+            nc, nm = max(known, key=lambda x: (math.inf if x[1] is None else x[1], x[0] or math.inf))
+            w, node = max(1, fit_w(nc, nm, use_em=False)), (nc, nm)
         if w != cpus:
             notes.append(f"워커 {cpus} → {w} — 코어·메모리가 한 노드(코어 {node[0] or '모름'}·메모리 "
-                         f"{str(int(node[1])) + 'G' if node[1] else '모름'})에 함께 들어가게")
+                         f"{'미설정' if node[1] == 0.0 else _gb(node[1])})에 함께 들어가게")
             cpus, mem_gb, minutes = sphere_resources(n_runs, True, w)
-    em = _mem_gb(explicit_mem) if explicit_mem is not None else None
-    if em is not None and (em == 0 or em >= mem_gb):     # --mem=0 은 노드 메모리 전부(man sbatch)
+    if em is not None and (em == 0 or em >= mem_gb):
         memory = str(explicit_mem)
     else:
         if explicit_mem is not None:
             notes.append(f"메모리 {explicit_mem} 이 {n_runs}런 산출값 {mem_gb}G 보다 작아 {mem_gb}G 를 쓴다")
         memory = f"{mem_gb}G"
+    if shapes and not parallel and not whole:
+        # 옛 도구 — 코어·메모리가 함께 들어가는 노드가 있으면 그대로
+        want_gb = _mem_gb(memory) or 0.0
+        fits = [x for x in known if (not x[0] or x[0] >= cpus) and (x[1] is None or x[1] >= want_gb)]
+        if not fits:
+            if zero:
+                node, whole = max(zero, key=lambda x: x[0] or math.inf), True
+            else:
+                node = max(known, key=lambda x: (math.inf if x[1] is None else x[1], x[0] or math.inf))
+            if node[0] and cpus > node[0]:
+                notes.append(f"CPU {cpus} 가 노드 코어 {node[0]} 를 넘어 {node[0]} 로 줄인다")
+                cpus = node[0]
+    if whole and em != 0:
+        notes.append(f"메모리 {memory} 가 메모리를 아는 노드에 들어가지 않아 RealMemory 미설정 노드용 --mem=0(노드 메모리 전부)으로 "
+                     f"낸다 — 실제 메모리는 모른다(아는 노드: {', '.join(_gb(x[1]) for x in known) or '없음'})")
+        memory = "0"
+    if node and node[1] and not whole and (_mem_gb(memory) or 0.0) > node[1]:
+        cap = int(node[1])
+        notes.append(f"🔴 메모리 {memory} 가 노드 메모리 {cap}G 를 넘어 {cap}G 로 줄인다 — OOM 이 날 수 있다")
+        memory = f"{cap}G"
     et = _slurm_minutes(explicit_time) if explicit_time is not None else None
     if explicit_time is not None and _time_unlimited(explicit_time):
         time_limit, req_minutes = str(explicit_time), math.inf
@@ -856,19 +894,6 @@ def _sphere_auto_resources(n_runs, sif_path, partition, explicit_ncpu, explicit_
         else:
             notes.append(f"시간 {time_limit} 을 파티션 한도 {cap_t} 로 줄인다 — 한도를 넘는 요청은 PENDING 에 머문다")
         time_limit = cap_t
-    want_gb = None if em == 0 else (_mem_gb(memory) or 0.0)     # --mem=0(노드 전부)은 상한 검사에서 뺀다
-    if shapes and not parallel:
-        # 옛 도구 — 코어·메모리가 함께 들어가는 노드가 있으면 그대로, 없으면 메모리가 가장 큰 노드에 맞춘다
-        fits = [x for x in shapes if (not x[0] or x[0] >= cpus) and (want_gb is None or not x[1] or x[1] >= want_gb)]
-        if not fits:
-            node = max(shapes, key=lambda x: (x[1] or math.inf, x[0] or math.inf))
-            if node[0] and cpus > node[0]:
-                notes.append(f"CPU {cpus} 가 노드 코어 {node[0]} 를 넘어 {node[0]} 로 줄인다")
-                cpus = node[0]
-    if node and node[1] and want_gb is not None and want_gb > node[1]:
-        cap = int(node[1])
-        notes.append(f"🔴 메모리 {memory} 가 노드 메모리 {cap}G 를 넘어 {cap}G 로 줄인다 — OOM 이 날 수 있다")
-        memory = f"{cap}G"
     print(f"[Sphere Postprocess] 자원 — {n_runs}런, 도구 {'병렬(--parallel-runs)' if parallel else '순차'}: "
           f"CPU {cpus} · 메모리 {memory} · 시간 {time_limit}")
     for n in notes:

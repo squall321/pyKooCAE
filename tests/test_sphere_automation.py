@@ -116,8 +116,8 @@ def test_sizing():
     check("파티션 viz(3584MB·18997MB 노드) → 노드별 최댓값 8코어·18.55G(요약 '3584+' 는 최솟값)",
           lim_viz == {"max_minutes": 86400, "nodes": [(2, 3.5), (8, 18997 / 1024)], "max_cpus": 8, "max_mem_gb": 18997 / 1024},
           str(lim_viz))
-    check("RealMemory 미설정(1MB) 노드 → 메모리 모름(None), 메모리 상한 없음",
-          lim_nomem == {"max_minutes": None, "nodes": [(4, None)], "max_cpus": 4}, str(lim_nomem))
+    check("RealMemory 미설정(1MB) 노드 → 메모리 0.0(--mem=0 만 받는 노드), max_mem_gb 없음",
+          lim_nomem == {"max_minutes": None, "nodes": [(4, 0.0)], "max_cpus": 4}, str(lim_nomem))
     # 노드가 감당할 수 있게 — CPU 상한, 새 도구는 워커 수를 CPU·메모리에 맞춰 다시 잰다
     (c, m, t), out = build(979, {"--parallel-runs"}, limits={"max_cpus": 2})
     check("새 도구 + 노드 2코어: 워커 2 로 줄여 다시 잼(10G)", (c, m) == ("2", "10G"), str((c, m, t)))
@@ -134,8 +134,19 @@ def test_sizing():
     check("옛 도구 + ncpu 32 + 같은 노드: 메모리 큰 노드에 맞춰 4코어·42G", (c, m, t) == ("4", "42G", "08:00:00"), f"{(c, m, t)} {out[-200:]}")
     (c, m, t), _ = build(979, {"--parallel-runs"}, limits={"nodes": [(32, 8.0), (8, 64.0)]})
     check("새 도구 + 노드 32c/8G·8c/64G: 8워커(22G·09:21:00)", (c, m, t) == ("8", "22G", "09:21:00"), str((c, m, t)))
+    # RealMemory 미설정(1GB 밑) 노드는 --mem=0 만 받는다(Slurm 이 설정된 RealMemory 로 노드를 거른다) — 리뷰 N
     (c, m, t), out = build(979, limits={"nodes": [(64, 0.5)]})
-    check("노드 메모리 1GB 밑(미설정)은 모름 — --mem=0G 를 내지 않음", m == "130G" and "🔴" not in out, f"{m} {out[-200:]}")
+    check("옛 도구 + 메모리 미설정 노드 → --mem=0(노드 전부)·알림", m == "0" and "--mem=0" in out, f"{m} {out[-200:]}")
+    (c, m, t), _ = build(979, {"--parallel-runs"}, limits={"nodes": [(64, 0.0)]})
+    check("새 도구 + 메모리 미설정 노드 → 16워커·--mem=0", (c, m) == ("16", "0"), str((c, m, t)))
+    (c, m, t), _ = build(979, limits={"nodes": [(96, 96.0), (4, 0.0)]})
+    check("옛 도구 130G + 96G 노드·미설정 노드 → --mem=0(130G 는 어느 노드도 못 받음)", (c, m) == ("2", "0"), str((c, m, t)))
+    # 새 도구 노드 고르기에 명시 메모리도 넣는다 — 8c/31G 에 200G 를 깎아 넣지 않고 4c/256G 에 4워커·200G
+    (c, m, t), out = build(979, {"--parallel-runs"}, opts={"sphere_memory": "200G"}, limits={"nodes": [(8, 31.25), (4, 256.0)]})
+    check("새 도구 + 명시 200G + 노드 8c/31G·4c/256G → 4워커·200G(🔴 없음)", (c, m) == ("4", "200G") and "🔴" not in out,
+          f"{(c, m, t)} {out[-200:]}")
+    (c, m, t), out = build(979, {"--parallel-runs"}, limits={"nodes": [(64, 6.0)]})
+    check("워커 하나도 못 들이는 노드뿐 → 1워커(8G)를 노드 메모리로 깎고 🔴", (c, m) == ("1", "6G") and "🔴" in out, f"{(c, m, t)}")
     # 명시 '제한 없음' — man sbatch: 시간 0·UNLIMITED 는 제한 없음, --mem=0 은 노드 메모리 전부
     (c, m, t), _ = build(979, {"--parallel-runs"}, opts={"sphere_time_limit": "UNLIMITED"})
     check("명시 UNLIMITED 는 무제한 — 그대로", t == "UNLIMITED", t)
@@ -186,8 +197,11 @@ def test_sizing():
         finally:
             os.environ.pop("COLUMNS", None)
     want2 = {"choices": (True, False), "nargs2": (False, True), "star": (True, False), "narrow_old": (False, False),
-             "epilog_old": (False, False)}
-    helps = {k: ap_more(k) for k in want2}
+             "epilog_old": (False, False), "crlf": (True, False)}
+    helps = {k: ap_more(k) for k in want2 if k != "crlf"}
+    ap_c = argparse.ArgumentParser(prog="koo_sphere_report")
+    ap_c.add_argument("--parallel-runs", action="store_true")       # 옵션이 줄 끝 — CRLF 면 awk 는 '\r' 을 붙여 본다
+    helps["crlf"] = ap_c.format_help().replace("\n", "\r\n")
     # argparse 가 다른 옵션 설명을 접어 줄 머리(도움말 칸 들여쓰기)에 낱말이 오는 꼴 — 옛 판 도움말
     helps["wrapped_old"] = ("usage: koo_sphere_report [-h] [--yield-stress YIELD_STRESS]\n\noptions:\n"
                             "  -h, --help            show this help message and exit\n"
@@ -195,13 +209,13 @@ def test_sizing():
                             "                        --parallel-runs N 과\n                        --yield-map FILE 을 쓴다\n")
     want2["wrapped_old"] = (False, False)
     got_py = {k: (P._help_has_option(h, "--parallel-runs"), P._help_has_option(h, "--yield-map")) for k, h in helps.items()}
-    check("argparse 도움말(리뷰 M 6종): Python 탐지가 기대대로", got_py == want2, str(got_py))
+    check("argparse 도움말(리뷰 M·N 7종): Python 탐지가 기대대로", got_py == want2, str(got_py))
     sh_txt = P.build_sphere_report_sh("/data/x/output", sif_path="/x.sif", options={})
     fn = sh_txt[sh_txt.index("has_opt() {"):sh_txt.index("\n}\n", sh_txt.index("has_opt() {")) + 3]
     got_sh = {}
     for k, h in helps.items():
         hf = BASE / f"help_{k}.txt"
-        hf.write_text(h)
+        hf.write_bytes(h.encode("utf-8"))
         res = []
         for flag in ("--parallel-runs", "--yield-map"):
             r = subprocess.run(["bash", "-c", 'TOOL_HELP="$(cat "$1")"\n' + fn + 'has_opt "$2"', "x", str(hf), flag])
