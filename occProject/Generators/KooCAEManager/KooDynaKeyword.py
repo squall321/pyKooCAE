@@ -8917,42 +8917,34 @@ class MatCompositeDamageTitle(DynaKeyword):
             stream.write(formatted_elements)          
 # Mat 24 
 def _assert_mat_cards(mat_keywords, need, kw_name, title_offset=0):
-    """재질 블록마다 필요한 카드 줄 수를 검사하고, 부족하면 무엇이 왜 부족한지 알린다.
+    """재질 블록마다 카드 줄 수를 맞춘다 — 빠진 끝 선택 카드는 빈 줄(기본값)로 채우고, 카드 1 이 없으면 알리고 멈춘다.
 
-    🔴 예전에는 mat_keywords[i][3] 접근이 그대로 IndexError 로 터졌다.
-       스택트레이스만 나와서 "어느 재질이 왜" 인지 알 수 없었고, 실제로 엉뚱한
-       키워드(MAT_GENERAL_VISCOELASTIC)를 원인으로 의심하게 만들었다.
-       *MAT_PIECEWISE_LINEAR_PLASTICITY 는 LS-DYNA 규격상 카드 4장이다
-       (1: MID..TDEL / 2: C..VP / 3: EPS1~8 / 4: ES1~8).
-       카드 3·4 를 빠뜨린 덱이 흔한데, 그 덱은 LS-DYNA 도 다음 키워드 줄을
-       카드3 으로 삼켜서 오독한다 — 즉 입력을 고쳐야 하는 상황이다.
-       그래서 관대하게 채워 넘기지 않고, 고칠 지점을 정확히 알려주고 멈춘다.
+    R16 부록 V: 칸이 모두 기본값을 가진 데이터 카드는 선택 카드라, 뒤 카드도 모두 빠질 때 끝에서 생략할 수 있다.
+    *MAT_PIECEWISE_LINEAR_PLASTICITY 카드 2(C..VP)·3(EPS1~8)·4(ES1~8)는 칸이 모두 기본값 0 이라 선택 카드다(LCSS 를
+    쓰거나 SIGY·ETAN 만 쓰는 덱이 흔히 생략한다 — KooRemapper 예제 merge/three_layer.k 도 그렇다). 카드 1(MID RO E …)은
+    기본값 없는 칸이 있어 필수다.
+
+    🔴 예전(29eb785, 08-17)엔 카드 3·4 가 없으면 "LS-DYNA 도 다음 키워드를 카드3 으로 삼켜 오독한다" 며 멈췄는데 부록 V 와
+       반대다 — 키워드 줄이 데이터 카드를 끝낸다. 그보다 전에는 mat_keywords[i][3] 접근이 IndexError 로 터졌다.
     """
-    bad = []
+    bad, padded = [], 0
     for i in range(len(mat_keywords)):
         blk = mat_keywords[i]
-        if len(blk) < need:
-            title = ""
-            if title_offset and len(blk) > 0:
-                title = str(blk[0]).strip()[:40]
-            mid = ""
-            j = title_offset
-            if len(blk) > j:
-                tok = str(blk[j]).split()
-                if tok:
-                    mid = tok[0]
-            bad.append((i + 1, title, mid, len(blk)))
+        if len(blk) < title_offset + 1:          # 카드 1 없음 (제목 형식은 제목 + 카드 1)
+            title = str(blk[0]).strip()[:40] if title_offset and len(blk) > 0 else ""
+            bad.append((i + 1, title, len(blk)))
+        elif len(blk) < need:
+            mat_keywords[i] = list(blk) + [""] * (need - len(blk))
+            padded += 1
+    if padded:
+        print(f"  *{kw_name}: 생략한 선택 카드(2·3·4)를 기본값으로 채움 — {padded}개 블록 (R16 부록 V)")
     if not bad:
         return
-    lines = [f"*{kw_name}: 카드 줄 수 부족 — {len(bad)}개 블록",
-             f"  필요 {need}줄" + (" (제목 + 카드1~4)" if title_offset else " (카드1~4)")
-             + " / LS-DYNA 규격: 1=MID..TDEL, 2=C..VP, 3=EPS1~8, 4=ES1~8"]
-    for n, title, mid, got in bad[:10]:
-        lines.append(f"    #{n} {('제목='+title+' ') if title else ''}MID={mid or '?'} — {got}줄뿐")
+    lines = [f"*{kw_name}: 카드 1 이 없는 블록 {len(bad)}개 — 카드 1(MID RO E PR SIGY ETAN FAIL TDEL)은 필수다"]
+    for n, title, got in bad[:10]:
+        lines.append(f"    #{n} {('제목='+title+' ') if title else ''}— {got}줄뿐")
     if len(bad) > 10:
         lines.append(f"    ... 외 {len(bad) - 10}개")
-    lines.append("  조치: 각 카드 뒤에 EPS1~8 / ES1~8 두 줄을 추가하라(전부 0이면 곡선 미사용).")
-    lines.append("        카드3·4 가 없으면 LS-DYNA 도 다음 키워드를 삼켜 오독한다.")
     raise ValueError("\n".join(lines))
 
 

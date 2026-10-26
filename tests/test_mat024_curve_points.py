@@ -6,6 +6,8 @@
 배경 (2026-10-26): 제목 없는 *MAT_PIECEWISE_LINEAR_PLASTICITY 의 카드 3(EPS1~8)·카드 4(ES1~8)를 KMM 이 i 의 홀짝으로
 가르는데 카드 3 의 자리(imin)가 제목 유무로 3·4 라, 제목 없는 덱에서 EPS·ES 가 뒤바뀌어 출력됐다 — 응력-변형률 곡선이
 거꾸로(변형률 칸에 250~400, 응력 칸에 0~1) 써진다. 경고 없이 1월 첫 소스부터. _TITLE 변형은 맞았다.
+리뷰 L(2026-10-26): 카드 2·3·4 는 칸이 모두 기본값 0 인 선택 카드라 끝에서 생략할 수 있다(R16 부록 V). 08-17 가드(29eb785)가
+"LS-DYNA 도 다음 키워드를 삼킨다" 며 그런 덱을 멈췄다 — KooRemapper 예제(merge/three_layer.k)가 바로 그 꼴. 빈 카드로 채운다.
 """
 import os
 import subprocess
@@ -41,6 +43,17 @@ def deck(title):
     mat = kw + f10(1, "7.85E-09", 210000, 0.3, 0.0, 0.0, 0.0, 0.0) + f10(0.0, 0.0, 0, 0, 0.0) + f10(*EPS) + f10(*ES)
     return ("*KEYWORD\n" + nodes + "*PART\nblock\n" + f10(1, 1, 1) + "*SECTION_SOLID\n" + f10(1, 1) + mat
             + "*ELEMENT_SOLID\n" + f"{1:8d}{1:8d}" + "".join(f"{n:8d}" for n in range(1, 9)) + "\n*END\n")
+
+
+def deck_short(title, ncards):
+    """카드 1~ncards 만 쓴 덱 — 카드 2 는 LCSS=7(커브), 커브 7 은 (0,250)(1,400)"""
+    nodes = "*NODE\n" + "".join(f"{i + 1:8d}{float(x):16.6f}{float(y):16.6f}{float(z):16.6f}\n" for i, (x, y, z) in enumerate(
+        [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)]))
+    kw = "*MAT_PIECEWISE_LINEAR_PLASTICITY_TITLE\nsteel\n" if title else "*MAT_PIECEWISE_LINEAR_PLASTICITY\n"
+    cards = [f10(1, "7.85E-09", 210000, 0.3, 280.0, 0.0, 0.0, 0.0), f10(0.0, 0.0, 7, 0, 0.0)][:ncards]
+    curve = "*DEFINE_CURVE\n" + f10(7) + f"{0.0:>20}{250.0:>20}\n{1.0:>20}{400.0:>20}\n"
+    return ("*KEYWORD\n" + nodes + "*PART\nblock\n" + f10(1, 1, 1) + "*SECTION_SOLID\n" + f10(1, 1) + kw + "".join(cards)
+            + curve + "*ELEMENT_SOLID\n" + f"{1:8d}{1:8d}" + "".join(f"{n:8d}" for n in range(1, 9)) + "\n*END\n")
 
 
 def mat_cards(text):
@@ -82,6 +95,25 @@ def main():
         if len(cards) >= 4:
             check(f"{name}: 카드 3 = EPS1~8", floats(cards[2]) == EPS, cards[2])
             check(f"{name}: 카드 4 = ES1~8", floats(cards[3]) == ES, cards[3])
+    # 선택 카드 생략 — 빈 카드(기본값)로 채워 읽고, 카드 1·2 값은 그대로
+    for title, ncards in ((False, 2), (True, 1), (False, 1)):
+        name = ("제목 있음" if title else "제목 없음") + f" · 카드 {ncards}장만"
+        d = base / (("st" if title else "sp") + str(ncards))
+        d.mkdir()
+        (d / "model.k").write_text(deck_short(title, ncards))
+        (d / "opt.txt").write_text(OPT)
+        r = subprocess.run(KMM_CMD + ["opt.txt"], cwd=d, capture_output=True, text=True, timeout=600, env=ENV)
+        out = d / "model_trans.k"
+        check(f"{name}: rc 0·출력", r.returncode == 0 and out.exists(), (r.stdout + r.stderr)[-500:])
+        if not out.exists():
+            continue
+        cards = mat_cards(out.read_text(errors="replace"))
+        ok1 = len(cards) >= 1 and abs(floats(cards[0])[4] - 280.0) < 1e-9
+        check(f"{name}: 카드 1 SIGY 280 그대로", ok1, str(cards))
+        lcss = int(float(cards[1][20:30] or 0)) if len(cards) >= 2 and cards[1][20:30].strip() else 0
+        check(f"{name}: 카드 2 LCSS = {7 if ncards >= 2 else 0}", lcss == (7 if ncards >= 2 else 0), str(cards))
+        rest = [v for c in cards[2:4] for v in (floats(c) if c.strip() else [])]
+        check(f"{name}: 카드 3·4 는 기본값(0 또는 빈 칸)", all(v == 0.0 for v in rest), str(cards))
     print()
     if FAILS:
         print(f"FAILED {len(FAILS)}")
