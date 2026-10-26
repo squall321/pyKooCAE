@@ -303,7 +303,7 @@ class KooLoadNodalPoint(KooLoad):
             keyword += format(self.node + startID, ">10")
             keyword += "         1"
             keyword += format(self.lcid, ">10")
-            keyword += format(self.fx, ">10.3f")
+            keyword += _real10(self.fx)
             keyword += format(self.cid, ">10")
             if self.m1 != 0 or self.m2 != 0 or self.m3 != 0:
                 keyword += format(self.m1, ">10")
@@ -314,7 +314,7 @@ class KooLoadNodalPoint(KooLoad):
             keyword += format(self.node + startID, ">10")
             keyword += "         2"
             keyword += format(self.lcid, ">10")
-            keyword += format(self.fy, ">10.3f")
+            keyword += _real10(self.fy)
             keyword += format(self.cid, ">10")
             if self.m1 != 0 or self.m2 != 0 or self.m3 != 0:
                 keyword += format(self.m1, ">10")
@@ -325,7 +325,7 @@ class KooLoadNodalPoint(KooLoad):
             keyword += format(self.node + startID, ">10")
             keyword += "         3"
             keyword += format(self.lcid, ">10")
-            keyword += format(self.fz, ">10.3f")
+            keyword += _real10(self.fz)
             keyword += format(self.cid, ">10")
             if self.m1 != 0 or self.m2 != 0 or self.m3 != 0:
                 keyword += format(self.m1, ">10")
@@ -343,7 +343,7 @@ class KooLoadNodalPoint(KooLoad):
             stream.write(format(self.node + startID, ">10"))
             stream.write("         1")
             stream.write(format(self.lcid, ">10"))
-            stream.write(format(self.fx, ">10.3f"))
+            stream.write(_real10(self.fx))
             stream.write(format(self.cid, ">10"))
             if self.m1 != 0 or self.m2 != 0 or self.m3 != 0:
                 stream.write(format(self.m1, ">10"))
@@ -354,7 +354,7 @@ class KooLoadNodalPoint(KooLoad):
             stream.write(format(self.node + startID, ">10"))
             stream.write("         2")
             stream.write(format(self.lcid, ">10"))
-            stream.write(format(self.fy, ">10.3f"))
+            stream.write(_real10(self.fy))
             stream.write(format(self.cid, ">10"))
             if self.m1 != 0 or self.m2 != 0 or self.m3 != 0:
                 stream.write(format(self.m1, ">10"))
@@ -365,7 +365,7 @@ class KooLoadNodalPoint(KooLoad):
             stream.write(format(self.node + startID, ">10"))
             stream.write("         3")
             stream.write(format(self.lcid, ">10"))
-            stream.write(format(self.fz, ">10.3f"))
+            stream.write(_real10(self.fz))
             stream.write(format(self.cid, ">10"))
             if self.m1 != 0 or self.m2 != 0 or self.m3 != 0:
                 stream.write(format(self.m1, ">10"))
