@@ -12,7 +12,7 @@
 - [x] 곁에서 찾아 고친 기존 결함 — 320b250 제목 없는 MAT_024 EPS·ES 뒤바뀜 출력, 0c6aecf MAT_003 _TITLE 항상 죽음·카드 2 생략 죽음
 - [x] 시험 31종 — encoding_guard 가 새 subprocess 3곳의 encoding 누락을 잡음 → 302b2d4, 다시 전부 통과
 - [x] MAT_003 _TITLE '모든 판에서 죽음' — 09-29 가드 이전 판으로도 확인(조용한 오출력 없음), 서버 덱 13,852 중 해당 6(예제 사본·내 시험)
-- [ ] 컴파일본 e2e 하네스(Test_E2E_v125/kcr_sphere) — v124 로 먼저 실패 확인 → v125 로 통과
+- [x] 컴파일본 e2e — v124 로 먼저 실패 확인(1/16G/02:00·0건 rc 0) → v125 ALL PASS(4 노드 모양, yield_map 상대 경로)·NFS==SIF 소스 트리·10절점/파일끝 8·KMM_BIN 시험 10종 152 검사·KAM AIRMESH
 - [x] 회귀 L — MinimumModel md5 그대로·말뭉치 L 703건 모두 같음(658965c 대비)
 - [x] 적대 리뷰 L — 확정 6(L-5 는 bc16e34 로 이미), 가능성 8, 범위 밖 5 → 수정 묶음 M
 - [x] M Runner(ae3818d) — R1 노드별 메모리·R2 CPU 상한+W 맞춤·R3 무제한 명시값·R4 ncpu 읽기·R5 --help 옵션 줄·R6 SIF 판 엇갈림 경고·Loaded 줄 없음·yield_map 절대 경로
@@ -30,6 +30,7 @@
 - [x] P Runner(672ee52)·KMM(ba648d2) — 노드 고르기 재작성(무작위 2만 입력 중 못 받는 요청 0), DimensionalTolerance 예전 바이트, LOAD_BODY_VECTOR
 - [x] 시험 35종(묶음 P) 통과 · 말뭉치 O 736건: 같음 712(예전 사례 전부), 다름 24 = 전부 의도(탐침·시험 덱) · 성질 시험(cd8b1a2)
 - [x] 리뷰 P — 행렬 266,112 입력: 못 받는 요청 0·회귀 0, 확정은 거짓 🔴 알림 1 → Q1(d8a2688), 범위 밖 LOAD_NODE_POINT SF → Q2(eec9e5b)
-- [ ] 시험 전부(묶음 Q) → 빌드
-- [ ] 빌드 KMM·KCR → SIF v125 → tar → Drive·메일, 헤드 /opt
+- [x] 시험 35종(묶음 Q) 통과
+- [x] 빌드 v125(145b79a, 11:40~13:12, BUILD_RC 0, 최저 가용 45.2 GB, 2.35 컨테이너) — 세 모듈 GLIBC ≤ 2.35, NFS·SIF 소스 트리 배포
+- [ ] SIF v125(굽는 중, kooremapper-fd 에 알림) → SIF e2e → tar·Drive·메일 → push, 헤드 /opt(사용자 승인 필요)
 - [ ] a9 — ② 0건 비 0 종료 ③ --parallel-runs(선행 캐시 채우기) ④ --yield-map → Post v42
