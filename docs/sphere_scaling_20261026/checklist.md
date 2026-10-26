@@ -32,5 +32,7 @@
 - [x] 리뷰 P — 행렬 266,112 입력: 못 받는 요청 0·회귀 0, 확정은 거짓 🔴 알림 1 → Q1(d8a2688), 범위 밖 LOAD_NODE_POINT SF → Q2(eec9e5b)
 - [x] 시험 35종(묶음 Q) 통과
 - [x] 빌드 v125(145b79a, 11:40~13:12, BUILD_RC 0, 최저 가용 45.2 GB, 2.35 컨테이너) — 세 모듈 GLIBC ≤ 2.35, NFS·SIF 소스 트리 배포
-- [ ] SIF v125(굽는 중, kooremapper-fd 에 알림) → SIF e2e → tar·Drive·메일 → push, 헤드 /opt(사용자 승인 필요)
+- [x] SIF v125(sha256 2e1dc4fd, 13:19, KooRemapper 5ff6f6e1 기대=실제·그림 op 3/3) → compute-node-images(바이트 같음) → tar v125(1,345,944,774 B) → Drive·메일, kooremapper-fd 앞뒤 알림
+- [x] SIF e2e — 10절점·파일끝 8 ALL PASS, SIF 안 KMM 시험 10종 152 검사 통과
+- [ ] 헤드 /opt/apptainers 를 v125 로(사용자 승인 필요) · 노드 배포(VM 꺼짐 — 보류)
 - [ ] a9 — ② 0건 비 0 종료 ③ --parallel-runs(선행 캐시 채우기) ④ --yield-map → Post v42
