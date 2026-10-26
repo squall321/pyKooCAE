@@ -34,5 +34,7 @@
 - [x] 빌드 v125(145b79a, 11:40~13:12, BUILD_RC 0, 최저 가용 45.2 GB, 2.35 컨테이너) — 세 모듈 GLIBC ≤ 2.35, NFS·SIF 소스 트리 배포
 - [x] SIF v125(sha256 2e1dc4fd, 13:19, KooRemapper 5ff6f6e1 기대=실제·그림 op 3/3) → compute-node-images(바이트 같음) → tar v125(1,345,944,774 B) → Drive·메일, kooremapper-fd 앞뒤 알림
 - [x] SIF e2e — 10절점·파일끝 8 ALL PASS, SIF 안 KMM 시험 10종 152 검사 통과
-- [ ] 헤드 /opt/apptainers 를 v125 로(사용자 승인 필요) · 노드 배포(VM 꺼짐 — 보류)
+- [x] 헤드 /opt/apptainers 를 v125 로(사용자 승인, v124 는 하드 링크 SmartTwinPreprocessor_backup_20261026_193039.sif) — apptainer exec 로 10절점·파일끝 8·KMM 시험 2종 통과
+- [ ] 노드 배포(VM 꺼짐 — 보류): 켜면 compute-node-images 의 v125 를 deploy_apptainers.sh 로
+- [ ] 다음 판(사용자 결정 10-26): 내보내기에서 요소가 빠지면 🔴 + 비 0 종료, part_yield MAT_017 은 min(SIGY, FS)
 - [ ] a9 — ② 0건 비 0 종료 ③ --parallel-runs(선행 캐시 채우기) ④ --yield-map → Post v42
