@@ -638,7 +638,7 @@ def sphere_tool_flags(sif_path=None, timeout=180):
     import subprocess
     try:
         r = subprocess.run(["apptainer", "exec", sif_path or DEFAULT_SIF_PATH, "python3", "-m", "koo_sphere_report", "--help"],
-                           capture_output=True, text=True, timeout=timeout)
+                           capture_output=True, text=True, timeout=timeout, encoding='utf-8', errors='replace')
     except Exception:  # noqa: BLE001 — apptainer 없음·시간 초과 등은 '모름'
         return set()
     text = (r.stdout or "") + (r.stderr or "")
@@ -691,13 +691,15 @@ def partition_limits(partitions, timeout=30):
     try:
         times = []
         for p in names:
-            r = subprocess.run(["scontrol", "show", "partition", p], capture_output=True, text=True, timeout=timeout)
+            r = subprocess.run(["scontrol", "show", "partition", p], capture_output=True, text=True, timeout=timeout,
+                               encoding='utf-8', errors='replace')
             mt = re.search(r"MaxTime=(\S+)", r.stdout or "")
             if mt:
                 times.append(_slurm_minutes(mt.group(1)))
         if times:
             out["max_minutes"] = None if any(t is None for t in times) else max(times)
-        r = subprocess.run(["sinfo", "-h", "-p", ",".join(names), "-o", "%m"], capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(["sinfo", "-h", "-p", ",".join(names), "-o", "%m"], capture_output=True, text=True, timeout=timeout,
+                           encoding='utf-8', errors='replace')
         mems = [float(x.rstrip("+")) for x in (r.stdout or "").split() if re.fullmatch(r"\d+(\.\d+)?\+?", x)]
         if mems:
             out["max_mem_gb"] = max(mems) / 1024.0
