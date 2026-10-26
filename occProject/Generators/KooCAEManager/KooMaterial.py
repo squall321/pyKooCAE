@@ -1798,7 +1798,7 @@ class KooMaterialManager():
                 else:
                     curLine = self.parse_whole(curLine, [10,10,10,10,10,10,10,10])
                 for j in range(len(curLine)):
-                    if i % 2 == 0:
+                    if (i - imin) % 2 == 0:   # imin 은 카드 3(EPS) 자리 — 제목 유무로 3·4 라, i 의 홀짝만 보면 제목 없는 덱에서 EPS·ES 가 뒤바뀌어 출력에 응력-변형률 곡선이 거꾸로 써졌다
                         eps.append(KooDynaFloat(curLine[j]))
                     else:
                         es.append(KooDynaFloat(curLine[j]))
