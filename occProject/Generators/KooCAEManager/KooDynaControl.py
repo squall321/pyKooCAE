@@ -3,9 +3,11 @@ from __future__ import annotations
 if __name__ == "__main__":
     from KooDynaKeyword import *
     from KooOperator import KooDynaFloat, KooDynaInt, KooDynaString
+    from KooDefine import _real10
 else:
     from KooCAEManager.KooDynaKeyword import *
     from KooCAEManager.KooOperator import KooDynaFloat, KooDynaInt, KooDynaString
+    from KooCAEManager.KooDefine import _real10   # DRFCTR 0.9995 를 >10.3f 로 쓰면 1.000(감쇠 없음), DRTOL 1E-4 → 0.000(기본값)
 
 class KooControlMppIONodump:
     def __init__(self):
@@ -637,12 +639,12 @@ class KooControlDynamicRelaxation:
         keyword = "*CONTROL_DYNAMIC_RELAXATION\n"
         keyword += "$$   NRCYCK     DRTOL    DRFCRT    DRTERM   TSSFDR   IRELAL    EDTTL    IDRFLG\n"
         keyword += format(self.NRCYCK, ">10")
-        keyword += format(self.DRTOL, ">10.3f")
-        keyword += format(self.DRFCRT, ">10.3f")
+        keyword += _real10(self.DRTOL)
+        keyword += _real10(self.DRFCRT)
         keyword += format(self.DRTERM, ">10.3e")
-        keyword += format(self.TSSFDR, ">10.3f")
+        keyword += _real10(self.TSSFDR)
         keyword += format(self.IRELAL, ">10")
-        keyword += format(self.EDTTL, ">10.3f")
+        keyword += _real10(self.EDTTL)
         keyword += format(self.IDRFLG, ">10")
         keyword += "\n"
         return keyword
@@ -651,12 +653,12 @@ class KooControlDynamicRelaxation:
         stream.write("*CONTROL_DYNAMIC_RELAXATION\n")
         stream.write("$$   NRCYCK     DRTOL    DRFCRT    DRTERM   TSSFDR   IRELAL    EDTTL    IDRFLG\n")
         stream.write(format(self.NRCYCK, ">10"))
-        stream.write(format(self.DRTOL, ">10.3f"))
-        stream.write(format(self.DRFCRT, ">10.3f"))
+        stream.write(_real10(self.DRTOL))
+        stream.write(_real10(self.DRFCRT))
         stream.write(format(self.DRTERM, ">10.3e"))
-        stream.write(format(self.TSSFDR, ">10.3f"))
+        stream.write(_real10(self.TSSFDR))
         stream.write(format(self.IRELAL, ">10"))
-        stream.write(format(self.EDTTL, ">10.3f"))
+        stream.write(_real10(self.EDTTL))
         stream.write(format(self.IDRFLG, ">10"))
         stream.write("\n")
 

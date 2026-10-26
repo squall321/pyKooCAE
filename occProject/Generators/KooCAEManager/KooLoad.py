@@ -3,6 +3,7 @@ import math
 import numpy as np
 
 from KooCAEManager.KooOperator import KooDynaFloat, KooDynaInt, KooDynaString
+from KooCAEManager.KooDefine import _real10   # SF 1.0E-4 를 >10.3f 로 쓰면 0.000 → LS-DYNA 기본값 1(하중 10⁴ 배)
     
 class KooLoadBody:
     def __init__(self, lcid, sf =1.0, lciddr = "", xc = 0.0, yc = 0.0, zc = 0.0, cid = 0):
@@ -17,28 +18,28 @@ class KooLoadBody:
     def WritetoDynaKeyword(self):
         keyword = ""
         keyword += format(self.lcid, ">10")
-        keyword += format(self.sf, ">10.3f")
+        keyword += _real10(self.sf)
         if self.lciddr == "":
             keyword += "          "
         else:
             keyword += format(self.lciddr, ">10")
-        keyword += format(self.xc, ">10.3f")
-        keyword += format(self.yc, ">10.3f")
-        keyword += format(self.zc, ">10.3f")
+        keyword += _real10(self.xc)
+        keyword += _real10(self.yc)
+        keyword += _real10(self.zc)
         keyword += format(self.cid, ">10")
         keyword += "\n"
         return keyword
     
     def WriteStreamDynaKeyword(self, stream):
         stream.write(format(self.lcid, ">10"))
-        stream.write(format(self.sf, ">10.3f"))
+        stream.write(_real10(self.sf))
         if self.lciddr == "":
             stream.write("          ")
         else:
             stream.write(format(self.lciddr, ">10"))
-        stream.write(format(self.xc, ">10.3f"))
-        stream.write(format(self.yc, ">10.3f"))
-        stream.write(format(self.zc, ">10.3f"))
+        stream.write(_real10(self.xc))
+        stream.write(_real10(self.yc))
+        stream.write(_real10(self.zc))
         stream.write(format(self.cid, ">10"))
         stream.write("\n")
             
