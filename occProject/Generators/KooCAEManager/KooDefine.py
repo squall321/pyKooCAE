@@ -1,6 +1,17 @@
 from __future__ import annotations
 from KooCAEManager.KooOperator import *
 
+def _real10(v):
+    """10칸 실수 칸 — >10.3f 가 값을 그대로 담으면 예전 출력 그대로, 아니면 10칸 안에서 값에 가장 가까운(같으면 짧은) 표기.
+    🔴 *DEFINE_CURVE 머리(SFA·SFO·OFFA·OFFO)를 >10.3f 로만 써 SFO 1.0E-6 → 0.000 → LS-DYNA 가 0 을 기본값 1.0 으로 읽어
+       커브가 10⁶ 배였다(1월부터). 0.0012 → 0.001, 1.0E6 → 11칸이라 다음 칸을 밀었다."""
+    s = format(v, ">10.3f")
+    if len(s) <= 10 and float(s) == v:
+        return s
+    cands = [format(v, f".{d}f") for d in range(10)] + [format(v, f".{p}e") for p in range(7)] + [repr(float(v))]
+    cands = [c for c in cands if len(c) <= 10]
+    return format(min(cands, key=lambda c: (abs(float(c) - v), len(c))), ">10")
+
 def _curve_points(rows, lcid):
     """*DEFINE_CURVE 점 카드 → (A1 목록, O1 목록). 빈 칸은 기본값 0.0 이다(R16 점 카드 A1·O1 Default 0.0, Appendix V) —
     부록 V 대로면 빈 줄은 점 (0,0) 이다(실행 확인은 라이선스가 없어 못 함). 예전엔 float('') 로 죽었다(리뷰 G). 빈 줄은 개수를 알린다."""
@@ -164,10 +175,10 @@ class KooDefineCurve(KooDefine):
             keyword += "*DEFINE_CURVE\n"
         idStr = format(self.lcid + startID, ">10")
         sidrStr = format(self.sidr, ">10")
-        sfaStr = format(self.sfa, ">10.3f")
-        sfoStr = format(self.sfo, ">10.3f")
-        offaStr = format(self.offa, ">10.3f")
-        offoStr = format(self.offo, ">10.3f")
+        sfaStr = _real10(self.sfa)
+        sfoStr = _real10(self.sfo)
+        offaStr = _real10(self.offa)
+        offoStr = _real10(self.offo)
         dattypStr = format(self.dattyp, ">10")
         lcintStr = format(self.lcint, ">10")
         
@@ -188,10 +199,10 @@ class KooDefineCurve(KooDefine):
             stream.write("*DEFINE_CURVE\n")
         idStr = format(self.lcid + startID, ">10")
         sidrStr = format(self.sidr, ">10")
-        sfaStr = format(self.sfa, ">10.3f")
-        sfoStr = format(self.sfo, ">10.3f")
-        offaStr = format(self.offa, ">10.3f")
-        offoStr = format(self.offo, ">10.3f")
+        sfaStr = _real10(self.sfa)
+        sfoStr = _real10(self.sfo)
+        offaStr = _real10(self.offa)
+        offoStr = _real10(self.offo)
         dattypStr = format(self.dattyp, ">10")
         lcintStr = format(self.lcint, ">10")
         
