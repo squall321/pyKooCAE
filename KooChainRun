@@ -1390,7 +1390,7 @@ def _maybe_submit_sphere_after(runner_config, config_path):
 
     try:
         from Runner.PostprocessShellGenerator import (
-            build_sphere_sbatch, build_impact_sbatch, report_mode_from_runner_config,
+            build_sphere_sbatch, build_impact_sbatch, report_mode_from_runner_config, count_runs,
         )
     except Exception as e:
         print(f"[Postprocess] Warning: PostprocessShellGenerator import 실패: {e}")
@@ -1439,12 +1439,15 @@ def _maybe_submit_sphere_after(runner_config, config_path):
         print(f"\n[{report_label} Postprocess] Warning: jobs.json 읽기 실패 ({e}) — dependency 없이 제출")
 
     env_for_report = dict(runner_config.get("environment", {}))
+    # sphere 는 런 수로 자원을 잰다(배열 잡이라 dep_ids 수는 런 수가 아니다 — runner_config 의 step 총수)
+    sizing = {"n_runs": count_runs(runner_config)} if sbatch_builder is build_sphere_sbatch else {}
     sbatch_text = sbatch_builder(
         output_dir=output_dir,
         sif_path=pp.get("sif_path"),
         options=pp,
         environment=env_for_report,
         dependency_ids=dep_ids if dep_ids else None,
+        **sizing,
     )
     sbatch_path = os.path.join(output_dir, sbatch_name)
     os.makedirs(output_dir, exist_ok=True)

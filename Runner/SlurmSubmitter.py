@@ -115,7 +115,7 @@ class SlurmSubmitter:
 
         try:
             from Runner.PostprocessShellGenerator import (
-                build_sphere_sbatch, build_impact_sbatch, report_mode_from_runner_config,
+                build_sphere_sbatch, build_impact_sbatch, report_mode_from_runner_config, count_runs,
             )
         except Exception as e:
             print(f"  Warning: PostprocessShellGenerator import 실패 (skip): {e}")
@@ -147,12 +147,15 @@ class SlurmSubmitter:
 
         env_for_report = dict(self.environment)
         env_for_report.setdefault("partition", self.partition)
+        # sphere 는 런 수로 자원을 잰다(runner_config 의 step 총수 — 잡 ID 수가 아니다)
+        sizing = {"n_runs": count_runs(self.runner_config)} if sbatch_builder is build_sphere_sbatch else {}
         sbatch_text = sbatch_builder(
             output_dir=output_dir,
             sif_path=pp.get("sif_path"),
             options=pp,
             environment=env_for_report,
             dependency_ids=dep_ids,
+            **sizing,
         )
         sbatch_path = os.path.join(output_dir, sbatch_name)
         with open(sbatch_path, 'w', encoding='utf-8') as f:
