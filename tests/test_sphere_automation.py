@@ -161,6 +161,13 @@ def test_sizing():
     check("새 도구 + 명시 300G(어느 노드도 못 받음) → 16워커·128G 로 깎고 🔴", (c, m) == ("16", "128G") and "🔴" in out, str((c, m, t)))
     (c, m, t), out = build(979, {"--parallel-runs"}, limits={"nodes": [(64, 6.0), (64, 0.0)]})
     check("--mem=0 이 메모리 모자란 아는 노드(6G)에도 앉을 수 있으면 🔴", m == "0" and "🔴" in out and "6G" in out, f"{(c, m, t)} {out[-200:]}")
+    # 리뷰 P — 그 CPU 수를 못 받는 아는 노드는 '앉을 수 있다' 에 넣지 않는다(거짓 🔴), 명시 0 도 모자란 아는 노드면 🔴
+    (c, m, t), out = build(979, opts={"sphere_ncpu": 8}, limits={"nodes": [(2, 4.0), (64, 0.0)]})
+    check("옛 도구 ncpu 8 + 2c/4G·미설정 64c → --mem=0, 2코어 노드는 못 앉으니 🔴 아님", (c, m) == ("8", "0") and "🔴" not in out,
+          f"{(c, m, t)} {out[-200:]}")
+    (c, m, t), out = build(979, {"--parallel-runs"}, opts={"sphere_memory": "0"}, limits={"nodes": [(16, 31.25), (16, 0.0)]})
+    check("새 도구 명시 0 + 16c/31G·미설정 16c → 16워커·--mem=0, 31G 노드에 앉으면 38G 에 모자라니 🔴", m == "0" and "🔴" in out
+          and "31G" in out, f"{(c, m, t)} {out[-200:]}")
     # 성질 — 무작위 노드 모양·명시값에서 요청은 늘 한 노드가 받는다(코어 ≤ 노드 코어, --mem=0 이거나 메모리 ≤ RealMemory,
     # 미설정 노드는 --mem=0 만). 리뷰 L~O 가 이 규칙을 깬 꼴을 차례로 찾았다 — 고정 시드로 굳힌다.
     import random
@@ -194,7 +201,8 @@ def test_sizing():
     check("명시 0(무제한) + 파티션 2일 → 2-00:00:00(산출값은 한도 안이라 🔴 아님)", t == "2-00:00:00" and "🔴" not in out,
           f"{t} {out[-300:]}")
     (c, m, t), out = build(979, opts={"sphere_memory": "0"}, limits={"max_mem_gb": 62.5})
-    check("명시 메모리 0(노드 전부) — 그대로, 상한 검사 안 함", m == "0" and "🔴" not in out, f"{m} {out[-300:]}")
+    check("명시 메모리 0(노드 전부) — 그대로 두되 62.5G 노드가 산출값 130G 에 모자라면 🔴(리뷰 P)", m == "0" and "🔴" in out,
+          f"{m} {out[-300:]}")
     # sphere_ncpu 가 글이어도 submit 이 죽지 않는다(LS-DYNA 잡을 다 낸 뒤라 traceback 이면 sphere 잡이 빠진다)
     (c, m, t), _ = build(979, {"--parallel-runs"}, opts={"sphere_ncpu": "8.0"})
     check("sphere_ncpu '8.0' → 8워커(22G·09:21:00)", (c, m, t) == ("8", "22G", "09:21:00"), str((c, m, t)))

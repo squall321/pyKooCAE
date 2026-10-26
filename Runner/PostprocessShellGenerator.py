@@ -877,13 +877,18 @@ def _sphere_auto_resources(n_runs, sif_path, partition, explicit_ncpu, explicit_
         if node and node[0] and cpus > node[0]:
             notes.append(f"CPU {cpus} 가 노드 코어 {node[0]} 를 넘어 {node[0]} 로 줄인다")
             cpus = node[0]
-    if whole and em != 0:
-        lack = [x for x in known if x[1] and need_gb and x[1] < need_gb]
-        notes.append(("🔴 " if lack else "") + f"메모리 {memory} 를 받는 노드가 RealMemory 미설정 노드뿐이라 --mem=0(노드 메모리 전부)으로"
-                     f" 낸다 — 그 노드의 실제 메모리는 모른다"
-                     + (f". --mem=0 은 메모리를 아는 노드({', '.join(_gb(x[1]) for x in lack)})에도 앉을 수 있고 거기선 모자란다"
-                        if lack else ""))
-        memory = "0"
+    if whole:
+        # --mem=0 은 잡을 미설정 노드에 묶지 않는다 — 이 CPU 수를 받는 아는 노드 가운데 메모리가 모자란 노드가 있으면 🔴
+        want = mem_gb if em == 0 else need_gb       # 명시 0 이면 산출값과 견준다
+        lack = [x for x in known if x[1] and want and x[1] < want and (not x[0] or x[0] >= cpus)]
+        tail = (f" --mem=0 은 메모리를 아는 노드({', '.join(_gb(x[1]) for x in lack)})에도 앉을 수 있고 거기선 "
+                f"{n_runs}런 산출값 {mem_gb}G 에 모자란다" if lack else "")
+        if em != 0:
+            notes.append(("🔴 " if lack else "") + f"메모리 {memory} 를 받는 노드가 RealMemory 미설정 노드뿐이라 --mem=0(노드 메모리 전부)으로"
+                         f" 낸다 — 그 노드의 실제 메모리는 모른다." + tail)
+            memory = "0"
+        elif lack:
+            notes.append("🔴 명시 메모리 0(노드 메모리 전부)이다 —" + tail)
     if node and node[1] and not whole and (_mem_gb(memory) or 0.0) > node[1]:
         cap = int(node[1])
         notes.append(f"🔴 메모리 {memory} 가 노드 메모리 {cap}G 를 넘어 {cap}G 로 줄인다 — OOM 이 날 수 있다")
