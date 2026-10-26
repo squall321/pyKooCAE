@@ -21,6 +21,9 @@
 - [x] 시험 33종 전부 통과(새 시험 3종 포함)·MinimumModel md5 그대로(ec4c907d·53d24150)
 - [x] a9 지적(metavar 없으면 'PARALLEL_RUNS')은 실측상 잡힘 — argparse 실출력 시험으로 굳힘(1633041)
 - [x] 말뭉치 M — 715건: 같음 705(예전 말뭉치 703 전부), 다름 10 = 전부 의도(리뷰 L 탐침·시험 덱 — 커브 머리 값 보존, MAT_024 EPS·ES 순서, 옛 판 rc 1 → rc 0: MAT_003 _TITLE·MAT_017 카드 2·MAT_024 카드 생략)
-- [ ] 집중 리뷰 M(진행 중)
+- [x] 집중 리뷰 M — 확정 3·가능성 3·범위 밖 6
+- [x] N Runner(b215be9) — 한 노드에 맞춤·--help 정의 줄 토큰·yield_map scenario 폴더·미설정 메모리
+- [x] N KMM(24135b3·4a0e219) — _real10 'E-5' 꼴·BPM SF·커브 점 안정 정렬, 새 검사 모두 수정 전 판에서 실패 확인
+- [ ] 시험 전부·말뭉치 N(리뷰 M 탐침 포함)·집중 리뷰 N(진행 중)
 - [ ] 빌드 KMM·KCR → SIF v125 → tar → Drive·메일, 헤드 /opt
 - [ ] a9 — ② 0건 비 0 종료 ③ --parallel-runs(선행 캐시 채우기) ④ --yield-map → Post v42

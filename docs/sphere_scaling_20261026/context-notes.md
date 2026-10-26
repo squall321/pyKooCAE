@@ -52,3 +52,25 @@
   - 옛 판 rc 1 → rc 0: MAT_003 _TITLE·MAT_017 카드 2 생략·MAT_024 카드 생략·P4 13파트 덱.
   - 패딩한 MAT_024 덤프는 빈 선택 카드를 쓰고 알림 한 줄을 남긴다.
 - a9 지적(metavar 없으면 argparse 가 'PARALLEL_RUNS' 로 찍는다)은 실측상 탐지된다 — 규칙이 metavar 를 보지 않는다. 시험으로 굳혔다(1633041).
+
+## 리뷰 M(2026-10-26) → 수정 묶음 N
+확정 3·가능성 3·범위 밖 6. 반영:
+- N1(b215be9) 요청은 한 노드에 들어가야 한다 — ae3818d 는 코어 최댓값과 메모리 최댓값을 노드마다 따로 잡아 섞인 파티션(64c/16G + 4c/256G)에서 16코어·38G 처럼 어느 노드에도 안 맞는 요청을 냈다. 노드 모양 (코어, 메모리) 목록을 쓴다.
+  - 새 도구: 노드마다 W ≤ 코어, 6+2W ≤ 메모리인 가장 큰 W(위 예 5워커·16G).
+  - 옛 도구: 그대로 들어가는 노드가 없을 때만 메모리가 가장 큰 노드에 맞춘다(ncpu 32·100런 → 4코어·42G).
+  - 이 서버 파티션은 최대 코어 노드 = 최대 메모리 노드라 해당 없었다.
+- N2(b215be9) --help 탐지 규칙을 바꿨다 — 줄 머리 공백 정확히 두 칸 뒤 '-' 인 정의 줄, 옵션 부분(첫 두 칸 공백 앞)을 ', ' 로 갈라 첫 낱말 비교. 셸은 awk.
+  - Python 의 ^\s+ 가 re.M 에서 줄바꿈을 먹어 epilog 0열 글을 옵션으로 보던 것(셸과 다른 답)을 고쳤다.
+  - choices 안 쉼표·nargs=2·nargs='*' 를 놓치던 것, 접힌 설명 글 머리를 옵션으로 보던 것도 고쳤다.
+- N5(b215be9) yield_map 상대 경로는 template·manual file 처럼 scenario.json 폴더 기준이다(CumulativeDesigner). 하네스가 prepare 를 다른 폴더에서 돌려 확인한다.
+- N6(b215be9) 노드 메모리 1GB 밑(RealMemory 미설정 1MB)은 모름으로 — int() 가 0 이 되어 --mem=0G(노드 전부)를 내던 것.
+- N3(24135b3) _real10 에 'E-5' 꼴(지수의 0·'+' 없음 — LS-PrePost 가 쓰는 꼴) 후보를 더했다. '-1.2345E-5'·'1.23457E12' 를 반올림하던 것.
+- N7(24135b3) *BOUNDARY_PRESCRIBED_MOTION SF 도 _real10 — SF 1.0E-4 → 0.000 → 기본값 1.0(운동 10⁴ 배), 2.5E6 → 11칸이라 뒤 칸이 밀렸다. 62ba543 과 같은 계열이다.
+- N4(4a0e219) part_yield 커브 점은 x 로만 안정 정렬한다 — 커브 끝 빈 줄이 (0,0) 점으로 읽혀 εp=0 값이 0 이 되던 것.
+
+알리기만(이번에 고치지 않음):
+- *BOUNDARY_PRESCRIBED_MOTION_NODE 가 든 덱은 TypeError 로 죽는다(KooBoundaryNode.py:986 이 인자 없이 부름) — 서버 BPM 덱 475 중 0.
+- *MAT_RIGID 카드 2 빈 줄("must be included but may be left blank")은 ValueError 로 죽는다 — 서버 1,235 블록 중 0.
+- KAM PackageGenerator 가 CreateDefineCurve 의 SIDR 자리에 이름 글을 넘긴다(도달 여부 미확인).
+- KooRemapper merge 예제의 10칸 *NODE 는 KMM 이 절점을 알림 없이 버리고 rc 0 이다(8/16칸이 아니라 LS-DYNA 고정폭에도 어긋남). 68b954b 는 그 예제를 막던 MAT_024 가드를 풀었을 뿐 원인은 NODE 읽기다.
+- 남은 >10.3f 출력(KooDynaControl·Damping·Load·Segment 등, 대개 KMM 이 정한 값)은 별도 감사 과제다.
