@@ -26,6 +26,8 @@
 - [x] N KMM(24135b3·4a0e219) — _real10 'E-5' 꼴·BPM SF·커브 점 안정 정렬, 새 검사 모두 수정 전 판에서 실패 확인
 - [x] 시험 34종 통과 · 리뷰 N — 확정 3·가능성 4·범위 밖 2 (말뭉치 N 은 묶음 O 편집과 겹쳐 참고만: 예전 사례 전부 같음)
 - [x] O Runner(abdcfd2)·KMM(1549a2d·2128309) — 미설정 메모리 --mem=0·명시 메모리 노드 고르기·1워커·CRLF·같은 x 첫 점·LOAD_BODY/DR _real10, 새 검사 모두 부모 판에서 실패 확인
-- [ ] 시험 전부·말뭉치 O(리뷰 N 탐침 포함)·집중 리뷰 O(진행 중)
+- [x] 시험 35종 통과(묶음 O) · 리뷰 O — 확정 3(--mem=0 CPU 상한·미설정 노드 끌림·DimensionalTolerance DR 동작 변경)
+- [x] P Runner(672ee52)·KMM(ba648d2) — 노드 고르기 재작성(무작위 2만 입력 중 못 받는 요청 0), DimensionalTolerance 예전 바이트, LOAD_BODY_VECTOR
+- [ ] 시험 전부(묶음 P)·말뭉치 O·짧은 리뷰 P(진행 중)
 - [ ] 빌드 KMM·KCR → SIF v125 → tar → Drive·메일, 헤드 /opt
 - [ ] a9 — ② 0건 비 0 종료 ③ --parallel-runs(선행 캐시 채우기) ④ --yield-map → Post v42
