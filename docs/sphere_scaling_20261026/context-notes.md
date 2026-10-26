@@ -74,3 +74,22 @@
 - KAM PackageGenerator 가 CreateDefineCurve 의 SIDR 자리에 이름 글을 넘긴다(도달 여부 미확인).
 - KooRemapper merge 예제의 10칸 *NODE 는 KMM 이 절점을 알림 없이 버리고 rc 0 이다(8/16칸이 아니라 LS-DYNA 고정폭에도 어긋남). 68b954b 는 그 예제를 막던 MAT_024 가드를 풀었을 뿐 원인은 NODE 읽기다.
 - 남은 >10.3f 출력(KooDynaControl·Damping·Load·Segment 등, 대개 KMM 이 정한 값)은 별도 감사 과제다.
+
+## 리뷰 N(2026-10-26) → 수정 묶음 O
+확정 3·가능성 4·범위 밖(같은 계열, 사용자 덱으로 닿음) 2. 반영:
+- O1(abdcfd2) RealMemory 미설정 노드 — slurm.conf "RealMemory … The default value is 1"(MB).
+  - Slurm 은 설정된 RealMemory 로 노드를 거르므로(node_scheduler.c _build_node_list) 그 노드는 --mem=0 만 받는다.
+  - N6 은 그것을 '메모리 무한' 으로 봐 130G·38G 를 내 제출에서 거절됐다(ae3818d 는 우연히 0G 라 통과). 0.0(--mem=0 만)으로 두고, 아는 노드에 못 들어가면 --mem=0.
+- O3(abdcfd2) 새 도구 노드 고르기에 명시 sphere_memory 를 넣었다.
+- O4(abdcfd2) 워커 하나도 못 들이면 1워커로.
+- O5(abdcfd2) awk has_opt 가 CRLF 를 뗀다.
+- O2(1549a2d) part_yield 같은 x 는 덱 차례 첫 점만(dedupe). 4a0e219 는 보간 갈래에서 마지막 점(빈 줄 (0,0))을 골라 105 → 55·파트 빠짐이었다.
+- O6(2128309) *LOAD_BODY SF·XC·YC·ZC 와 *CONTROL_DYNAMIC_RELAXATION DRTOL·DRFCTR·TSSFDR·EDTTL 도 _real10 으로 쓴다.
+  - SF 1.0E-4 → 0.000 이면 기본값 1 이라 하중 10⁴ 배였다. kg-mm-ms 중력 9.81E-3 → 0.010(+1.9%).
+  - DRFCTR 0.9995 → 1.000 이면 감쇠가 없다. DRTOL 1E-4 → 0.000 이면 기본값 0.001 이다.
+
+알리기만:
+- sphere_partition 이 여럿이면 MaxTime 과 노드 모양을 파티션마다가 아니라 합쳐 본다(ae3818d 부터). short(1일·큰 노드)+long(30일·작은 노드)이면 어느 파티션에도 못 들어가는 요청이 된다.
+- argparse 그룹 설명·RawDescription epilog 가 두 칸 들여 '  --parallel-runs …' 로 시작하면 정의로 오인한다(배포된 도구 도움말에는 없음).
+- BPM DEATH·BIRTH, LOAD_SEGMENT SF·AT 는 >10.3e(유효숫자 4자리)로 쓴다.
+- KooDynaResult.py:190-192 는 CreateBoundaryPrescribedMotionNode 인자 차례가 틀렸다(도달 미확인).
