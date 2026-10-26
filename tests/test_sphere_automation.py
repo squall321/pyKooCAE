@@ -93,34 +93,49 @@ def test_sizing():
         '#!/bin/bash\n[ "$1" = -o ] && shift\n[ "$1" = show ] && [ "$2" = partition ] || exit 0\n'
         'n="PartitionName=normal AllowGroups=ALL Default=YES MaxNodes=UNLIMITED MaxTime=2-00:00:00 State=UP"\n'
         'v="PartitionName=viz AllowGroups=ALL Default=NO MaxNodes=UNLIMITED MaxTime=60-00:00:00 State=UP"\n'
-        'case "$3" in "") echo "$n"; echo "$v";; normal) echo "$n";; viz) echo "$v";; esac\n')
+        'u="PartitionName=nomem AllowGroups=ALL Default=NO MaxNodes=UNLIMITED MaxTime=UNLIMITED State=UP"\n'
+        'case "$3" in "") echo "$n"; echo "$v"; echo "$u";; normal) echo "$n";; viz) echo "$v";; nomem) echo "$u";; esac\n')
     # 실제 sinfo 처럼 — -N 이면 노드마다 '%c %m', 아니면 파티션 요약(노드가 섞이면 %m 은 최솟값 + '+', man sinfo)
     (fb / "sinfo").write_text(
         '#!/bin/bash\nN=0; for a in "$@"; do [ "$a" = -N ] && N=1; done\n'
         'case " $* " in\n'
         '  *viz*) if [ $N = 1 ]; then echo "2 3584"; echo "8 18997"; else echo "3584+"; fi ;;\n'
         '  *normal*) if [ $N = 1 ]; then echo "2 64000"; echo "2 64000"; else echo "64000"; fi ;;\n'
+        '  *nomem*) if [ $N = 1 ]; then echo "4 1"; else echo "1"; fi ;;\n'
         'esac\n')
     for f in ("scontrol", "sinfo"):
         (fb / f).chmod(0o755)
     old_path = os.environ["PATH"]
     os.environ["PATH"] = f"{fb}:{old_path}"
     try:
-        lim_default, lim_viz = P.partition_limits(""), P.partition_limits("viz")
+        lim_default, lim_viz, lim_nomem = P.partition_limits(""), P.partition_limits("viz"), P.partition_limits("nomem")
     finally:
         os.environ["PATH"] = old_path
     check("파티션 없음 → 기본 파티션(normal) 한도 2일·2코어·62.5G",
-          lim_default == {"max_minutes": 2880, "max_cpus": 2, "max_mem_gb": 62.5}, str(lim_default))
+          lim_default == {"max_minutes": 2880, "nodes": [(2, 62.5)], "max_cpus": 2, "max_mem_gb": 62.5}, str(lim_default))
     check("파티션 viz(3584MB·18997MB 노드) → 노드별 최댓값 8코어·18.55G(요약 '3584+' 는 최솟값)",
-          lim_viz == {"max_minutes": 86400, "max_cpus": 8, "max_mem_gb": 18997 / 1024}, str(lim_viz))
+          lim_viz == {"max_minutes": 86400, "nodes": [(2, 3.5), (8, 18997 / 1024)], "max_cpus": 8, "max_mem_gb": 18997 / 1024},
+          str(lim_viz))
+    check("RealMemory 미설정(1MB) 노드 → 메모리 모름(None), 메모리 상한 없음",
+          lim_nomem == {"max_minutes": None, "nodes": [(4, None)], "max_cpus": 4}, str(lim_nomem))
     # 노드가 감당할 수 있게 — CPU 상한, 새 도구는 워커 수를 CPU·메모리에 맞춰 다시 잰다
     (c, m, t), out = build(979, {"--parallel-runs"}, limits={"max_cpus": 2})
     check("새 도구 + 노드 2코어: 워커 2 로 줄여 다시 잼(10G)", (c, m) == ("2", "10G"), str((c, m, t)))
-    check("  그 사실을 알림", "노드 코어 2" in out, out[-300:])
+    check("  그 사실을 알림", "워커 16 → 2" in out and "코어 2" in out, out[-300:])
     (c, m, t), out = build(979, {"--parallel-runs"}, limits={"max_mem_gb": 32.0})
     check("새 도구 + 노드 32G: 워커 13 으로 맞춤(32G·06:32:00)", (c, m, t) == ("13", "32G", "06:32:00"), str((c, m, t)))
     (c, m, t), _ = build(979, limits={"max_cpus": 1})
     check("옛 도구 + 노드 1코어: CPU 1", c == "1", str((c, m, t)))
+    # 섞인 노드 — 요청은 한 노드에 들어가야 한다(코어 최대 노드와 메모리 최대 노드가 다르면 따로 잰 최댓값은 어느 노드에도 안 맞는다)
+    mixed = {"nodes": [(64, 16.0), (4, 256.0)]}
+    (c, m, t), _ = build(979, {"--parallel-runs"}, limits=mixed)
+    check("새 도구 + 노드 64c/16G·4c/256G: 64코어 노드에 맞춘 5워커(16G·13:45:00)", (c, m, t) == ("5", "16G", "13:45:00"), str((c, m, t)))
+    (c, m, t), out = build(100, opts={"sphere_ncpu": 32}, limits=mixed)
+    check("옛 도구 + ncpu 32 + 같은 노드: 메모리 큰 노드에 맞춰 4코어·42G", (c, m, t) == ("4", "42G", "08:00:00"), f"{(c, m, t)} {out[-200:]}")
+    (c, m, t), _ = build(979, {"--parallel-runs"}, limits={"nodes": [(32, 8.0), (8, 64.0)]})
+    check("새 도구 + 노드 32c/8G·8c/64G: 8워커(22G·09:21:00)", (c, m, t) == ("8", "22G", "09:21:00"), str((c, m, t)))
+    (c, m, t), out = build(979, limits={"nodes": [(64, 0.5)]})
+    check("노드 메모리 1GB 밑(미설정)은 모름 — --mem=0G 를 내지 않음", m == "130G" and "🔴" not in out, f"{m} {out[-200:]}")
     # 명시 '제한 없음' — man sbatch: 시간 0·UNLIMITED 는 제한 없음, --mem=0 은 노드 메모리 전부
     (c, m, t), _ = build(979, {"--parallel-runs"}, opts={"sphere_time_limit": "UNLIMITED"})
     check("명시 UNLIMITED 는 무제한 — 그대로", t == "UNLIMITED", t)
@@ -151,6 +166,48 @@ def test_sizing():
     want = {"plain": (True, True), "alias": (True, False), "optional": (True, False), "old": (False, False)}
     got = {k: (P._help_has_option(ap_help(k), "--parallel-runs"), P._help_has_option(ap_help(k), "--yield-map")) for k in want}
     check("argparse 도움말: metavar 없음·별칭·nargs='?' 는 잡고, 설명 글 속 언급만 있으면 안 잡음", got == want, str(got))
+    # 리뷰 M — choices 안 쉼표·nargs=2·nargs='*'·좁은 화면에서 접힌 설명 글 머리·epilog 의 0열 글. Python 과 셸이 같아야 한다
+    def ap_more(kind):
+        os.environ["COLUMNS"] = "60" if kind == "narrow_old" else "100"
+        fmt = argparse.RawDescriptionHelpFormatter
+        ap = argparse.ArgumentParser(prog="koo_sphere_report", formatter_class=fmt,
+                                     epilog="notes:\n\n--parallel-runs and --yield-map need the v2 SIF; this build has neither."
+                                     if kind == "epilog_old" else None)
+        if kind == "choices":
+            ap.add_argument("-j", "--parallel-runs", type=int, choices=[1, 2, 4, 8, 16])
+        elif kind == "nargs2":
+            ap.add_argument("-y", "--yield-map", nargs=2)
+        elif kind == "star":
+            ap.add_argument("-j", "--parallel-runs", nargs="*", type=int)
+        elif kind == "narrow_old":
+            ap.add_argument("--yield-stress", type=float, help="항복응력 기본값 350 — 새 판 도구는 --parallel-runs 와 --yield-map 을 함께 쓴다")
+        try:
+            return ap.format_help()
+        finally:
+            os.environ.pop("COLUMNS", None)
+    want2 = {"choices": (True, False), "nargs2": (False, True), "star": (True, False), "narrow_old": (False, False),
+             "epilog_old": (False, False)}
+    helps = {k: ap_more(k) for k in want2}
+    # argparse 가 다른 옵션 설명을 접어 줄 머리(도움말 칸 들여쓰기)에 낱말이 오는 꼴 — 옛 판 도움말
+    helps["wrapped_old"] = ("usage: koo_sphere_report [-h] [--yield-stress YIELD_STRESS]\n\noptions:\n"
+                            "  -h, --help            show this help message and exit\n"
+                            "  --yield-stress YIELD_STRESS\n                        항복응력 — 새 판은\n"
+                            "                        --parallel-runs N 과\n                        --yield-map FILE 을 쓴다\n")
+    want2["wrapped_old"] = (False, False)
+    got_py = {k: (P._help_has_option(h, "--parallel-runs"), P._help_has_option(h, "--yield-map")) for k, h in helps.items()}
+    check("argparse 도움말(리뷰 M 6종): Python 탐지가 기대대로", got_py == want2, str(got_py))
+    sh_txt = P.build_sphere_report_sh("/data/x/output", sif_path="/x.sif", options={})
+    fn = sh_txt[sh_txt.index("has_opt() {"):sh_txt.index("\n}\n", sh_txt.index("has_opt() {")) + 3]
+    got_sh = {}
+    for k, h in helps.items():
+        hf = BASE / f"help_{k}.txt"
+        hf.write_text(h)
+        res = []
+        for flag in ("--parallel-runs", "--yield-map"):
+            r = subprocess.run(["bash", "-c", 'TOOL_HELP="$(cat "$1")"\n' + fn + 'has_opt "$2"', "x", str(hf), flag])
+            res.append(r.returncode == 0)
+        got_sh[k] = tuple(res)
+    check("  셸 has_opt(생성된 sphere_report.sh 의 함수)도 같은 답", got_sh == got_py, f"sh={got_sh} py={got_py}")
     with _c.redirect_stdout(io.StringIO()):
         t1 = P.build_sphere_sbatch("/data/x/output", sif_path="/x.sif", options={}, environment={}, n_runs=979,
                                    tool_flags={"--parallel-runs"}, limits={})

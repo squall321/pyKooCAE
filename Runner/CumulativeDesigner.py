@@ -1047,10 +1047,14 @@ class CumulativeDesigner:
             try:
                 from Runner.PostprocessShellGenerator import build_sphere_report_sh
                 os.makedirs(output_dir, exist_ok=True)
+                pp_opts = dict(runner_config.postprocess)
+                ym = pp_opts.get("yield_map")
+                if ym and not os.path.isabs(str(ym)):   # template 등 다른 상대 경로처럼 scenario.json 폴더 기준
+                    pp_opts["yield_map"] = str(Path(self.scenario_dir) / str(ym))
                 sh_text = build_sphere_report_sh(
                     output_dir=output_dir,
                     sif_path=runner_config.postprocess.get("sif_path"),
-                    options=runner_config.postprocess,
+                    options=pp_opts,
                 )
                 sh_path = os.path.join(output_dir, "sphere_report.sh")
                 with open(sh_path, 'w', encoding='utf-8') as f:
