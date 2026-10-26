@@ -1484,7 +1484,7 @@ class KooMaterialManager():
                 BETA = 0.0
             else:
                 BETA = float(secondLine[6])
-            thirdLine = dynaMaterial[3]
+            thirdLine = dynaMaterial[3] if len(dynaMaterial) > 3 else ""   # 카드 2(SRC SRP FS VP) 생략 가능 — 빈 카드는 기본값
             if type(thirdLine) == list:
                 pass
             else:
@@ -1521,7 +1521,7 @@ class KooMaterialManager():
             SIGY = KooDynaFloat(firstLine[4],0.0)
             ETAN = KooDynaFloat(firstLine[5],0.0)
             BETA = KooDynaFloat(firstLine[6],0.0)
-            secondLine = dynaMaterial[2]
+            secondLine = dynaMaterial[2] if len(dynaMaterial) > 2 else ""   # 카드 2(SRC SRP FS VP) 생략 가능 — 빈 카드는 기본값
             if type(secondLine) == list:
                 pass
             else:

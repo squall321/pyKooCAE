@@ -8054,7 +8054,8 @@ class MatPlasticKinematic(DynaKeyword):
             parameterList = [] 
             parameters = self.parse_whole(mat_keywords[i][0], [10, 10, 10, 10, 10, 10, 10])
             parameterList.append(parameters)
-            parameters = self.parse_whole(mat_keywords[i][1], [10, 10, 10, 10])
+            # 카드 2(SRC SRP FS VP)는 칸마다 기본값이 있어 생략할 수 있다(R16 부록 V) — 없으면 빈 카드(기본값). 예전엔 IndexError 로 죽었다
+            parameters = self.parse_whole(mat_keywords[i][1] if len(mat_keywords[i]) > 1 else "", [10, 10, 10, 10])
             parameterList.append(parameters)
             self.parameters.append(parameterList)
     
@@ -8091,7 +8092,8 @@ class MatPlasticKinematicTitle(DynaKeyword):
             parameterList.append(parameters)
             parameters = self.parse_whole(mat_keywords[i][1], [10, 10, 10, 10, 10, 10, 10])
             parameterList.append(parameters)
-            parameters = self.parse_whole(mat_keywords[i][2], [10, 10, 10, 10])
+            # 카드 2 생략 가능(위 MatPlasticKinematic 과 같다)
+            parameters = self.parse_whole(mat_keywords[i][2] if len(mat_keywords[i]) > 2 else "", [10, 10, 10, 10])
             parameterList.append(parameters)
             self.parameters.append(parameterList)
             
@@ -8107,7 +8109,9 @@ class MatPlasticKinematicTitle(DynaKeyword):
         for i in range(len(self.parameters)):
             curMat = [] 
             parameter = self.parameters[i]
-            curMat.append("*MAT_PLASTIC_KINEMATIC")
+            # 제목 형식으로 넘긴다(다른 _TITLE 클래스와 같게) — '*MAT_PLASTIC_KINEMATIC' 으로 넘겨 재질 매니저가 제목 줄을
+            # 카드 1 로 읽어 MID 검사에서 죽었다(제목 있는 MAT_003 덱 전부)
+            curMat.append("*MAT_PLASTIC_KINEMATIC_TITLE")
             curMat.append(parameter[0])
             curMat.append(parameter[1])
             curMat.append(parameter[2])
