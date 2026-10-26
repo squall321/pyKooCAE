@@ -9,6 +9,11 @@ def _real10(v):
     if len(s) <= 10 and float(s) == v:
         return s
     cands = [format(v, f".{d}f") for d in range(10)] + [format(v, f".{p}e") for p in range(7)] + [repr(float(v))]
+    for p in range(9):      # 'E-5' 꼴(지수의 0·'+' 없음 — LS-PrePost 가 쓰는 꼴): 같은 10칸에 한두 자리 더 담는다
+        t = format(v, f".{p}e")
+        if "e" in t:
+            m, e = t.split("e")
+            cands.append(f"{m}E{int(e)}")
     cands = [c for c in cands if len(c) <= 10]
     return format(min(cands, key=lambda c: (abs(float(c) - v), len(c))), ">10")
 

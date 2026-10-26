@@ -18,6 +18,7 @@ from OCC.Core.GC import GC_MakeArcOfCircle
 from KooCAEManager.KooNode import NodeManager
 from KooCAEManager.KooElement import ElementManager
 from KooCAEManager.KooOperator import *
+from KooCAEManager.KooDefine import _real10   # SF 1.0E-4 를 >10.3f 로 쓰면 0.000 → LS-DYNA 기본값 1.0(운동 10⁴ 배)
 
 from OCC.Core.GeomAPI import (
     GeomAPI_PointsToBSplineSurface
@@ -158,7 +159,7 @@ class KooBoundaryPrescribedMotionRigid(KooBoundaryNode):
         dofstr = format(self.dof, ">10")
         vadstr = format(self.vad, ">10")
         lcidstr = format(self.lcid, ">10")
-        sfstr = format(self.sf, ">10.3f")
+        sfstr = _real10(self.sf)
         vidstr = format(self.vid, ">10")
         deathstr = format(self.death, ">10.3E")
         birthstr = format(self.birth, ">10.3E")
@@ -176,7 +177,7 @@ class KooBoundaryPrescribedMotionRigid(KooBoundaryNode):
         dofstr = format(self.dof, ">10")
         vadstr = format(self.vad, ">10")
         lcidstr = format(self.lcid, ">10")
-        sfstr = format(self.sf, ">10.3f")
+        sfstr = _real10(self.sf)
         vidstr = format(self.vid, ">10")
         deathstr = format(self.death, ">10.3E")
         birthstr = format(self.birth, ">10.3E")
@@ -238,7 +239,7 @@ class KooBoundaryPrescribedMotionNode(KooBoundaryNode):
         dofstr = format(self.dof, ">10")
         vadstr = format(self.vad, ">10")
         lcidstr = format(self.lcid, ">10")
-        sfstr = format(self.sf, ">10.3f")
+        sfstr = _real10(self.sf)
         vidstr = format(self.vid, ">10")
         deathstr = format(self.death, ">10.3E")
         birthstr = format(self.birth, ">10.3E")
@@ -256,7 +257,7 @@ class KooBoundaryPrescribedMotionNode(KooBoundaryNode):
         dofstr = format(self.dof, ">10")
         vadstr = format(self.vad, ">10")
         lcidstr = format(self.lcid, ">10")
-        sfstr = format(self.sf, ">10.3f")
+        sfstr = _real10(self.sf)
         vidstr = format(self.vid, ">10")
         deathstr = format(self.death, ">10.3E")
         birthstr = format(self.birth, ">10.3E")
@@ -316,7 +317,7 @@ class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
             dofstr = format(self.dofs[i], ">10")
             vadstr = format(self.vads[i], ">10")
             lcidstr = format(self.lcids[i], ">10")
-            sfstr = format(self.sfs[i], ">10.3f")
+            sfstr = _real10(self.sfs[i])
             vidstr = format(self.vids[i], ">10")
             deathstr = format(self.deaths[i], ">10.3E")
             birthstr = format(self.births[i], ">10.3E")
@@ -331,7 +332,7 @@ class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
             dofstr = format(self.dofs[i], ">10")
             vadstr = format(self.vads[i], ">10")
             lcidstr = format(self.lcids[i], ">10")
-            sfstr = format(self.sfs[i], ">10.3f")
+            sfstr = _real10(self.sfs[i])
             vidstr = format(self.vids[i], ">10")
             deathstr = format(self.deaths[i], ">10.3E")
             birthstr = format(self.births[i], ">10.3E")

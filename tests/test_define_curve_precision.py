@@ -6,7 +6,8 @@
 배경 (2026-10-26, 리뷰 L): KooDefineCurve 가 머리 칸을 >10.3f 로만 썼다. SFO 1.0E-6 → 0.000 이 되고 LS-DYNA 는 0 을
 기본값 1.0 으로 읽어 커브가 10⁶ 배가 된다(R16 DEFINE_CURVE: "SFO … EQ.0.0: Default set to 1.0"). 0.0012 → 0.001,
 1.0E6 → 11칸이라 뒤 칸을 밀었다. 1월(08ce963)부터. 서버 덱 1,175 커브 중 20개(실 덱 uvssoc SFO 0.0316 → 0.032).
-10.3f 가 값을 그대로 담는 커브(1.0·0.0 등)는 예전 바이트 그대로여야 한다.
+10.3f 가 값을 그대로 담는 커브(1.0·0.0 등)는 예전 바이트 그대로여야 한다. 리뷰 M: 'e-05' 만 후보로 두면 '-1.2345E-5' 처럼
+10칸에 정확히 들어가는 값을 반올림한다 — 'E-5' 꼴 후보를 더했다.
 """
 import os
 import subprocess
@@ -21,7 +22,9 @@ KMM_CMD = [os.environ["KMM_BIN"]] if os.environ.get("KMM_BIN") else [PY, str(GEN
 ENV = dict(os.environ, PATH=str(ROOT / "venv312" / "bin") + ":" + os.environ.get("PATH", ""))
 OPT = "*Inputfile\nmodel.k\n*Mode\nTRANSFORM,1\n**Transform,1\nTranslation,0,0,0\n**EndTransform\n*End\n"
 # LCID → (SFA, SFO, OFFA, OFFO) 글 — 7: 작은 값들, 8: 큰 SFO, 9: 10.3f 로 그대로 담기는 값(예전 바이트와 같아야 함)
-CURVES = {7: ("0.0012", "1.0E-6", "0.0004", "2.5E-4"), 8: ("1.0", "1.0E6", "0.0", "0.0316"), 9: ("1.0", "2.5", "0.0", "0.0")}
+CURVES = {7: ("0.0012", "1.0E-6", "0.0004", "2.5E-4"), 8: ("1.0", "1.0E6", "0.0", "0.0316"), 9: ("1.0", "2.5", "0.0", "0.0"),
+          # 리뷰 M — 'E-5' 꼴(LS-PrePost 가 쓰는 10칸 표기)로만 10칸에 정확히 들어가는 값
+          10: ("-1.2345E-5", "1.00001E-5", "1.23457E12", "1.23456E-5")}
 FAILS = []
 
 
@@ -66,7 +69,7 @@ def main():
     check("rc 0·출력", r.returncode == 0 and out.exists(), (r.stdout + r.stderr)[-500:])
     if out.exists():
         hdr = curve_headers(out.read_text(errors="replace"))
-        check("커브 3개 그대로", sorted(hdr) == sorted(CURVES), str(sorted(hdr)))
+        check(f"커브 {len(CURVES)}개 그대로", sorted(hdr) == sorted(CURVES), str(sorted(hdr)))
         for lc, h in CURVES.items():
             ln = hdr.get(lc, "")
             got = [ln[a:a + 10] for a in (20, 30, 40, 50)]
