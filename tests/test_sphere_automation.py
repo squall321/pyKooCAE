@@ -147,6 +147,20 @@ def test_sizing():
           f"{(c, m, t)} {out[-200:]}")
     (c, m, t), out = build(979, {"--parallel-runs"}, limits={"nodes": [(64, 6.0)]})
     check("워커 하나도 못 들이는 노드뿐 → 1워커(8G)를 노드 메모리로 깎고 🔴", (c, m) == ("1", "6G") and "🔴" in out, f"{(c, m, t)}")
+    # 리뷰 O — 명시 --mem=0 에도 CPU 상한, 명시 메모리를 받는 노드가 없으면 W 는 아는 노드로 정하고 깎는다, 코어만 모자라면 코어 큰 노드
+    (c, m, t), out = build(162, opts={"sphere_ncpu": 8, "sphere_memory": "0"}, limits={"nodes": [(2, 4.0)]})
+    check("옛 도구 + ncpu 8 + 명시 메모리 0 + 2코어 노드 → CPU 2·--mem=0", (c, m) == ("2", "0") and "CPU 8" in out, f"{(c, m, t)} {out[-200:]}")
+    (c, m, t), out = build(979, {"--parallel-runs"}, opts={"sphere_memory": "200G"}, limits={"nodes": [(96, 96.0), (4, 0.0)]})
+    check("새 도구 + 명시 200G + 96c/96G·미설정 4c → 16워커·96G 로 깎고 🔴(미설정 4c 에 끌려가지 않음)", (c, m) == ("16", "96G") and "🔴" in out,
+          f"{(c, m, t)}")
+    (c, m, t), _ = build(979, {"--parallel-runs"}, opts={"sphere_memory": "0"}, limits={"nodes": [(4, 32.0), (64, 0.0)]})
+    check("새 도구 + 명시 메모리 0 + 4c/32G·미설정 64c → 16워커·--mem=0", (c, m) == ("16", "0"), str((c, m, t)))
+    (c, m, t), out = build(100, opts={"sphere_ncpu": 32}, limits={"nodes": [(8, 64.0), (4, 256.0), (2, 0.0)]})
+    check("옛 도구 + ncpu 32 + 메모리는 맞고 코어만 모자람 → 코어 큰 노드 8코어·42G", (c, m) == ("8", "42G"), f"{(c, m, t)} {out[-200:]}")
+    (c, m, t), out = build(979, {"--parallel-runs"}, opts={"sphere_memory": "300G"}, limits={"nodes": [(4, 256.0), (64, 128.0)]})
+    check("새 도구 + 명시 300G(어느 노드도 못 받음) → 16워커·128G 로 깎고 🔴", (c, m) == ("16", "128G") and "🔴" in out, str((c, m, t)))
+    (c, m, t), out = build(979, {"--parallel-runs"}, limits={"nodes": [(64, 6.0), (64, 0.0)]})
+    check("--mem=0 이 메모리 모자란 아는 노드(6G)에도 앉을 수 있으면 🔴", m == "0" and "🔴" in out and "6G" in out, f"{(c, m, t)} {out[-200:]}")
     # 명시 '제한 없음' — man sbatch: 시간 0·UNLIMITED 는 제한 없음, --mem=0 은 노드 메모리 전부
     (c, m, t), _ = build(979, {"--parallel-runs"}, opts={"sphere_time_limit": "UNLIMITED"})
     check("명시 UNLIMITED 는 무제한 — 그대로", t == "UNLIMITED", t)

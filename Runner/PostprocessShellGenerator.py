@@ -823,33 +823,39 @@ def _sphere_auto_resources(n_runs, sif_path, partition, explicit_ncpu, explicit_
     zero = [x for x in shapes if x[1] == 0.0]       # RealMemory 미설정 — --mem=0 만 받는다
     em = _mem_gb(explicit_mem) if explicit_mem is not None else None    # 0 = 노드 메모리 전부(man sbatch)
     cpus, mem_gb, minutes = sphere_resources(n_runs, parallel, ncpu)
-    node, whole = None, em == 0     # 맞춘 노드 모양, --mem=0 으로 낼까
+    node, whole = None, em == 0     # 맞춘 노드 모양, --mem=0(노드 메모리 전부)으로 낼까
 
     def _gb(m):
         return "모름" if m is None else f"{int(m)}G"
 
+    def _mem_ok(x, g):          # 이 노드가 --mem=gG 를 받는가 — 미설정(0.0) 노드는 --mem=0 만
+        return x[1] is None or (x[1] > 0 and x[1] >= g)
+
     if parallel and shapes:
-        def fit_w(c, m, use_em=True):   # 이 노드에 들어가는 가장 큰 워커 수(0 이면 못 들어감)
-            w = min(cpus, c) if c else cpus
-            if m:
-                if use_em and em and em > m:
-                    return 0
-                w = min(w, int((m - SPHERE_NEW_MEM_BASE_GB) // SPHERE_NEW_MEM_PER_WORKER_GB))
-            return max(w, 0)
-        cand = [(fit_w(c, m), math.inf if m is None else m, c, m) for c, m in known]
-        cand = [x for x in cand if x[0] >= 1]
+        def w_on(x):            # 이 노드에서 코어·모형 메모리(6+2W)가 함께 맞는 가장 큰 W(메모리 모름·미설정은 코어만)
+            w = min(cpus, x[0]) if x[0] else cpus
+            if x[1]:
+                w = min(w, int((x[1] - SPHERE_NEW_MEM_BASE_GB) // SPHERE_NEW_MEM_PER_WORKER_GB))
+            return w
+        if whole:                                           # 명시 --mem=0 — 어느 노드든 메모리를 받는다
+            pool = shapes
+        elif em and any(_mem_ok(x, em) for x in known):    # 명시 메모리를 받는 노드가 있으면 그 가운데서
+            pool = [x for x in known if _mem_ok(x, em)]
+        else:                                               # 명시 메모리를 받는 노드가 없으면 W 를 위해 고르고 아래서 깎는다(🔴)
+            pool = known
+        cand = [(w_on(x), math.inf if x[1] is None else x[1], x) for x in pool]
+        cand = [t for t in cand if t[0] >= 1]
         if cand:
-            w, _, nc, nm = max(cand, key=lambda x: (x[0], x[1]))
-            node = (nc, nm)
-        elif zero:
-            nc = max(zero, key=lambda x: x[0] or math.inf)[0]
-            w, node, whole = (min(cpus, nc) if nc else cpus), (nc, 0.0), True
-        else:   # 워커 하나도 못 들이는 노드뿐 — 메모리가 가장 큰 노드, 그 노드 기준 워커(적어도 1), 아래서 메모리를 줄인다(🔴)
-            nc, nm = max(known, key=lambda x: (math.inf if x[1] is None else x[1], x[0] or math.inf))
-            w, node = max(1, fit_w(nc, nm, use_em=False)), (nc, nm)
+            w, _, node = max(cand, key=lambda t: (t[0], t[1]))
+        elif zero:              # 메모리를 아는 노드엔 워커 하나도 못 들어가고 미설정 노드가 있다 — --mem=0
+            node = max(zero, key=lambda x: x[0] or math.inf)
+            w, whole = (min(cpus, node[0]) if node[0] else cpus), True
+        else:                   # 워커 하나도 못 들이는 노드뿐 — 메모리가 가장 큰 노드에 1워커부터, 아래서 메모리를 줄인다(🔴)
+            node = max(known, key=lambda x: (math.inf if x[1] is None else x[1], x[0] or math.inf))
+            w = max(1, w_on(node))
         if w != cpus:
-            notes.append(f"워커 {cpus} → {w} — 코어·메모리가 한 노드(코어 {node[0] or '모름'}·메모리 "
-                         f"{'미설정' if node[1] == 0.0 else _gb(node[1])})에 함께 들어가게")
+            notes.append(f"워커 {cpus} → {w} — 코어 {node[0] or '모름'}·메모리 "
+                         f"{'미설정(--mem=0)' if node[1] == 0.0 else _gb(node[1])} 노드에 맞춘다")
             cpus, mem_gb, minutes = sphere_resources(n_runs, True, w)
     if em is not None and (em == 0 or em >= mem_gb):
         memory = str(explicit_mem)
@@ -857,21 +863,26 @@ def _sphere_auto_resources(n_runs, sif_path, partition, explicit_ncpu, explicit_
         if explicit_mem is not None:
             notes.append(f"메모리 {explicit_mem} 이 {n_runs}런 산출값 {mem_gb}G 보다 작아 {mem_gb}G 를 쓴다")
         memory = f"{mem_gb}G"
-    if shapes and not parallel and not whole:
-        # 옛 도구 — 코어·메모리가 함께 들어가는 노드가 있으면 그대로
-        want_gb = _mem_gb(memory) or 0.0
-        fits = [x for x in known if (not x[0] or x[0] >= cpus) and (x[1] is None or x[1] >= want_gb)]
-        if not fits:
-            if zero:
-                node, whole = max(zero, key=lambda x: x[0] or math.inf), True
-            else:
-                node = max(known, key=lambda x: (math.inf if x[1] is None else x[1], x[0] or math.inf))
-            if node[0] and cpus > node[0]:
-                notes.append(f"CPU {cpus} 가 노드 코어 {node[0]} 를 넘어 {node[0]} 로 줄인다")
-                cpus = node[0]
+    need_gb = None if em == 0 else (_mem_gb(memory) or 0.0)
+    if shapes and not parallel:
+        # 옛 도구 — 메모리를 받는 노드 가운데 코어도 맞는 노드가 있으면 그대로, 코어만 모자라면 코어 큰 노드에 맞춘다
+        pool = shapes if whole else [x for x in known if _mem_ok(x, need_gb)]
+        if pool:
+            if not any((not x[0] or x[0] >= cpus) for x in pool):
+                node = max(pool, key=lambda x: x[0] or math.inf)
+        elif zero:              # 메모리를 아는 노드는 못 받고 미설정 노드가 있다 — --mem=0
+            node, whole = max(zero, key=lambda x: x[0] or math.inf), True
+        else:                   # 어느 노드도 그 메모리를 못 받는다 — 메모리가 가장 큰 노드에 맞추고 아래서 줄인다(🔴)
+            node = max(known, key=lambda x: (math.inf if x[1] is None else x[1], x[0] or math.inf))
+        if node and node[0] and cpus > node[0]:
+            notes.append(f"CPU {cpus} 가 노드 코어 {node[0]} 를 넘어 {node[0]} 로 줄인다")
+            cpus = node[0]
     if whole and em != 0:
-        notes.append(f"메모리 {memory} 가 메모리를 아는 노드에 들어가지 않아 RealMemory 미설정 노드용 --mem=0(노드 메모리 전부)으로 "
-                     f"낸다 — 실제 메모리는 모른다(아는 노드: {', '.join(_gb(x[1]) for x in known) or '없음'})")
+        lack = [x for x in known if x[1] and need_gb and x[1] < need_gb]
+        notes.append(("🔴 " if lack else "") + f"메모리 {memory} 를 받는 노드가 RealMemory 미설정 노드뿐이라 --mem=0(노드 메모리 전부)으로"
+                     f" 낸다 — 그 노드의 실제 메모리는 모른다"
+                     + (f". --mem=0 은 메모리를 아는 노드({', '.join(_gb(x[1]) for x in lack)})에도 앉을 수 있고 거기선 모자란다"
+                        if lack else ""))
         memory = "0"
     if node and node[1] and not whole and (_mem_gb(memory) or 0.0) > node[1]:
         cap = int(node[1])
