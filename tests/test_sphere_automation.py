@@ -93,7 +93,13 @@ def test_sizing():
         'n="PartitionName=normal AllowGroups=ALL Default=YES MaxNodes=UNLIMITED MaxTime=2-00:00:00 State=UP"\n'
         'v="PartitionName=viz AllowGroups=ALL Default=NO MaxNodes=UNLIMITED MaxTime=60-00:00:00 State=UP"\n'
         'case "$3" in "") echo "$n"; echo "$v";; normal) echo "$n";; viz) echo "$v";; esac\n')
-    (fb / "sinfo").write_text('#!/bin/bash\ncase " $* " in *viz*) echo "3584+";; *normal*) echo "64000";; esac\n')
+    # 실제 sinfo 처럼 — -N 이면 노드마다 '%c %m', 아니면 파티션 요약(노드가 섞이면 %m 은 최솟값 + '+', man sinfo)
+    (fb / "sinfo").write_text(
+        '#!/bin/bash\nN=0; for a in "$@"; do [ "$a" = -N ] && N=1; done\n'
+        'case " $* " in\n'
+        '  *viz*) if [ $N = 1 ]; then echo "2 3584"; echo "8 18997"; else echo "3584+"; fi ;;\n'
+        '  *normal*) if [ $N = 1 ]; then echo "2 64000"; echo "2 64000"; else echo "64000"; fi ;;\n'
+        'esac\n')
     for f in ("scontrol", "sinfo"):
         (fb / f).chmod(0o755)
     old_path = os.environ["PATH"]
@@ -102,8 +108,36 @@ def test_sizing():
         lim_default, lim_viz = P.partition_limits(""), P.partition_limits("viz")
     finally:
         os.environ["PATH"] = old_path
-    check("파티션 없음 → 기본 파티션(normal) 한도 2일·62.5G", lim_default == {"max_minutes": 2880, "max_mem_gb": 62.5}, str(lim_default))
-    check("파티션 viz → 60일·3.5G(3584+)", lim_viz == {"max_minutes": 86400, "max_mem_gb": 3.5}, str(lim_viz))
+    check("파티션 없음 → 기본 파티션(normal) 한도 2일·2코어·62.5G",
+          lim_default == {"max_minutes": 2880, "max_cpus": 2, "max_mem_gb": 62.5}, str(lim_default))
+    check("파티션 viz(3584MB·18997MB 노드) → 노드별 최댓값 8코어·18.55G(요약 '3584+' 는 최솟값)",
+          lim_viz == {"max_minutes": 86400, "max_cpus": 8, "max_mem_gb": 18997 / 1024}, str(lim_viz))
+    # 노드가 감당할 수 있게 — CPU 상한, 새 도구는 워커 수를 CPU·메모리에 맞춰 다시 잰다
+    (c, m, t), out = build(979, {"--parallel-runs"}, limits={"max_cpus": 2})
+    check("새 도구 + 노드 2코어: 워커 2 로 줄여 다시 잼(10G)", (c, m) == ("2", "10G"), str((c, m, t)))
+    check("  그 사실을 알림", "노드 코어 2" in out, out[-300:])
+    (c, m, t), out = build(979, {"--parallel-runs"}, limits={"max_mem_gb": 32.0})
+    check("새 도구 + 노드 32G: 워커 13 으로 맞춤(32G·06:32:00)", (c, m, t) == ("13", "32G", "06:32:00"), str((c, m, t)))
+    (c, m, t), _ = build(979, limits={"max_cpus": 1})
+    check("옛 도구 + 노드 1코어: CPU 1", c == "1", str((c, m, t)))
+    # 명시 '제한 없음' — man sbatch: 시간 0·UNLIMITED 는 제한 없음, --mem=0 은 노드 메모리 전부
+    (c, m, t), _ = build(979, {"--parallel-runs"}, opts={"sphere_time_limit": "UNLIMITED"})
+    check("명시 UNLIMITED 는 무제한 — 그대로", t == "UNLIMITED", t)
+    (c, m, t), out = build(979, {"--parallel-runs"}, opts={"sphere_time_limit": "0"}, limits={"max_minutes": 2880})
+    check("명시 0(무제한) + 파티션 2일 → 2-00:00:00(산출값은 한도 안이라 🔴 아님)", t == "2-00:00:00" and "🔴" not in out,
+          f"{t} {out[-300:]}")
+    (c, m, t), out = build(979, opts={"sphere_memory": "0"}, limits={"max_mem_gb": 62.5})
+    check("명시 메모리 0(노드 전부) — 그대로, 상한 검사 안 함", m == "0" and "🔴" not in out, f"{m} {out[-300:]}")
+    # sphere_ncpu 가 글이어도 submit 이 죽지 않는다(LS-DYNA 잡을 다 낸 뒤라 traceback 이면 sphere 잡이 빠진다)
+    (c, m, t), _ = build(979, {"--parallel-runs"}, opts={"sphere_ncpu": "8.0"})
+    check("sphere_ncpu '8.0' → 8워커(22G·09:21:00)", (c, m, t) == ("8", "22G", "09:21:00"), str((c, m, t)))
+    (c, m, t), out = build(979, {"--parallel-runs"}, opts={"sphere_ncpu": "auto"})
+    check("sphere_ncpu 'auto' → 무시하고 산출값(16)·알림", c == "16" and "읽지 못해" in out, f"{c} {out[-300:]}")
+    with _c.redirect_stdout(io.StringIO()):
+        t1 = P.build_sphere_sbatch("/data/x/output", sif_path="/x.sif", options={}, environment={}, n_runs=979,
+                                   tool_flags={"--parallel-runs"}, limits={})
+    check("sbatch 가 어느 도구 판 기준인지 내보냄(SPHERE_SIZED_FOR=parallel), n_runs 없으면 없음",
+          "export SPHERE_SIZED_FOR=parallel\n" in t1 and "SPHERE_SIZED_FOR" not in t0, t1[-300:])
 
 
 FAKE_APPTAINER = """#!/bin/bash
@@ -112,11 +146,12 @@ for a in "$@"; do
   if [ "$a" = "--help" ]; then
     echo "usage: koo_sphere_report [-h] (--test-dir TEST_DIR | --from-json JSON_FILE)"
     if [ "$FAKE_TOOL" = new ]; then echo "  --parallel-runs N"; echo "  --yield-map FILE"; fi
+    if [ "$FAKE_TOOL" = oldmention ]; then echo "  --yield-stress MPA   항복응력 (--parallel-runs·--yield-map 은 새 판에만)"; fi
     exit 0
   fi
 done
 printf '%s\\n' "$@" > "$FAKE_ARGS"
-echo "Loaded ${FAKE_LOADED:-1} results in 0.1s"
+[ -n "$FAKE_SILENT" ] || echo "Loaded ${FAKE_LOADED:-1} results in 0.1s"
 exit ${FAKE_RC:-0}
 """
 
@@ -146,10 +181,15 @@ def test_shell_wiring():
         sh.write_text(P.build_sphere_report_sh(str(out), sif_path=str(sif), options=opts))
         return sh, td
 
-    def run(sh, td, tool, loaded="1", rc="0", cpus="4"):
+    def run(sh, td, tool, loaded="1", rc="0", cpus="4", sized=None, silent=False):
         env = dict(os.environ, PATH=f"{fake}:{os.environ['PATH']}", FAKE_TOOL=tool, FAKE_LOADED=loaded, FAKE_RC=rc,
                    FAKE_ARGS=str(td / "args.txt"))
-        env.pop("SLURM_CPUS_PER_TASK", None)
+        for k in ("SLURM_CPUS_PER_TASK", "SPHERE_SIZED_FOR", "FAKE_SILENT"):
+            env.pop(k, None)
+        if sized:
+            env["SPHERE_SIZED_FOR"] = sized
+        if silent:
+            env["FAKE_SILENT"] = "1"
         if cpus is not None:
             env["SLURM_CPUS_PER_TASK"] = cpus
         r = subprocess.run(["bash", str(sh)], capture_output=True, text=True, env=env, timeout=60)
@@ -179,6 +219,24 @@ def test_shell_wiring():
     check("yield_map + 새 도구: --yield-map 경로", flag_after(args, "--yield-map") == str(ymap), str(args))
     rc, log, args = run(sh3, td3, "old")
     check("yield_map + 옛 도구: 넘기지 않고 경고", "--yield-map" not in args and "--yield-map 을 모른다" in log, f"{args} {log[-300:]}")
+    rc, log, args = run(sh3, td3, "oldmention")
+    check("옛 도구 도움말 설명 글에 --parallel-runs·--yield-map 이 나와도 넘기지 않음(옵션 정의 줄만)",
+          rc == 0 and "--parallel-runs" not in args and "--yield-map" not in args, f"rc={rc} {args} {log[-300:]}")
+    rc, log, args = run(sh, td, "old", sized="parallel")
+    check("병렬 기준으로 잡힌 잡 + 노드 SIF 가 옛 판 → 🔴 경고(헤드·노드 SIF 엇갈림)", rc == 0 and "🔴" in log and "옛 판" in log,
+          f"rc={rc} {log[-300:]}")
+    rc, log, args = run(sh, td, "old", sized="sequential")
+    check("  순차 기준이면 경고 없음", "🔴" not in log, log[-300:])
+    rc, log, args = run(sh, td, "old", silent=True)
+    check("'Loaded N results' 줄이 없으면 경고(rc 는 도구 rc)", rc == 0 and "줄이 없어" in log, f"rc={rc} {log[-300:]}")
+    cwd = os.getcwd()
+    os.chdir(BASE)
+    try:
+        rel_sh = P.build_sphere_report_sh(str(BASE / "output"), sif_path=str(sif), options={"yield_map": "rel_ymap.json"})
+    finally:
+        os.chdir(cwd)
+    check("yield_map 상대 경로는 만드는 때의 폴더 기준 절대 경로로(잡은 --chdir=/data)",
+          f"YIELD_MAP={BASE / 'rel_ymap.json'}" in rel_sh, [ln for ln in rel_sh.splitlines() if ln.startswith("YIELD_MAP=")])
 
 
 def f10(*v):

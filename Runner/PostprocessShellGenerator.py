@@ -26,6 +26,7 @@ DROP/IMPACT 분기는 report_mode_from_runner_config() 로 판정
 """
 
 import math
+import os
 import re
 import shlex
 from Runner._encoding import job_env_lines
@@ -307,7 +308,7 @@ def build_sphere_report_sh(output_dir, sif_path=None, options=None, runs_subdir=
             - hotspot_part: int | list | "12,15" — 전각도 핫스팟 군집을 그 파트로만(--hotspot-part)
             - sphere_viewer: "canvas"(기본) | "plotly" — 3D 인벨롭 뷰어(--viewer)
             - sphere_extra_args: list | str — 임의 koo_sphere_report 인자 pass-through
-            - yield_map: 파트별 항복응력 JSON 경로(덱 단위) — 도구가 --yield-map 을 알 때만 넘긴다. 없으면 도구가
+            - yield_map: 파트별 항복응력 JSON 경로(덱 단위, 상대 경로는 만드는 때의 폴더 기준) — 도구가 --yield-map 을 알 때만 넘긴다. 없으면 도구가
               DropSet.json 의 model.part_yield(KMM 이 덱에서 쓴 값)를 쓴다
         실행 시점에 SIF 의 --help 로 --parallel-runs 를 확인해 있으면 SLURM_CPUS_PER_TASK 만큼 병렬로 돌린다.
         runs_subdir: output_dir 안의 시뮬 폴더 prefix (default "runs")
@@ -329,6 +330,8 @@ def build_sphere_report_sh(output_dir, sif_path=None, options=None, runs_subdir=
     opts = options or {}
     yield_stress = opts.get("yield_stress_mpa", DEFAULT_YIELD_STRESS)
     yield_map = opts.get("yield_map") or ""
+    if yield_map:   # 잡은 --chdir=/data 에서 돈다 — 상대 경로는 만드는 지금의 폴더 기준으로 굳힌다
+        yield_map = os.path.abspath(str(yield_map))
     # 핫스팟 파트 필터 → 그 뒤에 임의 koo_sphere_report 인자 pass-through (고정 플래그 뒤 → override 가능)
     tail = " ".join(x for x in (_hotspot_part_str(opts), _sphere_viewer_str(opts),
                                 _extra_args_str(opts, "sphere_extra_args")) if x)
@@ -397,15 +400,21 @@ fi
 
 # 이 SIF 의 koo_sphere_report 가 아는 옵션만 넘긴다 — 옛 SIF 와 섞여도 모르는 옵션으로 죽지 않게
 TOOL_HELP="$(apptainer exec "$SIF_PATH" python3 -m koo_sphere_report --help 2>&1 || true)"
+# argparse 옵션 정의 줄(줄 머리 '  --x …' 또는 '  -j N, --x …')만 본다 — 다른 옵션 설명 글 속 낱말에 속지 않게
+has_opt() {{
+    printf '%s\\n' "$TOOL_HELP" | grep -qE -- "^[[:space:]]+(-[^[:space:],]+([[:space:]][^[:space:],-][^[:space:],]*)?,[[:space:]])*$1([^[:alnum:]_-]|\\$)"
+}}
 EXTRA=()
-if printf '%s\\n' "$TOOL_HELP" | grep -q -- '--parallel-runs'; then
+if has_opt --parallel-runs; then
     EXTRA+=(--parallel-runs "${{SLURM_CPUS_PER_TASK:-1}}")
+elif [ "${{SPHERE_SIZED_FOR:-}}" = parallel ]; then
+    echo "[sphere_report] 🔴 경고: 이 잡의 자원은 병렬 도구(--parallel-runs) 기준인데 이 노드 SIF 의 koo_sphere_report 는 옛 판이다 — 메모리·시간이 모자랄 수 있다(헤드와 노드의 SIF 판을 맞출 것): $SIF_PATH" >&2
 fi
 YIELD_MAP={shlex.quote(str(yield_map))}
 if [ -n "$YIELD_MAP" ]; then
     if [ ! -f "$YIELD_MAP" ]; then
         echo "[sphere_report] 경고: yield_map 파일이 없다 — $YIELD_MAP (덱 파트별 항복응력·단일 기본값으로 판정)" >&2
-    elif printf '%s\\n' "$TOOL_HELP" | grep -q -- '--yield-map'; then
+    elif has_opt --yield-map; then
         EXTRA+=(--yield-map "$YIELD_MAP")
     else
         echo "[sphere_report] 경고: 이 SIF 의 koo_sphere_report 는 --yield-map 을 모른다 — 단일 항복응력 $YIELD_STRESS 로 판정" >&2
@@ -424,6 +433,9 @@ apptainer exec --bind /data:/data,"$TEST_DIR":"$TEST_DIR" \\
 set +o pipefail
 # 도구가 결과를 하나도 못 읽고도 rc 0 으로 끝나는 판(샤드 폴더에 output/ 이 빠진 경우 등)을 막는다 — 잡 성공으로 오인됐다
 LOADED="$(grep -oE 'Loaded [0-9]+ results' "$TOOL_LOG" | tail -1 | grep -oE '[0-9]+' || true)"
+if [ -z "$LOADED" ]; then
+    echo "[sphere_report] 경고: 도구 출력에 'Loaded N results' 줄이 없어 결과 0건 여부를 셸이 확인하지 못했다 — $TOOL_LOG" >&2
+fi
 if [ -n "$LOADED" ] && [ "$LOADED" -eq 0 ]; then
     echo "[sphere_report] ERROR: koo_sphere_report 가 결과를 하나도 읽지 못했다(Loaded 0, analysis_results=$N_NORMAL) — 빈 리포트다" >&2
     exit 3
@@ -633,6 +645,13 @@ def count_runs(runner_config):
     return n or None
 
 
+def _help_has_option(text, flag):
+    """argparse --help 에서 flag 가 옵션 정의 줄(줄 머리 '  --flag …' 또는 '  -j N, --flag …')에 있는가.
+    다른 옵션 설명 글에 그 낱말이 나오는 것에 속지 않는다 — 옛 도구에 모르는 옵션을 넘기면 argparse 로 죽는다.
+    sphere_report.sh 의 has_opt 와 같은 규칙."""
+    return re.search(rf"^\s+(?:-[^\s,]+(?:\s[^\s,-][^\s,]*)?,\s)*{re.escape(flag)}(?![\w-])", text or "", re.M) is not None
+
+
 def sphere_tool_flags(sif_path=None, timeout=180):
     """SIF 안 koo_sphere_report --help 가 아는 플래그 집합(--parallel-runs·--yield-map). 확인하지 못하면 빈 집합 — 옛 도구로 본다."""
     import subprocess
@@ -642,7 +661,7 @@ def sphere_tool_flags(sif_path=None, timeout=180):
     except Exception:  # noqa: BLE001 — apptainer 없음·시간 초과 등은 '모름'
         return set()
     text = (r.stdout or "") + (r.stderr or "")
-    return {f for f in ("--parallel-runs", "--yield-map") if f in text}
+    return {f for f in ("--parallel-runs", "--yield-map") if _help_has_option(text, f)}
 
 
 def _slurm_minutes(text):
@@ -681,9 +700,10 @@ def _mem_gb(text):
 
 
 def partition_limits(partitions, timeout=30):
-    """쉼표로 준 파티션들 가운데 가장 넉넉한 MaxTime(분)·노드 메모리(GB) — Slurm 은 잡이 들어가는 파티션을 고른다.
+    """쉼표로 준 파티션들 가운데 가장 넉넉한 MaxTime(분)·노드 코어 수·노드 메모리(GB) — Slurm 은 잡이 들어가는 파티션·노드를 고른다.
+    노드 값은 노드마다 읽는다 — `sinfo -o %m` 는 노드가 섞인 파티션에서 최솟값에 '+' 를 붙인다(man sinfo).
     파티션을 주지 않으면(sbatch 에 --partition 이 없으면) 잡이 가는 기본 파티션(Default=YES)을 본다.
-    {'max_minutes': 분 또는 None(무제한), 'max_mem_gb': GB}. 읽지 못하면 빈 dict(상한을 걸지 않는다)."""
+    {'max_minutes': 분 또는 None(무제한), 'max_cpus': 코어, 'max_mem_gb': GB}. 읽지 못하면 빈 dict(상한을 걸지 않는다)."""
     import subprocess
     names = [p.strip() for p in str(partitions or "").split(",") if p.strip()]
     out = {}
@@ -703,11 +723,14 @@ def partition_limits(partitions, timeout=30):
                 times.append(_slurm_minutes(mt.group(1)))
         if times:
             out["max_minutes"] = None if any(t is None for t in times) else max(times)
-        r = subprocess.run(["sinfo", "-h", "-p", ",".join(names), "-o", "%m"], capture_output=True, text=True, timeout=timeout,
-                           encoding='utf-8', errors='replace')
-        mems = [float(x.rstrip("+")) for x in (r.stdout or "").split() if re.fullmatch(r"\d+(\.\d+)?\+?", x)]
-        if mems:
-            out["max_mem_gb"] = max(mems) / 1024.0
+        r = subprocess.run(["sinfo", "-N", "-h", "-p", ",".join(names), "-o", "%c %m"], capture_output=True, text=True,
+                           timeout=timeout, encoding='utf-8', errors='replace')
+        nodes = [ln.split() for ln in (r.stdout or "").splitlines()]
+        nodes = [(int(c), float(m.rstrip("+"))) for c, m in (x for x in nodes if len(x) == 2)
+                 if re.fullmatch(r"\d+", c) and re.fullmatch(r"\d+(\.\d+)?\+?", m)]
+        if nodes:
+            out["max_cpus"] = max(c for c, _ in nodes)
+            out["max_mem_gb"] = max(m for _, m in nodes) / 1024.0
     except Exception:  # noqa: BLE001 — Slurm 명령이 없는 곳(시험·로컬)에서는 상한 없이
         return {}
     return out
@@ -728,42 +751,85 @@ def sphere_resources(n_runs, parallel, ncpu=None):
     return cpus, int(math.ceil(mem)), int(math.ceil(hours * 60))
 
 
+def _positive_int(value):
+    """'8'·8·'8.0' → 8. 못 읽거나 1 보다 작으면 None."""
+    try:
+        n = int(float(str(value).strip()))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return n if n >= 1 else None
+
+
+def _time_unlimited(text):
+    """명시 시간이 '제한 없음' 인가 — UNLIMITED·INFINITE·0 (man sbatch: "A time limit of zero requests that no time limit be imposed")."""
+    return str(text).strip().upper() in ("UNLIMITED", "INFINITE") or _slurm_minutes(text) == 0
+
+
 def _sphere_auto_resources(n_runs, sif_path, partition, explicit_ncpu, explicit_mem, explicit_time,
                            tool_flags=None, limits=None):
     """sphere 잡 자원을 런 수로 잰다. 명시값이 산출값보다 크면 명시값, 작으면 산출값을 쓰고 알린다(MCP 가 모든 캠페인에
-    sphere_time_limit 04:00:00 을 넣어 '명시값 우선' 이면 고침이 먹지 않는다). 파티션 한도를 넘으면 한도로 줄이고 알린다."""
+    sphere_time_limit 04:00:00 을 넣어 '명시값 우선' 이면 고침이 먹지 않는다). 노드가 감당하지 못하면 줄이고 알린다 —
+    CPU 는 노드 코어 수까지(넘으면 Slurm 이 잡을 거절한다), 새 도구는 워커 수를 CPU·메모리(6+2W)에 맞춰 다시 잰다.
+    Returns: (cpus, memory, time_limit, parallel)"""
     flags = sphere_tool_flags(sif_path) if tool_flags is None else tool_flags
     parallel = "--parallel-runs" in flags
-    cpus, mem_gb, minutes = sphere_resources(n_runs, parallel, explicit_ncpu)
     notes = []
+    ncpu = None
+    if explicit_ncpu is not None:
+        ncpu = _positive_int(explicit_ncpu)
+        if ncpu is None:
+            notes.append(f"sphere_ncpu {explicit_ncpu!r} 를 정수로 읽지 못해 무시한다")
+    lim = partition_limits(partition) if limits is None else limits
+    max_cpus, max_mem = lim.get("max_cpus"), lim.get("max_mem_gb")
+    cpus, mem_gb, minutes = sphere_resources(n_runs, parallel, ncpu)
+    if parallel:
+        w = cpus
+        if max_cpus and w > max_cpus:
+            notes.append(f"워커 {w} 이 노드 코어 {max_cpus} 를 넘어 {max_cpus} 로 줄인다")
+            w = max_cpus
+        w_mem = int((max_mem - SPHERE_NEW_MEM_BASE_GB) // SPHERE_NEW_MEM_PER_WORKER_GB) if max_mem else None
+        if w_mem is not None and 1 <= w_mem < w:
+            notes.append(f"워커 {w} 의 메모리 {SPHERE_NEW_MEM_BASE_GB + w * SPHERE_NEW_MEM_PER_WORKER_GB}G 가 "
+                         f"노드 메모리 {int(max_mem)}G 를 넘어 워커를 {w_mem} 로 줄인다")
+            w = w_mem
+        if w != cpus:
+            cpus, mem_gb, minutes = sphere_resources(n_runs, True, w)
+    elif max_cpus and cpus > max_cpus:
+        notes.append(f"CPU {cpus} 가 노드 코어 {max_cpus} 를 넘어 {max_cpus} 로 줄인다")
+        cpus = max_cpus
     em = _mem_gb(explicit_mem) if explicit_mem is not None else None
-    if em is not None and em >= mem_gb:
+    if em is not None and (em == 0 or em >= mem_gb):     # --mem=0 은 노드 메모리 전부(man sbatch)
         memory = str(explicit_mem)
     else:
         if explicit_mem is not None:
             notes.append(f"메모리 {explicit_mem} 이 {n_runs}런 산출값 {mem_gb}G 보다 작아 {mem_gb}G 를 쓴다")
         memory = f"{mem_gb}G"
     et = _slurm_minutes(explicit_time) if explicit_time is not None else None
-    if et is not None and et >= minutes:
-        time_limit = str(explicit_time)
+    if explicit_time is not None and _time_unlimited(explicit_time):
+        time_limit, req_minutes = str(explicit_time), math.inf
+    elif et is not None and et >= minutes:
+        time_limit, req_minutes = str(explicit_time), et
     else:
         if explicit_time is not None:
             notes.append(f"시간 {explicit_time} 이 {n_runs}런 산출값 {_fmt_slurm_time(minutes)} 보다 짧아 산출값을 쓴다")
-        time_limit = _fmt_slurm_time(minutes)
-    lim = partition_limits(partition) if limits is None else limits
-    if lim.get("max_minutes") and (_slurm_minutes(time_limit) or 0) > lim["max_minutes"]:
-        notes.append(f"🔴 시간 {time_limit} 이 파티션 한도 {_fmt_slurm_time(lim['max_minutes'])} 를 넘어 한도로 줄인다 — 끝나지 못할 수 있다"
-                     + ("" if parallel else " (병렬 도구(--parallel-runs) 판 SIF 면 크게 준다)"))
-        time_limit = _fmt_slurm_time(lim["max_minutes"])
-    if lim.get("max_mem_gb") and (_mem_gb(memory) or 0) > lim["max_mem_gb"]:
-        cap = int(lim["max_mem_gb"])
+        time_limit, req_minutes = _fmt_slurm_time(minutes), minutes
+    if lim.get("max_minutes") and req_minutes > lim["max_minutes"]:
+        cap_t = _fmt_slurm_time(lim["max_minutes"])
+        if minutes > lim["max_minutes"]:
+            notes.append(f"🔴 시간 {time_limit} 이 파티션 한도 {cap_t} 를 넘어 한도로 줄인다 — 끝나지 못할 수 있다"
+                         + ("" if parallel else " (병렬 도구(--parallel-runs) 판 SIF 면 크게 준다)"))
+        else:
+            notes.append(f"시간 {time_limit} 을 파티션 한도 {cap_t} 로 줄인다 — 한도를 넘는 요청은 PENDING 에 머문다")
+        time_limit = cap_t
+    if max_mem and em != 0 and (_mem_gb(memory) or 0) > max_mem:
+        cap = int(max_mem)
         notes.append(f"🔴 메모리 {memory} 가 파티션 노드 메모리 {cap}G 를 넘어 {cap}G 로 줄인다 — OOM 이 날 수 있다")
         memory = f"{cap}G"
     print(f"[Sphere Postprocess] 자원 — {n_runs}런, 도구 {'병렬(--parallel-runs)' if parallel else '순차'}: "
           f"CPU {cpus} · 메모리 {memory} · 시간 {time_limit}")
     for n in notes:
         print(f"  ⚠️  {n}")
-    return cpus, memory, time_limit
+    return cpus, memory, time_limit, parallel
 
 
 def build_sphere_sbatch(output_dir, sif_path=None, options=None, environment=None,
@@ -789,10 +855,13 @@ def build_sphere_sbatch(output_dir, sif_path=None, options=None, environment=Non
     explicit_ncpu = opts.get("sphere_ncpu", env.get("sphere_ncpu"))
     explicit_mem = opts.get("sphere_memory", env.get("sphere_memory"))
     explicit_time = opts.get("sphere_time_limit", env.get("sphere_time_limit"))
+    sized_line = ""
     if n_runs and opts.get("sphere_auto_resources", True):
-        ncpu, memory, time_limit = _sphere_auto_resources(
+        ncpu, memory, time_limit, parallel = _sphere_auto_resources(
             n_runs, sif_path or opts.get("sif_path"), partition, explicit_ncpu, explicit_mem, explicit_time,
             tool_flags=tool_flags, limits=limits)
+        # 자원을 어느 도구 판 기준으로 잡았는지 — 노드 SIF 가 옛 판이면 sphere_report.sh 가 경고한다(헤드·노드 SIF 엇갈림)
+        sized_line = f"export SPHERE_SIZED_FOR={'parallel' if parallel else 'sequential'}\n"
     else:
         # 예전 규칙: options(postprocess block) > environment > default
         ncpu = explicit_ncpu if explicit_ncpu is not None else env.get("ncpu", 8)
@@ -822,7 +891,7 @@ export LC_ALL=C.UTF-8
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
 
-{job_env_block}bash {output_dir}/sphere_report.sh
+{job_env_block}{sized_line}bash {output_dir}/sphere_report.sh
 """
 
 
