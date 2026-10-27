@@ -191,7 +191,7 @@ class KooDynaImporter():
 
     def PartYieldMap(self):
         """파트별 초기 항복응력(덱 단위 그대로) — {'unit': 'MPa'|'Pa'|None, 'parts': {pid: {yield, source, mid}}}.
-        R16 근거: MAT_003·MAT_ORIENTED_CRACK 은 SIGY. MAT_024 는 "SIGY … ignored if LCSS > 0" 라 LCSS 커브의 εp=0 값(커브는
+        R16 근거: MAT_003 은 SIGY, MAT_ORIENTED_CRACK 은 양수인 SIGY·FS(파괴응력) 중 작은 것(사용자 결정 10-26). MAT_024 는 "SIGY … ignored if LCSS > 0" 라 LCSS 커브의 εp=0 값(커브는
         "Abscissa value = SFA × (Defined value + OFFA)", "Ordinate value = SFO × (Defined value + OFFO)"), EPS·ES 점으로 주면
         그 점들의 εp=0 값, 아니면 SIGY. εp=0 값은 사이면 보간, 밖이면 끝 두 점으로 외삽한다 — EPS1: "If the first point is
         nonzero, the yield stress is extrapolated to determine the initial yield". (예전엔 '가장 작은 변형률 점'·ES1 — 리뷰 L)
@@ -244,8 +244,12 @@ class KooDynaImporter():
                     got = (float(mat.sigy), "MAT_024 SIGY")
             elif isinstance(mat, KooMaterialPlasticKinematic) and float(mat.sigy) > 0:
                 got = (float(mat.sigy), "MAT_003 SIGY")
-            elif isinstance(mat, KooMaterialOrientedCrack) and float(mat.SIGY) > 0:
-                got = (float(mat.SIGY), "MAT_ORIENTED_CRACK SIGY")
+            elif isinstance(mat, KooMaterialOrientedCrack):
+                # 양수인 SIGY·FS 중 작은 것 — 유리처럼 FS(파괴응력)가 SIGY 보다 작으면 FS 에서 먼저 깨진다(사용자 결정 10-26)
+                cands = [(v, src) for v, src in ((float(mat.SIGY), "MAT_ORIENTED_CRACK SIGY"),
+                                                 (float(mat.FS), "MAT_ORIENTED_CRACK FS(파괴)")) if v > 0]
+                if cands:
+                    got = min(cands, key=lambda c: c[0])
             if got and got[0] > 0:
                 parts[str(part.id)] = {"yield": got[0], "source": got[1], "mid": int(mat.id)}
         return {"unit": unit, "parts": parts}

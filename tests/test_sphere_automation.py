@@ -10,7 +10,8 @@
       시간 2h+0.06h×N/W(최소 4h). 명시값보다 산출값이 크면 산출값, 파티션 한도를 넘으면 한도로(알림).
   [2] sphere_report.sh 가 실행 시점에 --help 로 --parallel-runs·--yield-map 을 확인해 넘기고, 'Loaded 0 results' 면 비 0 종료.
   [3] KMM 이 DropSet.json 에 model.part_yield 를 쓴다(R16: MAT_024 SIGY 는 LCSS>0 이면 무시 — 커브의 εp=0 값, 가로축
-      SFA×(x+OFFA)·세로축 SFO×(y+OFFO), 사이면 보간·밖이면 외삽 — EPS1 이 0 이 아니면 외삽한다).
+      SFA×(x+OFFA)·세로축 SFO×(y+OFFO), 사이면 보간·밖이면 외삽 — EPS1 이 0 이 아니면 외삽한다). MAT_017 은 양수인
+      SIGY·FS 중 작은 것(사용자 결정 10-26 — 유리는 FS 에서 먼저 깨진다).
 """
 import json
 import os
@@ -386,7 +387,7 @@ def f10(*v):
 
 def yield_deck():
     nodes, elems, nid = [], [], 0
-    for k in range(9):
+    for k in range(12):
         base = nid
         for (x, y, z) in [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)]:
             nid += 1
@@ -394,7 +395,7 @@ def yield_deck():
         elems.append(f"{k + 1:8d}{k + 1:8d}" + "".join(f"{base + i:8d}" for i in range(1, 9)))
     z8 = f10(*([0.0] * 8))
     deck = "*KEYWORD\n*NODE\n" + "\n".join(nodes) + "\n"
-    deck += "".join(f"*PART\npart{k + 1}\n" + f10(k + 1, 1, k + 1) for k in range(9))
+    deck += "".join(f"*PART\npart{k + 1}\n" + f10(k + 1, 1, k + 1) for k in range(12))
     deck += "*SECTION_SOLID\n" + f10(1, 1)
     deck += "*MAT_PLASTIC_KINEMATIC\n" + f10(1, "7.85E-09", 210000, 0.3, 250.0, 1000.0, 0.0) + f10(0.0, 0.0, "1.0E20", 0.0)
     deck += ("*MAT_PIECEWISE_LINEAR_PLASTICITY_TITLE\ncurve_mat\n" + f10(2, "7.85E-09", 210000, 0.3, 999.0, 0.0, 0.0, 0.0)
@@ -423,6 +424,10 @@ def yield_deck():
              + f10(0.0, 0.0, 10, 0, 0.0) + z8 + z8)
     deck += ("*DEFINE_CURVE\n" + f10(10, 0, 1.0, 1.0, 0.0, 0.0)
              + f"{0.0:>20}{100.0:>20}\n{0.1:>20}{110.0:>20}\n{0.5:>20}{150.0:>20}\n\n")
+    # 사용자 결정 10-26 — MAT_017 은 양수인 SIGY·FS 중 작은 것(유리는 FS 에서 먼저 깨진다). 10) FS 30 < SIGY 45,
+    # 11) SIGY 45 < FS 60, 12) FS 0(없음) → SIGY. 카드 2 는 생략(선택 카드)
+    for mid, sigy, fs in ((10, 45.0, 30.0), (11, 45.0, 60.0), (12, 45.0, 0.0)):
+        deck += "*MAT_ORIENTED_CRACK\n" + f10(mid, "2.5E-09", 70000, 0.22, sigy, 0.0, fs, 0.0)
     return deck + "*ELEMENT_SOLID\n" + "\n".join(elems) + "\n*END\n"
 
 
@@ -482,7 +487,10 @@ def test_part_yield():
     y9 = got.get("9", (None, ""))[0]
     check("MAT_024 LCSS 커브 끝 빈 줄((0,0) 점) — εp=0 값은 덱 차례 앞 점 100", y9 is not None and abs(y9 - 100.0) < 1e-9,
           str(got.get("9")))
-    check("KMM 이 더한 바닥판(10)은 맵에 없음", "10" not in parts, str(parts.keys()))
+    check("MAT_017 FS 30 < SIGY 45: 파괴응력 30", got.get("10") == (30.0, "MAT_ORIENTED_CRACK FS(파괴)"), str(got.get("10")))
+    check("MAT_017 SIGY 45 < FS 60: SIGY 45", got.get("11") == (45.0, "MAT_ORIENTED_CRACK SIGY"), str(got.get("11")))
+    check("MAT_017 FS 0(없음): SIGY 45", got.get("12") == (45.0, "MAT_ORIENTED_CRACK SIGY"), str(got.get("12")))
+    check("KMM 이 더한 바닥판(13)은 맵에 없음", "13" not in parts, str(parts.keys()))
     check("model.parts 는 예전 형식(pid → 이름 글)", isinstance(model.get("parts"), dict)
           and all(isinstance(v, str) for v in model["parts"].values()), str(model.get("parts")))
 
