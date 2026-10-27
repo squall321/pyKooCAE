@@ -2238,6 +2238,8 @@ class KooPartManager():
             for parameters in block:
                 if parameters is None or len(parameters) < 4:
                     continue
+                if not any(str(v).strip() for v in parameters):   # 빈 줄 — 요소가 아니다(리뷰 S2: 파서가 빈 칸 4개로 준다)
+                    continue
                 try:
                     eid = int(parameters[0])
                     nid = int(parameters[1])
@@ -2475,6 +2477,7 @@ class KooPartManager():
         _pid_miss = 0       # PID 가 파트에 없어 버려진 수(기존엔 완전 무언)
         _corner_total = 0   # 코너 절점 0 이라 레코드로 세기 전에 버린 수(리뷰 R — 예전엔 '소실 0' 으로 보고)
         _bad_pairs = 0      # 2줄 포맷의 헤더 이상·홀수 줄로 버린 짝
+        _dup = 0            # 같은 파트 안 EID 중복 — 뒤 요소가 앞 요소를 덮어 하나가 사라진다(리뷰 S7)
         for i in range(len(parametersSolid)):
                 parameters = parametersSolid[i]
                 mode = 1
@@ -2510,6 +2513,8 @@ class KooPartManager():
                             _pid_miss += 1
                         if pid in self.parts:
                             part = self.parts[pid]
+                            if eid in part.elementManager.elements:
+                                _dup += 1
                             if len(nids) == 4 or nids[4] == 0 or nids[4] == nids[3]:
                                 nodes = get_nodes(part.nodeManager, nids[:4])
                                 part.AddTetrahedronLinearElement(eid, *nodes)
@@ -2558,6 +2563,8 @@ class KooPartManager():
                             _pid_miss += 1
                         if pid in self.parts:
                             part = self.parts[pid]
+                            if eid in part.elementManager.elements:
+                                _dup += 1
                             if len(nids) == 4 or nids[4] == 0 or nids[4] == nids[3]:
                                 nodes = get_nodes(part.nodeManager, nids[:4])
                                 part.AddTetrahedronLinearElement(eid, *nodes)
@@ -2593,6 +2600,8 @@ class KooPartManager():
                             _pid_miss += 1
                         if pid in self.parts:
                             part = self.parts[pid]
+                            if eid in part.elementManager.elements:
+                                _dup += 1
                             if len(nids) == 20:
                                 nodes = get_nodes(part.nodeManager, nids[:20])
                                 part.AddHexahedronQuadraticElement(eid, *nodes)
@@ -2602,15 +2611,16 @@ class KooPartManager():
         # 버린 요소는 KMM 이 끝에서 🔴 + 종료 코드 3 으로 알린다(리뷰 R — 예전엔 🔴 만 찍고 rc 0).
         if _rec_total or _corner_total or _bad_pairs:
             _lost = _rec_total - _add_total
-            if _lost or _corner_total or _bad_pairs:
+            if _lost or _corner_total or _bad_pairs or _dup:
                 _in = _rec_total + _corner_total + _bad_pairs
-                print(f"  🔴 ELEMENT_SOLID 개수 불일치: 입력 {_in} → 등록 {_add_total} "
-                      f"({_in - _add_total}개 소실, PID 미존재 {_pid_miss}개, 코너 절점 0 {_corner_total}개, "
-                      f"2줄 짝 이상 {_bad_pairs}개). 결과를 신뢰하기 전에 확인 필요")
+                print(f"  🔴 ELEMENT_SOLID 개수 불일치: 입력 {_in} → 등록 {_add_total - _dup} "
+                      f"({_in - _add_total + _dup}개 소실, PID 미존재 {_pid_miss}개, 코너 절점 0 {_corner_total}개, "
+                      f"2줄 짝 이상 {_bad_pairs}개, EID 중복 {_dup}개). 결과를 신뢰하기 전에 확인 필요")
                 note_import_loss("ELEMENT_SOLID — PID 에 *PART 없음", _pid_miss)
                 note_import_loss("ELEMENT_SOLID — 코너 절점 0", _corner_total)
                 note_import_loss("ELEMENT_SOLID — 2줄 포맷 짝 이상", _bad_pairs)
                 note_import_loss("ELEMENT_SOLID — 절점 수를 판정하지 못함", _lost - _pid_miss)
+                note_import_loss("ELEMENT_SOLID — 같은 파트 안 EID 중복(뒤 요소가 앞을 덮음)", _dup)
             else:
                 print(f"  ELEMENT_SOLID 개수 검사: 입력 {_rec_total} = 등록 {_add_total} (소실 0)")
 

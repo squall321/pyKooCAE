@@ -3277,6 +3277,12 @@ class KooMeshModifier(KooSimulationGenerator):
         filePath = os.path.join(self.curDir, self.inputFileName)
         filePath = filePath.replace(".k","")
         filePath = filePath + modifiedKeyword + ".k"
+        # 돈 모드가 없으면 접미사가 없어 출력 이름이 입력 모델과 같다 — 입력을 덮어쓰지 않고 멈춘다(리뷰 S3: *Mode 가 비었거나
+        # 읽히지 않은 옵션 파일이 rc 0 으로 입력 덱을 다시 썼다). 러너·MCP 가 만드는 옵션 파일은 늘 모드가 있다
+        if os.path.abspath(filePath) == os.path.abspath(os.path.join(self.curDir, self.inputFileName)):
+            print(f"🔴 출력 이름이 입력 모델과 같다({os.path.basename(filePath)}) — 돈 모드가 없다(*Mode 목록이 비었거나 "
+                  f"읽히지 않았다). 입력을 덮어쓰지 않고 멈춘다 (종료 코드 1)")
+            sys.exit(1)
         outputDir = os.path.dirname(filePath)
         with open(filePath, "w") as f:
             f.write("*KEYWORD\n")
@@ -3544,6 +3550,9 @@ if __name__ == "__main__":
                 if _iloss:
                     print(f"🔴 요소 소실: 읽기에서 요소 {sum(_iloss.values())}개를 버렸다 — "
                           + " · ".join(f"{why} {n}개" for why, n in _iloss.items()))
+                    if any("PID" in why for why in _iloss):
+                        print("   흔한 원인: 요소의 PID 를 정의한 *PART 가 없다 — 다른 파일에 있으면 함께 넣고, *PART_CONTACT 등 "
+                              "KMM 이 파트로 읽지 않는 *PART 변종이면 *PART 로 바꿀 것")
                 if _loss["n"]:
                     _eids = _loss["eids"]
                     print(f"🔴 요소 소실: 내보내기에서 요소를 쓰지 못한 경우가 {_loss['n']}건(EID {', '.join(map(str, _eids))}"

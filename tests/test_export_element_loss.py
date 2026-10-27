@@ -95,6 +95,13 @@ def real_dynain():
     return "*KEYWORD\n" + nodes + "*ELEMENT_SOLID\n" + els + "*INITIAL_STRESS_SOLID\n" + st + "*END\n"
 
 
+def mass_blank_deck():
+    """질량 요소 2개 뒤 빈 줄 하나 — 빈 줄은 요소가 아니다(리뷰 S2: '행을 읽지 못함' 으로 세여 rc 3 이었다)."""
+    el = f"{1:8d}{1:8d}" + "".join(f"{v:8d}" for v in (1, 2, 6, 5, 9, 10, 14, 13))
+    mass = f"{901:8d}{1:8d}{1.0e-3:16.8e}{1:8d}\n{902:8d}{2:8d}{1.0e-3:16.8e}{1:8d}\n\n"
+    return "*KEYWORD\n" + nodes8() + PROPS + "*ELEMENT_SOLID\n" + el + "\n*ELEMENT_MASS\n" + mass + "*END\n"
+
+
 def eids_of(text, kw, width=8):
     eids, inside = [], False
     for ln in text.splitlines():
@@ -140,6 +147,7 @@ def main():
 
     r, out, log = run(base / "pid_missing", deck(8, bad_pid=7))
     lost("*PART 없는 PID 의 솔리드 1개", r, log, "읽기", "1개", "*PART")
+    check("PID 미존재 안내에 *PART_CONTACT 같은 변종 언급(리뷰 S6)", "*PART_CONTACT" in log, log[-600:])
     check("PID 미존재: 나머지 요소 1·2 는 출력", out is not None and eids_of(out, "*ELEMENT_SOLID") == [1, 2], str(out and eids_of(out, "*ELEMENT_SOLID")))
 
     r, out, log = run(base / "shell_pid_missing", shell_deck(bad_pid=9))
@@ -156,6 +164,16 @@ def main():
     r, out, log = run(base / "mass_missing_node", mass_deck())
     lost("없는 절점에 붙은 질량 요소 1개", r, log, "읽기", "1개", "절점")
     check("질량 요소 901 은 출력", out is not None and eids_of(out, "*ELEMENT_MASS") == [901], str(out and eids_of(out, "*ELEMENT_MASS")))
+
+    r, out, log = run(base / "dup_eid", deck(8).replace(f"{3:8d}{1:8d}", f"{2:8d}{1:8d}"))
+    lost("같은 파트 안 EID 중복(뒤 요소가 앞을 덮음 — 리뷰 S7)", r, log, "읽기", "1개", "EID 중복")
+
+    r, out, log = run(base / "zero_modes", deck(8), opt="*Inputfile\nmodel.k\n*End\n", out_name="model.k")
+    check("모드 0개: 입력 model.k 를 덮어쓰지 않고 rc 1(리뷰 S3)", r.returncode == 1 and out == deck(8), f"rc={r.returncode} " + log[-500:])
+
+    r, out, log = run(base / "mass_blank_line", mass_blank_deck())
+    check("질량 블록 끝 빈 줄(리뷰 S2): rc 0 · 요소 소실 없음", r.returncode == 0 and "요소 소실" not in log, f"rc={r.returncode} " + log[-600:])
+    check("질량 요소 901·902 출력", out is not None and eids_of(out, "*ELEMENT_MASS") == [901, 902], str(out and eids_of(out, "*ELEMENT_MASS")))
 
     r, out, log = run(base / "dti_real_dynain", deck(8), opt=DTI_OPT, out_name="model_dti.k", extra={"dynain": real_dynain()})
     check("DTI 실제 dynain(요소 있음·*PART 없음 — 리뷰 S1): rc 0", r.returncode == 0, f"rc={r.returncode} " + log[-800:])
