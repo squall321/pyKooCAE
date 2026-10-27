@@ -82,6 +82,19 @@ def mass_deck():
     return "*KEYWORD\n" + nodes8() + PROPS + "*ELEMENT_SOLID\n" + el + "\n*ELEMENT_MASS\n" + mass + "*END\n"
 
 
+DTI_OPT = ("*Inputfile\nmodel.k\n*Mode\nDYNAIN_TO_INITIAL,1\n**DynainToInitial,1\n*DynainPath,dynain\n*IncludeStress,True\n"
+           "**EndDynainToInitial\n*End\n")
+
+
+def real_dynain():
+    """LS-DYNA 가 쓰는 dynain 꼴 — *PART 없이 *NODE·*ELEMENT_SOLID·*INITIAL_STRESS_SOLID 만(리뷰 S1)."""
+    nodes = "*NODE\n" + "".join(f"{i + 1:8d}{float(x):16.6f}{float(y):16.6f}{float(z) * 0.999:16.6f}\n" for i, (x, y, z) in enumerate(PTS))
+    els = "".join(f"{k + 1:8d}{1:8d}" + "".join(f"{v:8d}" for v in (k + 1, k + 2, k + 6, k + 5, k + 9, k + 10, k + 14, k + 13)) + "\n"
+                  for k in range(3))
+    st = "".join(f"{k + 1:10d}{1:10d}{0:10d}{0:10d}\n" + f10(12.5, 3.1, -4.2, 0.5, 0.2, 0.1, 0.0, 0.0) for k in range(3))
+    return "*KEYWORD\n" + nodes + "*ELEMENT_SOLID\n" + els + "*INITIAL_STRESS_SOLID\n" + st + "*END\n"
+
+
 def eids_of(text, kw, width=8):
     eids, inside = [], False
     for ln in text.splitlines():
@@ -93,12 +106,14 @@ def eids_of(text, kw, width=8):
     return eids
 
 
-def run(d, text):
+def run(d, text, opt=OPT, out_name="model_trans.k", extra=None):
     d.mkdir()
     (d / "model.k").write_text(text)
-    (d / "opt.txt").write_text(OPT)
+    (d / "opt.txt").write_text(opt)
+    for name, body in (extra or {}).items():
+        (d / name).write_text(body)
     r = subprocess.run(KMM_CMD + ["opt.txt"], cwd=d, capture_output=True, text=True, timeout=600, env=ENV)
-    out = d / "model_trans.k"
+    out = d / out_name
     return r, (out.read_text(errors="replace") if out.exists() else None), r.stdout + r.stderr
 
 
@@ -141,6 +156,12 @@ def main():
     r, out, log = run(base / "mass_missing_node", mass_deck())
     lost("없는 절점에 붙은 질량 요소 1개", r, log, "읽기", "1개", "절점")
     check("질량 요소 901 은 출력", out is not None and eids_of(out, "*ELEMENT_MASS") == [901], str(out and eids_of(out, "*ELEMENT_MASS")))
+
+    r, out, log = run(base / "dti_real_dynain", deck(8), opt=DTI_OPT, out_name="model_dti.k", extra={"dynain": real_dynain()})
+    check("DTI 실제 dynain(요소 있음·*PART 없음 — 리뷰 S1): rc 0", r.returncode == 0, f"rc={r.returncode} " + log[-800:])
+    check("DTI: 요소 소실 요약 없음(dynain 의 요소는 쓰지 않는다)", "🔴 요소 소실" not in log, log[-800:])
+    check("DTI: 출력에 요소 1·2·3 과 *INITIAL_STRESS_SOLID", out is not None and eids_of(out, "*ELEMENT_SOLID") == [1, 2, 3]
+          and "*INITIAL_STRESS_SOLID" in out, str(out and eids_of(out, "*ELEMENT_SOLID")))
 
     print()
     if FAILS:

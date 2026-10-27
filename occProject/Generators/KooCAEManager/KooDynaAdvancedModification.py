@@ -6874,8 +6874,16 @@ class KooDynaAdvancedModification:
 
         self.dynaSubImporter[dynainpath] = dynainImporter
 
+        # LS-DYNA dynain 은 *PART 없이 *NODE·요소·*INITIAL_* 만 싣는다. 여기서 쓰는 것은 절점·초기응력뿐이라 dynain 요소를
+        # 'PID 에 *PART 없음' 으로 버린 것은 출력 모델의 소실이 아니다 — 장부를 되돌린다(리뷰 S1: 안 그러면 DTI 가 늘 종료 코드 3)
+        from KooCAEManager.KooElement import IMPORT_LOSS
+        _loss_before = dict(IMPORT_LOSS)
         dynainImporter.importDynaFile(dynainpath)
         dynainImporter.importKeywordstoManager()
+        if IMPORT_LOSS != _loss_before:
+            IMPORT_LOSS.clear()
+            IMPORT_LOSS.update(_loss_before)
+            print("  (위 dynain 요소의 '🔴 소실' 은 출력 모델과 무관 — dynain 에서는 절점·초기응력만 가져온다)")
 
         if includeStress is False:
             dynainImporter.initialManager.ClearInitial()

@@ -53,6 +53,8 @@ def synth_dynain(deck, dest):
         except ValueError:
             continue
         out.append(f"{nid:8d}{x:16.6f}{y:16.6f}{z:16.6f}")
+    out.append("*ELEMENT_SOLID")      # 실제 dynain 은 *PART 없이 요소도 싣는다(리뷰 S1)
+    out += elems
     out.append("*INITIAL_STRESS_SOLID")
     for l in elems[:5]:
         out.append(f"{int(l[:8]):10d}{1:10d}{0:10d}{0:10d}")
