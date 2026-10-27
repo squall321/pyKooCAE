@@ -144,6 +144,13 @@ def main():
     d, rc, log = run("preserve_pattern", "*Inputfile\nmodel.k\n*PreserveIncludes\nsub*model.k\n*Recipe,shift_y,1\ndy,3\n*End\n")
     check("*PreserveIncludes 패턴 줄 sub*model.k 는 *Mode 충돌이 아니다(리뷰 R6): rc 0 · y 3 이동",
           rc == 0 and moved(read(d / "model_trans.k"), 0.0, 3.0), f"rc={rc} " + log[-500:])
+    for tag, opt in (("nbsp", "*Inputfile\nmodel.k\n\u00a0*Recipe,shift_y,1\ndy,3\n*End\n"),
+                     ("ideo", "*Inputfile\nmodel.k\n\u3000*Recipe,shift_y,1\ndy,3\n*End\n"),
+                     ("zwsp", "*Inputfile\nmodel.k\n\u200b*Recipe,shift_y,1\ndy,3\n*End\n"),
+                     ("cr_only", "*Inputfile\rmodel.k\r*Recipe,shift_y,1\rdy,3\r*End\r")):
+        d, rc, log = run("ws_" + tag, opt)
+        check(f"*Recipe 줄머리 {tag}(리뷰 S3): 펼쳐서 y 3 이동 · rc 0", rc == 0 and moved(read(d / "model_trans.k"), 0.0, 3.0),
+              f"rc={rc} " + log[-400:])
     d, rc, log = run("schema_int_ok", "*Inputfile\nmodel.k\n*Recipe,cnrb_ring\nn,16\n*End\n")
     check("정수 키에 16: 스키마 통과(펼침)", "레시피 cnrb_ring 판 1" in log and "이어야 한다" not in log, log[-500:])
 
@@ -158,6 +165,11 @@ def main():
                              "args": {"config": {"sections": [{"kind": "table", "top": "{{top}}"}]}}})
     recipes.save(post, {"note": "시험"}, USER)
 
+    for nm, args in (("lines_str", {"lines": "Translation,0,1,0"}), ("options_list", {"options": []})):
+        doc = {**recipes.load("shift_y", 1), "name": nm, "args": args, "params": {}}
+        doc["sha256"] = recipes._sha(doc)               # 등록소에 손으로 쓴 판(해시는 맞음 — 서명은 아니다)
+        (STORE / nm).mkdir()
+        recipes._write(STORE / nm / "1.yaml", doc)
     head = "*Inputfile\nmodel.k\n"
     bad = [
         ("unknown", head + "*Recipe,shift_rigid\ndx,1\ndz,2\n*End\n", "모르는 매개변수"),
@@ -174,6 +186,8 @@ def main():
         ("twice", head + "*Recipe,shift_rigid\ndx,1\n*Recipe,shift_y,1\ndy,1\n*End\n", "하나만"),
         ("badline", head + "*Recipe,shift_rigid\ndx 1\n*End\n", "이름,값"),
         ("end_before", head + "*End\n*Recipe,shift_y,1\ndy,3\n", "레시피대로 읽지 못했다"),
+        ("lines_str", head + "*Recipe,lines_str\n*End\n", "lines 는 목록"),
+        ("options_list", head + "*Recipe,options_list\n*End\n", "options 는 사전"),
         ("schema_int", head + "*Recipe,cnrb_ring\nn,16.5\n*End\n", "integer"),
     ]
     for name, opt, needle in bad:

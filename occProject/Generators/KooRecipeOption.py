@@ -24,7 +24,7 @@ PARAM_TYPES = {"number": (int, float), "integer": (int,), "string": (str,), "boo
 _KMM_KEY_RE = re.compile(r"^\*?[A-Za-z][A-Za-z0-9_.]*$")
 _KMM_STRUCTURE_RE = re.compile(r"^\s*(\*\*|\*(Inputfile|Mode|End)\b)", re.I)
 _INT_RE = re.compile(r"^[+-]?\d+$")
-_HAS_RECIPE = re.compile(rb"(?im)^(?:\xef\xbb\xbf)?[ \t]*\*recipe")   # 메모장 UTF-8 BOM 이 붙은 첫 줄도(리뷰 R4)
+_INVISIBLE = "\u200b\u2060\ufeff"     # 줄머리에서 떼는 보이지 않는 글자(ZWSP·WJ·BOM) — 공백(NBSP·전각 등)은 strip() 이 뗀다
 _ANY_TYPES = ("string", "number", "integer", "boolean", "array")      # 표에 없는 키·타입 없는 키(MCP additionalProperties)
 
 
@@ -210,14 +210,22 @@ def mode_key_types():
             for md in CATALOG.modes}
 
 
+def _lead(line):
+    """줄머리 판정용 — 앞뒤 공백(유니코드 포함)과 보이지 않는 글자를 뗀다(리뷰 S3: 웹·IME 에서 붙여 넣은 NBSP·전각 공백·ZWSP)."""
+    prev = None
+    while prev != line:
+        prev, line = line, line.strip().strip(_INVISIBLE)
+    return line
+
+
 def _block_lines(block, label, key_types=None):
     """key_types 가 있으면(kmm_<모드> 레시피) MCP args.schema.json 처럼 옵션 값 타입을 본다. kmm_chain 의 options 는 MCP 도
     타입을 보지 않는다(object 만)."""
     extra = sorted(set(block) - {"mode", "options", "lines"})
     if extra:
         raise RecipeError(f"{label}: 모르는 키 {extra} (options·lines 만 쓴다)")
-    opts = block.get("options") or {}
-    if not isinstance(opts, dict):
+    opts = block.get("options", {})
+    if not isinstance(opts, dict):          # MCP 스키마처럼 목록·글·null 은 거절(리뷰 S8)
         raise RecipeError(f"{label}: options 는 사전이어야 한다")
     out = []
     for k, v in opts.items():
@@ -228,7 +236,9 @@ def _block_lines(block, label, key_types=None):
             if not any(_is_type(v, t) for t in allowed):
                 raise RecipeError(f"{label}: 옵션 {k} 의 값 {v!r} 는 {'·'.join(allowed)} 이어야 한다(MCP 도구 스키마와 같은 검사)")
         out.append(f"{k},{_kmm_value(v)}")
-    lines = block.get("lines") or []
+    lines = block.get("lines", [])
+    if not isinstance(lines, list):         # 글을 주면 글자마다 한 줄이 되던 것(리뷰 S8)
+        raise RecipeError(f"{label}: lines 는 목록이어야 한다")
     if key_types is not None and len(lines) > 2000:
         raise RecipeError(f"{label}: lines 는 2000줄 이하여야 한다({len(lines)}줄)")
     for line in lines:
@@ -299,27 +309,31 @@ def expand_option_file(path):
     없으면 (path, None) — 파일 읽기도 바꾸지 않는다. 호출자는 읽은 모드를 목록과 대조한다."""
     with open(path, "rb") as f:
         data = f.read()
-    if not _HAS_RECIPE.search(data):
+    if b"*recipe" not in data.lower():     # 줄머리 꼴(BOM·NBSP·ZWSP·CR 줄끝)과 무관하게 먼저 거른다(리뷰 R4·S3)
         return path, None
     try:
-        lines = data.decode("utf-8-sig").splitlines()
+        lines, utf8 = data.decode("utf-8-sig").splitlines(), True
     except UnicodeDecodeError:
+        lines, utf8 = data.decode("utf-8", errors="replace").splitlines(), False
+    idx = [i for i, ln in enumerate(lines) if _lead(ln).lower().startswith("*recipe")]
+    if not idx:                            # 주석 등에 글자만 있다 — 레시피 파일이 아니다
+        return path, None
+    if not utf8:
         raise RecipeError("*Recipe 를 쓴 옵션 파일은 UTF-8 이어야 한다")
-    idx = [i for i, ln in enumerate(lines) if ln.strip().lower().startswith("*recipe")]
     if len(idx) != 1:
         raise RecipeError(f"*Recipe 는 옵션 파일에 하나만 쓴다({len(idx)}개)")
     i = idx[0]
-    parts = [p.strip() for p in lines[i].strip().split(",")]
+    parts = [p.strip().strip(_INVISIBLE) for p in _lead(lines[i]).split(",")]
     if parts[0].lower() != "*recipe" or len(parts) < 2 or not parts[1] or len(parts) > 3:
-        raise RecipeError(f"*Recipe 줄은 `*Recipe,<이름>[,<판>]` 이어야 한다: {lines[i].strip()!r}")
+        raise RecipeError(f"*Recipe 줄은 `*Recipe,<이름>[,<판>]` 이어야 한다: {_lead(lines[i])!r}")
     version = None
     if len(parts) == 3 and parts[2]:
         if not parts[2].isdigit():
             raise RecipeError(f"*Recipe 판은 양의 정수여야 한다: {parts[2]!r}")
         version = int(parts[2])
     texts, j = {}, i + 1
-    while j < len(lines) and not lines[j].strip().startswith("*"):
-        ln = lines[j].strip()
+    while j < len(lines) and not _lead(lines[j]).startswith("*"):
+        ln = _lead(lines[j])
         j += 1
         if not ln or ln.startswith("$"):
             continue
@@ -333,11 +347,11 @@ def expand_option_file(path):
     others = lines[:i] + lines[j:]
     # 줄머리가 *Mode·** 인 줄만 본다(리뷰 R6 — *PreserveIncludes 패턴 sub*model.k 같은 줄은 정상). 그 밖에 KMM 이 레시피와
     # 다르게 읽는 경우(*Recipe 앞의 *End 등)는 ImportOption 끝에서 읽은 모드를 레시피와 대조해 잡는다
-    clash = [ln.strip() for ln in others if ln.strip().startswith("**") or ln.strip().lower().startswith("*mode")]
+    clash = [_lead(ln) for ln in others if _lead(ln).startswith("**") or _lead(ln).lower().startswith("*mode")]
     if clash:
         raise RecipeError(f"*Recipe 와 *Mode·모드 블록을 함께 쓸 수 없다(레시피가 *Mode 목록을 만든다): {clash[0]!r}")
     rest = lines[j:]
-    end = next((k for k, ln in enumerate(rest) if ln.strip().lower() == "*end"), len(rest))
+    end = next((k for k, ln in enumerate(rest) if _lead(ln).lower() == "*end"), len(rest))
     head, tail = lines[:i] + rest[:end], rest[end + 1:]
 
     doc = load(parts[1], version)
