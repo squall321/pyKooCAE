@@ -3277,11 +3277,11 @@ class KooMeshModifier(KooSimulationGenerator):
         filePath = os.path.join(self.curDir, self.inputFileName)
         filePath = filePath.replace(".k","")
         filePath = filePath + modifiedKeyword + ".k"
-        # 돈 모드가 없으면 접미사가 없어 출력 이름이 입력 모델과 같다 — 입력을 덮어쓰지 않고 멈춘다(리뷰 S3: *Mode 가 비었거나
-        # 읽히지 않은 옵션 파일이 rc 0 으로 입력 덱을 다시 썼다). 러너·MCP 가 만드는 옵션 파일은 늘 모드가 있다
-        if os.path.abspath(filePath) == os.path.abspath(os.path.join(self.curDir, self.inputFileName)):
-            print(f"🔴 출력 이름이 입력 모델과 같다({os.path.basename(filePath)}) — 돈 모드가 없다(*Mode 목록이 비었거나 "
-                  f"읽히지 않았다). 입력을 덮어쓰지 않고 멈춘다 (종료 코드 1)")
+        # 돈 모드가 없으면 접미사가 없다 — 출력 이름이 입력 모델과 같아 입력 덱을 다시 쓰던 것(리뷰 S3), .key 입력은 다른 이름
+        # (modeley.k)으로 rc 0 이던 것(리뷰 T3)을 함께 막는다. 모드가 하나라도 돌면 접미사가 늘 붙는다(자체 출력 모드는 여기 안 온다)
+        if not modifiedKeyword:
+            print(f"🔴 돈 모드가 없다 — *Mode 목록이 비었거나 읽히지 않았다(*Recipe 를 썼다면 그 줄을 확인할 것). "
+                  f"입력 {self.inputFileName} 을 다시 쓰지 않고 멈춘다 (종료 코드 1)")
             sys.exit(1)
         outputDir = os.path.dirname(filePath)
         with open(filePath, "w") as f:

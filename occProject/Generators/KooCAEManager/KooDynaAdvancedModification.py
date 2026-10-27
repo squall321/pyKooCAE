@@ -6880,7 +6880,9 @@ class KooDynaAdvancedModification:
         _loss_before = dict(IMPORT_LOSS)
         dynainImporter.importDynaFile(dynainpath)
         dynainImporter.importKeywordstoManager()
-        if IMPORT_LOSS != _loss_before:
+        # 단, dynain 이 *PART 를 실었으면(앞 단계 _dti.k·손으로 만든 전체 덱) 그 파트가 출력 파트를 대신하므로 소실은 실제다 —
+        # 되돌리지 않는다(리뷰 T1)
+        if IMPORT_LOSS != _loss_before and not dynainImporter.partManager.parts:
             IMPORT_LOSS.clear()
             IMPORT_LOSS.update(_loss_before)
             print("  (위 dynain 요소의 '🔴 소실' 은 출력 모델과 무관 — dynain 에서는 절점·초기응력만 가져온다)")

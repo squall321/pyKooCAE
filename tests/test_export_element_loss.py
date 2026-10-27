@@ -171,6 +171,26 @@ def main():
     r, out, log = run(base / "zero_modes", deck(8), opt="*Inputfile\nmodel.k\n*End\n", out_name="model.k")
     check("모드 0개: 입력 model.k 를 덮어쓰지 않고 rc 1(리뷰 S3)", r.returncode == 1 and out == deck(8), f"rc={r.returncode} " + log[-500:])
 
+    # 리뷰 T — S7 은 덮인 요소가 다를 때만 소실(같은 요소가 두 번 읽힌 자기 *INCLUDE 탐침은 정보를 잃지 않는다)
+    same_dup = deck(8).replace("*END\n", "*ELEMENT_SOLID\n" + f"{2:8d}{1:8d}" + "".join(f"{v:8d}" for v in (2, 3, 7, 6, 10, 11, 15, 14)) + "\n*END\n")
+    r, out, log = run(base / "dup_identical", same_dup)
+    check("똑같은 요소가 두 번(EID·절점 같음): rc 0 · 요소 소실 없음(리뷰 T)", r.returncode == 0 and "요소 소실" not in log,
+          f"rc={r.returncode} " + log[-500:])
+    mass_hit = deck(8).replace("*END\n", "*ELEMENT_MASS\n" + f"{3:8d}{1:8d}{1.0e-3:16.8e}{1:8d}\n*END\n")
+    r, out, log = run(base / "mass_eid_collide", mass_hit)
+    lost("질량 요소 EID 3 이 같은 파트 솔리드 3 에 덮임(리뷰 T2)", r, log, "읽기", "1개", "ELEMENT_MASS")
+    check("질량 덮임을 솔리드 EID 중복으로 안내하지 않음", "ELEMENT_SOLID — 같은 파트 안 EID 중복" not in log, log[-500:])
+    dyn_part = deck(8, bad_pid=7)                     # 앞 단계 _dti.k 처럼 *PART 를 실은 dynain — 요소 3 은 없는 PID 7
+    r, out, log = run(base / "dti_dynain_with_part", deck(8), opt=DTI_OPT, out_name="model_dti.k", extra={"dynain": dyn_part})
+    lost("DTI dynain 에 *PART 가 있으면 그 소실은 실제(리뷰 T1)", r, log, "읽기", "1개", "*PART")
+    d = base / "zero_modes_key"
+    d.mkdir()
+    (d / "model.key").write_text(deck(8))
+    (d / "opt.txt").write_text("*Inputfile\nmodel.key\n*End\n")
+    r = subprocess.run(KMM_CMD + ["opt.txt"], cwd=d, capture_output=True, text=True, timeout=600, env=ENV)
+    check("모드 0개·.key 입력도 rc 1 · 새 .k 없음(리뷰 T3)", r.returncode == 1 and not [x for x in d.glob("*.k") if "_dump" not in x.name],
+          f"rc={r.returncode} {sorted(x.name for x in d.iterdir())} " + (r.stdout + r.stderr)[-300:])
+
     r, out, log = run(base / "mass_blank_line", mass_blank_deck())
     check("질량 블록 끝 빈 줄(리뷰 S2): rc 0 · 요소 소실 없음", r.returncode == 0 and "요소 소실" not in log, f"rc={r.returncode} " + log[-600:])
     check("질량 요소 901·902 출력", out is not None and eids_of(out, "*ELEMENT_MASS") == [901, 902], str(out and eids_of(out, "*ELEMENT_MASS")))

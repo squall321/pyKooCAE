@@ -2477,7 +2477,7 @@ class KooPartManager():
         _pid_miss = 0       # PID 가 파트에 없어 버려진 수(기존엔 완전 무언)
         _corner_total = 0   # 코너 절점 0 이라 레코드로 세기 전에 버린 수(리뷰 R — 예전엔 '소실 0' 으로 보고)
         _bad_pairs = 0      # 2줄 포맷의 헤더 이상·홀수 줄로 버린 짝
-        _dup = 0            # 같은 파트 안 EID 중복 — 뒤 요소가 앞 요소를 덮어 하나가 사라진다(리뷰 S7)
+        _dups = []          # 같은 파트 안 EID 중복 (파트, EID, 덮인 요소) — 끝에서 덮인 요소가 다른지 본다(리뷰 S7·T)
         for i in range(len(parametersSolid)):
                 parameters = parametersSolid[i]
                 mode = 1
@@ -2514,7 +2514,7 @@ class KooPartManager():
                         if pid in self.parts:
                             part = self.parts[pid]
                             if eid in part.elementManager.elements:
-                                _dup += 1
+                                _dups.append((part, eid, part.elementManager.elements[eid]))
                             if len(nids) == 4 or nids[4] == 0 or nids[4] == nids[3]:
                                 nodes = get_nodes(part.nodeManager, nids[:4])
                                 part.AddTetrahedronLinearElement(eid, *nodes)
@@ -2564,7 +2564,7 @@ class KooPartManager():
                         if pid in self.parts:
                             part = self.parts[pid]
                             if eid in part.elementManager.elements:
-                                _dup += 1
+                                _dups.append((part, eid, part.elementManager.elements[eid]))
                             if len(nids) == 4 or nids[4] == 0 or nids[4] == nids[3]:
                                 nodes = get_nodes(part.nodeManager, nids[:4])
                                 part.AddTetrahedronLinearElement(eid, *nodes)
@@ -2601,13 +2601,30 @@ class KooPartManager():
                         if pid in self.parts:
                             part = self.parts[pid]
                             if eid in part.elementManager.elements:
-                                _dup += 1
+                                _dups.append((part, eid, part.elementManager.elements[eid]))
                             if len(nids) == 20:
                                 nodes = get_nodes(part.nodeManager, nids[:20])
                                 part.AddHexahedronQuadraticElement(eid, *nodes)
                                 _add_total += 1
 
         # 🔴 개수 불변식 보고 — 요소가 조용히 사라지는 것을 로그만 보고도 잡을 수 있게 한다.
+        # 같은 파트 안 EID 중복 — 덮인 요소가 지금 요소와 같으면(같은 요소를 두 번 읽음 — 자기 *INCLUDE 등) 잃은 것이 없다.
+        # 다르면 소실이다. 덮인 것이 질량 요소(같은 파트 사전에 함께 든다)면 질량 소실로 따로 센다(리뷰 T2)
+        _dup = _dup_mass = _dup_same = 0
+        for _part, _eid, _prev in _dups:
+            _cur = _part.elementManager.elements.get(_eid)
+            if getattr(_prev, "type", "") in ("POINT", "POINT_NSET"):
+                _dup_mass += 1
+            elif (_cur is not None and getattr(_prev, "type", None) == getattr(_cur, "type", None)
+                  and [getattr(n, "id", None) for n in _prev.nodes] == [getattr(n, "id", None) for n in _cur.nodes]):
+                _dup_same += 1
+            else:
+                _dup += 1
+        if _dup_same:
+            print(f"  Warning: 같은 파트 안에 똑같은 솔리드가 {_dup_same}개 겹친다(EID·절점 같음) — 하나만 쓴다")
+        if _dup_mass:
+            print(f"  🔴 ELEMENT_MASS: 같은 파트 솔리드와 EID 가 같아 질량 요소 {_dup_mass}개가 덮였다")
+            note_import_loss("ELEMENT_MASS — 같은 파트 솔리드와 EID 가 같아 덮임", _dup_mass)
         # 버린 요소는 KMM 이 끝에서 🔴 + 종료 코드 3 으로 알린다(리뷰 R — 예전엔 🔴 만 찍고 rc 0).
         if _rec_total or _corner_total or _bad_pairs:
             _lost = _rec_total - _add_total
