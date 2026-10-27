@@ -18,7 +18,8 @@
 - [x] 빌드 v126(캡 scope, 238b490) — 04:18~05:50, BUILD_RC 0, 최저 가용 44 GB, GLIBC ≤ 2.35 세 모듈. bin 10-27 04:59·05:41·05:49, NFS == SIF 소스 트리
 - [x] 컴파일본 e2e(e2e_v126_host.log) — v120 덱 8 ALL PASS·KMM_BIN 시험 12종 0 FAIL(요소 소실 50·레시피 39 — 컴파일본 PyYAML·한글 로그)·KAM AIRMESH·KAM PKG ALL OK·KCR sphere ALL PASS
 - [x] SIF v126 6254091c(KooRemapper 5ff6f6e1 기대=실제, op 3/3) · compute-node-images 같음 · tar v126 1,346,080,840 B · Drive · 메일. kooremapper-fd 앞뒤 알림
-- [ ] SIF e2e
-- [ ] push
-- [ ] 헤드 /opt 교체(백업) · 다시 확인
-- [ ] 메모리·문서 갱신
+- [x] SIF e2e(e2e_v126_sif.log) — v120 덱 8 ALL PASS·SIF 안 KMM 시험 12종 0 FAIL(레시피 포함)·KAM PKG ALL OK
+- [x] push — pyKooCAE b480941..a8a8c84(19커밋), KooSlurm 문서 9f891361..afbf7864(레시피 2단계 지침)
+- [x] 헤드 /opt 교체 v126 6254091c(백업 SmartTwinPreprocessor_backup_20261027_062128.sif = v125 2e1dc4fd) · apptainer exec 확인(덱 8·요소 소실 50·레시피 39·KAM PKG)
+- [x] 메모리·문서 갱신
+- [ ] 노드 배포 — VM(node001·002) 꺼짐. 켜지면 compute-node-images(v126)를 deploy_apptainers.sh --image 로
