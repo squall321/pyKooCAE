@@ -37,6 +37,9 @@ CHAIN = {"name": "shift_rigid", "tool": "kmm_chain", "summary": "파트 5 를 �
 SINGLE = {"name": "shift_y", "tool": "kmm_transform", "summary": "모델을 y 로 옮긴다",
           "params": {"dy": {"type": "integer", "description": "y 이동량", "minimum": 0, "maximum": 100}},
           "args": {"options": {"Translation": "0,{{dy}},0"}}}
+CNRB = {"name": "cnrb_ring", "tool": "kmm_convert_cnrb_to_solid", "summary": "CNRB 를 원통 솔리드로 — 원주 절점 수",
+        "params": {"n": {"type": "number", "description": "원주 절점 수(정수 키에 수 매개변수)"}},
+        "args": {"options": {"NumCircumNodes": "{{n}}"}}}
 PTS = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)]
 
 
@@ -105,7 +108,7 @@ def save(doc):
 
 def main():
     print(f"KMM={' '.join(KMM_CMD)}  BASE={BASE}")
-    assert save(CHAIN)["version"] == 1 and save(SINGLE)["version"] == 1
+    assert save(CHAIN)["version"] == 1 and save(SINGLE)["version"] == 1 and save(CNRB)["version"] == 1
 
     d, rc, log = run("chain", "*Inputfile\nmodel.k\n*Recipe,shift_rigid\ndx,7.5\n*End\n")
     check("kmm_chain 레시피(판 생략 → 판 1): rc 0", rc == 0, log[-800:])
@@ -135,6 +138,15 @@ def main():
     check("*Recipe 없는 옵션 파일: rc 0 · _recipe.txt 없음", rc == 0 and not (d / "opt_recipe.txt").exists()
           and moved(read(d / "model_trans.k"), 1.0, 0.0), log[-600:])
 
+    d, rc, log = run("bom", "\ufeff*Recipe,shift_y,1\ndy,3\n*Inputfile\nmodel.k\n*End\n")
+    check("UTF-8 BOM 이 붙은 첫 줄 *Recipe 도 펼친다(리뷰 R4): rc 0 · y 3 이동", rc == 0 and moved(read(d / "model_trans.k"), 0.0, 3.0),
+          f"rc={rc} " + log[-500:])
+    d, rc, log = run("preserve_pattern", "*Inputfile\nmodel.k\n*PreserveIncludes\nsub*model.k\n*Recipe,shift_y,1\ndy,3\n*End\n")
+    check("*PreserveIncludes 패턴 줄 sub*model.k 는 *Mode 충돌이 아니다(리뷰 R6): rc 0 · y 3 이동",
+          rc == 0 and moved(read(d / "model_trans.k"), 0.0, 3.0), f"rc={rc} " + log[-500:])
+    d, rc, log = run("schema_int_ok", "*Inputfile\nmodel.k\n*Recipe,cnrb_ring\nn,16\n*End\n")
+    check("정수 키에 16: 스키마 통과(펼침)", "레시피 cnrb_ring 판 1" in log and "이어야 한다" not in log, log[-500:])
+
     # 손으로 고친 판(해시 다름)·후처리 레시피(해시는 맞음)
     tdir = STORE / "tampered_rcp"
     tdir.mkdir()
@@ -161,12 +173,14 @@ def main():
          "함께 쓸 수 없다"),
         ("twice", head + "*Recipe,shift_rigid\ndx,1\n*Recipe,shift_y,1\ndy,1\n*End\n", "하나만"),
         ("badline", head + "*Recipe,shift_rigid\ndx 1\n*End\n", "이름,값"),
+        ("end_before", head + "*End\n*Recipe,shift_y,1\ndy,3\n", "레시피대로 읽지 못했다"),
+        ("schema_int", head + "*Recipe,cnrb_ring\nn,16.5\n*End\n", "integer"),
     ]
     for name, opt, needle in bad:
         d, rc, log = run("bad_" + name, opt)
-        check(f"거절 {name}: rc 1 · 🔴 *Recipe · '{needle}' · 출력 없음",
-              rc == 1 and "🔴 *Recipe" in log and needle in log and not list(d.glob("model_*.k")) or False,
-              f"rc={rc} " + log[-500:])
+        check(f"거절 {name}: rc 1 · 🔴 *Recipe · '{needle}' · 출력 없음 · 입력 그대로",
+              rc == 1 and "🔴 *Recipe" in log and needle in log and not list(d.glob("model_*.k"))
+              and read(d / "model.k") == deck() or False, f"rc={rc} " + log[-500:])
 
     recipes.retire("shift_y", 1, "시험 — 판 1 도 내림", USER)
     d, rc, log = run("all_retired", head + "*Recipe,shift_y\ndy,1\n*End\n")

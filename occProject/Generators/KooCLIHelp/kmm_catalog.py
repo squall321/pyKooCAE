@@ -106,6 +106,8 @@ TOPICS = [
         "- 등록소: $STMC_RECIPES_DIR (기본 /data/SmartTwinMCP/recipes)/<이름>/<판>.yaml. 목록·매개변수는 MCP recipe_list·recipe_get.",
         "- KMM 이 레시피를 *Mode 목록과 모드 블록으로 펼쳐 <옵션>_recipe.txt 로 남기고 그 파일을 읽는다.",
         "- 매개변수 검사(타입·minimum·maximum·enum·필수)와 값 표기(실수 7.5, 참거짓 True/False)는 MCP recipe_run 과 같다.",
+        "- kmm_<모드> 레시피는 펼친 옵션 값도 MCP 도구 스키마처럼 키 타입(실수·정수·참거짓)을 본다(정수 키에 16.5 는 거절).",
+        "- *End 는 맨 끝에 둔다. KMM 이 읽은 모드가 레시피와 다르면(예: *Recipe 앞의 *End) 아무것도 쓰지 않고 멈춘다.",
         "- 저장 때 해시(sha256)와 내용이 다른 판(손으로 고친 판)은 쓰지 않는다. 내린 판은 판을 지정해야 쓰고, 알림이 나온다.",
         "- *Recipe 와 *Mode·모드 블록은 한 파일에 함께 쓰지 않는다. 후처리(post_*) 레시피는 MCP recipe_run 으로만 돈다.",
         "- 옵션 안 파일 경로는 그대로 둔다(MCP 는 작업 폴더로 복사해 이름만 남긴다). 오류는 '🔴 *Recipe: …' 와 종료 코드 1.",

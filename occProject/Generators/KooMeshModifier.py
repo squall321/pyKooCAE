@@ -169,7 +169,7 @@ class KooMeshModifier(KooSimulationGenerator):
         # *Recipe,<이름>[,<판>] 이 있으면 MCP 레시피 등록소의 판을 펼친 옵션 글(<옵션>_recipe.txt)을 읽는다 — 없으면 그대로
         from KooRecipeOption import RecipeError, expand_option_file
         try:
-            filePath = expand_option_file(filePath)
+            filePath, recipeModes = expand_option_file(filePath)
         except RecipeError as e:
             print(f"🔴 *Recipe: {e}")
             sys.exit(1)
@@ -2772,6 +2772,14 @@ class KooMeshModifier(KooSimulationGenerator):
                 line = line.strip()
                 if not line:  # Empty line, skip it
                     continue
+
+        # *Recipe 로 펼친 글은 레시피의 모드 그대로 읽혀야 한다. *Recipe 앞의 *End 같은 줄로 모드가 빠지면 KMM 은 모드 0개로
+        # 돌아 입력 모델 이름 그대로 다시 쓴다(리뷰 R2). 그러기 전에 멈춘다
+        if recipeModes is not None and (self.modeList != recipeModes
+                                        or self.modeIDList != list(range(1, len(recipeModes) + 1))):
+            print(f"🔴 *Recipe: 펼친 옵션 글을 레시피대로 읽지 못했다 — 읽은 모드 {self.modeList}, 레시피 {recipeModes}. "
+                  f"*Recipe 앞에 *End 같은 줄이 있는지 볼 것")
+            sys.exit(1)
 
     def GenerateDecomposeK(self, modeid):
         curOption = self.modeIDOption[modeid]

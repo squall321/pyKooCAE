@@ -24,7 +24,8 @@ PARAM_TYPES = {"number": (int, float), "integer": (int,), "string": (str,), "boo
 _KMM_KEY_RE = re.compile(r"^\*?[A-Za-z][A-Za-z0-9_.]*$")
 _KMM_STRUCTURE_RE = re.compile(r"^\s*(\*\*|\*(Inputfile|Mode|End)\b)", re.I)
 _INT_RE = re.compile(r"^[+-]?\d+$")
-_HAS_RECIPE = re.compile(rb"(?im)^[ \t]*\*recipe")
+_HAS_RECIPE = re.compile(rb"(?im)^(?:\xef\xbb\xbf)?[ \t]*\*recipe")   # 메모장 UTF-8 BOM 이 붙은 첫 줄도(리뷰 R4)
+_ANY_TYPES = ("string", "number", "integer", "boolean", "array")      # 표에 없는 키·타입 없는 키(MCP additionalProperties)
 
 
 class RecipeError(Exception):
@@ -175,7 +176,43 @@ def _kmm_value(v):
     return s
 
 
-def _block_lines(block, label):
+def _value_types(ktype):
+    """키 타입(help 카탈로그) → 허용 JSON 타입. MCP 생성기 _kmm_value_schema 와 같은 규칙."""
+    t = (ktype or "").strip()
+    if t == "실수":
+        return ("number", "string")
+    if t == "정수":
+        return ("integer", "string")
+    if t in ("True/False", "bool", "True|False"):
+        return ("boolean", "string")
+    return _ANY_TYPES
+
+
+def _is_type(v, t):
+    """JSON Schema(2020-12) 타입 판정 — 참거짓은 수가 아니고, 정수는 소수부가 0 인 수(16.0)도 포함한다."""
+    if t == "string":
+        return isinstance(v, str)
+    if t == "boolean":
+        return isinstance(v, bool)
+    if t == "array":
+        return isinstance(v, list)
+    if isinstance(v, bool):
+        return False
+    if t == "number":
+        return isinstance(v, (int, float))
+    return isinstance(v, int) or (isinstance(v, float) and v.is_integer())
+
+
+def mode_key_types():
+    """모드 → {키: 허용 타입}. MCP 생성기와 같은 출처(help 카탈로그 키 표, 옵션 키 꼴에 맞는 키만)."""
+    from KooCLIHelp.kmm_catalog import CATALOG
+    return {md.name: {k.name: _value_types(k.type) for k in md.keys if _KMM_KEY_RE.fullmatch(k.name)}
+            for md in CATALOG.modes}
+
+
+def _block_lines(block, label, key_types=None):
+    """key_types 가 있으면(kmm_<모드> 레시피) MCP args.schema.json 처럼 옵션 값 타입을 본다. kmm_chain 의 options 는 MCP 도
+    타입을 보지 않는다(object 만)."""
     extra = sorted(set(block) - {"mode", "options", "lines"})
     if extra:
         raise RecipeError(f"{label}: 모르는 키 {extra} (options·lines 만 쓴다)")
@@ -186,8 +223,15 @@ def _block_lines(block, label):
     for k, v in opts.items():
         if not _KMM_KEY_RE.fullmatch(str(k)):
             raise RecipeError(f"{label}: 옵션 키를 쓸 수 없다: {k!r}")
+        if key_types is not None:
+            allowed = key_types.get(k, _ANY_TYPES)
+            if not any(_is_type(v, t) for t in allowed):
+                raise RecipeError(f"{label}: 옵션 {k} 의 값 {v!r} 는 {'·'.join(allowed)} 이어야 한다(MCP 도구 스키마와 같은 검사)")
         out.append(f"{k},{_kmm_value(v)}")
-    for line in block.get("lines") or []:
+    lines = block.get("lines") or []
+    if key_types is not None and len(lines) > 2000:
+        raise RecipeError(f"{label}: lines 는 2000줄 이하여야 한다({len(lines)}줄)")
+    for line in lines:
         if not isinstance(line, str) or not line.strip() or "\n" in line or "\r" in line:
             raise RecipeError(f"{label}: lines 에 빈 줄·줄바꿈을 넣을 수 없다(블록이 그 자리에서 끝난다): {line!r}")
         if _KMM_STRUCTURE_RE.match(line):
@@ -234,7 +278,7 @@ def recipe_blocks(doc, values):
         raise RecipeError(f"레시피 도구 {tool!r} 는 KMM 에서 펼칠 수 없다(kmm_chain·kmm_<모드> 만 — 후처리 레시피는 MCP recipe_run 으로)")
     if "mode" in args:
         raise RecipeError(f"{tool} 레시피 args 에 mode 를 쓰지 않는다")
-    return [(mode, index[mode], _block_lines(args, mode))]
+    return [(mode, index[mode], _block_lines(args, mode, mode_key_types().get(mode, {})))]
 
 
 def option_text(head, blocks, tail):
@@ -251,13 +295,14 @@ def option_text(head, blocks, tail):
 # ── 옵션 파일 ───────────────────────────────────────────────────────────────────
 
 def expand_option_file(path):
-    """*Recipe 가 있으면 펼친 옵션 글을 <옵션>_recipe.txt 로 쓰고 그 경로를 돌려준다. 없으면 path 그대로(읽기도 바꾸지 않는다)."""
+    """*Recipe 가 있으면 펼친 옵션 글을 <옵션>_recipe.txt 로 쓰고 (그 경로, 레시피 모드 목록) 을 돌려준다.
+    없으면 (path, None) — 파일 읽기도 바꾸지 않는다. 호출자는 읽은 모드를 목록과 대조한다."""
     with open(path, "rb") as f:
         data = f.read()
     if not _HAS_RECIPE.search(data):
-        return path
+        return path, None
     try:
-        lines = data.decode("utf-8").splitlines()
+        lines = data.decode("utf-8-sig").splitlines()
     except UnicodeDecodeError:
         raise RecipeError("*Recipe 를 쓴 옵션 파일은 UTF-8 이어야 한다")
     idx = [i for i, ln in enumerate(lines) if ln.strip().lower().startswith("*recipe")]
@@ -286,7 +331,9 @@ def expand_option_file(path):
             raise RecipeError(f"매개변수 {k} 를 두 번 줬다")
         texts[k] = v
     others = lines[:i] + lines[j:]
-    clash = [ln.strip() for ln in others if ln.strip().startswith("**") or "*mode" in ln.lower()]
+    # 줄머리가 *Mode·** 인 줄만 본다(리뷰 R6 — *PreserveIncludes 패턴 sub*model.k 같은 줄은 정상). 그 밖에 KMM 이 레시피와
+    # 다르게 읽는 경우(*Recipe 앞의 *End 등)는 ImportOption 끝에서 읽은 모드를 레시피와 대조해 잡는다
+    clash = [ln.strip() for ln in others if ln.strip().startswith("**") or ln.strip().lower().startswith("*mode")]
     if clash:
         raise RecipeError(f"*Recipe 와 *Mode·모드 블록을 함께 쓸 수 없다(레시피가 *Mode 목록을 만든다): {clash[0]!r}")
     rest = lines[j:]
@@ -307,4 +354,4 @@ def expand_option_file(path):
     shown = ", ".join(f"{k}={_text(v)}" for k, v in values.items()) or "없음"
     print(f"레시피 {doc['name']} 판 {doc['version']}(sha256 {doc['sha256'][:12]}, 만든 이 {doc.get('created_by', '?')}) — "
           f"매개변수 {shown} → 모드 {len(blocks)}개({', '.join(b[0] for b in blocks)})로 펼쳐 {os.path.basename(out)} 를 읽는다")
-    return out
+    return out, [b[0] for b in blocks]
