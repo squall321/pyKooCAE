@@ -94,6 +94,22 @@ TOPICS = [
         "낙하 속도 √(2gh) 의 g: DROP_ATTITUDE·DROP_WEIGHT_IMPACT_TEST 의 Gravity 키. 없으면 모델 재질 밀도 중앙값으로",
         "  ton-mm-s(< 1e-7) → 9810, kg-m-s(100~1e5) → 9.81. kg-mm-ms·g-cm-s 등은 판정 불가라 Gravity 를 꼭 줄 것 (로그 WARNING).",
     ]),
+    Topic("recipe", "레시피 — MCP 레시피 등록소의 판을 옵션 파일에서 이름으로 부른다", aliases=["레시피", "*Recipe", "recipes"], body=[
+        "MCP recipe_save 로 저장한 레시피(kmm_chain·kmm_<모드>)를 옵션 파일에서 이름으로 부른다. 펼친 결과는 MCP 와 같다.",
+        "",
+        "  *Inputfile",
+        "  model.k",
+        "  *Recipe,<이름>[,<판>]                판을 빼면 쓸 수 있는(active) 마지막 판",
+        "  <매개변수>,<값>                       한 줄에 하나 — 다음 `*` 줄까지 (빈 줄·$ 줄은 건너뛴다)",
+        "  *End",
+        "",
+        "- 등록소: $STMC_RECIPES_DIR (기본 /data/SmartTwinMCP/recipes)/<이름>/<판>.yaml. 목록·매개변수는 MCP recipe_list·recipe_get.",
+        "- KMM 이 레시피를 *Mode 목록과 모드 블록으로 펼쳐 <옵션>_recipe.txt 로 남기고 그 파일을 읽는다.",
+        "- 매개변수 검사(타입·minimum·maximum·enum·필수)와 값 표기(실수 7.5, 참거짓 True/False)는 MCP recipe_run 과 같다.",
+        "- 저장 때 해시(sha256)와 내용이 다른 판(손으로 고친 판)은 쓰지 않는다. 내린 판은 판을 지정해야 쓰고, 알림이 나온다.",
+        "- *Recipe 와 *Mode·모드 블록은 한 파일에 함께 쓰지 않는다. 후처리(post_*) 레시피는 MCP recipe_run 으로만 돈다.",
+        "- 옵션 안 파일 경로는 그대로 둔다(MCP 는 작업 폴더로 복사해 이름만 남긴다). 오류는 '🔴 *Recipe: …' 와 종료 코드 1.",
+    ]),
 ]
 
 

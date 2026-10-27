@@ -166,6 +166,13 @@ class KooMeshModifier(KooSimulationGenerator):
 
     def ImportOption(self, fileName):
         filePath = os.path.join(self.curDir, fileName)
+        # *Recipe,<이름>[,<판>] 이 있으면 MCP 레시피 등록소의 판을 펼친 옵션 글(<옵션>_recipe.txt)을 읽는다 — 없으면 그대로
+        from KooRecipeOption import RecipeError, expand_option_file
+        try:
+            filePath = expand_option_file(filePath)
+        except RecipeError as e:
+            print(f"🔴 *Recipe: {e}")
+            sys.exit(1)
 
         with open(filePath, "r") as f:
             line = f.readline().strip()
