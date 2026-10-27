@@ -68,28 +68,33 @@ from KooODBCADManager.PackageLayer import *
 from KooODBCADManager.PackageWarpageLayer import *
 
 # *Define CurveFunction 식 — 예전엔 옵션 파일 글을 eval 해 한 줄로 임의 코드가 돌았다(os.system 등). 이제 AST 화이트리스트로
-# 계산한다: 수·사칙·**·%·//·괄호·부호, math 한 인자 함수(접두 없음·math.)·np./numpy. 함수, pi·e·tau, abs·round·int·float.
-# 예전 eval 이름공간(from math import *·np)의 같은 함수·연산자를 그대로 써 허용하는 식의 값은 eval 과 같다.
-# 큰 정수 거듭제곱(9**9**9)은 실수로 계산해 멈추지 않고 OverflowError 가 된다. 식에는 쉼표가 없다(옵션 줄을 쉼표로 나눈다).
+# 계산한다: 수·참거짓·사칙·**·%·//·괄호·부호·~·not, 비교(연쇄)·조건식(a if c else b)·and/or, math 한 인자 함수(접두 없음·
+# math.)·np./numpy. 함수, pi·e·tau·inf·nan, abs·round·int·float·bool. 예전 eval 이름공간(from math import *·np)의 같은
+# 함수·연산자를 그대로 써 허용하는 식의 값은 eval 과 같다(정수 거듭제곱도 정수 그대로 — 리뷰 R7). 결과가 100만 비트를 넘는 정수
+# 거듭제곱(9**9**9)은 멈추지 않고 OverflowError 가 된다. 식에는 쉼표가 없다(옵션 줄을 쉼표로 나눈다).
 import ast as _ast
 import math as _math
 import operator as _op
 import numpy as _np
 _CURVE_MATH = {n: getattr(_math, n) for n in (
     "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "exp", "expm1",
-    "log", "log10", "log2", "log1p", "sqrt", "fabs", "floor", "ceil", "trunc", "radians", "degrees")}
-_CURVE_BUILTIN = {"abs": abs, "round": round, "int": int, "float": float}
+    "log", "log10", "log2", "log1p", "sqrt", "fabs", "floor", "ceil", "trunc", "radians", "degrees",
+    "erf", "erfc", "gamma", "lgamma", "cbrt", "exp2", "isqrt", "ulp", "isfinite", "isinf", "isnan") if hasattr(_math, n)}
+_CURVE_BUILTIN = {"abs": abs, "round": round, "int": int, "float": float, "bool": bool}
 _CURVE_NP = {"sin", "cos", "tan", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "arcsinh", "arccosh", "arctanh",
              "exp", "expm1", "exp2", "log", "log10", "log2", "log1p", "sqrt", "cbrt", "square", "abs", "absolute",
-             "fabs", "floor", "ceil", "trunc", "rint", "sign", "radians", "degrees", "deg2rad", "rad2deg"}
-_CURVE_CONST = {"pi": _math.pi, "e": _math.e, "tau": _math.tau}
+             "fabs", "floor", "ceil", "trunc", "rint", "sign", "radians", "degrees", "deg2rad", "rad2deg",
+             "round", "around", "fix", "sinc", "reciprocal", "negative", "positive"}
+_CURVE_CONST = {"pi": _math.pi, "e": _math.e, "tau": _math.tau, "inf": _math.inf, "nan": _math.nan}
+_CURVE_CMPS = {_ast.Lt: _op.lt, _ast.LtE: _op.le, _ast.Gt: _op.gt, _ast.GtE: _op.ge, _ast.Eq: _op.eq, _ast.NotEq: _op.ne}
 _CURVE_BINOPS = {_ast.Add: _op.add, _ast.Sub: _op.sub, _ast.Mult: _op.mul, _ast.Div: _op.truediv,
                  _ast.FloorDiv: _op.floordiv, _ast.Mod: _op.mod}
 
 
 def _curve_pow(a, b):
-    if isinstance(a, int) and isinstance(b, int) and abs(a) > 1 and (abs(b) > 64 or a.bit_length() > 256):
-        return float(a) ** b
+    # 정수끼리는 정수 그대로(예전 eval 과 같은 값). 결과가 100만 비트를 넘으면 계산하지 않는다 — 예전 eval 은 여기서 멈췄다
+    if isinstance(a, int) and isinstance(b, int) and b > 0 and abs(a) > 1 and b * a.bit_length() > 1_000_000:
+        raise OverflowError("정수 거듭제곱 결과가 너무 크다")
     return a ** b
 
 
@@ -106,15 +111,39 @@ def _curve_attr(node):
 
 
 def _curve_eval(node):
-    if isinstance(node, _ast.Constant) and type(node.value) in (int, float):
+    if isinstance(node, _ast.Constant) and type(node.value) in (int, float, bool):
         return node.value
     if isinstance(node, _ast.BinOp) and isinstance(node.op, _ast.Pow):
         return _curve_pow(_curve_eval(node.left), _curve_eval(node.right))
     if isinstance(node, _ast.BinOp) and type(node.op) in _CURVE_BINOPS:
         return _CURVE_BINOPS[type(node.op)](_curve_eval(node.left), _curve_eval(node.right))
-    if isinstance(node, _ast.UnaryOp) and isinstance(node.op, (_ast.UAdd, _ast.USub)):
+    if isinstance(node, _ast.UnaryOp) and isinstance(node.op, (_ast.UAdd, _ast.USub, _ast.Not, _ast.Invert)):
         v = _curve_eval(node.operand)
+        if isinstance(node.op, _ast.Not):
+            return not v
+        if isinstance(node.op, _ast.Invert):
+            return _op.invert(v)
         return +v if isinstance(node.op, _ast.UAdd) else -v
+    if isinstance(node, _ast.Compare) and all(type(o) in _CURVE_CMPS for o in node.ops):
+        # 연쇄 비교는 파이썬처럼 — 처음 거짓인 비교 결과(아니면 마지막 결과)를 그대로 돌려주고, 거짓 뒤는 계산하지 않는다.
+        # numpy 값끼리면 결과가 np.bool_ 이라 뒤 연산(0 나눗셈·~)의 의미가 파이썬 bool 과 다르다 — 예전 eval 과 같게 그대로 둔다
+        left, res = _curve_eval(node.left), True
+        for o, comp in zip(node.ops, node.comparators):
+            right = _curve_eval(comp)
+            res = _CURVE_CMPS[type(o)](left, right)
+            if not res:
+                return res
+            left = right
+        return res
+    if isinstance(node, _ast.IfExp):
+        return _curve_eval(node.body) if _curve_eval(node.test) else _curve_eval(node.orelse)
+    if isinstance(node, _ast.BoolOp):
+        v = None
+        for sub in node.values:                # and 는 처음 거짓인 값, or 는 처음 참인 값(파이썬과 같다)
+            v = _curve_eval(sub)
+            if (isinstance(node.op, _ast.And) and not v) or (isinstance(node.op, _ast.Or) and v):
+                return v
+        return v
     if isinstance(node, _ast.Name) and node.id in _CURVE_CONST:
         return _CURVE_CONST[node.id]
     if isinstance(node, _ast.Attribute) and not callable(_curve_attr(node)):

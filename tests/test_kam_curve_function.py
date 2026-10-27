@@ -47,6 +47,17 @@ GOOD = [  # (LCID, 변수, 식) — 기준 x 0~2 를 0.5 간격
     (112, {}, "np.arctan({x})+np.exp(-{x})+np.log1p({x})+np.pi"),
     (113, {}, "round({x}*10)/10+int({x})+float({x})"),
     (114, {"E": "2.5"}, "{E}"),
+    # 리뷰 R7 — 정수 거듭제곱은 정수 그대로(예전 eval: 3**65%7 = 5, (2**65+1)-2**65 = 1)
+    (115, {}, "3**65%7+{x}"),
+    (116, {}, "(2**65+1)-2**65+{x}"),
+    # 리뷰 R8 — 예전에 되던 안전한 식: 조건식·비교(연쇄)·and/or·not·~·남은 math 한 인자 함수·np.round·True·inf
+    (117, {}, "{x}/0.1 if {x}<0.1 else 1.0"),
+    (118, {}, "({x}<0.5)*2+(0<{x}<=1.5)"),
+    (119, {}, "erf({x})+erfc({x})+gamma({x}+1)+lgamma({x}+2)+cbrt({x})+exp2({x})"),
+    (120, {}, "np.round({x}*3)+True"),
+    (121, {}, "({x}>0 and {x}) or 0.25"),
+    (122, {}, "(not {x})+~int({x}*2)"),
+    (123, {}, "{x} if {x}<inf else 0"),
 ]
 
 
@@ -94,7 +105,7 @@ def main():
     for ln in log.splitlines():
         if ln.startswith("RESULT "):
             got = json.loads(ln[7:])
-    check("허용 식 14개: rc 0 · 커브 14개", rc == 0 and len(got) == len(GOOD), f"rc={rc} " + log[-800:])
+    check(f"허용 식 {len(GOOD)}개: rc 0 · 커브 {len(GOOD)}개", rc == 0 and len(got) == len(GOOD), f"rc={rc} " + log[-800:])
     for lcid, variables, expr in GOOD:
         xs, want = expected(variables, expr)
         c = got.get(str(lcid), {})
