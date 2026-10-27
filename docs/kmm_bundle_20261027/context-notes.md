@@ -98,3 +98,11 @@
   - J_Y5 는 *PARAMETER_LOCAL 인클루드를 passthrough 로 넘겨, 그 안의 *PART 2 를 쓰는 본 파일 셸 9개가 빠진다.
   - I_X4b 는 8절점 두께 셸 EID 21 출력 실패다. 예전엔 트레이스백이었다.
 - J_M6·J_Y5·PART_CONTACT 는 KMM 리더의 기존 한계다. 이번에 '조용한 소실' 에서 'rc 3' 으로 바뀌었을 뿐이고 지원 작업은 따로다.
+
+## KooRemapper 쪽과 맞춘 것(10-27, kooremapper-fd)
+- KooRemapper 리맵 산출물 중 메시 전용 덱(*PART 없이 *NODE·*ELEMENT_* 만)이 57개다. 설계상 PART·MAT 가 있는 덱에 *INCLUDE·조립해서 쓰는 메시다. offset 결과 13개도 모두 같은 꼴이다(베이스 arc30_flat.k 가 메시 전용이라 PID 1 의 *PART 가 없다).
+  - 이것을 KMM 에 단독으로 넣으면 예전엔 요소가 전부 빠진 출력(rc 0)이었고, 이제 rc 3 이다.
+  - 문서 정리·예제 정리는 KooRemapper 쪽 사용자 결정으로 넘겼다.
+- KCR REMAP 체인(CumulativeScenarioRunner._run_kooremapper_step)은 앞 스텝 *_dti.k(완전한 덱)에 op 을 적용해 Remap_dti.k 를 다음 스텝에 넘긴다.
+  - op 출력에 *PART 없는 요소가 있으면 v126 의 다음 KMM 스텝이 rc 3 으로 멈춘다.
+  - 예전엔 그 요소를 버린 채 LS-DYNA 까지 갔다. 원래 깨진 체인이 드러나는 것이다. *PART 를 그대로 남기는 op(matswap 등)은 영향이 없다.

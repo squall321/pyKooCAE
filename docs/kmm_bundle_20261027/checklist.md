@@ -15,9 +15,9 @@
 - [x] 확인 리뷰 T — 낮음 5건 + 말뭉치 R 오탐 2건(자기 *INCLUDE) 고침(2632734·3296a37·2762399). 리뷰 라운드 종료(수렴)
 - [x] 시험 묶음 4회째(suite_u) 통과 · 말뭉치 S(최종, 738건) — 같음 725, 다름 13 모두 KMM 출력의 실제 요소 소실이 rc 3 으로 드러난 것
       (C_g6·C_real_kr_offset·F_z1·H_t7×2·I_X4b·J_M6·J_Y5·L_P7·M_m024×2·V126×2 — 오탐 0)
-- [ ] 빌드 v126(캡 scope, 빌드 중 소스 수정 금지) — bin 시각 확인
-- [ ] 컴파일본 e2e(이번 네 가지 + 지난 판 묶음)
-- [ ] SIF v126(kooremapper-fd 에 앞뒤로 알림) · compute-node-images · tar · Drive · 메일
+- [x] 빌드 v126(캡 scope, 238b490) — 04:18~05:50, BUILD_RC 0, 최저 가용 44 GB, GLIBC ≤ 2.35 세 모듈. bin 10-27 04:59·05:41·05:49, NFS == SIF 소스 트리
+- [x] 컴파일본 e2e(e2e_v126_host.log) — v120 덱 8 ALL PASS·KMM_BIN 시험 12종 0 FAIL(요소 소실 50·레시피 39 — 컴파일본 PyYAML·한글 로그)·KAM AIRMESH·KAM PKG ALL OK·KCR sphere ALL PASS
+- [x] SIF v126 6254091c(KooRemapper 5ff6f6e1 기대=실제, op 3/3) · compute-node-images 같음 · tar v126 1,346,080,840 B · Drive · 메일. kooremapper-fd 앞뒤 알림
 - [ ] SIF e2e
 - [ ] push
 - [ ] 헤드 /opt 교체(백업) · 다시 확인
