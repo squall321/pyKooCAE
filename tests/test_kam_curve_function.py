@@ -58,6 +58,7 @@ GOOD = [  # (LCID, 변수, 식) — 기준 x 0~2 를 0.5 간격
     (121, {}, "({x}>0 and {x}) or 0.25"),
     (122, {}, "(not {x})+~int({x}*2)"),
     (123, {}, "{x} if {x}<inf else 0"),
+    (124, {}, "{x} if {x}<np.inf else np.nan"),
 ]
 
 
@@ -121,6 +122,7 @@ def main():
         ("exec", "exec('import os')"),
         ("unknown_name", "{x}+undefined_name"),
         ("big_pow", "9**9**9"),
+        ("square_chain", "np.square(" * 20 + "2**100" + ")" * 20),
     ]
     for name, expr in bad:
         d, rc, log = run("bad_" + name, block(201, {}, expr), timeout=60)

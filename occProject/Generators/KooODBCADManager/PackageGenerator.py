@@ -105,12 +105,20 @@ def _curve_attr(node):
             return _CURVE_MATH[name]
         if mod == "math" and name in _CURVE_CONST:
             return _CURVE_CONST[name]
-        if mod in ("np", "numpy") and (name in _CURVE_NP or name in ("pi", "e")):
+        if mod in ("np", "numpy") and (name in _CURVE_NP or name in ("pi", "e", "inf", "nan")):
             return getattr(_np, name)
     raise ValueError(f"허용하지 않는 이름: {_ast.unparse(node)}")
 
 
 def _curve_eval(node):
+    # 모든 중간값에 상한 — 거듭제곱만 막으면 np.square( 겹치기·곱셈으로 정수가 커진다(리뷰 S5). 100만 비트면 실수로도 넘친다
+    v = _curve_eval1(node)
+    if type(v) is int and v.bit_length() > 1_000_000:
+        raise OverflowError("정수 값이 100만 비트를 넘는다")
+    return v
+
+
+def _curve_eval1(node):
     if isinstance(node, _ast.Constant) and type(node.value) in (int, float, bool):
         return node.value
     if isinstance(node, _ast.BinOp) and isinstance(node.op, _ast.Pow):
