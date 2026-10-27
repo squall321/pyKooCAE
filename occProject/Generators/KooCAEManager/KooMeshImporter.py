@@ -220,7 +220,7 @@ class KooDynaImporter():
         parts = {}
         for part in self.partManager.parts.values():
             mat = by_id.get(getattr(part, "mid", None))
-            got = None
+            got, cands = None, None
             if isinstance(mat, KooMaterialPiecewiseLinearPlasticity):
                 lcss = int(getattr(mat, "lcss", 0) or 0)
                 eps = [float(v) for v in (getattr(mat, "eps", None) or [])]
@@ -252,9 +252,13 @@ class KooDynaImporter():
                     got = min(cands, key=lambda c: c[0])
             if got and got[0] > 0:
                 # 기준 — FS 는 R16 MAT_017 "based on a maximum principal stress criterion" 이라 σ1 과 비교할 값이고, 나머지(SIGY·
-                # 커브)는 von Mises 항복이다(리뷰 R3). 옛 도구는 이 키를 모른 채 그대로 돈다
-                parts[str(part.id)] = {"yield": got[0], "source": got[1], "mid": int(mat.id),
-                                       "criterion": "max_principal" if "FS(파괴)" in got[1] else "von_mises"}
+                # 커브)는 von Mises 항복이다(리뷰 R3). 옛 도구는 이 키들을 모른 채 그대로 돈다.
+                # limits — 기준이 다른 한계는 크기로 하나만 고를 수 없다(σ1·σvm 사이에 대소가 없다). 후처리가 한계마다 안전율을
+                # 내 작은 쪽을 쓰게 둘 다 적는다(리뷰 S4). yield·source·criterion 은 사용자 결정 min(SIGY, FS) 그대로
+                crit = lambda src: "max_principal" if "FS(파괴)" in src else "von_mises"
+                parts[str(part.id)] = {"yield": got[0], "source": got[1], "mid": int(mat.id), "criterion": crit(got[1]),
+                                       "limits": [{"value": v, "criterion": crit(src), "source": src}
+                                                  for v, src in (cands or [got])]}
         return {"unit": unit, "parts": parts}
 
     def ImportMetaDatafromPreviousStep(self, jsonData):

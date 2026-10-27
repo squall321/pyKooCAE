@@ -493,6 +493,10 @@ def test_part_yield():
     crit = {k: v.get("criterion") for k, v in parts.items()}
     check("기준: MAT_017 FS 는 최대 주응력(max_principal), SIGY·커브는 von_mises(리뷰 R3)",
           crit.get("10") == "max_principal" and all(c == "von_mises" for k, c in crit.items() if k != "10"), str(crit))
+    lim = {k: sorted((x.get("criterion"), x.get("value")) for x in (v.get("limits") or [])) for k, v in parts.items()}
+    check("한계 목록: MAT_017 은 SIGY(von_mises)·FS(max_principal) 둘 다, FS 0 은 SIGY 만(리뷰 S4)",
+          lim.get("10") == [("max_principal", 30.0), ("von_mises", 45.0)] and lim.get("11") == [("max_principal", 60.0), ("von_mises", 45.0)]
+          and lim.get("12") == [("von_mises", 45.0)] and lim.get("1") == [("von_mises", 250.0)], str(lim))
     check("KMM 이 더한 바닥판(13)은 맵에 없음", "13" not in parts, str(parts.keys()))
     check("model.parts 는 예전 형식(pid → 이름 글)", isinstance(model.get("parts"), dict)
           and all(isinstance(v, str) for v in model["parts"].values()), str(model.get("parts")))
