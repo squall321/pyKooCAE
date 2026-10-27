@@ -67,6 +67,72 @@ from KooCAEManager.KooSection import *
 from KooODBCADManager.PackageLayer import *
 from KooODBCADManager.PackageWarpageLayer import *
 
+# *Define CurveFunction 식 — 예전엔 옵션 파일 글을 eval 해 한 줄로 임의 코드가 돌았다(os.system 등). 이제 AST 화이트리스트로
+# 계산한다: 수·사칙·**·%·//·괄호·부호, math 한 인자 함수(접두 없음·math.)·np./numpy. 함수, pi·e·tau, abs·round·int·float.
+# 예전 eval 이름공간(from math import *·np)의 같은 함수·연산자를 그대로 써 허용하는 식의 값은 eval 과 같다.
+# 큰 정수 거듭제곱(9**9**9)은 실수로 계산해 멈추지 않고 OverflowError 가 된다. 식에는 쉼표가 없다(옵션 줄을 쉼표로 나눈다).
+import ast as _ast
+import math as _math
+import operator as _op
+import numpy as _np
+_CURVE_MATH = {n: getattr(_math, n) for n in (
+    "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "exp", "expm1",
+    "log", "log10", "log2", "log1p", "sqrt", "fabs", "floor", "ceil", "trunc", "radians", "degrees")}
+_CURVE_BUILTIN = {"abs": abs, "round": round, "int": int, "float": float}
+_CURVE_NP = {"sin", "cos", "tan", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "arcsinh", "arccosh", "arctanh",
+             "exp", "expm1", "exp2", "log", "log10", "log2", "log1p", "sqrt", "cbrt", "square", "abs", "absolute",
+             "fabs", "floor", "ceil", "trunc", "rint", "sign", "radians", "degrees", "deg2rad", "rad2deg"}
+_CURVE_CONST = {"pi": _math.pi, "e": _math.e, "tau": _math.tau}
+_CURVE_BINOPS = {_ast.Add: _op.add, _ast.Sub: _op.sub, _ast.Mult: _op.mul, _ast.Div: _op.truediv,
+                 _ast.FloorDiv: _op.floordiv, _ast.Mod: _op.mod}
+
+
+def _curve_pow(a, b):
+    if isinstance(a, int) and isinstance(b, int) and abs(a) > 1 and (abs(b) > 64 or a.bit_length() > 256):
+        return float(a) ** b
+    return a ** b
+
+
+def _curve_attr(node):
+    if isinstance(node, _ast.Attribute) and isinstance(node.value, _ast.Name):
+        mod, name = node.value.id, node.attr
+        if mod == "math" and name in _CURVE_MATH:
+            return _CURVE_MATH[name]
+        if mod == "math" and name in _CURVE_CONST:
+            return _CURVE_CONST[name]
+        if mod in ("np", "numpy") and (name in _CURVE_NP or name in ("pi", "e")):
+            return getattr(_np, name)
+    raise ValueError(f"허용하지 않는 이름: {_ast.unparse(node)}")
+
+
+def _curve_eval(node):
+    if isinstance(node, _ast.Constant) and type(node.value) in (int, float):
+        return node.value
+    if isinstance(node, _ast.BinOp) and isinstance(node.op, _ast.Pow):
+        return _curve_pow(_curve_eval(node.left), _curve_eval(node.right))
+    if isinstance(node, _ast.BinOp) and type(node.op) in _CURVE_BINOPS:
+        return _CURVE_BINOPS[type(node.op)](_curve_eval(node.left), _curve_eval(node.right))
+    if isinstance(node, _ast.UnaryOp) and isinstance(node.op, (_ast.UAdd, _ast.USub)):
+        v = _curve_eval(node.operand)
+        return +v if isinstance(node.op, _ast.UAdd) else -v
+    if isinstance(node, _ast.Name) and node.id in _CURVE_CONST:
+        return _CURVE_CONST[node.id]
+    if isinstance(node, _ast.Attribute) and not callable(_curve_attr(node)):
+        return _curve_attr(node)
+    if isinstance(node, _ast.Call) and not node.keywords and not any(isinstance(a, _ast.Starred) for a in node.args):
+        f = node.func
+        fn = (_CURVE_MATH.get(f.id) or _CURVE_BUILTIN.get(f.id)) if isinstance(f, _ast.Name) else _curve_attr(f)
+        if callable(fn):
+            return fn(*[_curve_eval(a) for a in node.args])
+    raise ValueError(f"허용하지 않는 식: {_ast.unparse(node)}")
+
+
+def _eval_curve_expr(text):
+    v = _curve_eval(_ast.parse(text.strip(), mode="eval").body)
+    if isinstance(v, complex):
+        raise ValueError(f"값이 실수가 아니다: {v}")
+    return v
+
 
 
 class PackageUserdefined:
@@ -2329,7 +2395,11 @@ class PackageUserdefined:
                     curOutput = curOutput.replace("{"+variable+"}",variableMap[variable])
             
             curOutput = curOutput.replace("{"+baseVarName+"}",str(baseVarList[i]))                
-            value = eval(curOutput)
+            try:
+                value = _eval_curve_expr(curOutput)
+            except Exception as e:
+                print("Error : DEFINE_CURVE_FUNCTION LCID {0} 식 '{1}' 를 계산하지 못했다 — {2}".format(LCID, curOutput, e))
+                sys.exit(1)
             A1List.append(baseVarList[i])
             O1List.append(value)
             print("A1: {0}, O1: {1}".format(baseVarList[i],value))
