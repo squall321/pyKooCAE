@@ -147,10 +147,16 @@ def main():
     for tag, opt in (("nbsp", "*Inputfile\nmodel.k\n\u00a0*Recipe,shift_y,1\ndy,3\n*End\n"),
                      ("ideo", "*Inputfile\nmodel.k\n\u3000*Recipe,shift_y,1\ndy,3\n*End\n"),
                      ("zwsp", "*Inputfile\nmodel.k\n\u200b*Recipe,shift_y,1\ndy,3\n*End\n"),
-                     ("cr_only", "*Inputfile\rmodel.k\r*Recipe,shift_y,1\rdy,3\r*End\r")):
+                     ("cr_only", "*Inputfile\rmodel.k\r*Recipe,shift_y,1\rdy,3\r*End\r"),
+                     ("lrm", "*Inputfile\nmodel.k\n\u200e*Recipe,shift_y,1\ndy,3\n*End\n"),
+                     ("zwj_shy", "*Inputfile\nmodel.k\n\u200d\u00ad*Recipe,shift_y,1\ndy,3\n*End\n")):
         d, rc, log = run("ws_" + tag, opt)
         check(f"*Recipe 줄머리 {tag}(리뷰 S3): 펼쳐서 y 3 이동 · rc 0", rc == 0 and moved(read(d / "model_trans.k"), 0.0, 3.0),
               f"rc={rc} " + log[-400:])
+    d, rc, log = run("vt_comment", "*Inputfile\nmodel.k\n$ note\x0b*Recipe,shift_y\n*Mode\nTRANSFORM,1\n**Transform,1\n"
+                     "Translation,1,0,0\n**EndTransform\n*End\n")
+    check("주석 안 \\x0b 뒤 *Recipe 는 레시피 줄이 아니다 — 보통 옵션 파일 그대로(리뷰 T)", rc == 0 and moved(read(d / "model_trans.k"), 1.0, 0.0)
+          and not (d / "opt_recipe.txt").exists(), f"rc={rc} " + log[-400:])
     d, rc, log = run("schema_int_ok", "*Inputfile\nmodel.k\n*Recipe,cnrb_ring\nn,16\n*End\n")
     check("정수 키에 16: 스키마 통과(펼침)", "레시피 cnrb_ring 판 1" in log and "이어야 한다" not in log, log[-500:])
 

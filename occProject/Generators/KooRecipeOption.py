@@ -17,6 +17,7 @@ import json
 import math
 import os
 import re
+import unicodedata
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]{2,47}$")
 SLOT_RE = re.compile(r"\{\{\s*([A-Za-z0-9_]+)\s*\}\}")
@@ -24,7 +25,7 @@ PARAM_TYPES = {"number": (int, float), "integer": (int,), "string": (str,), "boo
 _KMM_KEY_RE = re.compile(r"^\*?[A-Za-z][A-Za-z0-9_.]*$")
 _KMM_STRUCTURE_RE = re.compile(r"^\s*(\*\*|\*(Inputfile|Mode|End)\b)", re.I)
 _INT_RE = re.compile(r"^[+-]?\d+$")
-_INVISIBLE = "\u200b\u2060\ufeff"     # 줄머리에서 떼는 보이지 않는 글자(ZWSP·WJ·BOM) — 공백(NBSP·전각 등)은 strip() 이 뗀다
+_NEWLINE_RE = re.compile(r"\r\n|\r|\n")   # ImportOption(텍스트 모드 보편 줄바꿈)과 같은 줄 나눔 — \x0b·\x85·U+2028 은 줄이 아니다
 _ANY_TYPES = ("string", "number", "integer", "boolean", "array")      # 표에 없는 키·타입 없는 키(MCP additionalProperties)
 
 
@@ -210,12 +211,26 @@ def mode_key_types():
             for md in CATALOG.modes}
 
 
+def _invisible(ch):
+    return ch.isspace() or unicodedata.category(ch) == "Cf"
+
+
 def _lead(line):
-    """줄머리 판정용 — 앞뒤 공백(유니코드 포함)과 보이지 않는 글자를 뗀다(리뷰 S3: 웹·IME 에서 붙여 넣은 NBSP·전각 공백·ZWSP)."""
-    prev = None
-    while prev != line:
-        prev, line = line, line.strip().strip(_INVISIBLE)
-    return line
+    """줄머리 판정용 — 앞뒤 공백(유니코드 포함)과 보이지 않는 서식 글자(범주 Cf — ZWSP·LRM·ZWJ·soft hyphen·BOM 등)를
+    뗀다(리뷰 S3·T4: 웹·IME 에서 붙여 넣은 줄머리)."""
+    i, j = 0, len(line)
+    while i < j and _invisible(line[i]):
+        i += 1
+    while j > i and _invisible(line[j - 1]):
+        j -= 1
+    return line[i:j]
+
+
+def _split_lines(text):
+    out = _NEWLINE_RE.split(text)
+    if out and out[-1] == "":
+        out.pop()
+    return out
 
 
 def _block_lines(block, label, key_types=None):
@@ -312,9 +327,9 @@ def expand_option_file(path):
     if b"*recipe" not in data.lower():     # 줄머리 꼴(BOM·NBSP·ZWSP·CR 줄끝)과 무관하게 먼저 거른다(리뷰 R4·S3)
         return path, None
     try:
-        lines, utf8 = data.decode("utf-8-sig").splitlines(), True
+        lines, utf8 = _split_lines(data.decode("utf-8-sig")), True
     except UnicodeDecodeError:
-        lines, utf8 = data.decode("utf-8", errors="replace").splitlines(), False
+        lines, utf8 = _split_lines(data.decode("utf-8", errors="replace")), False
     idx = [i for i, ln in enumerate(lines) if _lead(ln).lower().startswith("*recipe")]
     if not idx:                            # 주석 등에 글자만 있다 — 레시피 파일이 아니다
         return path, None
@@ -323,7 +338,7 @@ def expand_option_file(path):
     if len(idx) != 1:
         raise RecipeError(f"*Recipe 는 옵션 파일에 하나만 쓴다({len(idx)}개)")
     i = idx[0]
-    parts = [p.strip().strip(_INVISIBLE) for p in _lead(lines[i]).split(",")]
+    parts = [_lead(p) for p in _lead(lines[i]).split(",")]
     if parts[0].lower() != "*recipe" or len(parts) < 2 or not parts[1] or len(parts) > 3:
         raise RecipeError(f"*Recipe 줄은 `*Recipe,<이름>[,<판>]` 이어야 한다: {_lead(lines[i])!r}")
     version = None
