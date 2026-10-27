@@ -110,27 +110,27 @@ def _curve_attr(node):
     raise ValueError(f"허용하지 않는 이름: {_ast.unparse(node)}")
 
 
-def _curve_eval(node):
-    # 모든 중간값에 상한 — 거듭제곱만 막으면 np.square( 겹치기·곱셈으로 정수가 커진다(리뷰 S5). 100만 비트면 실수로도 넘친다
-    v = _curve_eval1(node)
+def _cap(v):
+    # 모든 정수 중간값에 상한 — 거듭제곱만 막으면 np.square( 겹치기·곱셈으로 커진다(리뷰 S5). 감싸는 함수를 따로 두면 마디마다
+    # 프레임이 둘이라 식 길이 한도가 절반이 된다(리뷰 T5) — 값을 만드는 자리에서 직접 부른다. 100만 비트면 실수로도 넘친다
     if type(v) is int and v.bit_length() > 1_000_000:
         raise OverflowError("정수 값이 100만 비트를 넘는다")
     return v
 
 
-def _curve_eval1(node):
+def _curve_eval(node):
     if isinstance(node, _ast.Constant) and type(node.value) in (int, float, bool):
-        return node.value
+        return _cap(node.value)
     if isinstance(node, _ast.BinOp) and isinstance(node.op, _ast.Pow):
-        return _curve_pow(_curve_eval(node.left), _curve_eval(node.right))
+        return _cap(_curve_pow(_curve_eval(node.left), _curve_eval(node.right)))
     if isinstance(node, _ast.BinOp) and type(node.op) in _CURVE_BINOPS:
-        return _CURVE_BINOPS[type(node.op)](_curve_eval(node.left), _curve_eval(node.right))
+        return _cap(_CURVE_BINOPS[type(node.op)](_curve_eval(node.left), _curve_eval(node.right)))
     if isinstance(node, _ast.UnaryOp) and isinstance(node.op, (_ast.UAdd, _ast.USub, _ast.Not, _ast.Invert)):
         v = _curve_eval(node.operand)
         if isinstance(node.op, _ast.Not):
             return not v
         if isinstance(node.op, _ast.Invert):
-            return _op.invert(v)
+            return _cap(_op.invert(v))
         return +v if isinstance(node.op, _ast.UAdd) else -v
     if isinstance(node, _ast.Compare) and all(type(o) in _CURVE_CMPS for o in node.ops):
         # 연쇄 비교는 파이썬처럼 — 처음 거짓인 비교 결과(아니면 마지막 결과)를 그대로 돌려주고, 거짓 뒤는 계산하지 않는다.
@@ -160,7 +160,7 @@ def _curve_eval1(node):
         f = node.func
         fn = (_CURVE_MATH.get(f.id) or _CURVE_BUILTIN.get(f.id)) if isinstance(f, _ast.Name) else _curve_attr(f)
         if callable(fn):
-            return fn(*[_curve_eval(a) for a in node.args])
+            return _cap(fn(*[_curve_eval(a) for a in node.args]))
     raise ValueError(f"허용하지 않는 식: {_ast.unparse(node)}")
 
 
