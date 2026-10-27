@@ -25,14 +25,23 @@ def element_set_key(aSet):
             aSet.sid)
 
 
-# 내보내기에서 쓰지 못한 요소 — KMM 이 끝에서 🔴 요약 + 종료 코드 3 으로 알린다(조용한 요소 소실 금지, 사용자 결정 10-26).
-# n 은 건너뛴 횟수, eids 는 건너뛴 요소 ID(차례 그대로, 중복 없이). 솔리드·2차 솔리드 출력기가 채운다.
-EXPORT_LOSS = {"n": 0, "eids": {}}
+# 요소 소실 장부 — KMM 이 끝에서 🔴 요약 + 종료 코드 3 으로 알린다(조용한 요소 소실 금지, 사용자 결정 10-26).
+# EXPORT_LOSS: 내보내기에서 쓰지 못한 횟수 n 과 앞 10개 EID(큰 덱에서 전부 빠져도 메모리가 늘지 않게). 출력기들이 채운다.
+# IMPORT_LOSS: 읽기에서 버린 요소 수(이유별 — PID 에 *PART 없음·코너 절점 0 등). KooPart 의 요소 읽기가 채운다(리뷰 R).
+EXPORT_LOSS = {"n": 0, "eids": []}
+IMPORT_LOSS = {}
 
 
 def _note_export_loss(element):
     EXPORT_LOSS["n"] += 1
-    EXPORT_LOSS["eids"].setdefault(getattr(element, "id", "?"), None)
+    eid = getattr(element, "id", "?")
+    if len(EXPORT_LOSS["eids"]) < 10 and eid not in EXPORT_LOSS["eids"]:
+        EXPORT_LOSS["eids"].append(eid)
+
+
+def note_import_loss(why, n=1):
+    if n > 0:
+        IMPORT_LOSS[why] = IMPORT_LOSS.get(why, 0) + n
 
 
 class Element:
@@ -4221,25 +4230,45 @@ class ElementManager:
                 pass
         if self.GetNumberofLinearFaceElements() > 0:
             stream.write(("*ELEMENT_SHELL %\n" if w == 10 else "*ELEMENT_SHELL\n"))
+            _skip = 0
             for key in self.elements:
                 element : FaceElement = self.elements[key]
-                if element.type == "TRI3":
-                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[2].id+startNID):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
-                    stream.write(formatString)
-                elif element.type == "QUAD4":
-                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
-                    stream.write(formatString)
+                try:
+                    if element.type == "TRI3":
+                        formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[2].id+startNID):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
+                        stream.write(formatString)
+                    elif element.type == "QUAD4":
+                        formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
+                        stream.write(formatString)
+                except Exception:
+                    # 요소 하나를 못 쓰면 그 요소만 건너뛰고 장부에 적는다 — KMM 이 끝에서 🔴 + 종료 코드 3(리뷰 R)
+                    _skip += 1
+                    _note_export_loss(element)
+                    if _skip <= 5:
+                        print(f"  Warning: 셸 요소 출력 실패(EID {getattr(element,'id','?')}) — 스킵")
+            if _skip:
+                print(f"  Warning: 셸 요소 출력 스킵 총 {_skip}개")
         
         if self.GetNumberofQuadraticFaceElements() > 0:
             stream.write(("*ELEMENT_SHELL %\n" if w == 10 else "*ELEMENT_SHELL\n"))
+            _skip = 0
             for key in self.elements:
                 element : FaceElement = self.elements[key]
-                if element.type == "TRI6":
-                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
-                    stream.write(formatString)
-                elif element.type == "QUAD8":
-                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}\n"
-                    stream.write(formatString)
+                try:
+                    if element.type == "TRI6":
+                        formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(0):>{w}}{str(0):>{w}}\n"
+                        stream.write(formatString)
+                    elif element.type == "QUAD8":
+                        formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}\n"
+                        stream.write(formatString)
+                except Exception:
+                    # 요소 하나를 못 쓰면 그 요소만 건너뛰고 장부에 적는다 — KMM 이 끝에서 🔴 + 종료 코드 3(리뷰 R)
+                    _skip += 1
+                    _note_export_loss(element)
+                    if _skip <= 5:
+                        print(f"  Warning: 셸 요소 출력 실패(EID {getattr(element,'id','?')}) — 스킵")
+            if _skip:
+                print(f"  Warning: 셸 요소 출력 스킵 총 {_skip}개")
 
     def WritetoDynaKeywordLine(self, pid, startNID, startEID):
         dynaString = ""
@@ -4267,23 +4296,43 @@ class ElementManager:
     def WriteStreamDynaKeywordLine(self, stream, pid, startNID, startEID):
         if self.GetNumberofLinearLineElements() > 0:
             stream.write("*ELEMENT_BEAM\n")             
+            _skip = 0
             for key in self.elements:
                 element : LineElement = self.elements[key]
-                if element.type == "LINE2":
-                    nullStr = "        "
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{nullStr}{str(element.constraints[0]):>8}{str(element.constraints[1]):>8}{str(element.constraints[2]):>8}{str(element.constraints[3]):>8}{str(element.local):>8}\n"
-                    stream.write(formatString)
-        if self.GetNumberofQuadraticLineElements() > 0:
-            stream.write("*ELEMENT_BEAM\n")
-            for key in self.elements:
-                element : LineElement = self.elements[key]
-                if element.type == "LINE3":
-                    if element.nodes[2].id == 0:
+                try:
+                    if element.type == "LINE2":
                         nullStr = "        "
                         formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{nullStr}{str(element.constraints[0]):>8}{str(element.constraints[1]):>8}{str(element.constraints[2]):>8}{str(element.constraints[3]):>8}{str(element.local):>8}\n"
-                    else:
-                        formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.constraints[0]):>8}{str(element.constraints[1]):>8}{str(element.constraints[2]):>8}{str(element.constraints[3]):>8}{str(element.local):>8}\n"
-                    stream.write(formatString)
+                        stream.write(formatString)
+                except Exception:
+                    # 요소 하나를 못 쓰면 그 요소만 건너뛰고 장부에 적는다 — KMM 이 끝에서 🔴 + 종료 코드 3(리뷰 R)
+                    _skip += 1
+                    _note_export_loss(element)
+                    if _skip <= 5:
+                        print(f"  Warning: 빔 요소 출력 실패(EID {getattr(element,'id','?')}) — 스킵")
+            if _skip:
+                print(f"  Warning: 빔 요소 출력 스킵 총 {_skip}개")
+        if self.GetNumberofQuadraticLineElements() > 0:
+            stream.write("*ELEMENT_BEAM\n")
+            _skip = 0
+            for key in self.elements:
+                element : LineElement = self.elements[key]
+                try:
+                    if element.type == "LINE3":
+                        if element.nodes[2].id == 0:
+                            nullStr = "        "
+                            formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{nullStr}{str(element.constraints[0]):>8}{str(element.constraints[1]):>8}{str(element.constraints[2]):>8}{str(element.constraints[3]):>8}{str(element.local):>8}\n"
+                        else:
+                            formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.constraints[0]):>8}{str(element.constraints[1]):>8}{str(element.constraints[2]):>8}{str(element.constraints[3]):>8}{str(element.local):>8}\n"
+                        stream.write(formatString)
+                except Exception:
+                    # 요소 하나를 못 쓰면 그 요소만 건너뛰고 장부에 적는다 — KMM 이 끝에서 🔴 + 종료 코드 3(리뷰 R)
+                    _skip += 1
+                    _note_export_loss(element)
+                    if _skip <= 5:
+                        print(f"  Warning: 빔 요소 출력 실패(EID {getattr(element,'id','?')}) — 스킵")
+            if _skip:
+                print(f"  Warning: 빔 요소 출력 스킵 총 {_skip}개")
     
     def WritetoDynaKeywordPoint(self, pid, startNID, startEID):
         dynaString = ""
@@ -4316,27 +4365,47 @@ class ElementManager:
     def WriteStreamDynaKeywordPoint(self, stream, pid, startNID, startEID):
         if self.GetNumberofPointElements() > 0:
             i = 0
+            _skip = 0
             for key in self.elements:
                 element : PointElement = self.elements[key]
-                if element.type == "POINT":
-                    i = i + 1
-                    if i == 1:
-                        stream.write("*ELEMENT_MASS\n")
-                    massStr = _format_mass16(element.mass)
-                    ePid = getattr(element, "pid", 0) or pid
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{massStr:>16}{str(ePid):>8}\n"
-                    stream.write(formatString)
+                try:
+                    if element.type == "POINT":
+                        i = i + 1
+                        if i == 1:
+                            stream.write("*ELEMENT_MASS\n")
+                        massStr = _format_mass16(element.mass)
+                        ePid = getattr(element, "pid", 0) or pid
+                        formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{massStr:>16}{str(ePid):>8}\n"
+                        stream.write(formatString)
+                except Exception:
+                    # 요소 하나를 못 쓰면 그 요소만 건너뛰고 장부에 적는다 — KMM 이 끝에서 🔴 + 종료 코드 3(리뷰 R)
+                    _skip += 1
+                    _note_export_loss(element)
+                    if _skip <= 5:
+                        print(f"  Warning: 질량 요소 출력 실패(EID {getattr(element,'id','?')}) — 스킵")
+            if _skip:
+                print(f"  Warning: 질량 요소 출력 스킵 총 {_skip}개")
             i = 0
+            _skip = 0
             for key in self.elements:
                 element : PointElement = self.elements[key]
-                if element.type == "POINT_NSET":
-                    i = i + 1
-                    if i == 1:
-                        stream.write("*ELEMENT_MASS_NODE_SET\n")
-                    massStr = _format_mass16(element.mass)
-                    ePid = getattr(element, "pid", 0) or pid
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{massStr:>16}{str(ePid):>8}\n"
-                    stream.write(formatString)
+                try:
+                    if element.type == "POINT_NSET":
+                        i = i + 1
+                        if i == 1:
+                            stream.write("*ELEMENT_MASS_NODE_SET\n")
+                        massStr = _format_mass16(element.mass)
+                        ePid = getattr(element, "pid", 0) or pid
+                        formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{massStr:>16}{str(ePid):>8}\n"
+                        stream.write(formatString)
+                except Exception:
+                    # 요소 하나를 못 쓰면 그 요소만 건너뛰고 장부에 적는다 — KMM 이 끝에서 🔴 + 종료 코드 3(리뷰 R)
+                    _skip += 1
+                    _note_export_loss(element)
+                    if _skip <= 5:
+                        print(f"  Warning: 질량 요소 출력 실패(EID {getattr(element,'id','?')}) — 스킵")
+            if _skip:
+                print(f"  Warning: 질량 요소 출력 스킵 총 {_skip}개")
                     
             
                     

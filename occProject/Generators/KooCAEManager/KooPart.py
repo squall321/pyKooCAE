@@ -2247,6 +2247,7 @@ class KooPartManager():
                     pid = KooDynaInt(str(parameters[3]))
                 except (ValueError, IndexError):
                     print(f"  Warning: *ELEMENT_MASS 행을 읽지 못해 건너뛴다: {parameters}")
+                    note_import_loss("ELEMENT_MASS — 행을 읽지 못함")
                     continue
 
                 # part lookup: parts / partsRigid / constrainedParts 모두 확인
@@ -2266,6 +2267,7 @@ class KooPartManager():
                             node = self.nodeManager.FindNodefromID(nid)
                         if node is None:
                             print(f"[WARNING] *ELEMENT_MASS eid={eid} nid={nid} 노드 미발견 — 스킵")
+                            note_import_loss("ELEMENT_MASS — 절점 없음")
                             continue
                         pe = target_part.elementManager.AddPointElement(eid, node, mass)
                     else:  # MASS_NODE_SET
@@ -2278,6 +2280,7 @@ class KooPartManager():
                         node = self.nodeManager.FindNodefromID(nid)
                         if node is None:
                             print(f"[WARNING] *ELEMENT_MASS eid={eid} nid={nid} 노드 미발견 — 스킵")
+                            note_import_loss("ELEMENT_MASS — 절점 없음")
                             continue
                         pe = self.elementManager.AddPointElement(eid, node, mass)
                     else:
@@ -2287,6 +2290,7 @@ class KooPartManager():
                 
     
     def AddBeamElementsfromDyna(self, parametersBeam):
+        _pid_miss = 0
         for i in range(len(parametersBeam)):
             parameters = parametersBeam[i]
             for j in range(len(parameters)):
@@ -2307,6 +2311,8 @@ class KooPartManager():
                 rt2 = parameter[7]
                 rr2 = parameter[8]
                 local = parameter[9]
+                if pid not in self.parts:
+                    _pid_miss += 1
                 if pid in self.parts:
                     part : KooPart = self.parts[pid]
                     if len(nids)<3 or nids[2] == 0:
@@ -2319,11 +2325,14 @@ class KooPartManager():
                         n3 = part.nodeManager.FindNodefromID(nids[2])
 
                         part.AddLineQuadraticElement(eid, n1, n2, n3, rt1, rr1, rt2, rr2, local)
-                    
+        if _pid_miss:   # 예전엔 완전 무언으로 버렸다(리뷰 R) — KMM 이 끝에서 🔴 + 종료 코드 3
+            print(f"  🔴 ELEMENT_BEAM: *PART 가 없는 PID 의 빔 {_pid_miss}개를 버렸다")
+            note_import_loss("ELEMENT_BEAM — PID 에 *PART 없음", _pid_miss)
 
     def AddShellElementsfromDyna(self, parametersShell, thickness=False):
         # thickness=True: *ELEMENT_SHELL_THICKNESS 블록(카드 1 + 두께 카드 2장, 8절점이면 3장). 행 길이로만 추측하면
         # 요소 하나짜리 블록(행 2개)을 일반 셸로 읽어 두께 줄에서 죽었다(리뷰 H)
+        _pid_miss = 0
         for i in range(len(parametersShell)):
             parameters = parametersShell[i]
             mode = 1
@@ -2353,6 +2362,8 @@ class KooPartManager():
                     nids = parameter[2:]
                     # nids to integer list 
                     nids = [KooDynaInt(str(i)) for i in nids[:8]]   # N1~N8 만(80열 뒤는 LS-DYNA 도 안 읽음 — 리뷰 I), 빈 칸은 0(리뷰 H)
+                    if pid not in self.parts:
+                        _pid_miss += 1
                     if pid in self.parts:
                         part : KooPart = self.parts[pid]
                         if len(nids) == 3 or nids[3] == 0:
@@ -2398,6 +2409,8 @@ class KooPartManager():
                     thickness = parameter2[0:-1]                    
                     beta = parameter2[4]
 
+                    if pid not in self.parts:
+                        _pid_miss += 1
                     if pid in self.parts:
                         part : KooPart = self.parts[pid]
                         if len(nids) == 3 or nids[3] == 0:
@@ -2429,6 +2442,8 @@ class KooPartManager():
                     # 8절점 두께 THIC1~8 = 카드 2 의 4개 + 카드 3 의 4개 — 카드 3(4칸)에서 theta[0..7] 을 읽어 IndexError 였다(리뷰 H)
                     theta = list(parameter2[0:4]) + list(parameter3[0:4])
 
+                    if pid not in self.parts:
+                        _pid_miss += 1
                     if pid in self.parts:
                         part : KooPart = self.parts[pid]
                         if len(nids) == 6 or nids[6] == 0:
@@ -2449,12 +2464,17 @@ class KooPartManager():
                             n7 = part.nodeManager.FindNodefromID(nids[6])
                             n8 = part.nodeManager.FindNodefromID(nids[7])
                             part.AddQuadrangleQuadraticElementThetaBeta(eid, n1, n2, n3, n4, n5, n6, n7, n8, theta[0], theta[1], theta[2], theta[3], theta[4], theta[5], theta[6], theta[7], beta)
+        if _pid_miss:   # 예전엔 완전 무언으로 버렸다(리뷰 R) — KMM 이 끝에서 🔴 + 종료 코드 3
+            print(f"  🔴 ELEMENT_SHELL: *PART 가 없는 PID 의 셸 {_pid_miss}개를 버렸다")
+            note_import_loss("ELEMENT_SHELL — PID 에 *PART 없음", _pid_miss)
 
     def AddSolidElementsfromDynaAdvanced(self, parametersSolid):
         # 개수 불변식: 조용한 요소 소실을 막기 위해 '입력 레코드 vs 실제 등록' 을 집계한다.
         _rec_total = 0      # 입력에서 인식한 요소 레코드 수
         _add_total = 0      # 실제로 파트에 등록된 요소 수
         _pid_miss = 0       # PID 가 파트에 없어 버려진 수(기존엔 완전 무언)
+        _corner_total = 0   # 코너 절점 0 이라 레코드로 세기 전에 버린 수(리뷰 R — 예전엔 '소실 0' 으로 보고)
+        _bad_pairs = 0      # 2줄 포맷의 헤더 이상·홀수 줄로 버린 짝
         for i in range(len(parametersSolid)):
                 parameters = parametersSolid[i]
                 mode = 1
@@ -2510,10 +2530,12 @@ class KooPartManager():
                         parameter1 = parameters[i]
                         if i + 1 >= len(parameters):
                             print("  Warning: ELEMENT_SOLID 2줄 포맷 홀수 라인 — 마지막 라인 무시 (EID/PID줄:", str(parameter1)[:40], ")")
+                            _bad_pairs += 1
                             break
                         parameter2 = parameters[i + 1]
                         if len(parameter1) < 2:
                             _warn_hdr += 1
+                            _bad_pairs += 1
                             if _warn_hdr <= 5:
                                 print("  Warning: ELEMENT_SOLID 2줄 포맷 헤더 이상 — 쌍 무시:", str(parameter1)[:40])
                             continue
@@ -2526,6 +2548,7 @@ class KooPartManager():
                         if 0 in nids[:4]:
                             # 코너 4노드 미달 = 유효 솔리드 불가 — None 노드 요소가 조용히 생기는 것 방지
                             _warn_corner += 1
+                            _corner_total += 1
                             if _warn_corner <= 5:
                                 print(f"  Warning: ELEMENT_SOLID EID {eid} 코너노드 부족(nids[:4]={nids[:4]}) — 요소 스킵")
                             continue
@@ -2576,11 +2599,18 @@ class KooPartManager():
                                 _add_total += 1
 
         # 🔴 개수 불변식 보고 — 요소가 조용히 사라지는 것을 로그만 보고도 잡을 수 있게 한다.
-        if _rec_total:
+        # 버린 요소는 KMM 이 끝에서 🔴 + 종료 코드 3 으로 알린다(리뷰 R — 예전엔 🔴 만 찍고 rc 0).
+        if _rec_total or _corner_total or _bad_pairs:
             _lost = _rec_total - _add_total
-            if _lost:
-                print(f"  🔴 ELEMENT_SOLID 개수 불일치: 입력 {_rec_total} → 등록 {_add_total} "
-                      f"({_lost}개 소실, PID 미존재 {_pid_miss}개). 결과를 신뢰하기 전에 확인 필요")
+            if _lost or _corner_total or _bad_pairs:
+                _in = _rec_total + _corner_total + _bad_pairs
+                print(f"  🔴 ELEMENT_SOLID 개수 불일치: 입력 {_in} → 등록 {_add_total} "
+                      f"({_in - _add_total}개 소실, PID 미존재 {_pid_miss}개, 코너 절점 0 {_corner_total}개, "
+                      f"2줄 짝 이상 {_bad_pairs}개). 결과를 신뢰하기 전에 확인 필요")
+                note_import_loss("ELEMENT_SOLID — PID 에 *PART 없음", _pid_miss)
+                note_import_loss("ELEMENT_SOLID — 코너 절점 0", _corner_total)
+                note_import_loss("ELEMENT_SOLID — 2줄 포맷 짝 이상", _bad_pairs)
+                note_import_loss("ELEMENT_SOLID — 절점 수를 판정하지 못함", _lost - _pid_miss)
             else:
                 print(f"  ELEMENT_SOLID 개수 검사: 입력 {_rec_total} = 등록 {_add_total} (소실 0)")
 
