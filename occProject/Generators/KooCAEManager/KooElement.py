@@ -25,6 +25,16 @@ def element_set_key(aSet):
             aSet.sid)
 
 
+# 내보내기에서 쓰지 못한 요소 — KMM 이 끝에서 🔴 요약 + 종료 코드 3 으로 알린다(조용한 요소 소실 금지, 사용자 결정 10-26).
+# n 은 건너뛴 횟수, eids 는 건너뛴 요소 ID(차례 그대로, 중복 없이). 솔리드·2차 솔리드 출력기가 채운다.
+EXPORT_LOSS = {"n": 0, "eids": {}}
+
+
+def _note_export_loss(element):
+    EXPORT_LOSS["n"] += 1
+    EXPORT_LOSS["eids"].setdefault(getattr(element, "id", "?"), None)
+
+
 class Element:
     def __init__(self,id=0):
         self.id = id
@@ -4130,6 +4140,7 @@ class ElementManager:
                 except Exception:
                     # 기존 except:pass 는 예외 1건에 나머지 요소 전부 무언 소실 — 해당 요소만 스킵으로 축소
                     _skip_cnt += 1
+                    _note_export_loss(element)
                     if _skip_cnt <= 5:
                         print(f"  Warning: 솔리드 요소 출력 실패(EID {getattr(element,'id','?')}) — 스킵")
             if _skip_cnt:
@@ -4160,6 +4171,7 @@ class ElementManager:
                         stream.write(card)
                 except Exception:
                     _skip_q += 1
+                    _note_export_loss(element)
                     if _skip_q <= 5:
                         print(f"  Warning: 2차 솔리드 요소 출력 실패(EID {getattr(element,'id','?')}) — 스킵")
             if _skip_q:

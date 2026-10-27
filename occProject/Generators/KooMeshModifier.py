@@ -3521,7 +3521,17 @@ if __name__ == "__main__":
             simGenerator.ImportBaseFile()
             simGenerator.GenerateMetaData()
             print("Generate Modified File")
-            simGenerator.GenerateModifiedFile()        
+            simGenerator.GenerateModifiedFile()
+            # 내보내기에서 요소가 빠졌으면 결과 .k 는 쓸 수 없다 — 🔴 요약 + 종료 코드 3(1 은 예외·입력 오류).
+            # 출력 .k 는 진단용으로 남긴다. 러너·MCP 는 rc≠0 이면 멈춘다(사용자 결정 10-26 "요소 소실 시 비 0 종료").
+            from KooCAEManager.KooElement import EXPORT_LOSS as _loss
+            if _loss["n"]:
+                _eids = list(_loss["eids"])
+                print(f"🔴 요소 소실: 내보내기에서 요소 {len(_eids)}개를 쓰지 못했다(EID {', '.join(map(str, _eids[:10]))}"
+                      f"{' …' if len(_eids) > 10 else ''}) — 출력 .k 를 해석에 쓰지 말 것 (종료 코드 3)")
+                print("   흔한 원인: 덱 *NODE 가 LS-DYNA 고정폭(NID 8칸·좌표 16칸)이 아니라 절점을 잘못 읽었다 — "
+                      "요소가 읽히지 않은 절점을 가리킨다")
+                sys.exit(3)
             print("Done")
         finally:
             sys.stdout = _console  # stdout 복원 (sys.exit 로 중간 종료해도 닫힌 로그 파일에 쓰지 않게)
