@@ -190,7 +190,7 @@ class KooDynaImporter():
             print(f"Warning: 파트별 항복응력 맵을 만들지 못했다 ({e}) — sphere 리포트는 단일 항복응력으로 판정한다")
 
     def PartYieldMap(self):
-        """파트별 초기 항복응력(덱 단위 그대로) — {'unit': 'MPa'|'Pa'|None, 'parts': {pid: {yield, source, mid}}}.
+        """파트별 초기 항복응력(덱 단위 그대로) — {'unit': 'MPa'|'Pa'|None, 'parts': {pid: {yield, source, mid, criterion}}}.
         R16 근거: MAT_003 은 SIGY, MAT_ORIENTED_CRACK 은 양수인 SIGY·FS(파괴응력) 중 작은 것(사용자 결정 10-26). MAT_024 는 "SIGY … ignored if LCSS > 0" 라 LCSS 커브의 εp=0 값(커브는
         "Abscissa value = SFA × (Defined value + OFFA)", "Ordinate value = SFO × (Defined value + OFFO)"), EPS·ES 점으로 주면
         그 점들의 εp=0 값, 아니면 SIGY. εp=0 값은 사이면 보간, 밖이면 끝 두 점으로 외삽한다 — EPS1: "If the first point is
@@ -251,7 +251,10 @@ class KooDynaImporter():
                 if cands:
                     got = min(cands, key=lambda c: c[0])
             if got and got[0] > 0:
-                parts[str(part.id)] = {"yield": got[0], "source": got[1], "mid": int(mat.id)}
+                # 기준 — FS 는 R16 MAT_017 "based on a maximum principal stress criterion" 이라 σ1 과 비교할 값이고, 나머지(SIGY·
+                # 커브)는 von Mises 항복이다(리뷰 R3). 옛 도구는 이 키를 모른 채 그대로 돈다
+                parts[str(part.id)] = {"yield": got[0], "source": got[1], "mid": int(mat.id),
+                                       "criterion": "max_principal" if "FS(파괴)" in got[1] else "von_mises"}
         return {"unit": unit, "parts": parts}
 
     def ImportMetaDatafromPreviousStep(self, jsonData):
