@@ -312,13 +312,13 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     pp_parser.add_argument('config', help='runner_config.json 경로')
     pp_group = pp_parser.add_mutually_exclusive_group()
     pp_group.add_argument('--deep', action='store_true',
-                          help='각 Run_*/deep_report.sh 만 순차 실행')
+                          help='각 Run_*/deep_report.sh 만 순차 실행 (deep 산출물이 이미 있어도 다시)')
     pp_group.add_argument('--sphere', action='store_true',
                           help='sphere_report.sh 만 실행 (전각도 DROP)')
     pp_group.add_argument('--impact', action='store_true',
                           help='impact_report.sh 만 실행 (전위치 부분충격 IMPACT)')
     pp_group.add_argument('--all', action='store_true',
-                          help='deep 모두 실행 후 종합 리포트 (scenario mode 로 sphere|impact 자동 선택, default)')
+                          help='deep 산출물이 없는 Run 만 deep 후 종합 리포트 (scenario mode 로 sphere|impact 자동 선택, default)')
 
     # ========================================================================
     # KooChainRun reprioritize: 완료 결과 기반 대기 잡 우선순위 재배치 (적응 샘플링)
@@ -3246,6 +3246,11 @@ def cmd_postprocess(args):
     deep_failed = 0
     deep_done = 0
     deep_no_output = 0
+    deep_existing = 0
+    # --all(무플래그)은 deep 산출물이 이미 있는 Run 을 건너뛴다 — 판정은 sphere_report.sh 와 같다
+    # (Output/report/{result,analysis_result}.json). 예전엔 자식 잡 inline deep 이 끝낸 Run 도 전부
+    # 드라이버 자원 안에서 다시 돌았다. --deep 을 명시하면 예전처럼 전부 다시 돈다.
+    skip_done_deep = not args.deep
     steps = []   # (단계, ok|fail|skip, 이유) — 끝의 요약 줄·종료 코드
     if do_deep:
         # DROP(chain/large_scale)는 output/Run_*, DWI(drop_weight_impact)는 케이스 격리 탓에
@@ -3259,6 +3264,11 @@ def cmd_postprocess(args):
         )
         print(f"\n[Deep] {len(run_dirs)} Run_* 폴더 발견")
         for rd in run_dirs:
+            report_dir = rd / "Output" / "report"
+            if skip_done_deep and ((report_dir / "result.json").exists()
+                                   or (report_dir / "analysis_result.json").exists()):
+                deep_existing += 1
+                continue
             sh = rd / "deep_report.sh"
             # Fallback: sh 없으면 그때 생성 (시뮬 실패해도 d3plot 있으면 후처리 가능)
             if not sh.exists():
@@ -3297,11 +3307,13 @@ def cmd_postprocess(args):
             else:
                 deep_failed += 1
                 print(f"    ✗ rc={rc.returncode}, log={log_path}")
+        if deep_existing:
+            print(f"[Deep] deep 산출물이 이미 있는 {deep_existing}개 Run 은 건너뜀 (다시 돌리려면 --deep)")
         print(f"[Deep] done: {deep_done}, failed: {deep_failed}")
-        counts = f"성공 {deep_done}·실패 {deep_failed}·Output 없음 {deep_no_output}"
+        counts = f"성공 {deep_done}·이미 있음 {deep_existing}·실패 {deep_failed}·Output 없음 {deep_no_output}"
         if deep_failed:
             steps.append(("deep", "fail", counts))
-        elif deep_done == 0:
+        elif deep_done + deep_existing == 0:
             steps.append(("deep", "skip", f"deep 을 돌 Run 없음 ({len(run_dirs)} Run_*, {counts})"))
         else:
             steps.append(("deep", "ok", counts))

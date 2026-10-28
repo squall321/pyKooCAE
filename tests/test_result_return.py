@@ -215,10 +215,31 @@ def test_exit_codes():
           f"rc={p.returncode} {p.stdout[-300:]}")
 
 
+def test_deep_skip_existing():
+    print("[3] E — --all 은 deep 산출물이 있는 Run 을 건너뛰고, --deep 은 다시 돈다")
+    env, sif, log = fake_env("e")
+    cfg, out = chain_impact_config(BASE / "e_deep", sif)
+    fake_dwi_results(out, n=3)
+    for i, name in ((1, "analysis_result.json"), (2, "result.json")):   # sphere_report.sh 와 같은 두 판정 파일
+        rep = next((out / "results" / f"dwi_{i:04d}").glob("Run_*")) / "Output" / "report"
+        rep.mkdir(parents=True)
+        (rep / name).write_text("{}", encoding="utf-8")
+    p = run(KCR + ["postprocess", str(cfg), "--all"], env=env)
+    deep_runs = [ln for ln in log.read_text(encoding="utf-8").splitlines() if ln.startswith("deep ")]
+    check("--all: deep 은 산출물 없는 dwi_0003 하나만", len(deep_runs) == 1 and "dwi_0003" in deep_runs[0], str(deep_runs))
+    check("--all: 요약에 이미 있음 2, rc 0", "이미 있음 2" in p.stdout and p.returncode == 0,
+          f"rc={p.returncode} {p.stdout[-300:]}")
+    log.write_text("", encoding="utf-8")
+    p = run(KCR + ["postprocess", str(cfg), "--deep"], env=env)
+    deep_runs = [ln for ln in log.read_text(encoding="utf-8").splitlines() if ln.startswith("deep ")]
+    check("--deep: 이미 있어도 3개 모두 다시", len(deep_runs) == 3 and p.returncode == 0, f"rc={p.returncode} {deep_runs}")
+
+
 if __name__ == "__main__":
     print(f"코드: {KCR_ROOT}  작업: {BASE}")
     test_dwi_impact_report()
     test_exit_codes()
+    test_deep_skip_existing()
     if FAILS:
         print(f"FAILED {len(FAILS)}")
         for f in FAILS:
