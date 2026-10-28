@@ -14,5 +14,5 @@
 - [x] 9a. 빌드 KooChainRun c556a678(22:42, BUILD_RC 0, GLIBC 2.35, 최저 가용 44 GB) — /data·SIF 소스 트리·build_dist 같음
 - [x] 9b. 컴파일본 e2e — KCR_BIN ALL PASS(e2e_host_bin.log), 헤드 SIF v126 바이너리로 22건 실패 먼저 확인(1건은 SIF 안 PATH 대역 문제), 바이너리 prepare 셸 3종 = 소스 판
 - [x] 9c. SIF v127 4d31651f(22:46, KooRemapper 8c7c4f87 기대=실제, op 3/3) · compute-node-images 같음 · tar v127 1,346,086,303 B · Drive·메일 · kooremapper-fd 앞뒤 알림 · SIF 안 KCR c556a678·prepare·rc 3·LANG=C 도움말, KMM·KAM 은 v126 과 같음
-- [ ] 9d. 헤드 /opt 교체·노드 배포 — 사용자 승인/VM 대기
+- [ ] 9d. 노드 배포(compute-node-images v127 + Post v41) — KooSlurm 이 노드를 띄우면 맞춰서. 헤드 /opt 교체는 「노드 검증 뒤 함께」(10-28 사용자 결정, 전달), 교체 직전 사용자 직접 확인
 - [x] 10. kooremapper-4a 에 커밋·v127 알림(KooSlurm 은 0a8c9cca 로 post_exec 겹침을 이미 해소 — 제안 불필요, DWI 리포트 자리만 전달)
