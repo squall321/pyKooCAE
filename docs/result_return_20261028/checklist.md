@@ -15,7 +15,7 @@
 - [x] 9b. 컴파일본 e2e — KCR_BIN ALL PASS(e2e_host_bin.log), 헤드 SIF v126 바이너리로 22건 실패 먼저 확인(1건은 SIF 안 PATH 대역 문제), 바이너리 prepare 셸 3종 = 소스 판
 - [x] 9c. SIF v127 4d31651f(22:46, KooRemapper 8c7c4f87 기대=실제, op 3/3) · compute-node-images 같음 · tar v127 1,346,086,303 B · Drive·메일 · kooremapper-fd 앞뒤 알림 · SIF 안 KCR c556a678·prepare·rc 3·LANG=C 도움말, KMM·KAM 은 v126 과 같음
 - [x] 9d. 노드 배포 — 10-28 23:06 node001 Pre v127 4d31651f·Post v41 6176ff66(deploy_apptainers.sh --nodes-file), SIF 안 KCR c556a678, 노드에서 /data KCR 새 도움말 확인
-- [ ] 9e. 🔴 같은 배포가 헤드 /opt Pre 도 v126→v127 로 덮음(--nodes-file 이어도 controller 먼저 — 내 확인 누락, 사용자 결정 '검증 뒤' 위반). v126 사본 없음 — 되돌림 여부 사용자 결정 대기
+- [x] 9e. 🔴 같은 배포가 헤드 /opt 도 덮음(--nodes-file 이어도 controller 먼저 — 내 확인 누락). Pre v126→v127(4d31651f), Post 는 원래 v41 이라 같은 내용(6176ff66, mtime 만 23:06). 사용자 결정(전달, 10-28): 「그대로 둔다」 — 원래 계획의 끝 상태와 같고 노드 검증도 이 판으로 통과
 - [x] 9f. node001 검증(KooSlurm, v127·Post v41) — 잡 1245 COMPLETED 0:0·sphere_report.html 13.2 MB·요약 줄, 1246·1247(정상 종료 0개 사본) sphere rc 1 → FAILED 3:0(기대대로). VM 은 KooSlurm 이 끔
 - [ ] 9g. 빈틈: postprocess 는 prepare 때 만든 .sh 를 그대로 돈다 — 옛 결과(1245 사본의 7월 sphere_report.sh 2,325 B)엔 D(JSON)·10-26 sphere 개선이 안 들어간다. .sh 재생성 길(예: postprocess --regen-sh)은 사용자 결정 대기
 - [x] 10. kooremapper-4a 에 커밋·v127 알림(KooSlurm 은 0a8c9cca 로 post_exec 겹침을 이미 해소 — 제안 불필요, DWI 리포트 자리만 전달)
