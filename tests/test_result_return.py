@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parent.parent
 KCR_ROOT = Path(os.environ.get("KCR_ROOT", ROOT)).resolve()
 sys.path.insert(0, str(KCR_ROOT))
 PY = str(ROOT / "venv312" / "bin" / "python")
-KCR = [PY, str(KCR_ROOT / "KooChainRun")]
+# 컴파일본으로 볼 때: KCR_BIN=/data/SmartTwinPreprocessor/bin/KooChainRun (CLI 검사만 바이너리, 생성기 직접 검사는 KCR_ROOT 소스)
+KCR = [os.environ["KCR_BIN"]] if os.environ.get("KCR_BIN") else [PY, str(KCR_ROOT / "KooChainRun")]
 BASE = Path(tempfile.mkdtemp(prefix="result_return_"))
 FAILS = []
 
@@ -221,6 +222,14 @@ def test_exit_codes():
     p = run(KCR + ["postprocess", str(cfg), "--deep"], env=env)
     check("deep 을 돌 Run 없음 → rc 3", p.returncode == 3 and "deep=skip" in p.stdout,
           f"rc={p.returncode} {p.stdout[-300:]}")
+
+    # ascii 로케일(--cleanenv·cron 류) — 한글 요약 줄에서 죽지 않는다(컴파일본 utf8_mode=0 함정, KCR_BIN 으로 볼 것)
+    cfg, out = chain_impact_config(BASE / "c_ascii", sif)
+    fake_dwi_results(out)
+    p = run(KCR + ["postprocess", str(cfg), "--impact"], env=dict(env, LANG="C", LC_ALL="C", PYTHONUTF8="0",
+                                                                  PYTHONIOENCODING=""))
+    check("LANG=C 에서도 rc 0 · 한글 요약 줄", p.returncode == 0 and "[Postprocess] 요약 impact_report=ok" in p.stdout,
+          f"rc={p.returncode} {p.stdout[-200:]} {p.stderr[-300:]}")
 
 
 def test_deep_skip_existing():
