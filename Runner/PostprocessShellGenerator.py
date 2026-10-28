@@ -38,6 +38,9 @@ DEFAULT_MODE = "section"
 DEFAULT_UA_THREADS = 8
 DEFAULT_SV_THREADS = 8
 DEFAULT_YIELD_STRESS = 350
+# impact_report.sh 가 'SIF 에 koo_impact_report 없음(구버전)' 으로 건너뛸 때의 종료 코드.
+# 예전엔 exit 0 이라 리포트가 없는데도 잡·postprocess 가 성공으로 보였다. postprocess 는 이 코드를 건너뜀으로 센다.
+IMPACT_RC_NO_TOOL = 4
 
 # 핫스팟 군집 기본값 — koo_deep_report 의 argparse 기본값과 같은 값을 둔다.
 # 값이 기본과 같으면 플래그를 방출하지 않아, 기존 시나리오의 생성물이
@@ -477,7 +480,8 @@ def build_impact_report_sh(output_dir, sif_path=None, options=None, scenario_jso
             test_dir 에 링크해 리포트의 project_name 을 살린다.
 
     Returns:
-        sh 스크립트 문자열
+        sh 스크립트 문자열. 종료 코드: 0 성공, 2 SIF 없음, IMPACT_RC_NO_TOOL 구버전 SIF(건너뜀),
+        그 밖은 koo_impact_report 의 rc.
 
     매핑: test_dir = output_dir 의 parent (base_dir), sphere 와 동일.
           koo_impact_report --test-dir 가 test_dir/output/Run_*/Output/d3plot
@@ -537,10 +541,10 @@ if [ ! -f "$SIF_PATH" ]; then
     exit 2
 fi
 
-# Old-SIF soft-degrade: koo_impact_report 미포함 SIF(2.3.x 이전)면 경고 후 skip.
+# Old-SIF soft-degrade: koo_impact_report 미포함 SIF(2.3.x 이전)면 경고 후 skip — 리포트가 없으니 0 이 아닌 건너뜀 코드.
 if ! apptainer exec "$SIF_PATH" python3 -c "import koo_impact_report" >/dev/null 2>&1; then
     echo "[impact_report] WARN: SIF 에 koo_impact_report 없음 (구버전 SIF?) — skip" >&2
-    exit 0
+    exit {IMPACT_RC_NO_TOOL}
 fi
 
 echo "[impact_report] start: test_dir=$TEST_DIR"

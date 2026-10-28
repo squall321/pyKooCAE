@@ -41,6 +41,11 @@ if printf '%s\n' "${args[@]}" | grep -qx -- '-c'; then
     exit "${FAKE_IMPORT_RC:-0}"          # python3 -c "import koo_impact_report"
 fi
 case "$mod" in
+    koo_deep_report)
+        for ((i=0; i<${#args[@]}; i++)); do [ "${args[$i]}" = "-m" ] && run_dir="${args[$((i+2))]}"; done
+        echo "deep run_dir=$run_dir" >> "$LOG"
+        [ "${FAKE_DEEP_RC:-0}" = 0 ] || exit "$FAKE_DEEP_RC"
+        mkdir -p "$html"; echo "{}" > "$html/analysis_result.json"; exit 0 ;;
     koo_impact_report)
         n=0
         for r in "$td"/output/Run_* "$td"/output/results/dwi_*/Run_*; do
@@ -158,9 +163,62 @@ def test_dwi_impact_report():
         check("둘 다 없으면 <base_dir>/output", f({"base_dir": "/data/b"}, cfg) == "/data/b/output")
 
 
+def chain_impact_config(d, sif, with_sh=True):
+    """체인 IMPACT 모양 runner_config(project.output_dir=<d>/output) — 옛 판에서도 출력 폴더를 찾는다."""
+    out = d / "output"
+    out.mkdir(parents=True, exist_ok=True)
+    rc = {"project": {"output_dir": str(out)}, "scenario": {"steps": [{"mode": "IMPACT"}]},
+          "postprocess": {"enabled": True, "sif_path": str(sif)}}
+    cfg = d / "runner_config.json"
+    cfg.write_text(json.dumps(rc), encoding="utf-8")
+    if with_sh:
+        from Runner.PostprocessShellGenerator import build_impact_report_sh
+        (out / "impact_report.sh").write_text(build_impact_report_sh(str(out), str(sif), {}), encoding="utf-8")
+    return cfg, out
+
+
+def test_exit_codes():
+    print("[2] C — postprocess 종료 코드(0 성공·1 실패·3 건너뜀)와 요약 줄")
+    env, sif, log = fake_env("c")
+
+    cfg, out = chain_impact_config(BASE / "c_nosh", sif, with_sh=False)
+    p = run(KCR + ["postprocess", str(cfg), "--impact"], env=env)
+    check("impact_report.sh 없음 → rc 3(건너뜀)", p.returncode == 3, f"rc={p.returncode}")
+    check("요약 줄에 impact_report=skip(impact_report.sh 없음)",
+          "impact_report=skip(impact_report.sh 없음)" in p.stdout, p.stdout[-300:])
+
+    cfg, out = chain_impact_config(BASE / "c_old_sif", sif)
+    fake_dwi_results(out)
+    p = run(KCR + ["postprocess", str(cfg), "--impact"], env=dict(env, FAKE_IMPORT_RC="1"))
+    check("구버전 SIF(koo_impact_report 없음) → rc 3, 이유 구버전 SIF",
+          p.returncode == 3 and "구버전 SIF" in p.stdout, f"rc={p.returncode} {p.stdout[-300:]}")
+    r = run(["bash", str(out / "impact_report.sh")], env=dict(env, FAKE_IMPORT_RC="1"))
+    check("impact_report.sh 자체도 구버전 SIF 에서 0 이 아닌 코드(4)", r.returncode == 4, f"rc={r.returncode}")
+
+    cfg, out = chain_impact_config(BASE / "c_noruns", sif)
+    p = run(KCR + ["postprocess", str(cfg), "--impact"], env=env)
+    check("도구 실패(런 0개) → rc 1", p.returncode == 1, f"rc={p.returncode}")
+
+    cfg, out = chain_impact_config(BASE / "c_ok", sif)
+    fake_dwi_results(out)
+    p = run(KCR + ["postprocess", str(cfg), "--impact"], env=env)
+    check("성공 → rc 0, 요약 impact_report=ok", p.returncode == 0 and "impact_report=ok" in p.stdout,
+          f"rc={p.returncode} {p.stdout[-300:]}")
+
+    p = run(KCR + ["postprocess", str(cfg), "--deep"], env=dict(env, FAKE_DEEP_RC="1"))
+    check("deep 실패 → rc 1, 요약 deep=fail", p.returncode == 1 and "deep=fail" in p.stdout,
+          f"rc={p.returncode} {p.stdout[-300:]}")
+
+    cfg, out = chain_impact_config(BASE / "c_empty", sif)
+    p = run(KCR + ["postprocess", str(cfg), "--deep"], env=env)
+    check("deep 을 돌 Run 없음 → rc 3", p.returncode == 3 and "deep=skip" in p.stdout,
+          f"rc={p.returncode} {p.stdout[-300:]}")
+
+
 if __name__ == "__main__":
     print(f"코드: {KCR_ROOT}  작업: {BASE}")
     test_dwi_impact_report()
+    test_exit_codes()
     if FAILS:
         print(f"FAILED {len(FAILS)}")
         for f in FAILS:

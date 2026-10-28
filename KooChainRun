@@ -3197,6 +3197,12 @@ def cmd_postprocess(args):
 
     runner_config.json에서 base_dir / output_dir 경로 추출,
     각 Run_*/deep_report.sh 와 output_dir/sphere_report.sh를 순차 실행.
+
+    종료 코드 — 예전엔 실패해도 늘 0 이라 "리포트 없음" 이 "성공" 과 같았다:
+      0  요청한 단계가 모두 성공
+      1  하나라도 실패(셸 rc≠0·deep_report.sh 생성 실패, runner_config·output_dir 없음)
+      3  실패는 없고 건너뛴 단계가 있음(.sh 없음·구버전 SIF·deep 을 돌 Run 없음)
+    끝에 '[Postprocess] 요약' 한 줄로 단계별 ok/fail/skip 과 이유를 찍는다.
     """
     import subprocess
     import json
@@ -3239,6 +3245,8 @@ def cmd_postprocess(args):
 
     deep_failed = 0
     deep_done = 0
+    deep_no_output = 0
+    steps = []   # (단계, ok|fail|skip, 이유) — 끝의 요약 줄·종료 코드
     if do_deep:
         # DROP(chain/large_scale)는 output/Run_*, DWI(drop_weight_impact)는 케이스 격리 탓에
         # output/results/dwi_*/Run_* 로 한 단계 더 깊다. 둘 다 스캔(비재귀 glob 은 DWI 를 놓쳐
@@ -3257,6 +3265,7 @@ def cmd_postprocess(args):
                 output_run_dir = rd / "Output"
                 if not output_run_dir.exists():
                     print(f"  skip {rd.name}: Output/ 폴더 없음 (d3plot 미생성)")
+                    deep_no_output += 1
                     continue
                 try:
                     from Runner.PostprocessShellGenerator import build_deep_report_sh
@@ -3271,6 +3280,7 @@ def cmd_postprocess(args):
                     print(f"  fallback 생성: {sh.name}")
                 except Exception as e:
                     print(f"  skip {rd.name}: deep_report.sh fallback 생성 실패 ({e})")
+                    deep_failed += 1
                     continue
                 # 방금 만든 .sh 를 이번 패스에서 바로 실행 — 과거엔 여기서 continue 라
                 # 2회차 postprocess 전엔 deep 가 안 돌았음. DWI 는 .sh 선생성 경로가 없어
@@ -3288,42 +3298,53 @@ def cmd_postprocess(args):
                 deep_failed += 1
                 print(f"    ✗ rc={rc.returncode}, log={log_path}")
         print(f"[Deep] done: {deep_done}, failed: {deep_failed}")
+        counts = f"성공 {deep_done}·실패 {deep_failed}·Output 없음 {deep_no_output}"
+        if deep_failed:
+            steps.append(("deep", "fail", counts))
+        elif deep_done == 0:
+            steps.append(("deep", "skip", f"deep 을 돌 Run 없음 ({len(run_dirs)} Run_*, {counts})"))
+        else:
+            steps.append(("deep", "ok", counts))
+
+    def _run_report(label, name, skip_rc=None):
+        """종합 리포트 .sh 실행 → steps 에 기록. skip_rc: 셸이 '건너뜀' 으로 쓰는 종료 코드 {rc: 이유}."""
+        skip_rc = skip_rc or {}
+        sh = Path(output_dir) / f"{name}.sh"
+        if not sh.exists():
+            print(f"\n[{label}] {name}.sh 없음: {sh}")
+            print("  prepare 시 postprocess 옵션이 있어야 자동 생성됨")
+            steps.append((name, "skip", f"{name}.sh 없음"))
+            return
+        print(f"\n[{label}] running: {sh}")
+        log_path = Path(output_dir) / f"{name}.log"
+        with open(log_path, 'w', encoding='utf-8') as logf:
+            rc = subprocess.run(
+                ["bash", str(sh)], cwd=output_dir,
+                stdout=logf, stderr=subprocess.STDOUT
+            )
+        if rc.returncode == 0:
+            print(f"  ✓ done")
+            steps.append((name, "ok", ""))
+        elif rc.returncode in skip_rc:
+            print(f"  - skip rc={rc.returncode} ({skip_rc[rc.returncode]}), log={log_path}")
+            steps.append((name, "skip", f"{skip_rc[rc.returncode]}, log={log_path}"))
+        else:
+            print(f"  ✗ rc={rc.returncode}, log={log_path}")
+            steps.append((name, "fail", f"rc={rc.returncode}, log={log_path}"))
 
     if do_sphere:
-        sphere_sh = Path(output_dir) / "sphere_report.sh"
-        if not sphere_sh.exists():
-            print(f"\n[Sphere] sphere_report.sh 없음: {sphere_sh}")
-            print("  prepare 시 postprocess 옵션이 있어야 자동 생성됨")
-        else:
-            print(f"\n[Sphere] running: {sphere_sh}")
-            log_path = Path(output_dir) / "sphere_report.log"
-            with open(log_path, 'w', encoding='utf-8') as logf:
-                rc = subprocess.run(
-                    ["bash", str(sphere_sh)], cwd=output_dir,
-                    stdout=logf, stderr=subprocess.STDOUT
-                )
-            if rc.returncode == 0:
-                print(f"  ✓ done")
-            else:
-                print(f"  ✗ rc={rc.returncode}, log={log_path}")
+        _run_report("Sphere", "sphere_report")
 
     if do_impact:
-        impact_sh = Path(output_dir) / "impact_report.sh"
-        if not impact_sh.exists():
-            print(f"\n[Impact] impact_report.sh 없음: {impact_sh}")
-            print("  prepare 시 postprocess 옵션이 있어야 자동 생성됨")
-        else:
-            print(f"\n[Impact] running: {impact_sh}")
-            log_path = Path(output_dir) / "impact_report.log"
-            with open(log_path, 'w', encoding='utf-8') as logf:
-                rc = subprocess.run(
-                    ["bash", str(impact_sh)], cwd=output_dir,
-                    stdout=logf, stderr=subprocess.STDOUT
-                )
-            if rc.returncode == 0:
-                print(f"  ✓ done")
-            else:
-                print(f"  ✗ rc={rc.returncode}, log={log_path}")
+        from Runner.PostprocessShellGenerator import IMPACT_RC_NO_TOOL
+        _run_report("Impact", "impact_report", {IMPACT_RC_NO_TOOL: "구버전 SIF — koo_impact_report 없음"})
+
+    states = [s for _, s, _ in steps]
+    exit_code = 1 if "fail" in states else (3 if "skip" in states else 0)
+    summary = " ".join(f"{n}={s}" + (f"({why})" if why else "") for n, s, why in steps)
+    print(f"\n[Postprocess] 요약 {summary} rc={exit_code}")
+    if exit_code:
+        sys.exit(exit_code)
 
 
 def cmd_diagnose(args):
