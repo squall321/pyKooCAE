@@ -124,6 +124,22 @@ def prepare_drop_weight_impact(user_config, scenario_path, output_path):
     with open(str(output_path), 'w', encoding='utf-8') as f:
         json.dump(runner_config, f, indent=2, ensure_ascii=False)
 
+    # 7. impact_report.sh — submit 의 의존 잡·postprocess --impact/--all 이 부르는 파일.
+    # chain(CumulativeDesigner)과 같은 계약: postprocess 블록이 있으면 enabled 와 무관하게 만든다.
+    # 예전엔 DWI 만 안 만들어 의존 잡이 부를 .sh 가 없었다(리포트 0건).
+    pp = user_config.get("postprocess")
+    if pp:
+        try:
+            from Runner.PostprocessShellGenerator import build_impact_report_sh
+            impact_sh_path = os.path.join(output_dir, "impact_report.sh")
+            with open(impact_sh_path, 'w', encoding='utf-8') as f:
+                f.write(build_impact_report_sh(output_dir=output_dir, sif_path=pp.get("sif_path"),
+                                               options=pp, scenario_json=str(scenario_path)))
+            os.chmod(impact_sh_path, 0o755)
+            print(f"  impact_report.sh 생성 (수동 실행 가능): {impact_sh_path}")
+        except Exception as e:
+            print(f"  Warning: impact_report.sh 생성 실패 (skip): {e}")
+
     print(f"\n✅ Drop Weight Impact 준비 완료!")
     print(f"  케이스 수: {total_cases}")
     print(f"  runner_config: {output_path}")

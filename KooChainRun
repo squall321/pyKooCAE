@@ -1372,6 +1372,20 @@ def cmd_submit(args):
     _maybe_submit_sphere_after(rc, config_path)
 
 
+def _report_output_dir(runner_config, config_path):
+    """종합 리포트·후처리가 볼 시뮬 결과 루트(절대경로).
+
+    chain/large_scale 은 project.output_dir, DWI(drop_weight_impact)는 최상위 output_dir
+    (기본 dwi_output) 이다. 예전엔 project.output_dir 만 봐서 DWI 는 output_dir 가 정확히
+    <config 폴더>/output 일 때만 맞았다. 둘 다 없으면 <base_dir>/output.
+    """
+    project = runner_config.get("project", {})
+    output_dir = project.get("output_dir") or runner_config.get("output_dir") or os.path.join(
+        runner_config.get("base_dir", str(Path(config_path).parent)), "output"
+    )
+    return str(Path(output_dir).resolve())
+
+
 def _maybe_submit_sphere_after(runner_config, config_path):
     """Submit 끝난 후 종합 리포트 dependent job 제출 (scenario mode 로 routing).
 
@@ -1411,12 +1425,7 @@ def _maybe_submit_sphere_after(runner_config, config_path):
         sbatch_builder = build_sphere_sbatch
         sbatch_name = "sphere_report.sbatch"
 
-    # output_dir 결정
-    project = runner_config.get("project", {})
-    output_dir = project.get("output_dir") or os.path.join(
-        runner_config.get("base_dir", str(Path(config_path).parent)), "output"
-    )
-    output_dir = str(Path(output_dir).resolve())
+    output_dir = _report_output_dir(runner_config, config_path)
 
     # jobs.json에서 모든 job_id 모으기
     jobs_json = os.path.join(Path(config_path).parent, "jobs.json")
@@ -3198,12 +3207,7 @@ def cmd_postprocess(args):
     with open(config_path, encoding='utf-8') as f:
         runner_config = json.load(f)
 
-    # output_dir 결정
-    project = runner_config.get("project", {})
-    output_dir = project.get("output_dir") or os.path.join(
-        runner_config.get("base_dir", str(config_path.parent)), "output"
-    )
-    output_dir = str(Path(output_dir).resolve())
+    output_dir = _report_output_dir(runner_config, config_path)
     if not os.path.isdir(output_dir):
         print(f"Error: output_dir not found: {output_dir}")
         sys.exit(1)
