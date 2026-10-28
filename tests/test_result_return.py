@@ -37,10 +37,18 @@ for ((i=0; i<${#args[@]}; i++)); do
         --bind) bind="${args[$((i+1))]}" ;;
     esac
 done
+if printf '%s\n' "${args[@]}" | grep -qx -- '--help'; then
+    echo "usage: koo_sphere_report [-h] (--test-dir TEST_DIR | --from-json JSON_FILE)"
+    [ "${FAKE_NO_FORMAT:-0}" = 1 ] || echo "  --format {html,json,terminal} [{html,json,terminal} ...]"
+    exit 0
+fi
 if printf '%s\n' "${args[@]}" | grep -qx -- '-c'; then
     exit "${FAKE_IMPORT_RC:-0}"          # python3 -c "import koo_impact_report"
 fi
 case "$mod" in
+    koo_sphere_report)
+        printf '%s\n' "${args[@]}" > "${FAKE_ARGS:-/dev/null}"
+        echo "Loaded 1 results in 0.1s"; echo "<html></html>" > "$html"; exit 0 ;;
     koo_deep_report)
         for ((i=0; i<${#args[@]}; i++)); do [ "${args[$i]}" = "-m" ] && run_dir="${args[$((i+2))]}"; done
         echo "deep run_dir=$run_dir" >> "$LOG"
@@ -235,11 +243,48 @@ def test_deep_skip_existing():
     check("--deep: 이미 있어도 3개 모두 다시", len(deep_runs) == 3 and p.returncode == 0, f"rc={p.returncode} {deep_runs}")
 
 
+def test_sphere_json():
+    print("[4] D — sphere_report.sh 가 --format html json terminal 을 준다(--json 만으로는 JSON 이 안 나온다)")
+    env, sif, log = fake_env("d")
+    from Runner.PostprocessShellGenerator import build_sphere_report_sh
+
+    def make(tag, opts):
+        out = BASE / f"d_{tag}" / "output"
+        o = out / "Run_1" / "Output"
+        (o / "report").mkdir(parents=True)
+        (o / "mes0000").write_text(" N o r m a l    t e r m i n a t i o n\n", encoding="utf-8")
+        (o / "report" / "result.json").write_text("{}", encoding="utf-8")
+        sh = out / "sphere_report.sh"
+        sh.write_text(build_sphere_report_sh(str(out), sif_path=str(sif), options=opts), encoding="utf-8")
+        return sh, out
+
+    def fmt_args(sh, out, **extra):
+        a = out / "args.txt"
+        r = run(["bash", str(sh)], env=dict(env, FAKE_ARGS=str(a), **extra))
+        args = a.read_text(encoding="utf-8").split("\n") if a.exists() else []
+        i = [k for k, v in enumerate(args) if v == "--format"]
+        return r.returncode, args, i
+
+    sh, out = make("default", {})
+    rc, args, i = fmt_args(sh, out)
+    check("--format html json terminal 을 넘김", rc == 0 and len(i) == 1 and args[i[0] + 1:i[0] + 4] == ["html", "json", "terminal"],
+          f"rc={rc} {args}")
+    check("--json 경로는 그대로 output_dir/sphere_report.json", "--json" in args
+          and args[args.index("--json") + 1] == str(out / "sphere_report.json"), str(args))
+    rc, args, i = fmt_args(sh, out, FAKE_NO_FORMAT="1")
+    check("도구가 --format 을 모르면(옛 판) 넘기지 않음", rc == 0 and not i, str(args))
+    sh, out = make("user", {"sphere_extra_args": ["--format", "html", "terminal"]})
+    rc, args, i = fmt_args(sh, out)
+    check("sphere_extra_args 의 --format 이 뒤에 붙어 이긴다(JSON 끄는 길)", len(i) == 2 and args[i[1] + 1:i[1] + 3] == ["html", "terminal"],
+          str(args))
+
+
 if __name__ == "__main__":
     print(f"코드: {KCR_ROOT}  작업: {BASE}")
     test_dwi_impact_report()
     test_exit_codes()
     test_deep_skip_existing()
+    test_sphere_json()
     if FAILS:
         print(f"FAILED {len(FAILS)}")
         for f in FAILS:

@@ -416,6 +416,11 @@ has_opt() {{
         END {{ exit found ? 0 : 1 }}'
 }}
 EXTRA=()
+# --json 경로만 주면 도구는 --format(기본 html terminal)에 json 이 없어 JSON 을 쓰지 않는다 — 같이 준다.
+# sphere_extra_args 의 --format 은 뒤에 붙어 이긴다
+if has_opt --format; then
+    EXTRA+=(--format html json terminal)
+fi
 if has_opt --parallel-runs; then
     EXTRA+=(--parallel-runs "${{SLURM_CPUS_PER_TASK:-1}}")
 elif [ "${{SPHERE_SIZED_FOR:-}}" = parallel ]; then
