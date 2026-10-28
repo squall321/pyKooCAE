@@ -163,3 +163,23 @@ C·D·E 는 전각도 자동 귀환의 품질이고, F 는 늦어도 됩니다(�
 
 포털 W-92 에서 네 리포(KooSlurm·pyKooCAE·KooRemapper·SmartTwinMCP)를 반박 검증까지 돌려 "결과가 어디까지 저절로 오나" 를 지도로 만들었고 W-93 에서
 귀환 모양이 정해졌습니다. 그 조사 주장을 **쓰기 직전에 현재 코드와 dev 실물로 다시 읽어** 고쳤습니다. 틀린 데나 **이미 되는 길이 있으면 알려 주십시오** — 그 길을 쓰고 부탁을 접겠습니다.
+
+---
+
+## 6. 회신 — pyKooCAE (2026-10-28, SIF v127)
+
+계획·결정 근거는 `docs/result_return_20261028/`(PLAN·checklist·context-notes)에 있습니다. 시험은 `tests/test_result_return.py` 41검사이고, 각 묶음이 고치기 전 판에서 실패하는 것을 먼저 확인했습니다. 컴파일본은 `KCR_BIN=<바이너리>` 로 같은 시험을 돌렸습니다.
+
+| | 상태 | 커밋 | 요점 |
+|---|---|---|---|
+| A | 고침 | 4119850 | DWI prepare 가 postprocess 블록이 있으면 `<output_dir>/impact_report.sh` 를 만든다 |
+| B | **이미 고쳐져 있었음** | 5baae8d(9-17) | 워크플로는 `InitialVelocityZ,0`+`Gravity,9810`, KMM 이 √(2gh) 를 한 번만. 고치기 전 워크플로 × KMM b77f95d 이후 판이면 mm 모델 h≤100 도 2배였다 — Run 의 `energy.speed` 로 볼 것 |
+| C | 고침 | ce61cd4 | `postprocess` 종료 코드 0 성공·1 실패·3 건너뜀(.sh 없음·구버전 SIF·deep 을 돌 Run 없음) + `[Postprocess] 요약` 한 줄. impact 구버전 SIF 는 `exit 4` |
+| D | 고침(기본값) | 639da3d | sphere 셸이 `--format html json terminal`(도구가 알 때만). 20런 실측 JSON 25.3 MB·+1.5초·메모리 그대로. 끄기는 `sphere_extra_args` |
+| E deep | 고침 | 282f3dd·abc2eb5 | `--all` 은 deep 이 있는 Run 을 건너뛰고 `--deep` 은 다시. DWI run.sh 가 chain 과 같은 계약(`auto_deep`, inline)으로 케이스마다 deep |
+| E output_dir | 고침 | 4119850 | postprocess·의존 잡이 DWI 최상위 `output_dir` 를 본다. 이름이 `output` 이 아니면 `<output_dir>/.impact_root/output/` 링크로 로더에 넘긴다. 리포트는 `<output_dir>/impact_report.{html,json}` |
+| F 폴백 | **이미 고쳐져 있었음** | 7b31d09·1de4a5a·94ba214·7afefc5(10-23) | KMM 이 재질 밀도·Gravity 로 단위계를 정해 폴백 물성을 그 단위로 |
+| F 예제 | DWI 9개는 이미 | 0b79c68(9-17) | HWWarrantyDropTest 9개·`/data/scenario` 프리셋의 바닥판 ρ 7850·E 2e11 은 **사용자 결정 대기**(프리셋을 고치면 운영 결과가 바뀐다) |
+
+§4 에서 정한 것. 초속은 워크플로가 0 을 쓰고 KMM 이 만든다. 단위계 키는 새로 만들지 않는다. 종합 리포트의 정본은 submit 의 의존 잡이다(KooSlurm 0a8c9cca 가 리포트 잡이 있으면 post_exec `--all` 을 생략). 귀환 매니페스트는 KooSlurm 이 쓴다.
+배포. KooChainRun c556a678(GLIBC 2.35)은 /data·SIF 소스 트리에 있고, SIF v127(sha256 4d31651f, KooRemapper 8c7c4f87 포함)과 tar v127 은 compute-node-images·Drive 에 있다. 헤드 `/opt/apptainers` 교체와 노드 배포는 아직이다.
