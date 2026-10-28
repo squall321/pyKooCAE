@@ -103,10 +103,27 @@ def prepare_drop_weight_impact(user_config, scenario_path, output_path):
     with open(manifest_path, 'w', encoding='utf-8') as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
 
-    # 5. run.sh 생성
+    # 5. run.sh 생성 — deep_report 는 chain 과 같은 계약(postprocess.enabled && auto_deep, 기본 inline):
+    # 케이스마다 LS-DYNA 뒤 그 잡 안에서 돈다. 예전엔 DWI 만 run.sh 에 deep 이 없어 드라이버 postprocess --all 이
+    # 유일한 생산자였고, 그것마저 없으면 impact 리포트 잡이 Run 마다 unified_analyzer 를 떠안았다.
+    deep_sh_path, deep_timeout = None, 7200
+    pp = user_config.get("postprocess")
+    if pp and pp.get("enabled") and pp.get("auto_deep", True):
+        if str(pp.get("auto_deep_mode", "inline")).lower() == "inline":
+            from Runner.PostprocessShellGenerator import build_deep_report_sh
+            deep_sh_path = os.path.join(output_dir, "deep_report_case.sh")
+            with open(deep_sh_path, 'w', encoding='utf-8') as f:
+                f.write(build_deep_report_sh(run_dir="${1:?usage: deep_report_case.sh <LS-DYNA 실행 폴더>}",
+                                             sif_path=pp.get("sif_path"), options=pp))
+            os.chmod(deep_sh_path, 0o755)
+            deep_timeout = pp.get("deep_timeout_seconds", 7200)
+        else:
+            print(f"  ⚠️ auto_deep_mode={pp.get('auto_deep_mode')} 는 DWI 에서 지원하지 않는다 — run.sh 에 deep 을 넣지 않음"
+                  f" (postprocess --all 이 채운다)")
     run_sh_path = os.path.join(output_dir, "run.sh")
     _generate_dwi_run_sh(run_sh_path, output_dir, config_dir, total_cases, environment,
-                         project_name=user_config.get("project_name", "DWI"))
+                         project_name=user_config.get("project_name", "DWI"),
+                         deep_sh=deep_sh_path, deep_timeout=deep_timeout)
 
     # 6. runner_config.json
     runner_config = {
@@ -597,8 +614,8 @@ def _write_dwi_step_config(config_path, model_file, output_dir,
 
 
 def _generate_dwi_run_sh(run_sh_path, output_dir, config_dir, total_cases, environment,
-                         project_name="DWI"):
-    """Slurm array job용 run.sh."""
+                         project_name="DWI", deep_sh=None, deep_timeout=7200):
+    """Slurm array job용 run.sh. deep_sh 가 있으면 LS-DYNA 정상 종료(rc 0·d3plot) 뒤 그 실행 폴더로 deep_report 를 돈다."""
     env = environment
     ncpu = env.get("ncpu", 4)
     memory = env.get("memory", "4G")
@@ -692,7 +709,19 @@ if [ $EXIT_CODE -eq 0 ]; then
 else
     echo "FAIL (exit=$EXIT_CODE)" > $WORKDIR/status.txt
 fi
+"""
 
+    if deep_sh:
+        script += f"""
+# 3. deep_report (postprocess.enabled && auto_deep, chain 과 같은 계약) — 실패해도 케이스 결과(status.txt)는 그대로
+if [ $EXIT_CODE -eq 0 ] && [ -f d3plot ]; then
+    DEEP_LOG="${{RUNDIR:-$WORKDIR/}}deep_report.log"
+    timeout {int(deep_timeout)} bash {deep_sh} "$PWD" > "$DEEP_LOG" 2>&1
+    echo "  deep_report rc=$? (log: $DEEP_LOG)"
+fi
+"""
+
+    script += f"""
 echo "=== Done: $BASENAME (exit=$EXIT_CODE) ==="
 """
 

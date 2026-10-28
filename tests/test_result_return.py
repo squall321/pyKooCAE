@@ -279,12 +279,89 @@ def test_sphere_json():
           str(args))
 
 
+FAKE_KMM = r"""#!/bin/bash
+# 가짜 KooMeshModifier — step config 의 *RunDirectoryMode 폴더 아래 Run_*/Output/ 에 덱을 둔다
+dir=$(grep -m1 '^\*RunDirectoryMode' "$1" | cut -d, -f3)
+run="$dir/Run_20261028_000000_kmm"
+mkdir -p "$run/Output"
+echo "*KEYWORD" > "$run/Output/DropWeightImpactTestSet.k"
+"""
+FAKE_DYNA = r"""#!/bin/bash
+# 가짜 LS-DYNA — d3plot 만 남긴다
+touch d3plot
+exit "${FAKE_DYNA_RC:-0}"
+"""
+
+
+def test_dwi_inline_deep():
+    print("[5] E — DWI run.sh 가 LS-DYNA 뒤 deep 을 inline 으로(chain 과 같은 계약)")
+    env, sif, log = fake_env("f")
+    tools = BASE / "f_tools"
+    tools.mkdir()
+    for name, body in (("kmm", FAKE_KMM), ("dyna", FAKE_DYNA)):
+        (tools / name).write_text(body, encoding="utf-8")
+        (tools / name).chmod(0o755)
+
+    def prepare(tag, pp):
+        d = BASE / f"f_{tag}"
+        sc = dwi_scenario(d, sif, postprocess=False)
+        s = json.loads(sc.read_text(encoding="utf-8"))
+        s["environment"].update(koomeshmodifier_path=str(tools / "kmm"), solver_command=str(tools / "dyna"))
+        if pp is not None:
+            s["postprocess"] = dict(pp, sif_path=str(sif))
+        sc.write_text(json.dumps(s, ensure_ascii=False), encoding="utf-8")
+        p = run(KCR + ["prepare", str(sc)], env=env, cwd=str(d))
+        run_sh = d / "dwi_output" / "run.sh"
+        text = run_sh.read_text(encoding="utf-8").replace(str(d), "<D>") if run_sh.exists() else ""
+        return d, p, text
+
+    d, p, text = prepare("on", {"enabled": True})
+    deep_sh = d / "dwi_output" / "deep_report_case.sh"
+    check("enabled: deep_report_case.sh 생성 + run.sh 가 부른다", deep_sh.exists() and "deep_report_case.sh" in text,
+          p.stdout[-300:])
+    out = d / "dwi_output"
+    for task in ("1", "2"):
+        r = run(["bash", str(out / "run.sh")], env=dict(env, SLURM_ARRAY_TASK_ID=task), cwd=str(d))
+    runs = sorted((out / "results").glob("dwi_*/Run_*"))
+    rep_ok = [(r / "Output" / "report" / "analysis_result.json").exists() for r in runs]
+    check("두 케이스 모두 Run_*/Output/report/analysis_result.json(impact 로더가 재사용하는 자리)",
+          len(runs) == 2 and all(rep_ok), f"{runs} {rep_ok} {r.stdout[-300:]} {r.stderr[-300:]}")
+    check("deep_report.log 는 Run_*/ 에", all((r / "deep_report.log").exists() for r in runs))
+    check("케이스 status PASS", all((r.parent / "status.txt").read_text().strip() == "PASS" for r in runs))
+    log.write_text("", encoding="utf-8")
+    p = run(KCR + ["postprocess", str(d / "runner_config.json"), "--all"], env=env)
+    calls = log.read_text(encoding="utf-8")
+    check("뒤이은 postprocess --all 은 deep 을 다시 돌지 않고(이미 있음 2) 리포트만, rc 0",
+          "deep " not in calls and "이미 있음 2" in p.stdout and "runs=2" in calls and p.returncode == 0,
+          f"rc={p.returncode} {calls} {p.stdout[-300:]}")
+
+    d2, _, _ = prepare("deepfail", {"enabled": True})
+    r = run(["bash", str(d2 / "dwi_output" / "run.sh")], env=dict(env, SLURM_ARRAY_TASK_ID="1", FAKE_DEEP_RC="1"), cwd=str(d2))
+    st = d2 / "dwi_output" / "results" / "dwi_0001" / "status.txt"
+    check("deep 이 실패해도 케이스는 PASS·run.sh rc 0", r.returncode == 0 and st.read_text().strip() == "PASS",
+          f"rc={r.returncode}")
+    d3, _, _ = prepare("dynafail", {"enabled": True})
+    log.write_text("", encoding="utf-8")
+    run(["bash", str(d3 / "dwi_output" / "run.sh")], env=dict(env, SLURM_ARRAY_TASK_ID="1", FAKE_DYNA_RC="1"), cwd=str(d3))
+    check("LS-DYNA 가 실패하면 deep 을 돌지 않음", "deep " not in log.read_text(encoding="utf-8"))
+
+    _, _, base = prepare("nopp", None)
+    for tag, pp in (("disabled", {"enabled": False}), ("noauto", {"enabled": True, "auto_deep": False}),
+                    ("separate", {"enabled": True, "auto_deep_mode": "separate_job"})):
+        dx, px, tx = prepare(tag, pp)
+        check(f"{tag}: run.sh 는 postprocess 없을 때와 같다(deep 없음)",
+              tx.replace(str(dx), "<D>") == base.replace(str(BASE / "f_nopp"), "<D>") and tx != ""
+              and not (dx / "dwi_output" / "deep_report_case.sh").exists())
+    check("separate_job: 지원하지 않는다고 알림", "지원하지 않는다" in px.stdout, px.stdout[-300:])
+
+
 if __name__ == "__main__":
     print(f"코드: {KCR_ROOT}  작업: {BASE}")
     test_dwi_impact_report()
     test_exit_codes()
     test_deep_skip_existing()
     test_sphere_json()
+    test_dwi_inline_deep()
     if FAILS:
         print(f"FAILED {len(FAILS)}")
         for f in FAILS:
