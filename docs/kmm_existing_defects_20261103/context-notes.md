@@ -68,3 +68,74 @@
   - V2 대비 새 출력 차이는 29파일이고, 모두 리뷰 W 수정의 의도한 결과다.
     - `*KEYWORD i10=y` 덱(KooRemapper load 예제 4건)의 원문 블록 CONTROL_IMPLICIT_*·CONTACT_TIED_*_TITLE 에 '%' 가 붙었다(🟡5).
     - 배터리 gas wound 2건에서 RobustContact_SS 번호가 315 → 504 가 됐다. 덱의 원문 *SET_SEGMENT_GENERAL 503 을 예약했기 때문이다(🟡8). 예전 315 는 우연히 안 겹쳤을 뿐이다.
+
+## 집중 리뷰 X (2026-11-03, 대상 dac9b98) — 🔴 1 · 🟡 2 · ⚪ 6
+- **🔴1 _TITLE 단면 블록의 빈 줄 → 유령 단면(1227bac).** 76b14ff 는 _TITLE 이 아닌 블록만 고쳤다. _TITLE 블록에서는 단면 사이 빈 줄을 다음 제목으로, 진짜 제목을 SECID 로 읽었다. 정수가 아닌 SECID 가 KooDynaInt 로 0 이 되어 maxid+1 을 받았고, 뒤의 실제 단면 번호를 밀어냈다(rc 0).
+  - 제목 자리 빈 줄 다음 줄이 정수가 아닌 제목이고, 그다음 줄이 정수 SECID 카드이면 그 빈 줄을 건너뛴다. 아니면 LS-DYNA 처럼 빈 제목으로 둔다.
+  - SECID 가 비었거나 양의 정수가 아닌 카드 묶음은 단면으로 만들지 않고 알린다. KMM 은 이름 SECID 를 지원하지 않는다.
+  - 범위 밖으로 보고된 *SECTION_SOLID(_TITLE) 의 같은 꼴(블록 끝 빈 줄 → 유령 NewSolidSection, v129 부터)도 같은 규칙으로 고쳤다.
+- **🟡2 셋 번호 예약이 이상한 제목에서 죽는다(11d208e).** `isdigit` 은 참인데 int() 가 못 읽는 글('--2024'·'①②')에서 ValueError(rc 1)가 났고, *_TITLE 블록의 제목 줄까지 봤다. 정수 정규식으로 보고 제목 줄은 뺀다.
+- **🟡3 요소 셋 계열은 예약하지 않았다(11d208e).** THERMAL 발열원 *SET_SOLID 가 원문 *SET_SOLID_GENERAL 과 같은 번호를 받았다. *SET_SOLID·SHELL·BEAM·TSHELL·DISCRETE_* 를 partManager.elementManager.maxSID 에 예약한다.
+- **⚪4 long 셋(11d208e).** long('+') 원문 블록은 20칸으로 SID 를 읽는다.
+- **⚪5 데이터 줄까지 예약(11d208e).** 블록마다 첫 데이터 줄(카드 1 의 SID)만 본다. 절점·파트 번호까지 잡으면 새 셋 번호가 1e8 을 넘어 *ELEMENT_MASS_NODE_SET 의 8칸 NSID 가 넘칠 수 있었다.
+- **⚪6 TSHELL 원문 통과 안내(97aaff9).** 어떤 *PART 계열에도 없는 PID 나 *PART 가 없는 덱(dynain)에서도 "PART_COMPOSITE_TSHELL·PART_CONTACT 등" 이라고 적어 오해를 불렀다. 덱에 *PART 가 없으면 그렇게 알리고, 아니면 "…이거나 덱에 *PART 가 없는 PID" 로 적는다. 동작은 v129 처럼 원문 통과 그대로다.
+- **⚪ 그대로 둠.**
+  - ⚪7 I10=Y 덱에서는 모든 원문 블록에 '%' 가 붙는다. 뜻은 전역 I10=Y 와 같다.
+  - ⚪8 PlaneGraded·수동 강체화·TSHELL 발열원 판정은 `type == "TSHELL8"` 로만 한다. 같은 실행에서 ConvertHexato,TShell 로 만든 HEXA8 TShellMode 파트는 빠진다(v129 와 같다).
+- **아는 불량(dac9b98 스냅숏).** test_section_card_sets 3 FAIL, test_kmm_real_deck_crashes 3 FAIL 이다. 고친 트리는 28/28·39/39 다.
+- **리뷰 W 탐침 재실행(리뷰 X 항목 7).** p3_sec·p11_partvar·p13b/c 배터리 TSHELL·p2_floor·p6_rigidify·p5_i10·p10_pex·p14_ssid 모두 기대대로다. p4_kdf(입력 101,475개)에서 v129 에서 값으로 읽히던 입력은 모두 같은 값이고, 새로 예외가 나는 입력은 0건이다.
+- **말뭉치 W2(5625a74 ↔ dac9b98).** 같음 734 · 다름 13 이다. 다른 13건의 출력 해시가 W(8ae3318) 와 한 줄도 다르지 않다. 리뷰 W 수정은 지난 말뭉치 출력을 바꾸지 않았다.
+
+## 집중 리뷰 Y (2026-11-03, 대상 97aaff9) — 🟡 3 · ⚪ 2
+- 정상 덱에서는 회귀가 없었다. 실제 덱 4,675개의 *SECTION_SHELL·TSHELL·SOLID(_TITLE) 블록 26,070개를 dac9b98 과 97aaff9 로 읽은 결과가 같았고, 예외·새 경고가 0이었다(모두 정수 SECID).
+- **🟡1 정수값 실수 SECID 를 버렸다(c22d68d, 1227bac 회귀).** `_secid_bad` 가 정수 정규식만 받아 SECID '1.0'(Altair 등)과 R 형 *PARAMETER 치환값 '3.0' 을 버렸다(v129·dac9b98 은 받았다). KooDynaInt 처럼 정수값 실수를 받는 `_whole_int` 를 두고 `_first_int` 도 같이 쓴다. '1.5' 같은 정수 아닌 수는 그대로 거절한다.
+- **🟡2 빈 제목 원문 셋의 번호 예약이 빠졌다(c70259e, 11d208e 회귀).** 빈 줄을 먼저 거른 뒤 _TITLE 제목을 떼어, 빈 제목 블록에서는 SID 줄이 빠졌다. DROP RobustContact_SS 가 원문 *SET_SEGMENT_GENERAL_TITLE 2 와 같은 번호를 받았다(rc 0). 제목을 먼저 떼고 빈 줄을 거른다.
+- **🟡3 _TITLE 단면 사이 빈 줄이 2개 이상이면 어긋났다(c22d68d, X 🔴1 덜 고침).** 셸은 3줄 짝이라 진짜 제목이 카드 2 로 먹혀 뒤 단면이 모두 사라졌다. 빈 줄 덩어리 다음이 정수 아닌 제목 + 정수 카드면 덩어리 전체를, 바로 정수 카드 1 이면 마지막 빈 줄 하나만 빈 제목으로 남기고 건너뛴다. 숫자로 시작하는 제목('2024')은 LS-DYNA 도 잘못 읽으므로 그대로 둔다.
+- **⚪4 안내 문구(fcae54f).** *PART_COMPOSITE_TSHELL 만 있는 덱도 "이 덱에 *PART 가 없어" 로 찍혔다. "KMM 이 파트로 읽은 *PART 가 없어(dynain 이거나 *PART_COMPOSITE_TSHELL 등만 있는 덱)" 로 고쳤다.
+- **⚪5 콤마·long *SECTION_SOLID(_TITLE)(c22d68d, 기존 결함).** 예전엔 콤마 줄이 유령 단면이 됐고, 1227bac 는 경고 뒤 버렸다. 셸 단면(C5)과 같이 블록 형식을 넘겨 `_card_fields` 로 읽는다. 고정폭 줄은 예전과 같다.
+- **⚪ 그대로 둠.**
+  - *SECTION_SOLID ELFORM 101~105 사용자 요소 카드는 카드 1 로 읽혀 유령 단면이 될 수 있다(v129 도 같음). 셸처럼 원문 카드로 남기려면 솔리드 사용자 요소 카드 배치를 매뉴얼로 확인해야 해서 이번에는 보고만 한다.
+  - 파트가 없는 SECID 를 가리키면 지금은 경고만 찍는다. rc 3 으로 올리면 KMM 이 해석하지 않는 단면 종류(*SECTION_DISCRETE 등)를 가리키는 정상 파트까지 걸린다.
+- **아는 불량(97aaff9 스냅숏).** test_section_card_sets 4 FAIL, test_kmm_real_deck_crashes 1 FAIL, test_tshell_element_contact 1 FAIL 이다. 고친 트리는 33/33·39/39·20/20 이다.
+- **말뭉치 W3(5625a74 ↔ 97aaff9).** 450건까지 같음 447 · 다름 3(W 와 같은 쉼표 덱 3건, 해시까지 같음)이었다. 최종 트리로 W4 를 돌리려고 멈췄다.
+- **전체 시험(97aaff9).** 44개 모두 통과(test_drop_attitude_angles 는 shim 30건).
+- **말뭉치 V5(실제 덱 88건, 5625a74 ↔ fcae54f).** V3(dac9b98) 와 사례별 출력 해시가 같고, 다른 것은 019 한 건이다.
+  - 019 는 KooRemapper offset 예제 03_tshell_result.k 의 낡은 사본(09-17, Test_CLIHelp_e2e)이다. 그쪽이 ff52566 에서 고치기 전 출력이라 *SECTION_TSHELL 에 셸 카드 2(t1~t4 1.5)가 붙어 있다.
+  - dac9b98 은 그 줄을 다음 단면 카드 1 로 읽고 SECID '1.500e+00' 을 반올림해 유령 단면 2 를 만들었다. 지금은 정수가 아니라고 알리고 버려, 출력이 v129 와 같다(리뷰 X 🔴1 의 의도). 지금 KooRemapper 예제는 한 줄 섹션이라 알릴 것은 없다.
+  - 두 판 모두 rc 3 인데, 원인은 덱 자체(솔리드 600개의 PID 에 *PART 없음)다.
+  - 고쳐진 TRANSFORM 10건의 요소 줄 수(count_elems)도 V3 와 같다.
+
+## 집중 리뷰 Z (2026-11-03, 대상 fcae54f) — 🔴 0 · 🟡 1(기존) · ⚪ 2
+- 회귀는 없었다.
+  - 말뭉치 4,675 파일의 단면 블록 26,070개가 dac9b98·97aaff9 와 모두 같았다.
+  - 실제 덱 6개의 model_dump.k·model_trans.k 가 97aaff9 와 바이트까지 같았다.
+  - 무작위 정상 블록 44,855개가 정답과 100% 같았다.
+  - `_whole_int` 가 받은 무작위 78,669개는 모두 KooDynaInt 와 같은 정수였다.
+- **🟡1 *PART 정수 칸의 정수값 실수(694494c, v129 부터).** `_part_int_or_blank`·`_part_int_or_empty` 가 int() 만 써서 '3.0'(R 형 &sec)·'82.0' 을 0 으로 읽었다. 단면은 c22d68d 부터 그 SECID 를 받는데 PART 는 SECID 0 을 내보냈고(rc 0), PID '93.0' 파트는 빠졌다. int() 가 실패할 때만 `_whole_int` 로 받는다(예전 값은 그대로). 말뭉치 5,930 덱의 PART 카드에서 이 꼴은 0건이다.
+- **COHOFF·GASKETT 칸(694494c, v129 부터 — 리뷰 Z 참고 항목).** KooSection 이 *SECTION_SOLID(_TITLE) 카드 1 의 빈 칸 4·5번째에서 읽어, 덱 값(7·8번째)이 출력에서 0.000e+00 이 됐다. 쓰기와 같은 7·8번째 칸에서 읽는다.
+  - 말뭉치 835덱에 0 이 아닌 COHOFF·GASKETT 는 없다. 그래서 출력이 바뀌는 덱도 없다.
+  - 덤프(model_dump.k) 기록기는 COHOFF·GASKETT 를 4·5번째 칸에 쓴다(확인용 사본이라 그대로 둠). 덤프를 다시 읽으면 그 값은 예전처럼 0 이 된다.
+- **⚪2 그대로 둠.** 빈 줄로 띄운 _TITLE 단면의 제목이 '2.0'·'1e3' 처럼 정수값 실수 꼴이면 카드 1 로 읽힌다. 숫자 제목('2024')과 같은 한계이고 LS-DYNA 도 그렇게 읽는다. 말뭉치 0건이다.
+- **⚪3 그대로 둠(기존 한계).** *SECTION_SOLID ELFORM 101~105 의 속성 카드('1.0 2.0')가 다시 유령 단면이 된다. 97aaff9 는 '1.0' 을 거절해 우연히 막고 있었다. v129 와 같다.
+- **참고(범위 밖).** 콤마 *MAT_RIGID 카드 2('1,7,7')에서 ValueError(KooDynaKeyword 8621, 배터리 meshless structure.k, 두 판 같음).
+- **아는 불량(fcae54f 스냅숏).** test_section_card_sets 2 FAIL 이다(파트 91·92 SECID 0·93 소실, COHOFF·GASKETT 0). 고친 트리는 36/36 이다.
+- **말뭉치 W4(5625a74 ↔ fcae54f).** 401건까지 같음 398 · 다름 3(W 와 같음)이었다. 최종 트리로 W5 를 돌리려고 멈췄다.
+- **전체 시험(fcae54f).** 44개 모두 통과(shim 30건).
+- **말뭉치 W5(지난 말뭉치 747건, 5625a74 ↔ 694494c — 최종 트리).** 같음 733 · 다름 14 · 새 크래시 0. 13건은 W 와 출력 해시까지 같고, 더해진 것은 L_P7_long 하나다.
+- **말뭉치 W5 의 L_P7_long(덱 전체 `*KEYWORD LONG=S`, 범위 밖).** v129 는 20칸 *SECTION_SOLID 줄을 10칸으로 읽어 SECID 빈 유령 NewSolidSection 1(쓰레기 COHOFF 1.0)을 만들고 바닥판 단면을 2 로 밀었다. 지금은 1227bac 규칙대로 빈 SECID 카드를 단면으로 만들지 않고 알려, 바닥판 단면이 1 이다. 두 판 모두 rc 3 이다(*PART 도 잘못 읽어 요소 소실 — 이 덱의 출력은 쓰지 말라고 이미 알린다).
+- **말뭉치 V6(실제 덱 88건, 5625a74 ↔ 694494c).** 출력 176개(사례 × 옛·새)가 V5(fcae54f) 와 바이트까지 같다. 694494c 는 실제 덱 출력을 바꾸지 않는다. V3 대비 차이는 019 한 건(위 V5 설명) 그대로이고, count_elems 도 같다.
+
+## 이번 범위 밖으로 남긴 기존 결함(리뷰 W·X·Y·Z 에서 보고, v129 도 같음)
+- DECOMPOSE_K 는 원문 요소만 쓰는 절점을 출력하지 않는다(TSHELL 원문 통과 파트의 절점 50개 소실).
+- I10=Y 덱의 DropSet.k 는 `*KEYWORD I10=Y` 를 남기는데 *ELEMENT_MASS 는 8칸으로 쓴다.
+- *DEFINE_CURVE 의 콤마 점 줄에서 ValueError(KooDefine._curve_points) — 배터리 예제 덱이 rc 1.
+- IMPORT_MERGE_K 는 가져올 덱에 *SET_NODE_LIST·*SET_PART_LIST 가 있으면 죽고, 가져온 덱의 원문 블록을 버린다. psid 오프셋은 늘 0 이다.
+- FastDOE 의 Pre/PostNodes 기록기는 원문 블록을 쓰지 않는다.
+- *INITIAL_STRESS_TSHELL 파서가 없어 DTI 가 dynain 의 TSHELL 응력을 버린다.
+- *PART_CONTACT 로 정의한 솔리드는 rc 3 소실 그대로다.
+- *CONTACT_ERODING_*_ID 의 ERODING 카드가 빠진 덱의 IndexError(덱 오류).
+- 콤마·long *NODE 는 못 읽는다(B2 가 요소를 원인과 함께 버린다, rc 3).
+- 셸 단면 실수의 10.3e 출력, *KEYWORD LONG=Y, MIRROR 의 TSHELL, ICOMP 판정의 TShellMode 파트.
+- *SECTION_SOLID ELFORM 101~105 사용자 요소 카드(유령 단면이 될 수 있다).
+- 덤프(model_dump.k)의 *SECTION_SOLID COHOFF·GASKETT 칸 배치(4·5번째), 콤마 *MAT_RIGID 카드 2 의 ValueError.
+- 예전 미수정분: *ELEMENT_SHELL_THICKNESS·IMPORT_MERGE_K PART.secid·NODUMP·DWI OutsideRigid 위치.

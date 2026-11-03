@@ -13,10 +13,10 @@
 - [x] B2 정의 안 된 절점 요소 → 읽기 소실 장부 — 86adf0b
 - [x] A *ELEMENT_TSHELL → TSHELL8 — 1b515b6(옛 7 FAIL → 11/11, 리뷰 탐침 GEN_tshell SINGLE_SURFACE 1→2 parts·RC_tshell 외부 면 6→16)
 - [x] D(새로 찾음) 원문 통과 블록 '%'·'+' 표시 — 8ae3318(test_kmm_real_deck_crashes 29/29)
-- [ ] help·문서
-- [ ] 기존 시험 전부
-- [ ] 말뭉치 U(옛 5625a74) · V(실제 덱) — 바뀐 것은 의도한 것뿐
-- [ ] 적대 리뷰 → 고침
+- [x] help·문서 — `--help` 에 이번 변경으로 틀려진 문구가 없다(종료 코드 3 '요소가 빠졌다' 는 읽기 소실에도 맞다). 기록은 context-notes
+- [x] 기존 시험 전부 — 최종 트리 694494c 에서 44개 통과(test_drop_attitude_angles 는 pytest 없어 shim 30건). fcae54f·97aaff9 도 통과
+- [x] 말뭉치 U(옛 5625a74) · V(실제 덱) — 바뀐 것은 의도한 것뿐. 최종 트리 694494c: W5 같음 733·다름 14(W + L_P7_long), V6 은 V5 와 바이트까지 같음
+- [x] 적대 리뷰 → 고침 — W(🔴 2·🟡 6, 76b14ff~dac9b98)·X(🔴 1·🟡 2·⚪ 3, 1227bac·11d208e·97aaff9)·Y(🟡 3·⚪ 2, c22d68d·c70259e·fcae54f)·Z(🟡 1·참고 1, 694494c) 고침
 - [ ] 굽기 전 확인(헤드·compute-node-images sha, 마지막 tar, 잡)
 - [ ] 빌드(캡 scope) — bin 시각
 - [ ] 컴파일본 e2e(아는 불량 먼저: 헤드 v129)
