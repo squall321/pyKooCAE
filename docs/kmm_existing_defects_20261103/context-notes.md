@@ -36,3 +36,11 @@
   - model_dump.k 는 고쳐진 사례에서 예전엔 도중에 잘려 있었다. 그래서 차이가 큰 것이 당연하다.
 - **아는 불량(헤드 v129 컴파일본).** test_kmm_real_deck_crashes 15 FAIL, test_section_card_sets 14 FAIL, test_tshell_element_contact 7 FAIL 이다. C2 단위 검사는 소스 트리의 KooDynaFloat 를 가져오므로 바이너리 판정이 아니다.
 - **B5 근원 해결(kooremapper-fd, 2026-11-03).** 47a2c91(출력기 — TIED 카드 2 DT 를 10칸 `   1.0E+20`, 그리고 DR 종료 카드의 `1e+20` 이 정수 칸 NOSOL 에 앉던 것)·9448448(저장된 예제 덱 8개). compat 빌드 b9d4c12d(GLIBC_2.35). 그쪽 시험 tools/regress/test_card_80col.py 는 헤드 v129 SIF 안 8c7c4f87 에서 8 FAIL(아는 불량)이다. v130 굽기에서 b9d4c12d 로 스테이징되고, SIF e2e 에서 같은 시험을 다시 본다.
+- **말뭉치 W(지난 말뭉치 747건, 5625a74 ↔ 8ae3318).** 같음 734 · 다름 13 이고, 모두 설명된다.
+  - 리뷰 G 쉼표 자유형식 덱 3건: 셸 단면 카드 2 `1.5,1.5,1.5,1.5` 를 예전엔 고정폭으로 잘라 두께 0 으로 읽었다(조용한 손상). 이제 1.5 다(C5).
+  - 요소 소실 재현 덱 3건(V126_repro_merge·_shell, M_m024_real_three_layer·_dbg): 예전 출력에 남던 데이터 없는 빈 `*ELEMENT_SOLID`·`*ELEMENT_SHELL` 머리줄이 사라졌다. 요소를 읽을 때 버리므로 생긴 차이다(B2). 둘 다 rc 3 이다.
+  - TSHELL 재현 덱 7건(TT·ED):
+    - TSHELL 요소가 원문 구역에서 요소 구역으로 옮겨 갔다.
+    - TSHELL 만 있는 모델의 바닥판 접촉이 SSTYP 5(전체)에서 바깥 파트 셋(DropContact_OuterParts)으로 바뀌었다.
+    - **바닥판 솔리드 EID 가 TSHELL EID 와 겹치던 것(옛 1~1000 대 TSHELL 1·2)이 풀렸다**(새 3~1002).
+    - I10(`%`) TSHELL 블록이 있는 덱은 기존 "입력 요소 카드가 I10 이면 출력도 I10" 규칙이 이제 적용되어, 솔리드도 I10 으로 나간다(연결은 같다).
