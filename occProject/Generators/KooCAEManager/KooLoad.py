@@ -729,6 +729,8 @@ def _segment_set_or_ref(segmentSetManager, SSID, keyword):
     if segmentSet is None:
         print(f"  {keyword}: SSID {SSID} 는 KMM 이 읽지 않는 세트(*SET_SEGMENT_GENERAL 등)라 SSID 만 그대로 쓴다 — 세트 원문은 그대로 나간다")
         segmentSet = _SegmentSetRef(SSID)
+        # 이 번호를 예약한다 — KMM 이 새로 만드는 세그먼트 셋이 같은 번호를 받지 않게(리뷰 W 🟡8)
+        segmentSetManager.maxid = max(getattr(segmentSetManager, "maxid", 0) or 0, SSID)
     return segmentSet
 
 

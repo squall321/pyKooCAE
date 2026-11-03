@@ -581,6 +581,7 @@ class KooDynaImporter():
             print(f"  Part maxID synced with CNRB: {self.partManager.maxID}")
         self.importAdditional()
         print("Additional Imported")
+        self._reserve_raw_set_ids()
         print("Import Completed")
         
         
@@ -683,6 +684,30 @@ class KooDynaImporter():
             nodeSets = setNodeListGenerate.getSetNodeList()
             self.nodeSetManager.AddNodeSetfromDyna(nodeSets)
             
+    def _reserve_raw_set_ids(self):
+        """KMM 이 해석하지 않는 *SET_SEGMENT_*·*SET_PART_*·*SET_NODE_*(GENERAL·ADD 등) 원문 블록의 번호를 셋 매니저에 예약한다.
+        KMM 이 새로 만드는 셋(RobustContact_SS·ModelParts_SS 등)이 그 번호를 받아 같은 번호 셋이 둘 생기던 것(리뷰 W 🟡8).
+        정수로 시작하는 줄의 첫 칸을 모두 본다 — 넉넉히 잡으면 새 번호가 커질 뿐 뜻은 같다."""
+        raw = getattr(self.dynaManager, "_raw_keyword_dict", None) or {}
+        fams = (("SET_SEGMENT", getattr(self, "segmentSetManager", None), "maxid"),
+                ("SET_PART", getattr(self, "partManager", None), "maxSID"),
+                ("SET_NODE", getattr(self, "nodeSetManager", None), "maxID"))
+        for kw, blocks in raw.items():
+            if self.keywordInterpreted.get(kw, False):
+                continue
+            for prefix, mgr, attr in fams:
+                if not kw.startswith(prefix) or mgr is None or not hasattr(mgr, attr):
+                    continue
+                top = getattr(mgr, attr) or 0
+                for block in blocks:
+                    for ln in block:
+                        ln = str(ln)
+                        f = (ln.split(",")[0] if "," in ln else ln[:10]).strip()
+                        if f.lstrip("+-").isdigit():
+                            top = max(top, int(f))
+                if top > (getattr(mgr, attr) or 0):
+                    setattr(mgr, attr, top)
+
     def _keep_raw_tshell_rows(self, keyword, leftover):
         """KMM 이 파트로 읽지 않는 PID 의 *ELEMENT_TSHELL 줄만 원문 블록에 남기고 해석 표시를 푼다 — 원문 기록기가 그 줄을
         형식 표시(%·+)와 함께 그대로 쓰고, 해석한 줄은 요소 매니저가 쓴다(중복 없음, 리뷰 W 🔴2)."""
