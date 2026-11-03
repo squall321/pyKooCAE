@@ -6,7 +6,7 @@
 배경 (2026-11-03, H8·H9 캠페인 보고): 원본 FPCB 단면 ELFORM 3·SHRF 0.8333·NIP 5 가 DropSet.k 에서 ELFORM 1·SHRF 1.0·
 NIP 2·PROPT 1(LS-DYNA 기본값)로 바뀌었다. KooSectionManager 가 칸을 지역 변수로만 읽고 단면에 넣지 않았고, PROPT 를
 빠뜨려 QR·ICOMP·TSHEAR 를 한 칸씩 밀려 읽었다. R16 카드 1 = SECID ELFORM SHRF NIP PROPT QR ICOMP TSHEAR,
-ICOMP=1 이면 각도 NIP 개(카드당 8개).
+ICOMP=1 이면 각도 NIP 개(카드당 8개, NIP 0 은 2개 — R16 "EQ.0: set to 2 integration points").
 """
 import os
 import subprocess
@@ -50,6 +50,7 @@ dt,0.0001
 SEC1 = (1, 3, 0.8333, 5, 1, 0.0, 0, 0, [])                       # H8·H9 FPCB 꼴
 SEC2 = (2, 5, 0.75, 3, 2, 0.5, 1, 1, [0.0, 45.0, 90.0])         # _TITLE·ICOMP=1 — 각도 NIP 개
 SEC3 = (3, 2, 0.8333333, 10, 1, 0.0, 1, 0, [10.0 * k for k in range(10)])   # 각도 두 카드(8+2)·SHRF 5/6 자리수
+SEC4 = (4, 1, 1.0, 0, 1, 0.0, 1, 0, [30.0, 60.0])            # NIP 0 = 적분점 2개(R16) — ICOMP=1 이면 각도 2개
 
 
 def check(name, cond, detail=""):
@@ -69,8 +70,9 @@ def deck():
     s2 = SEC2
     secs = ("*SECTION_TSHELL\n" + f10(*s1[:8])
             + "*SECTION_TSHELL_TITLE\nfpcb_layered\n" + f10(*s2[:8]) + f10(*s2[8])
-            + "*SECTION_TSHELL\n" + f10(*SEC3[:8]) + f10(*SEC3[8][:8]) + f10(*SEC3[8][8:]))
-    parts = "*PART\nfpcb_a\n" + f10(1, 1, 1) + "*PART\nfpcb_b\n" + f10(2, 2, 1) + "*PART\nfpcb_c\n" + f10(3, 3, 1)
+            + "*SECTION_TSHELL\n" + f10(*SEC3[:8]) + f10(*SEC3[8][:8]) + f10(*SEC3[8][8:])
+            + "*SECTION_TSHELL\n" + f10(*SEC4[:8]) + f10(*SEC4[8]))
+    parts = "*PART\nfpcb_a\n" + f10(1, 1, 1) + "*PART\nfpcb_b\n" + f10(2, 2, 1) + "*PART\nfpcb_c\n" + f10(3, 3, 1) + "*PART\nfpcb_d\n" + f10(4, 4, 1)
     mat = "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3)
     els = ("*ELEMENT_TSHELL\n" + f"{1:8d}{1:8d}" + "".join(f"{n:8d}" for n in (1, 2, 5, 4, 7, 8, 11, 10)) + "\n"
            + f"{2:8d}{2:8d}" + "".join(f"{n:8d}" for n in (2, 3, 6, 5, 8, 9, 12, 11)) + "\n")
@@ -129,6 +131,7 @@ def main():
         check(f"{name}: *SECTION_TSHELL_TITLE — ELFORM 5·SHRF 0.75·NIP 3·PROPT 2·QR 0.5·ICOMP 1·TSHEAR 1·각도 0/45/90",
               got.get(2) == want(SEC2), str(got.get(2)))
         check(f"{name}: *SECTION_TSHELL — NIP 10 각도 두 카드(8+2)·SHRF 0.8333333 자리수 그대로", got.get(3) == want(SEC3), str(got.get(3)))
+        check(f"{name}: *SECTION_TSHELL — NIP 0·ICOMP 1 이면 각도 2개(30/60) 그대로", got.get(4) == want(SEC4), str(got.get(4)))
         check(f"{name}: *ELEMENT_TSHELL 두 요소가 남음", out.count("*ELEMENT_TSHELL") >= 1
               and all(f"{e:8d}" in out for e in (1, 2)), "")
     print()

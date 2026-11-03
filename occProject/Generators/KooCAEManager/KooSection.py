@@ -349,10 +349,12 @@ class KooSectionManager():
         sec.tshear = KooDynaInt(f[7], 0)
         sec.bList = []
         if sec.icomp == 1:
-            # 각도는 NIP 개만 — 더 쓰면 LS-DYNA 가 남는 카드를 다음 단면의 카드 1 로 읽는다
+            # 각도는 NIP 개만 — 더 쓰면 LS-DYNA 가 남는 카드를 다음 단면의 카드 1 로 읽는다.
+            # NIP 0 은 적분점 2개(R16 "EQ.0: set to 2 integration points")라 각도도 2개다(NIP 칸은 0 그대로 쓴다)
+            n_angle = sec.nip if sec.nip > 0 else 2
             for line in angleLines:
                 for j in range(8):
-                    if len(sec.bList) >= sec.nip:
+                    if len(sec.bList) >= n_angle:
                         break
                     sec.bList.append(KooDynaFloat(line[j] if j < len(line) else "", 0.0))
 
