@@ -138,11 +138,12 @@ def main():
     check("표준 8칸 *NODE: 요소 소실 알림 없음", "요소 소실" not in log, log[-600:])
 
     r, out, log = run(base / "nid10", deck(10))
-    lost("NID 10칸 *NODE(merge 예제 꼴)", r, log, "내보내기", "3건", "고정폭")
+    # 2026-11-03 부터 없는 절점을 가리키는 요소는 읽을 때 원인("정의 안 된 절점")과 함께 버린다 — 예전엔 내보내기 소실로만 잡혔다
+    lost("NID 10칸 *NODE(merge 예제 꼴)", r, log, "읽기", "3개", "고정폭")
     check("NID 10칸 *NODE: 진단용 출력 .k 는 남는다", out is not None, "")
 
     r, out, log = run(base / "missing_node", deck(8, bad_node=999))
-    lost("없는 절점을 가리키는 솔리드 1개", r, log, "내보내기", "1건", "고정폭")
+    lost("없는 절점을 가리키는 솔리드 1개", r, log, "읽기", "1개", "고정폭")
     check("없는 절점: 나머지 요소 1·2 는 출력", out is not None and eids_of(out, "*ELEMENT_SOLID") == [1, 2], str(out and eids_of(out, "*ELEMENT_SOLID")))
 
     r, out, log = run(base / "pid_missing", deck(8, bad_pid=7))
@@ -155,7 +156,7 @@ def main():
     check("셸 PID 미존재: 셸 101 은 출력", out is not None and eids_of(out, "*ELEMENT_SHELL") == [101], str(out and eids_of(out, "*ELEMENT_SHELL")))
 
     r, out, log = run(base / "shell_missing_node", shell_deck(bad_node=999))
-    lost("없는 절점을 가리키는 셸 1개(예전엔 트레이스백)", r, log, "내보내기", "1건", "고정폭")
+    lost("없는 절점을 가리키는 셸 1개(예전엔 트레이스백)", r, log, "읽기", "1개", "고정폭")
     check("셸 없는 절점: 셸 101 은 출력", out is not None and eids_of(out, "*ELEMENT_SHELL") == [101], str(out and eids_of(out, "*ELEMENT_SHELL")))
 
     r, out, log = run(base / "tennode_corner0", tennode_deck())
