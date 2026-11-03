@@ -2865,6 +2865,9 @@ class KooDynaAdvancedModification:
                             if not p.elementManager.elements:
                                 continue
                             first_elem = next(iter(p.elementManager.elements.values()))
+                            if getattr(first_elem, "type", "") == "TSHELL8":
+                                # TSHELL 은 최소 변이 두께라 바닥판이 수백 배로 잘게 나뉜다 — 표본에서 뺀다(v129 와 같은 크기, 리뷰 W 🟡3)
+                                continue
                             if isinstance(first_elem, FaceElement):
                                 # Shell: 요소 자체가 외곽면
                                 for eid, elem in p.elementManager.elements.items():
