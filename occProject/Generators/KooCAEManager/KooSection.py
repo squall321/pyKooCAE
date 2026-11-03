@@ -7,6 +7,7 @@ else:
     from KooCAEManager.KooDynaKeyword import *
 
 from KooCAEManager.KooOperator import *
+from KooCAEManager.KooDefine import _real10   # 값 손실 없는 10칸 실수(TSHELL 단면)
 
 class KooSection():
     def __init__(self, id, name):
@@ -317,11 +318,12 @@ class KooSectionTShell(KooSection):
         keywordString = "*SECTION_TSHELL_TITLE\n"
         keywordString += "{0}\n".format(self.name)
         # 10 digit for each float
-        formatted_string = "{:10d}{:10d}{:10.3e}{:10d}{:10d}{:10.3e}{:10d}{:10d}\n".format(self.id, self.elform, self.shrf, self.nip, self.propt, self.qr, self.icomp, self.tshear)
+        # 실수 칸은 덱 값을 지키는 가장 짧은 10칸 표기(_real10) — 10.3e 는 5/6 을 0.8333 으로 줄인다(2026-11-03)
+        formatted_string = "{:10d}{:10d}{}{:10d}{:10d}{}{:10d}{:10d}\n".format(self.id, self.elform, _real10(self.shrf), self.nip, self.propt, _real10(self.qr), self.icomp, self.tshear)
         keywordString += formatted_string
         i = 0 
         for b in self.bList:
-            formatted_string = "{:10.3e}".format(b)
+            formatted_string = _real10(b)
             keywordString += formatted_string
             i = i + 1
             if i % 8 == 0:
@@ -332,6 +334,28 @@ class KooSectionTShell(KooSection):
         return keywordString           
 
 class KooSectionManager():
+    @staticmethod
+    def _set_tshell_cards(sec, firstLine, angleLines):
+        """R16 *SECTION_TSHELL 카드 1 = SECID ELFORM SHRF NIP PROPT QR ICOMP TSHEAR(빈 칸은 기본값). ICOMP=1 이면 각도 NIP 개를
+        카드마다 8개씩 읽는다. 예전엔 칸을 지역 변수로만 읽고 단면에 넣지 않아 기본값(ELFORM 1·SHRF 1.0·NIP 2·PROPT 1)으로
+        썼고, PROPT 를 빠뜨려 QR·ICOMP·TSHEAR 를 한 칸씩 밀려 읽었다(2026-11-03 H8·H9 FPCB 보고)."""
+        f = list(firstLine) + [""] * 8
+        sec.elform = KooDynaInt(f[1], 1)
+        sec.shrf = KooDynaFloat(f[2], 1.0)
+        sec.nip = KooDynaInt(f[3], 2)
+        sec.propt = KooDynaInt(f[4], 1)
+        sec.qr = KooDynaFloat(f[5], 0.0)
+        sec.icomp = KooDynaInt(f[6], 0)
+        sec.tshear = KooDynaInt(f[7], 0)
+        sec.bList = []
+        if sec.icomp == 1:
+            # 각도는 NIP 개만 — 더 쓰면 LS-DYNA 가 남는 카드를 다음 단면의 카드 1 로 읽는다
+            for line in angleLines:
+                for j in range(8):
+                    if len(sec.bList) >= sec.nip:
+                        break
+                    sec.bList.append(KooDynaFloat(line[j] if j < len(line) else "", 0.0))
+
     def __init__(self):
         self.maxid = 0
         self.sections = {}
@@ -628,13 +652,6 @@ class KooSectionManager():
         elif dynaSection[0] == "*SECTION_TSHELL":
             firstLine = dynaSection[1]
             curid = KooDynaInt(firstLine[0],0)
-            elform = KooDynaInt(firstLine[1],1)
-            shrf = KooDynaFloat(firstLine[2],1.0)
-            nip = KooDynaInt(firstLine[3],2)
-            qr = KooDynaFloat(firstLine[4],0.0)
-            icomp = KooDynaInt(firstLine[5],0)
-            tshear = KooDynaInt(firstLine[6],0)
-            
             if curid != 0:
                 curname = "Section{0}".format(curid)
                 sec = KooSectionTShell(curid, curname)
@@ -642,25 +659,12 @@ class KooSectionManager():
             else:
                 curname = "NewSection"
                 sec = self.CreateTShellSection(curname, 1)
-            
-            if icomp == 1:
-                for i in range(2,len(dynaSection)):
-                    for j in range(0,8):
-                        if len(dynaSection[i]) <= j:
-                            break
-                        sec.AddB(KooDynaFloat(dynaSection[i][j],0.0))
+            self._set_tshell_cards(sec, firstLine, dynaSection[2:])
                     
         elif dynaSection[0] == "*SECTION_TSHELL_TITLE":
             zeroLine = dynaSection[1]
             firstLine = dynaSection[2]
             curid = KooDynaInt(firstLine[0],0)
-            elform = KooDynaInt(firstLine[1],1)
-            shrf = KooDynaFloat(firstLine[2],1.0)
-            nip = KooDynaInt(firstLine[3],2)
-            qr = KooDynaFloat(firstLine[4],0.0)
-            icomp = KooDynaInt(firstLine[5],0)
-            tshear = KooDynaInt(firstLine[6],0)
-            
             if curid != 0:
                 curname = zeroLine[0]
                 sec = KooSectionTShell(curid, curname)
@@ -668,13 +672,7 @@ class KooSectionManager():
             else:
                 curname = "NewSection"
                 sec = self.CreateTShellSection(curname, 1)
-            
-            if icomp == 1:
-                for i in range(3,len(dynaSection)):
-                    for j in range(0,8):
-                        if len(dynaSection[i]) <= j:
-                            break
-                        sec.AddB(KooDynaFloat(dynaSection[i][j],0.0))
+            self._set_tshell_cards(sec, firstLine, dynaSection[3:])
             
         return None
 

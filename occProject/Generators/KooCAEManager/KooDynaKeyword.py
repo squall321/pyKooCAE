@@ -11150,6 +11150,15 @@ class SectionSolidPeriTitle(DynaKeyword):
             stream.write("$$      DR     PTYPE\n")
             stream.write("{dr:>10}{ptype:>10}\n".format(dr=parameter[2][0], ptype=parameter[2][1]))
 
+def _tshell_icomp_on(parameters):
+    """*SECTION_TSHELL 카드 1 의 ICOMP(7번째 칸)가 1 인가 — parse_whole 은 칸을 공백째 돌려주므로 예전 글 비교
+    (parameters[6] == "1")는 늘 거짓이라 각도 카드를 한 번도 읽지 못했다(2026-11-03)."""
+    try:
+        return len(parameters) >= 7 and float(str(parameters[6]).strip() or 0) == 1.0
+    except ValueError:
+        return False
+
+
 class SectionTShell(DynaKeyword):
     def __init__(self):
         super(SectionTShell,self).__init__("SECTION_TSHELL")
@@ -11160,7 +11169,7 @@ class SectionTShell(DynaKeyword):
             parameters = self.parse_whole(section_tshell_keywords[i][0], [10, 10, 10, 10, 10, 10, 10, 10])
             parameterList.append(parameters)
             if len(parameters) >= 7: 
-                if parameters[6] == "1":
+                if _tshell_icomp_on(parameters):
                     for j in range(1,len(section_tshell_keywords[i])):
                         parameters = self.parse_whole(section_tshell_keywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
                         parameterList.append(parameters)
@@ -11219,7 +11228,7 @@ class SectionTShellTitle(DynaKeyword):
             parameters = self.parse_whole(section_tshell_keywords[i][1], [10, 10, 10, 10, 10, 10, 10, 10])
             parameterList.append(parameters)
             if len(parameters) >= 7:
-                if parameters[6] == "1":
+                if _tshell_icomp_on(parameters):
                     for j in range(2,len(section_tshell_keywords[i])):
                         parameters = self.parse_whole(section_tshell_keywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
                         parameterList.append(parameters)
