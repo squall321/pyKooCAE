@@ -197,6 +197,19 @@ def main():
     d, rc, log = run("beta", TRANS, deck(extra=beta))
     check("⚪ *ELEMENT_TSHELL_BETA: 원문 그대로이고 접촉 집합에 안 든다고 알림", "*ELEMENT_TSHELL_BETA" in log and "원문 그대로 둔다" in log,
           log[-600:])
+    # 리뷰 Y ⚪4 — *PART_COMPOSITE_TSHELL 만 있는 덱(원문 통과의 대표 사례)의 안내가 '이 덱에 *PART 가 없어' 가 아니다
+    only = ("*KEYWORD\n*NODE\n" + "".join(f"{n:8d}{x:16.6f}{y:16.6f}{z:16.6f}\n" for n, (x, y, z)
+                                      in enumerate([(x, y, z) for z in (0.0, 0.5) for (x, y) in ((0, 0), (1, 0), (1, 1), (0, 1))], 1))
+            + "*ELEMENT_TSHELL\n" + f"{1:8d}{5:8d}" + "".join(f"{n:8d}" for n in range(1, 9)) + "\n"
+            + "*PART_COMPOSITE_TSHELL\nlaminate\n" + f10(5, 1, 0.8333, 0, 0, 0, 0, 0) + f10(1, 0.25, 0.0, "", 1, 0.25, 90.0, "")
+            + "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3) + "*END\n")
+    d, rc, log = run("composite_only", TRANS, only)
+    t = (d / "model_trans.k").read_text(errors="replace") if (d / "model_trans.k").exists() else ""
+    cards, blocks, seen = tshell_cards(t)
+    check("Y⚪4 *PART_COMPOSITE_TSHELL 만 있는 덱: rc 0 · TSHELL 1줄 원문 그대로",
+          rc == 0 and sorted(map(str, seen)) == ["1"] and cards.get(1, (0,))[0] == 5, f"rc={rc} {seen} " + log[-400:])
+    check("Y⚪4 안내가 'KMM 이 파트로 읽은 *PART 가 없어(… *PART_COMPOSITE_TSHELL 등만 있는 덱)'",
+          "KMM 이 파트로 읽은 *PART 가 없어" in log and "PART_COMPOSITE_TSHELL 등만" in log, grab(log, "ELEMENT_TSHELL"))
     print()
     if FAILS:
         print(f"FAILED {len(FAILS)}")

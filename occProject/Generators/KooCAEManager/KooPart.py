@@ -2720,8 +2720,9 @@ class KooPartManager():
         if leftover:
             _p = sorted(other_pids)
             _ids = f"{', '.join(map(str, _p[:10]))}{' …' if len(_p) > 10 else ''}"
-            if not self.parts:   # dynain 처럼 *PART 가 없는 덱 — 주 덱 파트로 이어진다(리뷰 X ⚪6: 오해를 부르던 안내)
-                print(f"  ELEMENT_TSHELL: 이 덱에 *PART 가 없어 TSHELL {len(leftover)}개(PID {_ids})는 원문 그대로 둔다")
+            if not self.parts:   # KMM 이 파트로 읽은 *PART 가 없다 — dynain 이거나 *PART_COMPOSITE_TSHELL 등만 있는 덱(리뷰 X ⚪6·Y ⚪4)
+                print(f"  ELEMENT_TSHELL: KMM 이 파트로 읽은 *PART 가 없어(dynain 이거나 *PART_COMPOSITE_TSHELL 등만 있는 덱) "
+                      f"TSHELL {len(leftover)}개(PID {_ids})는 원문 그대로 둔다")
             else:
                 print(f"  ELEMENT_TSHELL: KMM 이 파트로 읽지 않는 PID({_ids})의 TSHELL {len(leftover)}개는 원문 그대로 둔다 — "
                       f"*PART_COMPOSITE_TSHELL·*PART_CONTACT 등이거나 덱에 *PART 가 없는 PID 다. 이 파트는 낙하 접촉 집합에 들어가지 않는다")
