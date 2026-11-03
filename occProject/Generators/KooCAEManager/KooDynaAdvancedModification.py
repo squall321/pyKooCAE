@@ -1580,8 +1580,13 @@ class KooDynaAdvancedModification:
         print("Direction Vector: ", dirVector)
         print("Tolerance Angle: ", toleranceAngle)
         print("PID: ", part.id)
-        prevSection = part.section 
-        newSection =self.dynaImporter.sectionManager.CreateTShellSection("New TShell")
+        prevSection = part.section
+        if type(prevSection).__name__ == "KooSectionTShell":
+            # PART_EXCHANGE 로 함께 준 *SECTION_TSHELL 을 그대로 쓴다 — 예전엔 기본 단면("New TShell", ELFORM 1·NIP 2)으로
+            # 덮어 사용자 단면이 안 쓰이는 카드로 남았다(리뷰 W 🟡7)
+            newSection = prevSection
+        else:
+            newSection =self.dynaImporter.sectionManager.CreateTShellSection("New TShell")
         part.SetSection(newSection)
               
          
