@@ -125,6 +125,21 @@
 - **말뭉치 W5 의 L_P7_long(덱 전체 `*KEYWORD LONG=S`, 범위 밖).** v129 는 20칸 *SECTION_SOLID 줄을 10칸으로 읽어 SECID 빈 유령 NewSolidSection 1(쓰레기 COHOFF 1.0)을 만들고 바닥판 단면을 2 로 밀었다. 지금은 1227bac 규칙대로 빈 SECID 카드를 단면으로 만들지 않고 알려, 바닥판 단면이 1 이다. 두 판 모두 rc 3 이다(*PART 도 잘못 읽어 요소 소실 — 이 덱의 출력은 쓰지 말라고 이미 알린다).
 - **말뭉치 V6(실제 덱 88건, 5625a74 ↔ 694494c).** 출력 176개(사례 × 옛·새)가 V5(fcae54f) 와 바이트까지 같다. 694494c 는 실제 덱 출력을 바꾸지 않는다. V3 대비 차이는 019 한 건(위 V5 설명) 그대로이고, count_elems 도 같다.
 
+## 빌드·배포 기록 (v130)
+- **굽기 전 확인(21:1x).** 헤드 /opt = compute-node-images = v129(79275a4f), 마지막 tar v129, 잡 없음, 가용 36 GB. KooRemapper 스테이징은 굽기에서 8c7c4f87 → b9d4c12d(GLIBC_2.35, `stage-to-appt313.sh --check`).
+- **빌드(52fbded, 21:19~22:13).** build_without_automatedmodeller.sh --clean 을 캡 scope(MemoryMax 24G·adj 1000)로 돌렸다(BUILD_RC 0, 최저 가용 24.2 GB). 2.35 컨테이너에서 다시 돌고, 가드가 밖에서 /data·SIF 소스 트리에 배포했다.
+  - KMM 36ab6c8e → **0a832f04**(22:03). KAM 은 580f028e 그대로다.
+  - KooChainRun 6b19f55d → **74a62ce8**(22:12). Runner 소스는 v129 뒤로 바뀌지 않았다. 배포 폴더 348개 파일 가운데 .bin 하나만 다르고, 차이는 31바이트다.
+    - ELF 빌드 ID 20바이트가 다르다.
+    - Nuitka 상수 묶음 안에서 원소 두 개(`M`·`Otuple`)의 직렬화 순서가 바뀌었고, 그 체크섬 4바이트가 달라졌다. 문자열 집합 순서는 파이썬 해시 무작위화를 따르므로, 집합 내용이 같아 동작도 같다.
+    - v129 에서 sha 가 같았던 것은 원소 2개 순서가 우연히 같았기 때문이다.
+- **호스트 e2e(컴파일본).** 바이너리는 NFS 와 SIF 소스 트리가 같다. 10절점·파일끝 판정기 8/8, KMM 시험 17종 0 FAIL, KCR 결과 귀환·--help·sphere 4종 통과다. 같은 최종 시험에서 헤드 v129 는 크래시 21·단면 26·TSHELL 13 FAIL 이다(아는 불량).
+- **SIF v130(22:28).** sha256 9d166fd0, 1,581,842,432 B 이고 compute-node-images 도 같다. tar v130 은 1,346,209,884 B 이고, Drive(ApptainerImages:SmartTwinPreprocessor/)에 올렸고 메일은 sent OK 다. KooRemapper 는 굽기 첫 단계에서 8c7c4f87 → b9d4c12d 가 됐다.
+- **SIF e2e.** SIF 안 KMM·KAM·KCR 이 소스 트리와 같다. KooRemapper b9d4c12d 의 test_card_80col 은 18/18 이다(v129 SIF 는 8 FAIL). 10절점 8/8, KMM 시험 17종 0 FAIL, KAM 곡선 식도 통과다.
+- **push(52fbded).** b72807f..52fbded 다.
+- **헤드 /opt(22:51).** v130(9d166fd0)이 됐다. v129(79275a4f)는 하드 링크 `SmartTwinPreprocessor_backup_20261103_225131.sif` 다. 교체 뒤 헤드 /opt 껍데기로 KMM 시험 5종과 KooRemapper 80열 시험이 모두 통과했다. 노드(node001·002·viz)는 down 이라 미배포다.
+- **알림.** kooremapper-fd 에 v130·b9d4c12d·시험 결과를 보냈다. H8·H9 캠페인 쪽은 보고 세션을 특정하지 못해, 사용자에게 전달 글을 드린다(v130 부터 TSHELL FPCB 가 접촉 집합에 들어가 v129 와 결과가 달라진다).
+
 ## 이번 범위 밖으로 남긴 기존 결함(리뷰 W·X·Y·Z 에서 보고, v129 도 같음)
 - DECOMPOSE_K 는 원문 요소만 쓰는 절점을 출력하지 않는다(TSHELL 원문 통과 파트의 절점 50개 소실).
 - I10=Y 덱의 DropSet.k 는 `*KEYWORD I10=Y` 를 남기는데 *ELEMENT_MASS 는 8칸으로 쓴다.

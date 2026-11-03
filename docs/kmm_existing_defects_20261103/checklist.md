@@ -17,11 +17,11 @@
 - [x] 기존 시험 전부 — 최종 트리 694494c 에서 44개 통과(test_drop_attitude_angles 는 pytest 없어 shim 30건). fcae54f·97aaff9 도 통과
 - [x] 말뭉치 U(옛 5625a74) · V(실제 덱) — 바뀐 것은 의도한 것뿐. 최종 트리 694494c: W5 같음 733·다름 14(W + L_P7_long), V6 은 V5 와 바이트까지 같음
 - [x] 적대 리뷰 → 고침 — W(🔴 2·🟡 6, 76b14ff~dac9b98)·X(🔴 1·🟡 2·⚪ 3, 1227bac·11d208e·97aaff9)·Y(🟡 3·⚪ 2, c22d68d·c70259e·fcae54f)·Z(🟡 1·참고 1, 694494c) 고침
-- [ ] 굽기 전 확인(헤드·compute-node-images sha, 마지막 tar, 잡)
-- [ ] 빌드(캡 scope) — bin 시각
-- [ ] 컴파일본 e2e(아는 불량 먼저: 헤드 v129)
-- [ ] SIF v130 · compute-node-images · tar · Drive · 메일
-- [ ] SIF e2e
-- [ ] push
-- [ ] 헤드 /opt 교체(하드 링크 백업) · 확인
-- [ ] 알림(kooremapper-fd: B5 출력기·v130), 메모리·문서
+- [x] 굽기 전 확인(헤드·compute-node-images sha, 마지막 tar, 잡) — v129 79275a4f·tar v129·잡 없음
+- [x] 빌드(캡 scope) — bin 시각: KMM 0a832f04(22:03)·KCR 74a62ce8(22:12, 상수 순서만 다름)·KAM 그대로
+- [x] 컴파일본 e2e(아는 불량 먼저: 헤드 v129) — 헤드 v129 는 최종 시험에서 크래시 21·단면 26·TSHELL 13 FAIL, v130 컴파일본은 KMM 시험 17종·10절점 8종·KCR 결과 귀환·sphere 모두 통과
+- [x] SIF v130 · compute-node-images · tar · Drive · 메일 — SIF 9d166fd0(22:28)·tar v130 1,346,209,884 B·KooRemapper b9d4c12d 스테이징·메일 sent OK
+- [x] SIF e2e — SIF 안 바이너리 = 소스 트리, KooRemapper b9d4c12d test_card_80col 18/18, 10절점 8/8, KMM 시험 17종·KAM 곡선 식 통과
+- [x] push — b72807f..52fbded
+- [x] 헤드 /opt 교체(하드 링크 백업) · 확인 — v130 9d166fd0(22:51), v129 백업 SmartTwinPreprocessor_backup_20261103_225131.sif, 껍데기 시험 통과. 노드는 down 이라 미배포
+- [x] 알림(kooremapper-fd: B5 출력기·v130), 메모리·문서 — H8·H9 쪽은 사용자에게 전달 글
