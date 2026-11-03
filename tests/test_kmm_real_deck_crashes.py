@@ -239,6 +239,23 @@ def main():
                 sids.append(int(float(data[0][:10])))
     check("X⚪4 long 원문 *SET_SEGMENT_GENERAL + 2(=KMM 의 다음 번호): KMM 세그먼트 셋이 2 를 받지 않음", rc == 0 and 2 not in sids and len(sids) == len(set(sids)),
           f"rc={rc} sids={sids}")
+    # 리뷰 Y 🟡2 — 원문 *SET_*_TITLE 의 제목 줄이 비어도 그 SID 를 예약한다(빈 줄을 먼저 거르면 제목 대신 SID 줄이 빠졌다)
+    bseg = ("*SET_SEGMENT\n" + f10(1) + f10(1, 2, 3, 4) + "*SET_SEGMENT_GENERAL_TITLE\n\n" + f10(2, 0.0, 0.0, 0.0, 0.0) + f10("PART", 1))
+    d, rc, log = run("y_blanktitle", base(bseg), DROP)
+    ds = sorted(d.rglob("DropSet.k"))
+    t = ds[0].read_text(errors="replace") if ds else ""
+    lines = t.splitlines()
+    sids = []
+    for i, ln in enumerate(lines):
+        u = ln.strip().upper()
+        if u.startswith("*SET_SEGMENT") and not u.startswith("*SET_SEGMENT_GENERAL"):
+            data = [x for x in lines[i + 1:i + 4] if not x.startswith("$")]
+            if u.endswith("_TITLE"):
+                data = data[1:]
+            if data:
+                sids.append(int(float(data[0][:10])))
+    check("Y🟡2 빈 제목 원문 *SET_SEGMENT_GENERAL_TITLE 2: KMM 세그먼트 셋이 2 를 받지 않음", rc == 0 and sids and 2 not in sids and len(sids) == len(set(sids)),
+          f"rc={rc} sids={sids}")
 
     # C2 — KooDynaFloat 단위 시험
     sys.path.insert(0, str(GEN))

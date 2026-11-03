@@ -688,8 +688,9 @@ class KooDynaImporter():
         """KMM 이 해석하지 않는 *SET_* 원문 블록(GENERAL·ADD 등)의 번호를 셋 매니저에 예약한다 — KMM 이 새로 만드는 셋
         (RobustContact_SS·ModelParts_SS·HeatGen *SET_SOLID 등)이 그 번호를 받아 같은 번호 셋이 둘 생기던 것(리뷰 W 🟡8·X).
         블록마다 첫 데이터 줄(카드 1 의 SID, _TITLE 은 제목 다음 줄)만 본다 — 데이터 줄의 절점·파트 번호까지 잡으면 새 번호가
-        1e8 을 넘어 8칸 칸(*ELEMENT_MASS_NODE_SET NSID 등)이 넘쳤다. long('+') 블록은 20칸이다."""
-        import re as _re
+        1e8 을 넘어 8칸 칸(*ELEMENT_MASS_NODE_SET NSID 등)이 넘쳤다. long('+') 블록은 20칸이다. 제목은 빈 줄이어도 제목이라
+        먼저 떼고 빈 줄을 거른다(리뷰 Y 🟡2: 거꾸로 하면 빈 제목 블록에서 SID 줄이 빠졌다)."""
+        from KooCAEManager.KooDynaKeyword import _whole_int
         raw = getattr(self.dynaManager, "_raw_keyword_dict", None) or {}
         fmts_all = getattr(self.dynaManager, "_block_formats", None) or {}
         elemMan = getattr(getattr(self, "partManager", None), "elementManager", None)
@@ -707,15 +708,16 @@ class KooDynaImporter():
                 fmts = fmts_all.get(kw, [])
                 top = getattr(mgr, attr) or 0
                 for bi, block in enumerate(blocks):
-                    lines = [str(l) for l in block if str(l).strip()]
+                    lines = [str(l) for l in block]
                     if kw.endswith("_TITLE"):
                         lines = lines[1:]
+                    lines = [l for l in lines if l.strip()]
                     if not lines:
                         continue
                     w = 20 if (fmts[bi] if bi < len(fmts) else None) == "long" else 10
-                    f = (lines[0].split(",")[0] if "," in lines[0] else lines[0][:w]).strip()
-                    if _re.fullmatch(r"[+-]?[0-9]+", f):
-                        top = max(top, int(f))
+                    v = _whole_int(lines[0].split(",")[0] if "," in lines[0] else lines[0][:w])
+                    if v is not None:
+                        top = max(top, v)
                 if top > (getattr(mgr, attr) or 0):
                     setattr(mgr, attr, top)
 
