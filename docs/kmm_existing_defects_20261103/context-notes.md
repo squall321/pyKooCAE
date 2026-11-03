@@ -44,3 +44,21 @@
     - TSHELL 만 있는 모델의 바닥판 접촉이 SSTYP 5(전체)에서 바깥 파트 셋(DropContact_OuterParts)으로 바뀌었다.
     - **바닥판 솔리드 EID 가 TSHELL EID 와 겹치던 것(옛 1~1000 대 TSHELL 1·2)이 풀렸다**(새 3~1002).
     - I10(`%`) TSHELL 블록이 있는 덱은 기존 "입력 요소 카드가 I10 이면 출력도 I10" 규칙이 이제 적용되어, 솔리드도 I10 으로 나간다(연결은 같다).
+
+## 적대 리뷰 W (2026-11-03) — 🔴 2 · 🟡 6, 모두 고침
+- **🔴1 단면 블록 빈 줄 → 유령 단면(76b14ff).** 카드 묶음 읽기가 블록 끝·앞·사이 빈 줄을 다음 단면 카드 1 로 읽었다. SECID 가 빈 단면이 maxid+1 을 받아 실제 단면 번호를 밀어냈고, 파트가 유령을 가리켰다(rc 0, 경고 없음 — v129 회귀). 카드 1 자리·블록 끝 빈 줄은 건너뛰고 센다. SECID 빈 카드 묶음은 단면으로 읽지 않는다.
+- **🔴2 *PART_COMPOSITE_TSHELL·*PART_CONTACT 파트의 TSHELL 소실(250cc54).** 해석된 파트에 없는 PID 의 줄은 소실이 아니라 원문으로 남긴다. 원문 블록과 형식 목록을 같이 걸러 그 줄만 남기고, 해석 표시를 푼다. 리뷰 탐침 출력이 v129 와 바이트까지 같다. *ELEMENT_TSHELL_BETA 등 변형이 원문으로 남으면 접촉에서 빠진다고 알린다.
+- **🟡3 PlaneGraded 자동 바닥판(7cec287).** TSHELL 파트를 표본에서 뺀다(v129 와 같은 크기).
+- **🟡4 수동 강체화(b568567).** TSHELL 강체 파트에 TSHELL 단면을 준다. 다른 종류에도 있는 EID 의 TSHELL 은 건드리지 않고 알린다.
+- **🟡5·🟡6 원문 표시(9887ebb).** I10 블록에는 늘 '%' 를 붙인다(일반 모드 기록기는 '*KEYWORD' 만 쓴다). '-' 는 'std' 로 기록해 되살린다.
+- **🟡7 PART_EXCHANGE + ConvertHexato(3244b89).** 준 TSHELL 단면을 그대로 쓴다.
+- **🟡8 셋 번호 충돌(ac843e3).** 해석하지 않는 *SET_SEGMENT_*·*SET_PART_*·*SET_NODE_* 원문의 번호와 자리 표시 SSID 를 셋 매니저에 예약한다.
+- **⚪ 반영.**
+  - KooDynaFloat 의 D 섞인 글은 예전처럼 기본값으로 돌린다(dac9b98).
+  - TSHELL 발열원은 원인을 밝혀 멈춘다(390fce6).
+  - TSHELL 변형은 알린다(250cc54).
+- **⚪ 그대로 둠.**
+  - *CONTACT_ERODING_*_ID 의 ERODING 카드(필수 조건부 카드)가 빠진 덱의 IndexError — 덱 오류다.
+  - 콤마·long *NODE 는 여전히 못 읽어, B2 가 요소를 원인과 함께 버린다(rc 3, 고정폭 안내).
+  - HEXA8 파트에 TSHELL 단면을 변환 없이 붙이는 PART_EXCHANGE 는 경고하지 않는다.
+- **아는 불량(8ae3318 스냅숏).** test_section_card_sets 4 FAIL, test_tshell_element_contact 7 FAIL, test_kmm_real_deck_crashes 7 FAIL 이다. 고친 트리는 23/23·19/19·36/36 이다.
