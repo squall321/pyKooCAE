@@ -238,7 +238,7 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
          K("DropContact.InheritGeneral", "True/False", "False", "바닥판 접촉 FS~VSF·OptCardA 를 원본 AUTOMATIC_GENERAL 에서 상속 (명시값 > 원본 > 기본값). RobustContact 시 SOFT·DEPTH 는 강제값"),
          K("DropContact.Type", "General/SurfaceToSurface", "General (D2R 시 S2S 자동)", "ConvertGeneralToSingleSurface=False 경로의 바닥판 접촉 유형. 키는 type/Type 대소문자 무관"),
          K("DropContact.Scope", "Outer/All", "Outer", "바닥판 접촉 slave 파트 범위 (Outer = bbox 외곽 10% 자동 선별)"),
-         K("TiedOptions.<필드>", "실수/문자", "-", "Tied 접촉 옵션. TiedOptions.ConvertToSegment,True 는 노드셋→세그먼트 변환"),
+         K("TiedOptions.<필드>", "실수/문자", "- (덱 값)", "Tied 접촉 옵션 (RobustContact,True 일 때). 준 칸만 모든 TIED 접촉에 덮어쓰고 안 준 칸은 덱 값 그대로 (SAST→SST·SBST→MST, FS·SOFT·THKOPT 등 카드 칸 이름). TiedOptions.ConvertToSegment,True 는 노드셋→세그먼트 변환"),
          K("ControlTimestep.<필드>", "실수", "-", "*CONTROL_TIMESTEP 덮어쓰기 (TSSFAC, DT2MS 등)"),
          K("ControlHourglass.<필드>", "실수", "-", "*CONTROL_HOURGLASS 덮어쓰기 (IHQ, QH)"),
          K("DynainDynamicRelaxation", "True/False", "False", "누적 스텝용 동적 이완(DR) 블록"),

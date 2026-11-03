@@ -3,8 +3,8 @@
 
 - [x] 조사 — TSHELL 읽기가 값을 버리고 칸이 밀림(KooSection.py), R16 카드 정의, TIED 0.005 출처(3d3f50c)·R16 주의 4 묶기 거리, KooChainRun 은 tied_options 를 그대로 넘김(기본값 없음)
 - [x] 사용자 결정 — TSHELL 수정·배포, TIED "고친다 — 덱 값 보존"
-- [ ] TSHELL 시험(아는 불량 먼저: TRANSFORM·DROP_ATTITUDE, ICOMP=1 각도, _TITLE) → 수정 → 통과 → 커밋
-- [ ] TIED 시험(아는 불량 먼저: RobustContact 에서 덱 SST·MST 보존, TiedOptions 로 준 값 반영·로그) → 수정 → help → 통과 → 커밋
+- [x] TSHELL 시험(아는 불량 먼저: TRANSFORM·DROP_ATTITUDE, ICOMP=1 각도, _TITLE) → 수정 → 통과 → 커밋 — 864524d. 옛 코드 6 FAIL → 10/10 OK. 키워드 읽기의 ICOMP 글 비교(공백째 "1")도 같이 고침
+- [x] TIED 시험(아는 불량 먼저: RobustContact 에서 덱 SST·MST 보존, TiedOptions 로 준 값 반영·로그) → 수정 → help → 통과 → 커밋 — 옛 코드 3 FAIL → 7/7 OK, test_cli_help ALL PASS
 - [ ] 기존 시험 전부
 - [ ] 말뭉치(지난 말뭉치 + TSHELL·TIED 덱) — 바뀐 것은 의도한 것뿐
 - [ ] 적대 리뷰 → 고침

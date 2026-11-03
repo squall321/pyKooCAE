@@ -2588,13 +2588,15 @@ class KooDynaAdvancedModification:
                         tolerance=tied_tol,
                         normal_angle_limit=tied_angle)
 
-                # Tied 파라미터 일괄 수정 — 제어 옵션 제외 후 나머지 전부 Contact 파라미터로 전달
+                # Tied 파라미터 일괄 수정 — 제어 옵션 제외 후 나머지 전부 Contact 파라미터로 전달. 준 키만 바꾼다.
+                # 예전엔 SAST·SBST 를 안 주면 0.005 로 덮었다(3d3f50c). R16 TIED 묶기 거리(접촉 일반 주의 4)에 들어가는 셸
+                # 두께를 단위 없이 덮어 mm 덱에선 사실상 0, m 덱에선 5 mm 였다 — 이제 덱 값 그대로다(사용자 결정 2026-11-03)
                 _tied_control_keys = {"ConvertToSegment", "Tolerance", "NormalAngleLimit"}
                 tied_params = {k: v for k, v in tied_opts.items() if k not in _tied_control_keys}
-                # SAST/SBST 디폴트: 0.005
-                tied_params.setdefault("SAST", 0.005)
-                tied_params.setdefault("SBST", 0.005)
-                self.dynaImporter.contactManager.ModifyTiedParameters(tied_params)
+                if tied_params:
+                    n_tied = self.dynaImporter.contactManager.ModifyTiedParameters(dict(tied_params))
+                    print(f"  RobustContact: TiedOptions 로 TIED 접촉 {n_tied}개의 "
+                          f"{', '.join(f'{k}={v}' for k, v in tied_params.items())} 를 바꿨다(SAST→SST·SBST→MST, 나머지 칸은 덱 값)")
 
                 # 1. 중복 Tied 먼저 제거
                 n_dup = self.dynaImporter.contactManager.RemoveDuplicateTiedContacts()
