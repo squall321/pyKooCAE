@@ -5173,9 +5173,10 @@ class DatabaseExtentIntfor(DynaKeyword):
     def parse(self, lines):
         parameters = self.parse_whole(lines[0][0], [10, 10, 10, 10, 10, 10, 10, 10])
         self.parameters.append(parameters)
-        parameters = self.parse_whole(lines[0][1], [10, 10, 10, 10, 10, 10])
+        # R16 카드 2(NWEAR~NPEN)는 선택 카드(기본값 0) — 없으면 빈 칸으로 둔다(매니저가 기본값을 채운다)
+        parameters = self.parse_whole(lines[0][1], [10, 10, 10, 10, 10, 10]) if len(lines[0]) > 1 else [""] * 6
         self.parameters.append(parameters)
-        
+
     def getDatabaseExtentIntfor(self):
         parameters = []
         parameters.append("*DATABASE_EXTENT_INTFOR")
