@@ -716,6 +716,22 @@ class KooLoadSegment(KooLoad):
         stream.write(keyword)
             
     
+class _SegmentSetRef:
+    """하중이 KMM 이 읽지 않는 세그먼트 셋(*SET_SEGMENT_GENERAL 등)을 가리킬 때 SSID 만 든 자리 표시.
+    세트 원문은 미해석 원문 블록으로 그대로 나가므로 하중은 같은 SSID 로 쓰면 뜻이 같다(2026-11-03, 예전엔 KeyError)."""
+    def __init__(self, sid):
+        self.sid = sid
+        self.segments = []
+
+
+def _segment_set_or_ref(segmentSetManager, SSID, keyword):
+    segmentSet = segmentSetManager.segmentSetList.get(SSID)
+    if segmentSet is None:
+        print(f"  {keyword}: SSID {SSID} 는 KMM 이 읽지 않는 세트(*SET_SEGMENT_GENERAL 등)라 SSID 만 그대로 쓴다 — 세트 원문은 그대로 나간다")
+        segmentSet = _SegmentSetRef(SSID)
+    return segmentSet
+
+
 class KooLoadSegmentSet(KooLoad):
     def __init__(self, lid, name, segmentSet = None, lcid = 0, sf= 0.0, at = 0.0):
         super(KooLoadSegmentSet,self).__init__(lid, name)
@@ -1179,7 +1195,7 @@ class KooLoadManager:
             lcid = int(firstLine[1])
             sf = float(firstLine[2])
             at = float(firstLine[3])
-            segmentSet = segmentSetManager.segmentSetList[SSID]
+            segmentSet = _segment_set_or_ref(segmentSetManager, SSID, "*LOAD_SEGMENT_SET")
             load = self.CreateLoadSegmentSet("",segmentSet,lcid,sf,at)                
             
         if dynaLoad[0] == "*LOAD_SEGMENT_SET_ID":
@@ -1194,7 +1210,7 @@ class KooLoadManager:
             lcid = int(secondLine[1])
             sf = float(secondLine[2])
             at = float(secondLine[3])
-            segmentSet = segmentSetManager.segmentSetList[SSID]
+            segmentSet = _segment_set_or_ref(segmentSetManager, SSID, "*LOAD_SEGMENT_SET_ID")
             load = self.CreateLoadSegmentSetwithID(lid,name,segmentSet,lcid,sf,at)            
             
         
