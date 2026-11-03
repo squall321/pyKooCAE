@@ -15,3 +15,13 @@
 ## 결정
 - **A 는 새 형식 TSHELL8.** 기존 TShellMode(솔리드를 *ELEMENT_TSHELL 로 쓰는 ConvertSolidtoTShell 경로)를 그대로 쓰면, 읽은 TSHELL 이 HEXA8 이 되어 솔리드 전용 처리(작은 dt 강체화 등)에 걸린다. 얇은 FPCB 가 강체로 바뀔 수 있다. 새 형식은 그런 분기를 자연히 건너뛰고, 면 계산과 존재 판정만 들어온다.
 - **셸 단면 10.3e 는 이번에 안 바꾼다.** 각도 카드만 새로 쓰는 줄이라 _real10 으로 쓴다.
+
+## 작업 중 새로 안 것
+- **C4 는 TSHELL 만의 문제가 아니었다.** PART_EXCHANGE 는 `part.section` 만 바꾸고 `part.secid` 는 그대로 둬서, 새 단면 카드는 쓰이는데 PART 카드는 옛 SECID 를 가리켰다. 모든 단면 형식이 그렇다(SOLID 실측 /data/koopark/Test_kmm_existing_defects/probe_pex_solid). `SetSection` 으로 둘 다 바꾼다. `*PIDS`(여러 파트)는 정렬 격자 변환에만 쓰이고 단면·재료 교체는 `*PID` 하나에만 적용된다. 이것은 그대로다(기능 확장).
+- **D(새로 찾음) — 원문 통과 블록이 형식 표시를 잃는다.** 원문 쓰기 다섯 곳이 키워드 줄을 `f"*{kw_name}"` 로만 썼다. `*ELEMENT_DISCRETE %` 같은 I10 블록의 10칸 줄이 8칸 키워드 아래에 놓여 LS-DYNA 가 잘못 읽는다. 읽기가 블록마다 기록하던 형식을 블록 객체로 찾아 되살린다(KooRawKeywordDedup.raw_keyword_line). A 시험의 옛 출력(I10 TSHELL 블록)에서 드러났다.
+  - 세트(*SET_BEAM 등)는 표준에서도 10칸이라 `%` 와 무관하다. 그리고 매니저가 해석해 다시 쓴다. 다만 long(`+`) 세트는 매니저가 10칸으로 읽어 SID 를 잃는다(아래 범위 밖).
+- **A 의 Tied 감지는 맞물린 메시에서만 된다.** RobustContact 의 Tied 면 감지는 면 중심 거리(RobustContactTolerance)와 법선으로 짝을 찾는다. 리뷰 U 의 RC_tshell 덱은 솔리드 윗면 1장과 TSHELL 아랫면 2장이라(맞물리지 않음) 0 이다. TSHELL 과 무관한 알고리즘 한계다. 맞물린 덱(tests/test_tshell_element_contact.py)에서는 감지된다.
+- **B5 는 KooRemapper 쪽에 수정을 요청했다(2026-11-03).** ModelAssembler.cpp 4459·4461·9860행이 82자 줄을 쓴다.
+
+## 보았지만 범위 밖(추가)
+- long(`+`)·콤마 형식은 이번에 SECTION_SHELL·SECTION_TSHELL·ELEMENT_TSHELL 만 읽는다. 다른 해석 키워드(*SET_*·*PART 등)는 여전히 10칸으로만 읽는다(예: `*SET_BEAM +` 의 SID 가 0 이 된다). 덱 전체 long(*KEYWORD LONG=Y)과 같은 일반 기능이다.

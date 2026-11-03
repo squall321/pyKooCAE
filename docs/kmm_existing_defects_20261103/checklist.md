@@ -3,15 +3,16 @@
 
 - [x] 조사 — 결함마다 원인 자리 확인(B1 DatabaseExtentIntfor.parse, B2 get_nodes→None 건너뜀, B3 `*` 빠진 비교·함수 이름, B4 *SET_SEGMENT_GENERAL, B5 KooRemapper ModelAssembler 82자 줄, B6 SectionShell 카드 2, C1 SHELL ICOMP 각도 소실 실측, C2 KooDynaFloat, C4 AddSectionfromDyna None, C5 블록 형식 미전달)
 - [x] 사용자 결정 — 범위 "이번 보고분 전부", 검증 뒤 v130 배포까지
-- [ ] B1 DATABASE_EXTENT_INTFOR 카드 2 선택 — 시험(아는 불량 먼저) → 고침 → 커밋
-- [ ] B3 ERODING_SURFACE_TO_SURFACE_ID — 시험 → 고침 → 커밋
-- [ ] B4 LOAD_SEGMENT_SET → 해석 안 하는 세트 — 시험 → 고침 → 커밋
-- [ ] B6 SECTION_SHELL 카드 2 없음 — 시험 → 고침 → 커밋
-- [ ] C2 KooDynaFloat Fortran 꼴 + B5 원인 짚는 오류 — 시험 → 고침 → 커밋, KooRemapper 쪽 알림
-- [ ] C1·C3·C5 단면 카드 묶음(여러 단면·SHELL ICOMP 각도·ICOMP 판정·long·콤마) — 시험 → 고침 → 커밋
-- [ ] C4 PART_EXCHANGE TSHELL·SOLID_PERI — 시험 → 고침 → 커밋
-- [ ] B2 정의 안 된 절점 요소 → 읽기 소실 장부 — 시험 → 고침 → 커밋
-- [ ] A *ELEMENT_TSHELL → TSHELL8 — 솔리드 전용 경로 점검 → 시험(리뷰 U 탐침: SINGLE_SURFACE 파트 수·RobustContact 면·Tied 감지) → 고침 → 커밋
+- [x] B1 DATABASE_EXTENT_INTFOR 카드 2 선택 — 3e96db7
+- [x] B3 ERODING_SURFACE_TO_SURFACE_ID — fadbb3f
+- [x] B4 LOAD_SEGMENT_SET → 해석 안 하는 세트 — f085731
+- [x] B6 SECTION_SHELL 카드 2 없음 — 53bc855(단면 카드 묶음과 함께)
+- [x] C2 KooDynaFloat Fortran 꼴 + B5 원인 짚는 오류 — d7dbf28, KooRemapper 쪽(kooremapper-fd)에 ModelAssembler 82자 줄 수정 요청
+- [x] C1·C3·C5 단면 카드 묶음(여러 단면·SHELL ICOMP 각도·사용자 요소 카드·ICOMP 판정·long·콤마) — 53bc855
+- [x] C4 PART_EXCHANGE — 모든 단면 형식에서 SECID 미동기(새로 찾음) + TSHELL·SOLID_PERI None — e27a183(옛 14 FAIL → 17/17)
+- [x] B2 정의 안 된 절점 요소 → 읽기 소실 장부 — 86adf0b
+- [x] A *ELEMENT_TSHELL → TSHELL8 — 1b515b6(옛 7 FAIL → 11/11, 리뷰 탐침 GEN_tshell SINGLE_SURFACE 1→2 parts·RC_tshell 외부 면 6→16)
+- [x] D(새로 찾음) 원문 통과 블록 '%'·'+' 표시 — 8ae3318(test_kmm_real_deck_crashes 29/29)
 - [ ] help·문서
 - [ ] 기존 시험 전부
 - [ ] 말뭉치 U(옛 5625a74) · V(실제 덱) — 바뀐 것은 의도한 것뿐
