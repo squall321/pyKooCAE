@@ -266,6 +266,11 @@ def _apply_ic_power(dynaImporter, option):
         eids = list(getattr(part_obj.elementManager, "elements", {}).keys())
         if not eids:
             raise ValueError(f"[THERMAL_LOAD] heat_source part={pid}: solid 요소 없음")
+        if any(getattr(e, "type", "") == "TSHELL8" for e in part_obj.elementManager.elements.values()):
+            # *ELEMENT_TSHELL 을 요소로 읽게 된 뒤(2026-11-03) TSHELL EID 로 *SET_SOLID 를 만들면 LS-DYNA 가 솔리드로 읽는다 —
+            # 예전처럼 멈추되 원인을 밝힌다(리뷰 W)
+            raise ValueError(f"[THERMAL_LOAD] heat_source part={pid}: TSHELL 파트 발열은 지원하지 않는다"
+                             f"(*SET_SOLID·*LOAD_HEAT_GENERATION_SET_SOLID 는 솔리드 요소만)")
         # SET 은 export 가 쓰는 글로벌 partManager.elementManager 에 생성(KooMeshImporter:2087)
         # solver="" → SolidSet 가 DA1 컬럼에 solver 를 쓰므로(클래스 한계), 빈 값으로 둬서
         # DA1 오염 방지(MECH 기본). 검증 smoke 도 plain SET_SOLID(MECH)로 통과.

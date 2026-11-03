@@ -1,6 +1,6 @@
 # *ELEMENT_TSHELL 을 요소로 읽어 TSHELL 파트가 DROP_ATTITUDE 접촉 집합(SINGLE_SURFACE·RobustContact 면·Tied 감지)에 들어가는지 보는 회귀 시험
 """
-실행: venv312/bin/python tests/test_tshell_element_contact.py   (KMM 3회, 약 30초)
+실행: venv312/bin/python tests/test_tshell_element_contact.py   (KMM 7회, 약 1분)
 수정 전 코드로 볼 때: KMM_GEN=<옛 occProject/Generators> … / 컴파일본: KMM_BIN=<KooMeshModifier 실행 파일> …
 
 배경 (2026-11-03, 리뷰 U 🟡3 → 기존 결함 묶음 A): KMM 은 *ELEMENT_TSHELL 을 해석하지 않고 원문으로만 다시 썼다. 그래서 TSHELL
@@ -61,7 +61,7 @@ def f10(*v):
     return "".join(f"{x:>10}" for x in v) + "\n"
 
 
-def deck():
+def deck(extra="", tshell_extra="", solid_eids=(1, 5)):
     pts = {}
     nid = 0
     for z in (0.0, 1.0):                       # 솔리드 절점 1~12 (x 0,1,2 × y 0,1 × z 0,1)
@@ -79,9 +79,9 @@ def deck():
     allp.update(ts_nodes)
     allp.update(far)
     nodes = "*NODE\n" + "".join(f"{i:8d}{x:16.6f}{y:16.6f}{z:16.6f}\n" for i, (x, y, z) in sorted(allp.items()))
-    sol = ("*ELEMENT_SOLID\n" + f"{1:8d}{1:8d}" + "".join(f"{n:8d}" for n in (1, 2, 5, 4, 7, 8, 11, 10)) + "\n"
-           + f"{5:8d}{1:8d}" + "".join(f"{n:8d}" for n in (2, 3, 6, 5, 8, 9, 12, 11)) + "\n")
-    tsh = ("*ELEMENT_TSHELL\n" + "".join(f"{e:8d}" + "".join(f"{n:8d}" for n in TS[e]) + "\n" for e in (2, 3))
+    sol = ("*ELEMENT_SOLID\n" + f"{solid_eids[0]:8d}{1:8d}" + "".join(f"{n:8d}" for n in (1, 2, 5, 4, 7, 8, 11, 10)) + "\n"
+           + f"{solid_eids[1]:8d}{1:8d}" + "".join(f"{n:8d}" for n in (2, 3, 6, 5, 8, 9, 12, 11)) + "\n")
+    tsh = ("*ELEMENT_TSHELL\n" + "".join(f"{e:8d}" + "".join(f"{n:8d}" for n in TS[e]) + "\n" for e in (2, 3)) + tshell_extra
            + "*ELEMENT_TSHELL %\n" + f"{4:10d}" + "".join(f"{n:10d}" for n in TS[4]) + "\n")
     props = ("*PART\nhousing\n" + f10(1, 1, 1) + "*PART\nfpcb\n" + f10(2, 2, 1) + "*PART\nfpcb_far\n" + f10(3, 2, 1)
              + "*SECTION_SOLID\n" + f10(1, 1) + "*SECTION_TSHELL\n" + f10(2, 3, 0.8333, 5, 1, 0.0, 0, 0)
@@ -89,7 +89,7 @@ def deck():
     tied = ("*CONTACT_TIED_SURFACE_TO_SURFACE\n" + f10(1, 2, 3, 3) + f10(0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, "1.0E+20")
             + f10(1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0))
     gen = "*CONTACT_AUTOMATIC_GENERAL\n" + f10(0, 0, 0, 0) + f10(0.2, 0.2) + f10("")
-    return "*KEYWORD\n" + nodes + sol + tsh + props + tied + gen + "*END\n"
+    return "*KEYWORD\n" + nodes + sol + tsh + props + tied + gen + extra + "*END\n"
 
 
 def tshell_cards(text):
@@ -118,9 +118,9 @@ def tshell_cards(text):
     return out, blocks, seen
 
 
-def run(name, opt):
+def run(name, opt, deck_text=None):
     d = Path(tempfile.mkdtemp(prefix=f"tsheltc_{name}_"))
-    (d / "model.k").write_text(deck())
+    (d / "model.k").write_text(deck_text if deck_text is not None else deck())
     (d / "opt.txt").write_text(opt)
     r = subprocess.run(KMM_CMD + ["opt.txt"], cwd=d, capture_output=True, text=True, timeout=900, env=ENV)
     return d, r.returncode, r.stdout + r.stderr
@@ -160,6 +160,43 @@ def main():
     # 솔리드 2개 외부 면 10 + TSHELL 파트 2 외부 면 10 + 파트 3 외부 면 6 = 26
     check("RobustContact: 전체 외부 면에 TSHELL 면 포함(10 + 10 + 6 = 26)", "26개" in seg, seg)
     check("RobustContact: 솔리드–TSHELL TIED 면을 감지(0 이 아님)", tied != "" and "— 0 Tied" not in tied, tied)
+    # 리뷰 W 🔴2 — *PART_COMPOSITE_TSHELL 파트의 TSHELL 은 원문 그대로(v129 처럼), 같은 블록의 *PART 파트 TSHELL 은 요소로
+    comp_rows = "".join(f"{e:8d}{5:8d}" + "".join(f"{n:8d}" for n in TS[3][1:]) + "\n" for e in (6, 7))
+    comp = "*PART_COMPOSITE_TSHELL\nlaminate\n" + f10(5, 1, 0.8333, 0, 0, 0, 0, 0) + f10(1, 0.25, 0.0, "", 1, 0.25, 90.0, "")
+    d, rc, log = run("composite", TRANS, deck(extra=comp, tshell_extra=comp_rows))
+    t = (d / "model_trans.k").read_text(errors="replace") if (d / "model_trans.k").exists() else ""
+    cards, blocks, seen = tshell_cards(t)
+    check("🔴2 *PART_COMPOSITE_TSHELL: rc 0", rc == 0, f"rc={rc} " + log[-600:])
+    check("🔴2 *PART_COMPOSITE_TSHELL: 그 파트 TSHELL 2줄은 원문 그대로, 나머지는 요소로 — 모두 한 번씩",
+          sorted(map(str, seen)) == ["2", "3", "4", "6", "7"] and cards.get(6, (0,))[0] == 5 and cards.get(7, (0,))[0] == 5, str(seen))
+    check("🔴2 *PART_COMPOSITE_TSHELL: 원문으로 둔다고 알림·소실 0", "원문 그대로 둔다" in log and "소실 0" in grab(log, "ELEMENT_TSHELL 개수"),
+          grab(log, "ELEMENT_TSHELL"))
+    # 리뷰 W 🟡3 — PlaneGraded 자동 바닥판 크기는 솔리드 외곽 요소만 본다(TSHELL 두께 0.5 를 넣으면 평균이 1.00 아래로)
+    d, rc, log = run("floor", DROP.format(extra="\nDropSurface,PlaneGraded,30,30,5,0,0,2"))
+    fl = grab(log, "PlaneGraded 자동")
+    check("🟡3 PlaneGraded 자동: 외곽면 평균 요소 1.00(솔리드만 — TSHELL 두께 빼고)", rc == 0 and "외곽면 평균 요소=1.00" in fl, f"rc={rc} {fl}")
+    # 리뷰 W 🟡4 — 수동 강체화: TSHELL 에만 있는 EID 4 는 TSHELL 단면 강체 파트로, 솔리드에도 있는 EID 2 의 TSHELL 은 그대로
+    d, rc, log = run("rigid", DROP.format(extra="\nRigidifyElementIDs,2,4"), deck(solid_eids=(1, 2)))
+    ds = sorted(d.rglob("DropSet.k"))
+    t = ds[0].read_text(errors="replace") if ds else ""
+    lines = t.splitlines()
+    sec_kind = {}
+    for i, ln in enumerate(lines):
+        u = ln.strip().upper()
+        if u.startswith("*SECTION_") and i + 1 < len(lines):
+            name = lines[i + 1].strip() if u.endswith("_TITLE") else ""
+            sec_kind[name] = u
+    cards, blocks, seen = tshell_cards(t)
+    check("🟡4 RigidifyElementIDs: rc 0", rc == 0, f"rc={rc} " + log[-600:])
+    check("🟡4 RigidifyElementIDs: TSHELL 4 의 강체 파트 단면은 *SECTION_TSHELL(_TITLE)",
+          sec_kind.get("RIGID_SmallDT_P3", "").startswith("*SECTION_TSHELL"), str(sec_kind))
+    check("🟡4 RigidifyElementIDs: 솔리드와 번호가 같은 TSHELL 2 는 파트 2 에 그대로·알림",
+          cards.get(2, (0,))[0] == 2 and "RigidifyElementIDs" in log and "TSHELL 은 그대로" in log, f"{cards.get(2)} {grab(log, 'RigidifyElementIDs')}")
+    # 리뷰 W ⚪ — *ELEMENT_TSHELL_BETA 처럼 원문으로 두는 변형은 접촉에서 빠진다고 알림
+    beta = "*ELEMENT_TSHELL_BETA\n" + f"{9:8d}{3:8d}" + "".join(f"{n:8d}" for n in TS[4][1:]) + "\n" + f"{30.0:16.4f}\n"
+    d, rc, log = run("beta", TRANS, deck(extra=beta))
+    check("⚪ *ELEMENT_TSHELL_BETA: 원문 그대로이고 접촉 집합에 안 든다고 알림", "*ELEMENT_TSHELL_BETA" in log and "원문 그대로 둔다" in log,
+          log[-600:])
     print()
     if FAILS:
         print(f"FAILED {len(FAILS)}")
