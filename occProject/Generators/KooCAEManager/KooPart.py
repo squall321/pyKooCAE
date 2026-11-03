@@ -18,6 +18,12 @@ def get_nodes(nodeManager, nids):
     """Helper function to find nodes from node IDs."""
     return [nodeManager.FindNodefromID(nid) for nid in nids]
 
+
+def _undefined_node(nodeManager, nids):
+    """요소가 *NODE 에 없는 절점을 가리키는가(0 은 빈 칸). 예전엔 없는 절점을 조용히 빼 절점이 모자란 요소가 남았다 —
+    DROP 경계 계산(SetBoundaries)에서 IndexError, TRANSFORM 은 원인 없이 내보내기 소실(2026-11-03)."""
+    return any(n and nodeManager.FindNodefromID(n) is None for n in nids)
+
 class KooConstraintPart():
     def __init__(self, id = 0, name = ""):
         self.id = id
@@ -2293,6 +2299,7 @@ class KooPartManager():
     
     def AddBeamElementsfromDyna(self, parametersBeam):
         _pid_miss = 0
+        _node_miss = 0   # *NODE 에 없는 절점을 가리켜 버린 수
         for i in range(len(parametersBeam)):
             parameters = parametersBeam[i]
             for j in range(len(parameters)):
@@ -2317,6 +2324,9 @@ class KooPartManager():
                     _pid_miss += 1
                 if pid in self.parts:
                     part : KooPart = self.parts[pid]
+                    if _undefined_node(part.nodeManager, nids):
+                        _node_miss += 1
+                        continue
                     if len(nids)<3 or nids[2] == 0:
                         n1 = part.nodeManager.FindNodefromID(nids[0])
                         n2 = part.nodeManager.FindNodefromID(nids[1])
@@ -2330,11 +2340,15 @@ class KooPartManager():
         if _pid_miss:   # 예전엔 완전 무언으로 버렸다(리뷰 R) — KMM 이 끝에서 🔴 + 종료 코드 3
             print(f"  🔴 ELEMENT_BEAM: *PART 가 없는 PID 의 빔 {_pid_miss}개를 버렸다")
             note_import_loss("ELEMENT_BEAM — PID 에 *PART 없음", _pid_miss)
+        if _node_miss:
+            print(f"  🔴 ELEMENT_BEAM: *NODE 에 없는 절점(정의 안 된 절점)을 가리키는 빔 {_node_miss}개를 버렸다")
+            note_import_loss("ELEMENT_BEAM — 정의 안 된 절점", _node_miss)
 
     def AddShellElementsfromDyna(self, parametersShell, thickness=False):
         # thickness=True: *ELEMENT_SHELL_THICKNESS 블록(카드 1 + 두께 카드 2장, 8절점이면 3장). 행 길이로만 추측하면
         # 요소 하나짜리 블록(행 2개)을 일반 셸로 읽어 두께 줄에서 죽었다(리뷰 H)
         _pid_miss = 0
+        _node_miss = 0   # *NODE 에 없는 절점을 가리켜 버린 수
         for i in range(len(parametersShell)):
             parameters = parametersShell[i]
             mode = 1
@@ -2368,6 +2382,9 @@ class KooPartManager():
                         _pid_miss += 1
                     if pid in self.parts:
                         part : KooPart = self.parts[pid]
+                        if _undefined_node(part.nodeManager, nids):
+                            _node_miss += 1
+                            continue
                         if len(nids) == 3 or nids[3] == 0:
                             n1 = part.nodeManager.FindNodefromID(nids[0])
                             n2 = part.nodeManager.FindNodefromID(nids[1])
@@ -2415,6 +2432,9 @@ class KooPartManager():
                         _pid_miss += 1
                     if pid in self.parts:
                         part : KooPart = self.parts[pid]
+                        if _undefined_node(part.nodeManager, nids):
+                            _node_miss += 1
+                            continue
                         if len(nids) == 3 or nids[3] == 0:
                             n1 = part.nodeManager.FindNodefromID(nids[0])
                             n2 = part.nodeManager.FindNodefromID(nids[1])
@@ -2448,6 +2468,9 @@ class KooPartManager():
                         _pid_miss += 1
                     if pid in self.parts:
                         part : KooPart = self.parts[pid]
+                        if _undefined_node(part.nodeManager, nids):
+                            _node_miss += 1
+                            continue
                         if len(nids) == 6 or nids[6] == 0:
                             n1 = part.nodeManager.FindNodefromID(nids[0])
                             n2 = part.nodeManager.FindNodefromID(nids[1])
@@ -2469,6 +2492,9 @@ class KooPartManager():
         if _pid_miss:   # 예전엔 완전 무언으로 버렸다(리뷰 R) — KMM 이 끝에서 🔴 + 종료 코드 3
             print(f"  🔴 ELEMENT_SHELL: *PART 가 없는 PID 의 셸 {_pid_miss}개를 버렸다")
             note_import_loss("ELEMENT_SHELL — PID 에 *PART 없음", _pid_miss)
+        if _node_miss:
+            print(f"  🔴 ELEMENT_SHELL: *NODE 에 없는 절점(정의 안 된 절점)을 가리키는 셸 {_node_miss}개를 버렸다")
+            note_import_loss("ELEMENT_SHELL — 정의 안 된 절점", _node_miss)
 
     def AddSolidElementsfromDynaAdvanced(self, parametersSolid):
         # 개수 불변식: 조용한 요소 소실을 막기 위해 '입력 레코드 vs 실제 등록' 을 집계한다.
@@ -2477,6 +2503,7 @@ class KooPartManager():
         _pid_miss = 0       # PID 가 파트에 없어 버려진 수(기존엔 완전 무언)
         _corner_total = 0   # 코너 절점 0 이라 레코드로 세기 전에 버린 수(리뷰 R — 예전엔 '소실 0' 으로 보고)
         _bad_pairs = 0      # 2줄 포맷의 헤더 이상·홀수 줄로 버린 짝
+        _node_miss = 0      # *NODE 에 없는 절점을 가리켜 버린 수(2026-11-03)
         _dups = []          # 같은 파트 안 EID 중복 (파트, EID, 덮인 요소) — 끝에서 덮인 요소가 다른지 본다(리뷰 S7·T)
         for i in range(len(parametersSolid)):
                 parameters = parametersSolid[i]
@@ -2513,6 +2540,9 @@ class KooPartManager():
                             _pid_miss += 1
                         if pid in self.parts:
                             part = self.parts[pid]
+                            if _undefined_node(part.nodeManager, nids):
+                                _node_miss += 1
+                                continue
                             if eid in part.elementManager.elements:
                                 _dups.append((part, eid, part.elementManager.elements[eid]))
                             if len(nids) == 4 or nids[4] == 0 or nids[4] == nids[3]:
@@ -2563,6 +2593,9 @@ class KooPartManager():
                             _pid_miss += 1
                         if pid in self.parts:
                             part = self.parts[pid]
+                            if _undefined_node(part.nodeManager, nids):
+                                _node_miss += 1
+                                continue
                             if eid in part.elementManager.elements:
                                 _dups.append((part, eid, part.elementManager.elements[eid]))
                             if len(nids) == 4 or nids[4] == 0 or nids[4] == nids[3]:
@@ -2600,6 +2633,9 @@ class KooPartManager():
                             _pid_miss += 1
                         if pid in self.parts:
                             part = self.parts[pid]
+                            if _undefined_node(part.nodeManager, nids):
+                                _node_miss += 1
+                                continue
                             if eid in part.elementManager.elements:
                                 _dups.append((part, eid, part.elementManager.elements[eid]))
                             if len(nids) == 20:
@@ -2632,11 +2668,12 @@ class KooPartManager():
                 _in = _rec_total + _corner_total + _bad_pairs
                 print(f"  🔴 ELEMENT_SOLID 개수 불일치: 입력 {_in} → 등록 {_add_total - _dup} "
                       f"({_in - _add_total + _dup}개 소실, PID 미존재 {_pid_miss}개, 코너 절점 0 {_corner_total}개, "
-                      f"2줄 짝 이상 {_bad_pairs}개, EID 중복 {_dup}개). 결과를 신뢰하기 전에 확인 필요")
+                      f"2줄 짝 이상 {_bad_pairs}개, EID 중복 {_dup}개, 정의 안 된 절점 {_node_miss}개). 결과를 신뢰하기 전에 확인 필요")
                 note_import_loss("ELEMENT_SOLID — PID 에 *PART 없음", _pid_miss)
                 note_import_loss("ELEMENT_SOLID — 코너 절점 0", _corner_total)
                 note_import_loss("ELEMENT_SOLID — 2줄 포맷 짝 이상", _bad_pairs)
-                note_import_loss("ELEMENT_SOLID — 절점 수를 판정하지 못함", _lost - _pid_miss)
+                note_import_loss("ELEMENT_SOLID — 정의 안 된 절점", _node_miss)
+                note_import_loss("ELEMENT_SOLID — 절점 수를 판정하지 못함", _lost - _pid_miss - _node_miss)
                 note_import_loss("ELEMENT_SOLID — 같은 파트 안 EID 중복(뒤 요소가 앞을 덮음)", _dup)
             else:
                 print(f"  ELEMENT_SOLID 개수 검사: 입력 {_rec_total} = 등록 {_add_total} (소실 0)")
