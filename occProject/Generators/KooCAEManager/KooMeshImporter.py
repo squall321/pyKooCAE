@@ -704,6 +704,8 @@ class KooDynaImporter():
             self.keywordInterpreted["ELEMENT_SHELL_THICKNESS"] = True
         if "ELEMENT_SOLID" in dynaKeywords:
             self.keywordInterpreted["ELEMENT_SOLID"] = True
+        if "ELEMENT_TSHELL" in dynaKeywords:
+            self.keywordInterpreted["ELEMENT_TSHELL"] = True   # TSHELL8 요소로 읽어 매니저가 쓴다(2026-11-03)
         if "SET_PART" in dynaKeywords:
             self.keywordInterpreted["SET_PART"] = True        
         if "SET_PART_LIST" in dynaKeywords:
@@ -792,6 +794,7 @@ class KooDynaImporter():
             elementSolidKeyword : ElementSolid = dynaKeywords["ELEMENT_SOLID"]
         else:
             elementSolidKeyword = None
+        elementTShellKeyword = dynaKeywords.get("ELEMENT_TSHELL")
         if modePart == "PART":
             def _part_int_or_blank(field, default=0):
                 """PART 필드를 int로 변환. 공백이면 default 반환."""
@@ -927,9 +930,11 @@ class KooDynaImporter():
             #import time
             #start = time.time()
             self.partManager.AddSolidElementsfromDynaAdvanced(parametersSolid)
+        if elementTShellKeyword is not None:
+            self.partManager.AddTShellElementsfromDyna(elementTShellKeyword.parameters)
         # 입력 요소 카드가 I10(*ELEMENT_… %)였으면 출력도 I10 스타일 보존
         if any(getattr(k, 'has_i10', False) for k in
-               (elementShellKeyword, elementShellThickKeyword, elementBeamKeyword, elementSolidKeyword)
+               (elementShellKeyword, elementShellThickKeyword, elementBeamKeyword, elementSolidKeyword, elementTShellKeyword)
                if k is not None):
             for _part in self.partManager.parts.values():
                 _part.elementManager.output_i10 = True

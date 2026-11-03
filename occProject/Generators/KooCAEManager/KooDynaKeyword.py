@@ -6125,6 +6125,42 @@ class ElementShellThickness(DynaKeyword):
                         stream.write(formatted_elements)
                     stream.write("\n")
                 
+class ElementTShell(DynaKeyword):
+    """*ELEMENT_TSHELL — 요소마다 한 줄(EID PID N1~N8). 칸 폭은 I10('%'·*KEYWORD I10=Y) 10, long('+') 20, 표준 8 이고
+    콤마 줄은 콤마 자유형식이다(2026-11-03 — 예전엔 해석하지 않아 TSHELL 파트에 요소가 없었다).
+    *ELEMENT_TSHELL_BETA·_COMPOSITE 같은 변형은 여기서 읽지 않는다(원문 그대로 나간다)."""
+    def __init__(self):
+        super(ElementTShell, self).__init__("ELEMENT_TSHELL")
+        self.has_i10 = False
+
+    def parse(self, elementTShellKeywords):
+        fmts = getattr(self, "block_formats", None) or []
+        for i, block in enumerate(elementTShellKeywords):
+            fmt = fmts[i] if i < len(fmts) else None
+            w = 10 if fmt == "i10" else (20 if fmt == "long" else 8)
+            if w == 10:
+                self.has_i10 = True
+            rows = []
+            for line in block:
+                s = str(line).replace("\n", "").rstrip()
+                if not s.strip() or s.lstrip().startswith("$"):
+                    continue
+                if "," in s:
+                    f = [x.strip() for x in s.split(",")]
+                else:
+                    f = [s[k * w:(k + 1) * w].strip() for k in range(10)]
+                rows.append((f + [""] * 10)[:10])
+            self.parameters.append(rows)
+
+    def write(self, stream):
+        for rows in self.parameters:
+            w = 10 if any(len(x) > 8 for r in rows for x in r) else 8
+            stream.write("*ELEMENT_TSHELL %\n" if w == 10 else "*ELEMENT_TSHELL\n")
+            stream.write("$$   EID     PID      N1      N2      N3      N4      N5      N6      N7      N8\n")
+            for r in rows:
+                stream.write("".join(f"{x:>{w}}" for x in r) + "\n")
+
+
 class ElementSolid(DynaKeyword):
     def __init__(self):
         super(ElementSolid,self).__init__("ELEMENT_SOLID")
@@ -15071,6 +15107,15 @@ class DynaManager():
                 dynaKeywordMan.addKeyword(eshell_thick)
                 while "ELEMENT_SHELL_THICKNESS" in lines_with_asterisk:
                     lines_with_asterisk.remove("ELEMENT_SHELL_THICKNESS")
+            if "ELEMENT_TSHELL" in lines_with_asterisk:
+                element_tshell = keyword_dict["ELEMENT_TSHELL"]
+                etshell = ElementTShell()
+                etshell.block_formats = getattr(self, "_block_formats", {}).get("ELEMENT_TSHELL", [])
+                etshell.parse(element_tshell)
+                etshell.write(file)
+                dynaKeywordMan.addKeyword(etshell)
+                while "ELEMENT_TSHELL" in lines_with_asterisk:
+                    lines_with_asterisk.remove("ELEMENT_TSHELL")
             if "ELEMENT_SOLID" in lines_with_asterisk:
                 element_solid = keyword_dict["ELEMENT_SOLID"]
                 esolid = ElementSolid()

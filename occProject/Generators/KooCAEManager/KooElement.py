@@ -1486,6 +1486,14 @@ class SolidElement(Element):
         self.AddNode(node7)
         self.AddNode(node8)
     
+    def SetNodesTShell8(self, node1, node2, node3, node4, node5, node6, node7, node8):
+        """*ELEMENT_TSHELL 요소(2026-11-03) — HEXA8 과 연결은 같지만 솔리드 전용 처리(작은 dt 강체화·재메싱·층 분할·미러)는
+        HEXA8 분기만 보므로 건너뛴다. 면 계산(SetBoundaries)과 접촉 파트 판정에만 들어온다."""
+        self.SetType("TSHELL8")
+        self.nodes = []
+        for node in (node1, node2, node3, node4, node5, node6, node7, node8):
+            self.AddNode(node)
+    
     def SetNodesHexa20(self,node1,node2,node3,node4,node5,node6,node7,node8,node9,node10,node11,node12,node13,node14,node15,node16,node17,node18,node19,node20):
         self.SetType("HEXA20")
         self.nodes = [] 
@@ -1564,7 +1572,7 @@ class SolidElement(Element):
             self.boundaries.append(boundary3)
             self.boundaries.append(boundary4)
             self.boundaries.append(boundary5)
-        elif self.type == "HEXA8":
+        elif self.type in ("HEXA8", "TSHELL8"):   # TSHELL8 = *ELEMENT_TSHELL(아래·위 면 4절점씩, 면 차례는 HEXA8 과 같다)
             boundary1 = []
             boundary2 = []
             boundary3 = []
@@ -3590,6 +3598,12 @@ class ElementManager:
         self.AddElement(element)
         return element
     
+    def AddTShellElement(self, id, node1, node2, node3, node4, node5, node6, node7, node8):
+        element = SolidElement(id)
+        element.SetNodesTShell8(node1, node2, node3, node4, node5, node6, node7, node8)
+        self.AddElement(element)
+        return element
+    
     def CreateHexahedronQuadraticElement(self,node1,node2,node3,node4,node5,node6,node7,node8,node9,node10,node11,node12,node13,node14,node15,node16,node17,node18,node19,node20):
         self.maxID = self.maxID + 1
         element = SolidElement(self.maxID)
@@ -4117,7 +4131,31 @@ class ElementManager:
                     formatString += f"{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.nodes[3].id + startNID):>{w}}{str(element.nodes[4].id + startNID):>{w}}{str(element.nodes[5].id + startNID):>{w}}{str(element.nodes[6].id + startNID):>{w}}{str(element.nodes[7].id + startNID):>{w}}{str(element.nodes[8].id + startNID):>{w}}{str(element.nodes[9].id + startNID):>{w}}\n"
                     formatString += f"{str(element.nodes[10].id + startNID):>{w}}{str(element.nodes[11].id + startNID):>{w}}{str(element.nodes[12].id + startNID):>{w}}{str(element.nodes[13].id + startNID):>{w}}{str(element.nodes[14].id + startNID):>{w}}{str(element.nodes[15].id + startNID):>{w}}{str(element.nodes[16].id + startNID):>{w}}{str(element.nodes[17].id + startNID):>{w}}{str(element.nodes[18].id + startNID):>{w}}{str(element.nodes[19].id + startNID):>{w}}\n"
                     dynaString += formatString
+        dynaString += self._tshell8_cards(pid, startNID, startEID, w)
         return dynaString
+    
+    def _tshell8_cards(self, pid, startNID, startEID, w):
+        """TSHELL8 요소 → *ELEMENT_TSHELL 카드(EID PID N1~N8). 쓰지 못한 요소는 내보내기 소실로 센다(2026-11-03 — 예전엔
+        *ELEMENT_TSHELL 을 해석하지 않아 원문 블록으로만 나갔다)."""
+        _ts = [e for e in self.elements.values() if e.type == "TSHELL8"]
+        if not _ts:
+            return ""
+        out = ["*ELEMENT_TSHELL %\n" if w == 10 else "*ELEMENT_TSHELL\n"]
+        _skip = 0
+        for element in _ts:
+            try:
+                if len(element.nodes) != 8:
+                    raise ValueError("TSHELL8 절점 수가 8 이 아님")
+                out.append(f"{str(element.id + startEID):>{w}}{str(pid):>{w}}"
+                           + "".join(f"{str(n.id + startNID):>{w}}" for n in element.nodes) + "\n")
+            except Exception:
+                _skip += 1
+                _note_export_loss(element)
+                if _skip <= 5:
+                    print(f"  Warning: TSHELL 요소 출력 실패(EID {getattr(element, 'id', '?')}) — 스킵")
+        if _skip:
+            print(f"  Warning: TSHELL 요소 출력 스킵 총 {_skip}개")
+        return "".join(out)
     
     def WriteStreamDynaKeywordSolid(self, stream, pid, startNID, startEID):
         w = 10 if getattr(self, 'output_i10', False) else 8  # I10 스타일 보존 (기본 8 = 기존 바이트 동일)
@@ -4185,6 +4223,7 @@ class ElementManager:
                         print(f"  Warning: 2차 솔리드 요소 출력 실패(EID {getattr(element,'id','?')}) — 스킵")
             if _skip_q:
                 print(f"  Warning: 2차 솔리드 요소 출력 스킵 총 {_skip_q}개")
+        stream.write(self._tshell8_cards(pid, startNID, startEID, w))
                     
     def WritetoDynaKeywordFace(self, pid, startNID, startEID):
         w = 10 if getattr(self, 'output_i10', False) else 8  # I10 스타일 보존 (기본 8 = 기존 바이트 동일)
