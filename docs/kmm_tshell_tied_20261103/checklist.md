@@ -13,6 +13,6 @@
 - [x] 컴파일본 e2e(Test_E2E_v129/e2e_v129_host.log) — 아는 불량 먼저: 헤드 v127 컴파일본 TSHELL 6·TIED 3 FAIL. 새 컴파일본 10절점·파일끝 8종 ALL PASS, KMM 시험 14종 0 FAIL(TSHELL 13·TIED 12·요소 소실 50·레시피 39 …), KCR 결과 귀환·sphere ALL PASS, LANG=C 에서 TIED 12/12(⚠ 경고 줄 포함)
 - [x] SIF · compute-node-images · tar · Drive · 메일 — SIF v129 sha 79275a4f(14:57), compute-node-images 같음, KooRemapper 8c7c4f87(기대=실제), tar v129 1,346,109,707 B(14:59), Drive·메일 완료
 - [x] SIF e2e(Test_E2E_v129/e2e_v129_sif.log) — SIF 안 KMM 36ab6c8e·KAM 580f028e·KCR 6b19f55d == 소스 트리, 10절점·파일끝 ALL PASS, KMM 시험 14종 0 FAIL, KAM 곡선 식 ALL OK
-- [ ] push
-- [ ] 헤드 /opt 교체(하드 링크 백업) · 확인
-- [ ] H8·H9 보고 세션·KooRemapper 쪽에 알림, 메모리·문서
+- [x] push — 864524d~5728b71
+- [x] 헤드 /opt 교체(하드 링크 백업) · 확인 — 15:20 v129(79275a4f), v127(4d31651f)은 SmartTwinPreprocessor_backup_20261103_152052.sif. 교체 전 아는 불량(TSHELL 6·TIED 3 FAIL) → 교체 뒤 TSHELL 13/13·TIED 12/12·요소 소실 50·레시피 39·10절점 ALL PASS·KAM 곡선 식 ALL OK. 노드는 down 이라 미배포
+- [x] H8·H9 보고 세션·KooRemapper 쪽에 알림, 메모리·문서 — kooremapper-fd 에 v129 알림. H8·H9 쪽은 보고 세션을 특정할 수 없어 사용자에게 전달 글을 드림
