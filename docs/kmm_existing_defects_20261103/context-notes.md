@@ -62,3 +62,9 @@
   - 콤마·long *NODE 는 여전히 못 읽어, B2 가 요소를 원인과 함께 버린다(rc 3, 고정폭 안내).
   - HEXA8 파트에 TSHELL 단면을 변환 없이 붙이는 PART_EXCHANGE 는 경고하지 않는다.
 - **아는 불량(8ae3318 스냅숏).** test_section_card_sets 4 FAIL, test_tshell_element_contact 7 FAIL, test_kmm_real_deck_crashes 7 FAIL 이다. 고친 트리는 23/23·19/19·36/36 이다.
+- **최종 트리(dac9b98) 검증.**
+  - 전체 시험: 44개 모두 통과(test_drop_attitude_angles 는 shim).
+  - 말뭉치 V3(실제 덱): 사례별 rc 가 V2(8ae3318) 와 같다. 예외는 072 하나로, kooremapper-fd 가 그 예제 덱의 82자 줄을 고쳐 입력이 바뀐 것이다(두 트리 모두 rc 3).
+  - V2 대비 새 출력 차이는 29파일이고, 모두 리뷰 W 수정의 의도한 결과다.
+    - `*KEYWORD i10=y` 덱(KooRemapper load 예제 4건)의 원문 블록 CONTROL_IMPLICIT_*·CONTACT_TIED_*_TITLE 에 '%' 가 붙었다(🟡5).
+    - 배터리 gas wound 2건에서 RobustContact_SS 번호가 315 → 504 가 됐다. 덱의 원문 *SET_SEGMENT_GENERAL 503 을 예약했기 때문이다(🟡8). 예전 315 는 우연히 안 겹쳤을 뿐이다.
