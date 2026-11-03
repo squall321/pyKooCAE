@@ -3069,6 +3069,15 @@ class KooPartManager():
         if exceptPIDs is None:
             exceptPIDs = set()
         manual_eids = set(element_ids) if element_ids else set()
+        # LS-DYNA 는 요소 종류마다 EID 를 따로 매긴다 — 같은 번호가 솔리드·셸·빔에도 있으면 TSHELL 은 건드리지 않는다
+        # (v129 까지 TSHELL 은 요소로 읽지 않아 대상이 아니었다, 리뷰 W 🟡4). TSHELL 에만 있는 번호만 TSHELL 에 적용한다
+        _non_ts_eids = {e for p in self.parts.values() for e, el in p.elementManager.elements.items()
+                        if getattr(el, 'type', '') != 'TSHELL8'} if manual_eids else set()
+        _ts_skipped = sorted({e for p in self.parts.values() for e, el in p.elementManager.elements.items()
+                              if getattr(el, 'type', '') == 'TSHELL8' and e in manual_eids and e in _non_ts_eids})
+        if _ts_skipped:
+            print(f"  ⚠️  RigidifyElementIDs: EID {', '.join(map(str, _ts_skipped[:10]))}{' …' if len(_ts_skipped) > 10 else ''} 는 "
+                  f"솔리드·셸 등에도 있어 그쪽만 강체로 한다 — 같은 번호의 TSHELL 은 그대로 둔다")
 
         rigid_pids = []
         total_rigidified = 0
@@ -3113,8 +3122,8 @@ class KooPartManager():
                 elem_unique = len(set(n.id for n in elem.nodes if n is not None))
                 is_tetra_elem = isinstance(elem, SolidElement) and elem_unique <= 5
 
-                # 수동 지정 (타입 무관)
-                if eid in manual_eids:
+                # 수동 지정 (타입 무관 — 단 다른 종류에도 있는 번호의 TSHELL 은 제외)
+                if eid in manual_eids and not (getattr(elem, 'type', '') == 'TSHELL8' and eid in _non_ts_eids):
                     rigidify = True
 
                 # dt 기준 (TETRA만)
@@ -3163,6 +3172,13 @@ class KooPartManager():
                     thickness = getattr(part.section, 'thickness', 0.1)
                 rigid_section = sectionMan.CreateShellSection(
                     f"RIGID_SmallDT_P{pid}", thickness if thickness > 0 else 0.1)
+            elif getattr(first_elem, "type", "") == "TSHELL8":
+                # *ELEMENT_TSHELL 요소는 TSHELL 단면이어야 한다 — 솔리드 단면이면 LS-DYNA 가 요소와 맞지 않는다(리뷰 W 🟡4).
+                # 원 파트의 TSHELL 단면 칸을 따른다(강체라 ELFORM 은 결과에 영향이 거의 없다)
+                src = getattr(part, "section", None)
+                rigid_section = sectionMan.CreateTShellSection(
+                    f"RIGID_SmallDT_P{pid}", getattr(src, "elform", 1), getattr(src, "shrf", 1.0), getattr(src, "nip", 2),
+                    getattr(src, "propt", 1), getattr(src, "qr", 0.0), 0, getattr(src, "tshear", 0))
             else:
                 rigid_section = sectionMan.CreateSolidSection(f"RIGID_SmallDT_P{pid}")
 
