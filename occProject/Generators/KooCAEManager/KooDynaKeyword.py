@@ -10729,20 +10729,104 @@ class SectionBeamTitle(DynaKeyword):
                 stream.write("".join(str(v) for v in parameter[j]).rstrip("\n"))
                 stream.write("\n")
 
+def _dyna_int(value, default=0):
+    """KooOperator.KooDynaInt 와 같은 규칙(빈 칸은 기본값, '2.0' 꼴은 정수) — 키워드 리더와 단면 매니저가 같은 값을 보게 한다."""
+    s = str(value).strip()
+    if s == "":
+        return default
+    try:
+        return int(s)
+    except ValueError:
+        try:
+            return int(round(float(s)))
+        except (ValueError, OverflowError):
+            return default
+
+
+def _card_fields(line, fmt, n=8):
+    """카드 한 줄을 칸 n 개로 나눈다. 콤마가 있으면 콤마 자유형식이다(R16: 카드마다 고정폭과 섞을 수 있다).
+    블록이 long('+')이면 칸은 20자, 아니면 10자다(R16: long 은 줄 수가 같고 칸만 넓어진다)."""
+    line = line.replace("\n", "")
+    if "," in line:
+        return (line.split(",") + [""] * n)[:n]
+    w = 20 if fmt == "long" else 10
+    return [line[k * w:(k + 1) * w] for k in range(n)]
+
+
+def _title_field(line, fmt):
+    """_TITLE 제목 줄 — 표준 80자, long 160자(R16 'longer than A20 … A160'). 제목 안 콤마는 나누지 않는다."""
+    return [line.replace("\n", "")[:160 if fmt == "long" else 80]]
+
+
+def _section_card_sets(lines, fmt, title, shell, keyword):
+    """*SECTION_SHELL·*SECTION_TSHELL(_TITLE) 블록 → 단면마다 카드 묶음 목록.
+    R16 'For each … section include a set of the following cards. This input ends at the next keyword' 대로 차례로 읽는다.
+    예전엔 블록마다 첫 단면만 읽어 같은 블록의 다음 단면이 사라졌고, 셸은 ICOMP=1 각도 카드도 버렸다(2026-11-03).
+      셸: [제목] 카드 1 · 카드 2(필수) · ICOMP=1 각도 ceil(NIP/8) 장 · ELFORM 101~105 사용자 요소 카드("RAW", 원문 줄)
+      두꺼운 셸: [제목] 카드 1 · ICOMP=1 각도 ceil(NIP/8) 장
+    NIP 0 은 적분점 2개다(R16 셸·두꺼운 셸 둘 다)."""
+    sets, k, n = [], 0, len(lines)
+    while k < n:
+        cs = []
+        if title:
+            cs.append(_title_field(lines[k], fmt))
+            k += 1
+            if k >= n:
+                print(f"  Warning: *{keyword}: 제목 줄 뒤에 카드 1 이 없다 — 이 단면은 읽지 않는다")
+                break
+        c1 = _card_fields(lines[k], fmt)
+        k += 1
+        cs.append(c1)
+        if shell:
+            if k < n:
+                cs.append(_card_fields(lines[k], fmt))
+                k += 1
+            else:
+                print(f"  Warning: *{keyword} SECID {c1[0].strip()}: 필수 카드 2(T1~T4) 가 없다 — 빈 칸(기본값)으로 읽는다."
+                      f" LS-DYNA 는 이 덱을 거절할 수 있다")
+                cs.append([""] * 8)
+        if _dyna_int(c1[6], 0) == 1:
+            nip = _dyna_int(c1[3], 2)
+            for _ in range(-(-(nip if nip > 0 else 2) // 8)):
+                if k >= n:
+                    break
+                cs.append(_card_fields(lines[k], fmt))
+                k += 1
+        if shell and 101 <= _dyna_int(c1[1], 0) <= 105 and k < n:
+            c5 = _card_fields(lines[k], fmt)
+            m = 1 + max(_dyna_int(c5[0], 0), 0) + -(-max(_dyna_int(c5[5], 0), 0) // 8)
+            cs.append(("RAW", [ln.replace("\n", "") for ln in lines[k:k + m]]))
+            k += m
+        sets.append(cs)
+    return sets
+
+
+def _f10(x):
+    """단면 덤프 칸 — long(20자)·콤마 칸은 공백을 떼고 10칸에 쓴다. 표준 10칸 칸은 그대로(덤프 바이트 유지)."""
+    x = str(x)
+    return x.strip() if len(x) > 10 else x
+
+
+def _write_section_extra_cards(stream, cards):
+    """단면 덤프 — 각도 카드는 10칸씩(long·콤마 칸은 공백을 떼고), 사용자 요소 카드는 원문 그대로."""
+    for card in cards:
+        if isinstance(card, tuple):
+            for ln in card[1]:
+                stream.write(ln + "\n")
+            continue
+        stream.write("".join(f"{_f10(x):>10}" for x in card) + "\n")
+
+
 class SectionShell(DynaKeyword):
     def __init__(self):
         super(SectionShell,self).__init__("SECTION_SHELL")
 
     def parse(self, section_shell_keywords):
+        fmts = getattr(self, "block_formats", None) or []
         for i in range(len(section_shell_keywords)):
-            parameterList = []
-            #parameters = section_shell_keywords[i][0].parse_whole([10, 10, 10, 10, 10, 10, 10, 10])
-            parameters = self.parse_whole(section_shell_keywords[i][0], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            #parameters = section_shell_keywords[i][1].parse_whole([10, 10, 10, 10, 10, 10, 10, 10])
-            parameters = self.parse_whole(section_shell_keywords[i][1], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            self.parameters.append(parameterList)
+            fmt = fmts[i] if i < len(fmts) else None
+            self.parameters.extend(_section_card_sets(section_shell_keywords[i], fmt, False, True, "SECTION_SHELL"))
+
 
     def AddSectionShellTitle(self, name, secid, elform, shrf, nip, propt, qririd, icomp, setyp, t1, t2, t3, t4, nloc, marea, idof, edgset):
         parameterList = []
@@ -10801,44 +10885,33 @@ class SectionShell(DynaKeyword):
         return self.parameters[ith][1][7]
 
     def getSectionShells(self):
-        sectionList = [] 
-        for i in range(len(self.parameters)):
-            parameter = self.parameters[i]
-            curSection = []
-            curSection.append("*SECTION_SHELL")
-            curSection.append(parameter[0])
-            curSection.append(parameter[1])
-            sectionList.append(curSection)
-        return sectionList
+        # 카드 1·2 뒤 각도 카드·사용자 요소 카드("RAW")까지 넘긴다 — 단면 매니저가 ICOMP=1 각도를 읽는다(2026-11-03)
+        return [["*SECTION_SHELL"] + list(parameter) for parameter in self.parameters]
     
+
     def write(self, stream):
         for i in range(len(self.parameters)):
             parameter = self.parameters[i]
             stream.write("*SECTION_SHELL\n")
             stream.write("$$   SECID    ELFORM      SHRF       NIP     PROPT    QRIRID     ICOMP     SETYP\n")
-            formatted_elements = f"{str(parameter[0][0]):>10}{str(parameter[0][1]):>10}{str(parameter[0][2]):>10}{str(parameter[0][3]):>10}{str(parameter[0][4]):>10}{str(parameter[0][5]):>10}{str(parameter[0][6]):>10}{str(parameter[0][7]):>10}\n"
+            formatted_elements = f"{_f10(parameter[0][0]):>10}{_f10(parameter[0][1]):>10}{_f10(parameter[0][2]):>10}{_f10(parameter[0][3]):>10}{_f10(parameter[0][4]):>10}{_f10(parameter[0][5]):>10}{_f10(parameter[0][6]):>10}{_f10(parameter[0][7]):>10}\n"
             stream.write(formatted_elements)
             stream.write("$$      T1        T2        T3        T4      NLOC     MAREA      IDOF    EDGSET\n")
-            formatted_elements = f"{str(parameter[1][0]):>10}{str(parameter[1][1]):>10}{str(parameter[1][2]):>10}{str(parameter[1][3]):>10}{str(parameter[1][4]):>10}{str(parameter[1][5]):>10}{str(parameter[1][6]):>10}{str(parameter[1][7]):>10}\n"
+            formatted_elements = f"{_f10(parameter[1][0]):>10}{_f10(parameter[1][1]):>10}{_f10(parameter[1][2]):>10}{_f10(parameter[1][3]):>10}{_f10(parameter[1][4]):>10}{_f10(parameter[1][5]):>10}{_f10(parameter[1][6]):>10}{_f10(parameter[1][7]):>10}\n"
             stream.write(formatted_elements)
+            _write_section_extra_cards(stream, parameter[2:])
+
 
 class SectionShellTitle(DynaKeyword):
     def __init__(self):
         super(SectionShellTitle,self).__init__("SECTION_SHELL_TITLE")
 
     def parse(self, section_shell_keywords):
+        fmts = getattr(self, "block_formats", None) or []
         for i in range(len(section_shell_keywords)):
-            parameterList = []
-            #parameters = section_shell_keywords[i][0].parse_whole([80])
-            parameters = self.parse_whole(section_shell_keywords[i][0], [80])
-            parameterList.append(parameters)
-            #parameters = section_shell_keywords[i][1].parse_whole([10, 10, 10, 10, 10, 10, 10, 10])
-            parameters = self.parse_whole(section_shell_keywords[i][1], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            #parameters = section_shell_keywords[i][2].parse_whole([10, 10, 10, 10, 10, 10, 10, 10])
-            parameters = self.parse_whole(section_shell_keywords[i][2], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            self.parameters.append(parameterList)
+            fmt = fmts[i] if i < len(fmts) else None
+            self.parameters.extend(_section_card_sets(section_shell_keywords[i], fmt, True, True, "SECTION_SHELL_TITLE"))
+
 
     def AddSectionShellTitle(self, name, secid, elform, shrf, nip, propt, qririd, icomp, setyp, t1, t2, t3, t4, nloc, marea, idof, edgset):
         parameterList = []
@@ -10902,28 +10975,23 @@ class SectionShellTitle(DynaKeyword):
         return self.parameters[ith][2][7]
     
     def getSectionShells(self):
-        sectionList = [] 
-        for i in range(len(self.parameters)):
-            parameter = self.parameters[i]
-            curSection = []
-            curSection.append("*SECTION_SHELL_TITLE")
-            curSection.append(parameter[0]) 
-            curSection.append(parameter[1]) 
-            curSection.append(parameter[2])
-            sectionList.append(curSection)
-        return sectionList
+        # 제목·카드 1·2 뒤 각도 카드·사용자 요소 카드("RAW")까지 넘긴다(2026-11-03)
+        return [["*SECTION_SHELL_TITLE"] + list(parameter) for parameter in self.parameters]
     
+
     def write(self, stream):
         for i in range(len(self.parameters)):
             parameter = self.parameters[i]
             stream.write("*SECTION_SHELL_TITLE\n")
             stream.write("{name}\n".format(name=parameter[0][0]))
             stream.write("$$   SECID    ELFORM      SHRF       NIP     PROPT    QRIRID     ICOMP     SETYP\n")
-            formatted_elements = f"{str(parameter[1][0]):>10}{str(parameter[1][1]):>10}{str(parameter[1][2]):>10}{str(parameter[1][3]):>10}{str(parameter[1][4]):>10}{str(parameter[1][5]):>10}{str(parameter[1][6]):>10}{str(parameter[1][7]):>10}\n"
+            formatted_elements = f"{_f10(parameter[1][0]):>10}{_f10(parameter[1][1]):>10}{_f10(parameter[1][2]):>10}{_f10(parameter[1][3]):>10}{_f10(parameter[1][4]):>10}{_f10(parameter[1][5]):>10}{_f10(parameter[1][6]):>10}{_f10(parameter[1][7]):>10}\n"
             stream.write(formatted_elements)
             stream.write("$$      T1        T2        T3        T4      NLOC     MAREA      IDOF    EDGSET\n")
-            formatted_elements = f"{str(parameter[2][0]):>10}{str(parameter[2][1]):>10}{str(parameter[2][2]):>10}{str(parameter[2][3]):>10}{str(parameter[2][4]):>10}{str(parameter[2][5]):>10}{str(parameter[2][6]):>10}{str(parameter[2][7]):>10}\n"
+            formatted_elements = f"{_f10(parameter[2][0]):>10}{_f10(parameter[2][1]):>10}{_f10(parameter[2][2]):>10}{_f10(parameter[2][3]):>10}{_f10(parameter[2][4]):>10}{_f10(parameter[2][5]):>10}{_f10(parameter[2][6]):>10}{_f10(parameter[2][7]):>10}\n"
             stream.write(formatted_elements)
+            _write_section_extra_cards(stream, parameter[3:])
+
 
 class SectionSolid(DynaKeyword):
     def __init__(self):
@@ -11151,31 +11219,17 @@ class SectionSolidPeriTitle(DynaKeyword):
             stream.write("$$      DR     PTYPE\n")
             stream.write("{dr:>10}{ptype:>10}\n".format(dr=parameter[2][0], ptype=parameter[2][1]))
 
-def _tshell_icomp_on(parameters):
-    """*SECTION_TSHELL 카드 1 의 ICOMP(7번째 칸)가 1 인가 — parse_whole 은 칸을 공백째 돌려주므로 예전 글 비교
-    (parameters[6] == "1")는 늘 거짓이라 각도 카드를 한 번도 읽지 못했다(2026-11-03)."""
-    try:
-        return len(parameters) >= 7 and float(str(parameters[6]).strip() or 0) == 1.0
-    except ValueError:
-        return False
-
-
 class SectionTShell(DynaKeyword):
     def __init__(self):
         super(SectionTShell,self).__init__("SECTION_TSHELL")
     
     def parse(self, section_tshell_keywords):
+        fmts = getattr(self, "block_formats", None) or []
         for i in range(len(section_tshell_keywords)):
-            parameterList = [] 
-            parameters = self.parse_whole(section_tshell_keywords[i][0], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            if len(parameters) >= 7: 
-                if _tshell_icomp_on(parameters):
-                    for j in range(1,len(section_tshell_keywords[i])):
-                        parameters = self.parse_whole(section_tshell_keywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
-                        parameterList.append(parameters)
-            self.parameters.append(parameterList)
-    
+            fmt = fmts[i] if i < len(fmts) else None
+            self.parameters.extend(_section_card_sets(section_tshell_keywords[i], fmt, False, False, "SECTION_TSHELL"))
+
+
     def AddSectionTShell(self, secid, elform, shrf, nip, propt, qr, icomp, tshear, bList):
         parameterList = []
         parameters = [secid, elform, shrf, nip, propt, qr, icomp, tshear]
@@ -11205,7 +11259,7 @@ class SectionTShell(DynaKeyword):
             parameter = self.parameters[i]
             stream.write("*SECTION_TSHELL\n")
             stream.write("$$   SECID    ELFORM      SHRF       NIP     PROPT        QR     ICOMP    TSHEAR\n")
-            formatted_elements = f"{str(parameter[0][0]):>10}{str(parameter[0][1]):>10}{str(parameter[0][2]):>10}{str(parameter[0][3]):>10}{str(parameter[0][4]):>10}{str(parameter[0][5]):>10}{str(parameter[0][6]):>10}{str(parameter[0][7]):>10}\n"
+            formatted_elements = f"{_f10(parameter[0][0]):>10}{_f10(parameter[0][1]):>10}{_f10(parameter[0][2]):>10}{_f10(parameter[0][3]):>10}{_f10(parameter[0][4]):>10}{_f10(parameter[0][5]):>10}{_f10(parameter[0][6]):>10}{_f10(parameter[0][7]):>10}\n"
             stream.write(formatted_elements)
             for j in range(1,len(parameter)):
                 if j == 1:
@@ -11213,7 +11267,7 @@ class SectionTShell(DynaKeyword):
             
                 formatted_elements = ""
                 for k in range(0,len(parameter[j])):
-                    formatted_elements += f"{str(parameter[j][k]):>10}"
+                    formatted_elements += f"{_f10(parameter[j][k]):>10}"
                 stream.write(formatted_elements)
                 stream.write("\n")
                 
@@ -11222,19 +11276,12 @@ class SectionTShellTitle(DynaKeyword):
         super(SectionTShellTitle,self).__init__("SECTION_TSHELL_TITLE")
         
     def parse(self, section_tshell_keywords):
+        fmts = getattr(self, "block_formats", None) or []
         for i in range(len(section_tshell_keywords)):
-            parameterList = []
-            parameters = self.parse_whole(section_tshell_keywords[i][0], [80])
-            parameterList.append(parameters)
-            parameters = self.parse_whole(section_tshell_keywords[i][1], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            if len(parameters) >= 7:
-                if _tshell_icomp_on(parameters):
-                    for j in range(2,len(section_tshell_keywords[i])):
-                        parameters = self.parse_whole(section_tshell_keywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
-                        parameterList.append(parameters)
-            self.parameters.append(parameterList)
-            
+            fmt = fmts[i] if i < len(fmts) else None
+            self.parameters.extend(_section_card_sets(section_tshell_keywords[i], fmt, True, False, "SECTION_TSHELL_TITLE"))
+
+
     def AddSectionTShellTitle(self, name, secid, elform, shrf, nip, propt, qr, icomp, tshear, bList):
         parameterList = []
         parameters = [name]
@@ -11268,7 +11315,7 @@ class SectionTShellTitle(DynaKeyword):
             stream.write("*SECTION_TSHELL_TITLE\n")
             stream.write("{name}\n".format(name=parameter[0][0]))
             stream.write("$$   SECID    ELFORM      SHRF       NIP     PROPT        QR     ICOMP    TSHEAR\n")
-            formatted_elements = f"{str(parameter[1][0]):>10}{str(parameter[1][1]):>10}{str(parameter[1][2]):>10}{str(parameter[1][3]):>10}{str(parameter[1][4]):>10}{str(parameter[1][5]):>10}{str(parameter[1][6]):>10}{str(parameter[1][7]):>10}\n"
+            formatted_elements = f"{_f10(parameter[1][0]):>10}{_f10(parameter[1][1]):>10}{_f10(parameter[1][2]):>10}{_f10(parameter[1][3]):>10}{_f10(parameter[1][4]):>10}{_f10(parameter[1][5]):>10}{_f10(parameter[1][6]):>10}{_f10(parameter[1][7]):>10}\n"
             stream.write(formatted_elements)
             for j in range(2,len(parameter)):
                 if j == 2:
@@ -11276,7 +11323,7 @@ class SectionTShellTitle(DynaKeyword):
                 
                 formatted_elements = ""
                 for k in range(0,len(parameter[j])):
-                    formatted_elements += f"{str(parameter[j][k]):>10}"
+                    formatted_elements += f"{_f10(parameter[j][k]):>10}"
                 stream.write(formatted_elements)
                 stream.write("\n")
         
@@ -15662,6 +15709,7 @@ class DynaManager():
             if "SECTION_SHELL" in lines_with_asterisk:
                 section_shell = keyword_dict["SECTION_SHELL"]
                 sshell = SectionShell()
+                sshell.block_formats = getattr(self, "_block_formats", {}).get("SECTION_SHELL", [])
                 sshell.parse(section_shell)
                 sshell.write(file)
                 dynaKeywordMan.addKeyword(sshell)
@@ -15670,6 +15718,7 @@ class DynaManager():
             if "SECTION_SHELL_TITLE" in lines_with_asterisk:
                 section_shell_title = keyword_dict["SECTION_SHELL_TITLE"]
                 sshell_title = SectionShellTitle()
+                sshell_title.block_formats = getattr(self, "_block_formats", {}).get("SECTION_SHELL_TITLE", [])
                 sshell_title.parse(section_shell_title)
                 sshell_title.write(file)
                 dynaKeywordMan.addKeyword(sshell_title)
@@ -15710,6 +15759,7 @@ class DynaManager():
             if "SECTION_TSHELL" in lines_with_asterisk:
                 section_tshell = keyword_dict["SECTION_TSHELL"]
                 stshell = SectionTShell()
+                stshell.block_formats = getattr(self, "_block_formats", {}).get("SECTION_TSHELL", [])
                 stshell.parse(section_tshell)
                 stshell.write(file)
                 dynaKeywordMan.addKeyword(stshell)
@@ -15718,6 +15768,7 @@ class DynaManager():
             if "SECTION_TSHELL_TITLE" in lines_with_asterisk:
                 section_tshell_title = keyword_dict["SECTION_TSHELL_TITLE"]
                 stshell_title = SectionTShellTitle()
+                stshell_title.block_formats = getattr(self, "_block_formats", {}).get("SECTION_TSHELL_TITLE", [])
                 stshell_title.parse(section_tshell_title)
                 stshell_title.write(file)
                 dynaKeywordMan.addKeyword(stshell_title)

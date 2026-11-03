@@ -9,6 +9,25 @@ else:
 from KooCAEManager.KooOperator import *
 from KooCAEManager.KooDefine import _real10   # 값 손실 없는 10칸 실수(TSHELL 단면)
 
+def _wide_field(x):
+    """long(20자) 블록의 칸은 공백을 떼어 10칸 출력에 넣는다. 표준 10칸 칸은 그대로(출력 바이트 유지)."""
+    return x.strip() if len(x) > 10 else x
+
+
+def _shell_extra_cards(sec, cards):
+    """셸 단면 카드 2 뒤 카드 — ICOMP=1 각도 NIP 개(NIP 0 은 적분점 2개, R16)와 ELFORM 101~105 사용자 요소 카드(원문).
+    키워드 리더(_section_card_sets)가 R16 카드 차례대로 잘라 넘긴다(2026-11-03)."""
+    sec.bList, sec.extraCards = [], []
+    n_angle = sec.nip if sec.nip > 0 else 2
+    for card in cards:
+        if isinstance(card, tuple):
+            sec.extraCards = list(card[1])
+        elif sec.icomp == 1:
+            for x in card:
+                if len(sec.bList) < n_angle:
+                    sec.bList.append(KooDynaFloat(x, 0.0))
+
+
 class KooSection():
     def __init__(self, id, name):
         self.id = id 
@@ -142,6 +161,8 @@ class KooSectionShell(KooSection):
         self.marea = 0.0
         self.idof = 0.0
         self.edgset = ""
+        self.bList = []        # ICOMP=1 각도(NIP 개)
+        self.extraCards = []   # ELFORM 101~105 사용자 요소 카드(원문 그대로)
 
     def SetThickness(self, thickness):
         self.T1 = thickness
@@ -169,6 +190,12 @@ class KooSectionShell(KooSection):
         keywordString += formatted_string
         formatted_string = "{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10}\n".format(self.T1, self.T2, self.T3, self.T4,self.nloc,self.marea,self.idof,self.edgset)
         keywordString += formatted_string
+        if self.icomp == 1:
+            # ICOMP=1 각도 카드(카드당 8개) — 예전엔 읽지도 쓰지도 않아 복합 셸 적층이 사라졌다(2026-11-03)
+            for i in range(0, len(self.bList), 8):
+                keywordString += "".join(_real10(b) for b in self.bList[i:i + 8]) + "\n"
+        for line in self.extraCards:
+            keywordString += line + "\n"
         self.SetDynaKeyword(keywordString)
         return keywordString
     
@@ -555,7 +582,8 @@ class KooSectionManager():
             sec.nloc = KooDynaFloat(secondLine[4],0.0)
             sec.marea = KooDynaFloat(secondLine[5],0.0)
             sec.idof = KooDynaFloat(secondLine[6],0.0)
-            sec.edgset = secondLine[7]
+            sec.edgset = _wide_field(secondLine[7])
+            _shell_extra_cards(sec, dynaSection[3:])
             
             return sec
         elif dynaSection[0] == "*SECTION_SHELL_TITLE":
@@ -586,7 +614,8 @@ class KooSectionManager():
             sec.nloc = KooDynaFloat(secondLine[4],0.0)
             sec.marea = KooDynaFloat(secondLine[5],0.0)
             sec.idof = KooDynaFloat(secondLine[6],0.0)
-            sec.edgset = secondLine[7]
+            sec.edgset = _wide_field(secondLine[7])
+            _shell_extra_cards(sec, dynaSection[4:])
             
             return sec
         elif dynaSection[0] == "*SECTION_SOLID":

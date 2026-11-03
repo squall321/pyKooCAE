@@ -1,0 +1,186 @@
+# 실제 덱에서 KMM 이 죽던 기존 결함(말뭉치 V, 2026-11-03)을 작은 덱으로 재현해 고쳐졌는지 보는 회귀 시험
+"""
+실행: venv312/bin/python tests/test_kmm_real_deck_crashes.py   (KMM 9회, 약 1분)
+수정 전 코드로 볼 때: KMM_GEN=<옛 occProject/Generators> … / 컴파일본: KMM_BIN=<KooMeshModifier 실행 파일> …
+
+  B1  *DATABASE_EXTENT_INTFOR 카드 1장(R16 카드 2 는 선택, 기본값 0) — 예전엔 IndexError
+  B2  요소가 *NODE 에 없는 절점을 가리킴 — 예전엔 DROP 에서 SetBoundaries IndexError, TRANSFORM 은 원인 없이 rc 3
+  B3  *CONTACT_ERODING_SURFACE_TO_SURFACE_ID — 예전엔 UnboundLocalError('i')
+  B4  *LOAD_SEGMENT_SET 이 *SET_SEGMENT_GENERAL 을 가리킴 — 예전엔 KeyError
+  B5  고정폭 10칸을 넘친 수(82자 줄) — 예전엔 원인 없는 ValueError traceback
+  B6  *SECTION_SHELL 필수 카드 2 없음 — 예전엔 IndexError
+  C2  KooDynaFloat 의 Fortran 꼴('4.5+01'·'1.0-3'·D 지수) — 예전엔 죽거나 조용히 기본값
+"""
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+GEN = Path(os.environ.get("KMM_GEN", ROOT / "occProject" / "Generators"))
+PY = str(ROOT / "venv312" / "bin" / "python")
+KMM_CMD = [os.environ["KMM_BIN"]] if os.environ.get("KMM_BIN") else [PY, str(GEN / "KooMeshModifier.py")]
+ENV = dict(os.environ, PATH=str(ROOT / "venv312" / "bin") + ":" + os.environ.get("PATH", ""))
+FAILS = []
+TRANS = "*Inputfile\nmodel.k\n*Mode\nTRANSFORM,1\n**Transform,1\nTranslation,0,0,0\n**EndTransform\n*End\n"
+DROP = """*Inputfile
+model.k
+*RunDirectoryMode,True,runs
+*Mode
+DROP_ATTITUDE,1
+**DropAttitude,1
+EulerRolling,0
+EulerPitching,0
+EulerYawing,0
+Height,100
+InitialVelocityX,0
+InitialVelocityY,0
+InitialVelocityZ,0
+InitialAngularVelocityX,0
+InitialAngularVelocityY,0
+InitialAngularVelocityZ,0
+OffsetDistance,1
+Density,7.85e-9
+YoungsModulus,2.0e5
+PoissonRatio,0.3
+tFinal,0.001
+dt,1e-6
+RobustContact,True
+**EndDropAttitude
+*End
+"""
+
+
+def check(name, cond, detail=""):
+    print("  %-74s %s" % (name, "OK" if cond else "FAIL"))
+    if not cond:
+        FAILS.append("%s %s" % (name, detail))
+
+
+def f10(*v):
+    return "".join(f"{x:>10}" for x in v) + "\n"
+
+
+def base(extra="", nodes_upper=True, shell_card2=True):
+    """솔리드 두 덩이(파트 1·2, 각 1요소) + 셸 하나(파트 3). nodes_upper=False 면 위 덩이 절점 9~16 을 빼 둔다(B2)."""
+    pts = [(x, y, z) for z in (0.0, 1.0) for (x, y) in ((0, 0), (1, 0), (1, 1), (0, 1))]
+    pts += [(x, y, z) for z in (1.0, 2.0) for (x, y) in ((0, 0), (1, 0), (1, 1), (0, 1))]
+    pts += [(2, 0, 0), (3, 0, 0), (3, 1, 0), (2, 1, 0)]
+    nodes = "*NODE\n" + "".join(f"{i + 1:8d}{float(x):16.6f}{float(y):16.6f}{float(z):16.6f}\n"
+                                for i, (x, y, z) in enumerate(pts) if nodes_upper or not 9 <= i + 1 <= 16)
+    els = ("*ELEMENT_SOLID\n" + f"{1:8d}{1:8d}" + "".join(f"{n:8d}" for n in range(1, 9)) + "\n"
+           + f"{2:8d}{2:8d}" + "".join(f"{n:8d}" for n in range(9, 17)) + "\n"
+           + "*ELEMENT_SHELL\n" + "".join(f"{x:8d}" for x in (3, 3, 17, 18, 19, 20)) + "\n")
+    shell = "*SECTION_SHELL\n" + f10(2, 2, 0.8333, 3, 1, 0, 0, 0) + (f10(0.5, 0.5, 0.5, 0.5, 0.0, 0, 0, 0) if shell_card2 else "")
+    props = ("*PART\nlower\n" + f10(1, 1, 1) + "*PART\nupper\n" + f10(2, 1, 1) + "*PART\nplate\n" + f10(3, 2, 1)
+             + "*SECTION_SOLID\n" + f10(1, 1) + shell + "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3))
+    return "*KEYWORD\n" + nodes + els + props + extra + "*END\n"
+
+
+def run(name, deck, opt):
+    d = Path(tempfile.mkdtemp(prefix=f"kmmcrash_{name}_"))
+    (d / "model.k").write_text(deck)
+    (d / "opt.txt").write_text(opt)
+    r = subprocess.run(KMM_CMD + ["opt.txt"], cwd=d, capture_output=True, text=True, timeout=900, env=ENV)
+    return d, r.returncode, r.stdout + r.stderr
+
+
+def out_text(d, name):
+    ps = sorted(d.rglob(name))
+    return ps[0].read_text(errors="replace") if ps else ""
+
+
+def block(text, kw):
+    """첫 kw 블록의 데이터 줄(주석 제외)."""
+    lines, out, on = text.splitlines(), [], False
+    for ln in lines:
+        if ln.startswith("*"):
+            if on:
+                break
+            on = ln.strip().upper() == kw
+            continue
+        if on and ln.strip() and not ln.startswith("$"):
+            out.append(ln)
+    return out
+
+
+def no_traceback(log):
+    return "Traceback (most recent call last)" not in log
+
+
+def main():
+    # B1 — 카드 1장 DATABASE_EXTENT_INTFOR
+    d, rc, log = run("b1", base("*DATABASE_EXTENT_INTFOR\n" + f10(0, 1, 1, 1, 1, -1, 0, 0)), TRANS)
+    b = block(out_text(d, "model_trans.k"), "*DATABASE_EXTENT_INTFOR")
+    check("B1: rc 0 · traceback 없음", rc == 0 and no_traceback(log), f"rc={rc} " + log[-500:])
+    check("B1: 카드 1 값 그대로(0 1 1 1 1 -1 0 0)·카드 2 는 R16 기본값 0",
+          len(b) >= 1 and b[0].split() == ["0", "1", "1", "1", "1", "-1", "0", "0"]
+          and (len(b) == 1 or set(b[1].split()) <= {"0"}), str(b))
+
+    # B3 — ERODING_SURFACE_TO_SURFACE_ID
+    ero = ("*CONTACT_ERODING_SURFACE_TO_SURFACE_ID\n" + f"{401:10d}{'eroding_region':>70}\n" + f10(1, 2, 3, 3, 0, 0, 1, 1)
+           + f10(0.3, 0.2, 0.0, 0.0, 0.0, 2, 0.0, "1.0E+20") + f10(1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0) + f10(1, 1, 1))
+    d, rc, log = run("b3", base(ero), TRANS)
+    t = out_text(d, "model_trans.k")
+    b = block(t, "*CONTACT_ERODING_SURFACE_TO_SURFACE_ID")
+    check("B3: rc 0 · traceback 없음", rc == 0 and no_traceback(log), f"rc={rc} " + log[-500:])
+    check("B3: 접촉 CID 401·SSID 1·MSID 2·SYM/EROSOP/IADJ 1 1 1 그대로",
+          len(b) >= 5 and b[0].split()[0] == "401" and b[1].split()[:2] == ["1", "2"] and b[4].split()[:3] == ["1", "1", "1"], str(b))
+
+    # B4 — SET_SEGMENT_GENERAL 을 가리키는 LOAD_SEGMENT_SET
+    gen = ("*SET_SEGMENT_GENERAL\n" + f10(3, 0.0, 0.0, 0.0, 0.0) + f10("PART", 1, 2) + "*DEFINE_CURVE\n" + f10(9001)
+           + f"{0.0:>20}{1.0:>20}\n{1.0:>20}{1.0:>20}\n" + "*LOAD_SEGMENT_SET\n" + f10(3, 9001, 0.0993, 0.0))
+    d, rc, log = run("b4", base(gen), TRANS)
+    t = out_text(d, "model_trans.k")
+    ls = [ln for kw in ("*LOAD_SEGMENT_SET", "*LOAD_SEGMENT_SET_ID") for ln in block(t, kw)]
+    check("B4: rc 0 · traceback 없음", rc == 0 and no_traceback(log), f"rc={rc} " + log[-500:])
+    check("B4: 하중이 SSID 3·LCID 9001 로 남음", any(ln.split()[:2] == ["3", "9001"] for ln in ls), str(ls))
+    check("B4: *SET_SEGMENT_GENERAL 원문이 남음", len(block(t, "*SET_SEGMENT_GENERAL")) == 2, str(block(t, "*SET_SEGMENT_GENERAL")))
+
+    # B6 — SECTION_SHELL 카드 2 없음
+    d, rc, log = run("b6", base(shell_card2=False), TRANS)
+    check("B6: rc 0 · traceback 없음", rc == 0 and no_traceback(log), f"rc={rc} " + log[-500:])
+    check("B6: 필수 카드 2 가 없다고 알림", "카드 2" in log and "SECTION_SHELL" in log, log[-600:])
+
+    # B2 — 정의 안 된 절점(위 덩이 절점 9~16 없음)
+    for mode, opt in (("trans", TRANS), ("drop", DROP)):
+        d, rc, log = run(f"b2_{mode}", base(nodes_upper=False), opt)
+        check(f"B2 {mode}: traceback 없음 · rc 3(요소 소실)", rc == 3 and no_traceback(log), f"rc={rc} " + log[-500:])
+        check(f"B2 {mode}: 소실 원인 '정의 안 된 절점' 을 적음", "정의 안 된 절점" in log, log[-600:])
+
+    # B5 — 82자 줄(DT 가 12자로 10칸을 넘침, KooRemapper ModelAssembler 꼴)
+    tied = ("*CONTACT_TIED_SURFACE_TO_SURFACE_OFFSET\n" + f10(1, 2, 3, 3, 0, 0, 1, 1)
+            + "       0.0       0.0       0.0       0.0       0.0         0       0.0  1.0000E+20\n"
+            + f10(0.0, 0.0, 0.005, 0.005, 0.0, 0.0, 0.0, 0.0))
+    d, rc, log = run("b5", base(tied), TRANS)
+    check("B5: traceback 대신 원인을 짚는 오류(칸 원문·10칸·80열)",
+          rc != 0 and "1.0000E+" in log and "10칸" in log and "80" in log, f"rc={rc} " + log[-600:])
+
+    # C2 — KooDynaFloat 단위 시험
+    sys.path.insert(0, str(GEN))
+    from KooCAEManager.KooOperator import KooDynaFloat
+    cases = [("4.5+01", 45.0), ("1.0-3", 0.001), ("1.0D-3", 0.001), ("  2.5d2", 250.0), ("-3.0E+2", -300.0),
+             ("0.8333", 0.8333), ("", 7.0), ("abc", 7.0), ("1e3", 1000.0), ("-.5-1", -0.05)]
+    for s, want in cases:
+        try:
+            got = KooDynaFloat(s, 7.0)
+        except Exception as e:
+            got = repr(e)
+        check(f"C2: KooDynaFloat({s!r}) = {want}", isinstance(got, float) and abs(got - want) <= 1e-12 * max(1.0, abs(want)), str(got))
+    try:
+        KooDynaFloat("  1.0000E+", 1.0)
+        check("C2: '  1.0000E+' 는 원인을 짚는 ValueError", False, "예외 없음")
+    except ValueError as e:
+        check("C2: '  1.0000E+' 는 원인을 짚는 ValueError", "1.0000E+" in str(e) and "10칸" in str(e), str(e))
+    print()
+    if FAILS:
+        print(f"FAILED {len(FAILS)}")
+        for f in FAILS:
+            print("  -", f[:900])
+        sys.exit(1)
+    print("ALL OK")
+
+
+if __name__ == "__main__":
+    main()
