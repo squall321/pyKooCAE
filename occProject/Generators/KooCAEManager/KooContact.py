@@ -1073,25 +1073,17 @@ class KooContactManager:
         elif contactKeyword[0] == "*CONTACT_TIED_SURFACE_TO_SURFACE_OFFSET_ID":
             i = 5
             contact = self.CreateContactTiedSurfacetoSurfaceOffsetwithID(id,name,SSID, MSID,SSTYP,MSTYP,SBOXID,MBOXID,SPR,MPR,FS,FD,DC,VC,VDC,PENCHK,BT,DT,SFS,SFM,SST,MST,SFST,SFMT,FSF,VSF)
-        elif contactKeyword[0] == "*CONTACT_ERODING_NODES_TO_SURFACE_ID" or contactKeyword[0] == "CONTACT_ERODING_SURFACE_TO_SURFACE_ID":
+        elif contactKeyword[0] == "*CONTACT_ERODING_NODES_TO_SURFACE_ID" or contactKeyword[0] == "*CONTACT_ERODING_SURFACE_TO_SURFACE_ID":
+            # 예전엔 두 번째 비교에 '*' 가 빠져 ERODING_SURFACE_TO_SURFACE_ID 가 이 분기에 못 들어와 i 가 없었다(2026-11-03)
             i = 6
             parameter = contactKeyword[5] 
-            if len(parameter[0]) == 0:
-                SYM = 0
-            else:
-                SYM = int(parameter[0])
-            if len(parameter[1]) == 0:
-                EROSOP = 0
-            else:
-                EROSOP = int(parameter[1])
-            if len(parameter[2]) == 0:
-                IADJ = 0
-            else:
-                IADJ = int(parameter[2])
+            SYM = KooDynaInt(parameter[0])
+            EROSOP = KooDynaInt(parameter[1])
+            IADJ = KooDynaInt(parameter[2])
             if contactKeyword[0] == "*CONTACT_ERODING_NODES_TO_SURFACE_ID":
                 contact = self.CreateContactErodingNodestoSurfacewithID(id,name,SSID, MSID,SSTYP,MSTYP,SBOXID,MBOXID,SPR,MPR,FS,FD,DC,VC,VDC,PENCHK,BT,DT,SFS,SFM,SST,MST,SFST,SFMT,FSF,VSF, SYM, EROSOP, IADJ)
             elif contactKeyword[0] == "*CONTACT_ERODING_SURFACE_TO_SURFACE_ID":
-                contact = self.createContactErodingSurfacetoSurfacewithID(id,name,SSID, MSID,SSTYP,MSTYP,SBOXID,MBOXID,SPR,MPR,FS,FD,DC,VC,VDC,PENCHK,BT,DT,SFS,SFM,SST,MST,SFST,SFMT,FSF,VSF, SYM, EROSOP, IADJ)
+                contact = self.CreateContactErodingSurfacetoSurfacewithID(id,name,SSID, MSID,SSTYP,MSTYP,SBOXID,MBOXID,SPR,MPR,FS,FD,DC,VC,VDC,PENCHK,BT,DT,SFS,SFM,SST,MST,SFST,SFMT,FSF,VSF, SYM, EROSOP, IADJ)
         
         for j in range(i,len(contactKeyword)):
             curContact = contactKeyword[j]
