@@ -1,6 +1,6 @@
 # 실제 덱에서 KMM 이 죽던 기존 결함(말뭉치 V, 2026-11-03)을 작은 덱으로 재현해 고쳐졌는지 보는 회귀 시험
 """
-실행: venv312/bin/python tests/test_kmm_real_deck_crashes.py   (KMM 10회, 약 1분)
+실행: venv312/bin/python tests/test_kmm_real_deck_crashes.py   (KMM 12회, 약 1분 30초)
 수정 전 코드로 볼 때: KMM_GEN=<옛 occProject/Generators> … / 컴파일본: KMM_BIN=<KooMeshModifier 실행 파일> …
 
   B1  *DATABASE_EXTENT_INTFOR 카드 1장(R16 카드 2 는 선택, 기본값 0) — 예전엔 IndexError
@@ -169,11 +169,42 @@ def main():
     check("D: 원문 블록 '*ELEMENT_DISCRETE %'(I10) 표시가 남음", "*ELEMENT_DISCRETE %" in disc, str(disc))
     check("D: 원문 블록 '*ELEMENT_DISCRETE +'(long) 표시가 남음", "*ELEMENT_DISCRETE +" in disc, str(disc))
 
+    # 리뷰 W 🟡5·🟡6 — 덱 전체 *KEYWORD I10=Y 여도 원문 I10 블록에 '%' (일반 모드 출력은 '*KEYWORD' 만 쓴다), '-'(표준 강제)는 '-' 로
+    g = base("*ELEMENT_DISCRETE\n" + f"{9:10d}{3:10d}{17:10d}{18:10d}{0:10d}{1.0:16.4f}{0:10d}{0.0:16.4f}\n"
+             + "*ELEMENT_DISCRETE -\n" + f"{10:8d}{3:8d}{19:8d}{20:8d}{0:8d}{1.0:16.4f}{0:8d}{0.0:16.4f}\n").replace("*KEYWORD\n", "*KEYWORD I10=Y\n", 1)
+    # 덱 전체 I10 이면 *NODE·*ELEMENT 도 10칸이어야 한다 — 이 시험은 원문 블록만 보므로 그 둘은 % 표시로 8칸을 지킨다
+    g = g.replace("*NODE\n", "*NODE -\n").replace("*ELEMENT_SOLID\n", "*ELEMENT_SOLID -\n").replace("*ELEMENT_SHELL\n", "*ELEMENT_SHELL -\n")
+    d, rc, log = run("w_i10", g, TRANS)
+    t = out_text(d, "model_trans.k")
+    disc = [ln for ln in t.splitlines() if ln.startswith("*ELEMENT_DISCRETE")]
+    check("🟡5 덱 전체 I10=Y: 원문 블록에 '*ELEMENT_DISCRETE %'", rc in (0, 3) and "*ELEMENT_DISCRETE %" in disc, f"rc={rc} {disc} {t.splitlines()[:1]}")
+    check("🟡6 '-'(표준 강제) 원문 블록은 '*ELEMENT_DISCRETE -'", "*ELEMENT_DISCRETE -" in disc, str(disc))
+    # 리뷰 W 🟡8 — 원문 *SET_SEGMENT_GENERAL 2 와 KMM 이 새로 만드는 세그먼트 셋 번호가 겹치지 않는다(DROP RobustContact)
+    seg = ("*SET_SEGMENT\n" + f10(1) + f10(1, 2, 3, 4) + "*SET_SEGMENT_GENERAL\n" + f10(2, 0.0, 0.0, 0.0, 0.0) + f10("PART", 1)
+           + "*DEFINE_CURVE\n" + f10(9001) + f"{0.0:>20}{1.0:>20}\n{1.0:>20}{1.0:>20}\n"
+           + "*LOAD_SEGMENT_SET\n" + f10(2, 9001, 1.0, 0.0))
+    d, rc, log = run("w_ssid", base(seg), DROP)
+    ds = sorted(d.rglob("DropSet.k"))
+    t = ds[0].read_text(errors="replace") if ds else ""
+    lines = t.splitlines()
+    sids = []
+    for i, ln in enumerate(lines):
+        u = ln.strip().upper()
+        if u.startswith("*SET_SEGMENT") and not u.startswith("*SET_SEGMENT_GENERAL"):
+            data = [x for x in lines[i + 1:i + 4] if not x.startswith("$")]
+            if u.endswith("_TITLE"):
+                data = data[1:]
+            if data:
+                sids.append(int(float(data[0][:10])))
+    check("🟡8 세그먼트 셋 번호: KMM 이 쓰는 셋 번호가 겹치지 않고 원문 GENERAL 2 와도 다름",
+          rc == 0 and len(sids) == len(set(sids)) and 2 not in sids, f"rc={rc} sids={sids} " + log[-300:])
+
     # C2 — KooDynaFloat 단위 시험
     sys.path.insert(0, str(GEN))
     from KooCAEManager.KooOperator import KooDynaFloat
     cases = [("4.5+01", 45.0), ("1.0-3", 0.001), ("1.0D-3", 0.001), ("  2.5d2", 250.0), ("-3.0E+2", -300.0),
-             ("0.8333", 0.8333), ("", 7.0), ("abc", 7.0), ("1e3", 1000.0), ("-.5-1", -0.05)]
+             ("0.8333", 0.8333), ("", 7.0), ("abc", 7.0), ("1e3", 1000.0), ("-.5-1", -0.05),
+             ("1D", 7.0), ("1.0D", 7.0), ("1e1d", 7.0), ("D1", 7.0)]   # D 가 섞인 수 아닌 글은 예전처럼 기본값(리뷰 W)
     for s, want in cases:
         try:
             got = KooDynaFloat(s, 7.0)

@@ -22,11 +22,12 @@ def parse_whole(curString, chunkList):
     return chunks    
 
 _FORTRAN_EXP = re.compile(r"^([+-]?(?:\d+\.?\d*|\.\d+))([+-]\d+)$")
+_FORTRAN_D = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)[dD][+-]?\d+$")
 
 
 def _fortran_float(text):
-    """Fortran 이 받는 실수 꼴을 float 로 — 'D'·'d' 지수(1.0D-3), 'E' 없이 부호로 시작하는 지수(4.5+01·1.0-3)."""
-    t = text.strip().replace("D", "E").replace("d", "E")
+    """Fortran 이 받는 실수 꼴을 float 로 — 'E' 없이 부호로 시작하는 지수(4.5+01·1.0-3)."""
+    t = text.strip()
     try:
         return float(t)
     except ValueError:
@@ -37,19 +38,22 @@ def _fortran_float(text):
 
 
 def KooDynaFloat(value, default = 0.0):
-    # 숫자 모양이 아닌 글('abc')은 예전처럼 기본값이다. 예전엔 D 지수(1.0D-3)도 여기서 조용히 기본값이 됐고,
+    # 숫자 모양이 아닌 글('abc'·'1D' 등)은 예전처럼 기본값이다. 예전엔 D 지수(1.0D-3)도 조용히 기본값이 됐고,
     # '4.5+01' 같은 Fortran 꼴과 잘린 수('1.0000E+')는 원인 없는 ValueError 로 죽었다(2026-11-03)
     reValue = default
-    if value.strip() == "":
+    v = value.strip()
+    if v == "":
         reValue = default
-    elif not value.replace("-","").replace(".","").replace("E","").replace("e","").replace("D","").replace("d","").replace("+","").strip().isdigit():
+    elif _FORTRAN_D.match(v):
+        reValue = float(v.replace("D", "E").replace("d", "E"))
+    elif not value.replace("-","").replace(".","").replace("E","").replace("e","").replace("+","").strip().isdigit():
         reValue = default
     else:
         try:
             reValue = _fortran_float(value)
         except ValueError:
-            raise ValueError(f"숫자 칸 '{value}' 를 실수로 읽을 수 없다 — 고정폭 10칸을 넘친 값이 잘렸을 수 있다"
-                             f"(R16: 80열을 넘는 글자는 읽지 않는다). 덱의 그 줄을 확인하라") from None
+            raise ValueError(f"숫자 칸 '{value}' 를 실수로 읽을 수 없다 — 고정폭 10칸을 넘친 값이 잘렸거나"
+                             f"(R16: 80열을 넘는 글자는 읽지 않는다) 잘못된 수다. 덱의 그 줄을 확인하라") from None
     return reValue
 
 def KooDynaInt(value, default = 0):
