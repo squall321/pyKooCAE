@@ -25,3 +25,13 @@
 
 ## 보았지만 범위 밖(추가)
 - long(`+`)·콤마 형식은 이번에 SECTION_SHELL·SECTION_TSHELL·ELEMENT_TSHELL 만 읽는다. 다른 해석 키워드(*SET_*·*PART 등)는 여전히 10칸으로만 읽는다(예: `*SET_BEAM +` 의 SID 가 0 이 된다). 덱 전체 long(*KEYWORD LONG=Y)과 같은 일반 기능이다.
+
+## 검증 기록
+- **전체 시험(8ae3318).** 44개 가운데 42개 rc 0, test_drop_attitude_angles 는 shim 30건 통과. test_export_element_loss 는 6 FAIL 이었다. v126 의 "*NODE 고정폭" 원인 안내가 내보내기 소실 쪽에만 있었는데, B2 로 같은 덱이 읽기 소실로 바뀌어 안내가 빠진 것이다. 읽기 소실에도 안내를 찍게 하고 시험의 단계 기대를 '읽기' 로 맞췄다(7f7bf6f, 50/50).
+- **말뭉치 V2(실제 덱 88건, 5625a74 ↔ 8ae3318).**
+  - 같음 43.
+  - rc 가 같고 다른 것 10. 주 출력 차이는 TSHELL 요소가 원문 구역에서 요소 구역으로 옮겨 간 것(같은 줄)뿐이다. 그리고 DROP 의 DropContact_OuterParts·RobustContact_SS 에 TSHELL 파트(예: 2002·2004)·면(27835 → 29587)이 더해졌다. 빠진 것은 없다.
+  - 고쳐진 크래시 35. TRANSFORM 10건은 입력과 출력의 요소 줄 수가 형식별로 같다. DROP 은 14건이 rc 0, 11건이 rc 3 이다. rc 3 은 리뷰 G DWI 덱으로, 이유는 '정의 안 된 절점' 뿐이다.
+  - B5 덱 1건은 원인을 짚는 ValueError 로 바뀌었다.
+  - model_dump.k 는 고쳐진 사례에서 예전엔 도중에 잘려 있었다. 그래서 차이가 큰 것이 당연하다.
+- **아는 불량(헤드 v129 컴파일본).** test_kmm_real_deck_crashes 15 FAIL, test_section_card_sets 14 FAIL, test_tshell_element_contact 7 FAIL 이다. C2 단위 검사는 소스 트리의 KooDynaFloat 를 가져오므로 바이너리 판정이 아니다.
