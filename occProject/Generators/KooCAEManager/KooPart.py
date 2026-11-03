@@ -2719,8 +2719,12 @@ class KooPartManager():
             return leftover
         if leftover:
             _p = sorted(other_pids)
-            print(f"  ELEMENT_TSHELL: KMM 이 파트로 읽지 않는 PID({', '.join(map(str, _p[:10]))}{' …' if len(_p) > 10 else ''})의 "
-                  f"TSHELL {len(leftover)}개는 원문 그대로 둔다 — *PART_COMPOSITE_TSHELL·*PART_CONTACT 등. 이 파트는 낙하 접촉 집합에 들어가지 않는다")
+            _ids = f"{', '.join(map(str, _p[:10]))}{' …' if len(_p) > 10 else ''}"
+            if not self.parts:   # dynain 처럼 *PART 가 없는 덱 — 주 덱 파트로 이어진다(리뷰 X ⚪6: 오해를 부르던 안내)
+                print(f"  ELEMENT_TSHELL: 이 덱에 *PART 가 없어 TSHELL {len(leftover)}개(PID {_ids})는 원문 그대로 둔다")
+            else:
+                print(f"  ELEMENT_TSHELL: KMM 이 파트로 읽지 않는 PID({_ids})의 TSHELL {len(leftover)}개는 원문 그대로 둔다 — "
+                      f"*PART_COMPOSITE_TSHELL·*PART_CONTACT 등이거나 덱에 *PART 가 없는 PID 다. 이 파트는 낙하 접촉 집합에 들어가지 않는다")
         kept = f" + 원문 그대로 {len(leftover)}" if leftover else ""
         if _add + len(leftover) == _rec and not _dup:
             print(f"  ELEMENT_TSHELL 개수 검사: 입력 {_rec} = 등록 {_add}{kept} (소실 0)")
