@@ -35,3 +35,4 @@
   - B5 덱 1건은 원인을 짚는 ValueError 로 바뀌었다.
   - model_dump.k 는 고쳐진 사례에서 예전엔 도중에 잘려 있었다. 그래서 차이가 큰 것이 당연하다.
 - **아는 불량(헤드 v129 컴파일본).** test_kmm_real_deck_crashes 15 FAIL, test_section_card_sets 14 FAIL, test_tshell_element_contact 7 FAIL 이다. C2 단위 검사는 소스 트리의 KooDynaFloat 를 가져오므로 바이너리 판정이 아니다.
+- **B5 근원 해결(kooremapper-fd, 2026-11-03).** 47a2c91(출력기 — TIED 카드 2 DT 를 10칸 `   1.0E+20`, 그리고 DR 종료 카드의 `1e+20` 이 정수 칸 NOSOL 에 앉던 것)·9448448(저장된 예제 덱 8개). compat 빌드 b9d4c12d(GLIBC_2.35). 그쪽 시험 tools/regress/test_card_80col.py 는 헤드 v129 SIF 안 8c7c4f87 에서 8 FAIL(아는 불량)이다. v130 굽기에서 b9d4c12d 로 스테이징되고, SIF e2e 에서 같은 시험을 다시 본다.
