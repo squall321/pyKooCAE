@@ -10802,7 +10802,16 @@ def _section_card_sets(lines, fmt, title, shell, keyword):
       두꺼운 셸: [제목] 카드 1 · ICOMP=1 각도 ceil(NIP/8) 장
     NIP 0 은 적분점 2개다(R16 셸·두꺼운 셸 둘 다)."""
     sets, k, n = [], 0, len(lines)
+    skipped = 0   # 카드 1(SECID 기본값 없음) 자리·블록 끝의 빈 줄 — 카드가 될 수 없어 건너뛰고 센다(ELEMENT_SHELL_THICKNESS 와 같은 규칙)
+    blank = lambda ln: not str(ln).replace("\n", "").strip()
     while k < n:
+        if all(blank(ln) for ln in lines[k:]):
+            skipped += n - k
+            break
+        if not title:
+            while k < n and blank(lines[k]):
+                skipped += 1
+                k += 1
         cs = []
         if title:
             cs.append(_title_field(lines[k], fmt))
@@ -10833,7 +10842,14 @@ def _section_card_sets(lines, fmt, title, shell, keyword):
             m = 1 + max(_dyna_int(c5[0], 0), 0) + -(-max(_dyna_int(c5[5], 0), 0) // 8)
             cs.append(("RAW", [ln.replace("\n", "") for ln in lines[k:k + m]]))
             k += m
+        if not str(c1[0]).strip():
+            # SECID 가 빈 카드 1 로 단면을 만들면 새 번호(maxid+1)를 받아 뒤의 실제 단면 번호를 밀어내고, 파트가 그 유령을
+            # 가리켰다(리뷰 W 🔴1) — 단면을 만들지 않고 알린다
+            print(f"  Warning: *{keyword}: SECID 가 빈 카드 묶음({len(cs)}장)은 단면으로 읽지 않는다(SECID 는 기본값이 없다 — 덱 확인)")
+            continue
         sets.append(cs)
+    if skipped:
+        print(f"  Warning: *{keyword} 블록의 빈 줄 {skipped}개를 건너뛰었다 — 카드 1(SECID) 자리라 카드가 될 수 없다(덱 확인)")
     return sets
 
 
