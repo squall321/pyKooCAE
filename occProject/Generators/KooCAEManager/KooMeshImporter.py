@@ -2326,7 +2326,7 @@ class KooDynaImporter():
                 # 매니저가 같은 내용으로 이미 쓴 카드는 건너뛴다 — 표시(keywordInterpreted)가 빠진
                 # 일반 경로 키워드(DATABASE_NCFORC·LOAD_THERMAL_VARIABLE·MAT_ADD_THERMAL_EXPANSION 등)가
                 # 왕복마다 배로 늘어나던 것을 막는다. 내용이 다르면 그대로 보존(유실 방지 유지).
-                from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks, index_written_blocks, is_case_marker
+                from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks, index_written_blocks, is_case_marker, raw_keyword_line
                 pending = filter_duplicate_raw_blocks(raw_dict or {}, interpreted, stream.getvalue(), SKIP)
                 wrote_header = False
                 # *CASE_BEGIN_n·*CASE_END_n 은 위치가 뜻이라(그 사이 카드만 그 케이스) 끝에 모아 쓰면 뜻이 바뀐다. KMM 은
@@ -2341,7 +2341,7 @@ class KooDynaImporter():
                     if not wrote_header:
                         stream.write("$\n$--- Uninterpreted keywords (raw, preserved) ---\n$\n")
                         wrote_header = True
-                    stream.write(f"*{kw_name}\n")
+                    stream.write(raw_keyword_line(self.dynaManager, kw_name, block))
                     for line in block:
                         stream.write(line if line.endswith('\n') else line + '\n')
                 # 데이터 카드 없는 키워드(*CONTROL_MPP_IO_NOD3DUMP·NOTIEDIO·NODUMP 등)는 블록이 없어 빠졌다.

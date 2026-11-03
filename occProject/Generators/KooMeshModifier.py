@@ -3355,7 +3355,8 @@ class KooMeshModifier(KooSimulationGenerator):
                     f.write("$\n$--- Uninterpreted keywords (raw, preserved) ---\n$\n")
                     wrote_header = True
                 for block in blocks:
-                    f.write(f"*{kw_name}\n")
+                    from KooCAEManager.KooRawKeywordDedup import raw_keyword_line
+                    f.write(raw_keyword_line(dyna_mgr, kw_name, block))
                     for line in block:
                         f.write(line if line.endswith('\n') else line + '\n')
         except Exception as e:

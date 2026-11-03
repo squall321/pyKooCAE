@@ -25,6 +25,7 @@ import json
 import fnmatch
 from io import StringIO
 from collections import defaultdict
+from KooCAEManager.KooRawKeywordDedup import raw_keyword_line   # 원문 블록 키워드 줄의 '%'·'+' 표시(2026-11-03)
 
 
 # ============================================================================
@@ -331,7 +332,7 @@ class KFileDecomposer:
             if raw_section_blocks:
                 f.write("$\n$--- Uninterpreted SECTION_* (raw, preserved) ---\n$\n")
                 for kw_name, block in raw_section_blocks:
-                    f.write(f"*{kw_name}\n")
+                    f.write(raw_keyword_line(self.dynaImporter.dynaManager, kw_name, block))
                     for line in block:
                         f.write(line if line.endswith('\n') else line + '\n')
             f.write("*END\n")
@@ -563,7 +564,7 @@ class KFileDecomposer:
                 if not wrote_header:
                     f.write("$\n$--- Uninterpreted keywords (raw, preserved) ---\n$\n")
                     wrote_header = True
-                f.write(f"*{kw_name}\n")
+                f.write(raw_keyword_line(dyna_mgr, kw_name, block))
                 for line in block:
                     f.write(line if line.endswith('\n') else line + '\n')
         except Exception as e:

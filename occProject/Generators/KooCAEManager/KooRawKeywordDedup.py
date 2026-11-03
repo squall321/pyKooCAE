@@ -75,3 +75,21 @@ def filter_duplicate_raw_blocks(raw_dict, interpreted, written_text, skip_keywor
             seen.add(key)         # raw 끼리의 중복도 한 번만
             result.append((kw_name, block))
     return result
+
+
+def raw_keyword_line(dyna_mgr, kw_name, block):
+    """원문 블록의 키워드 줄 — 읽을 때 기록한 블록 형식(키워드 끝 '%'=I10·'+'=long)을 되살린다(2026-11-03).
+    예전엔 f"*{kw_name}" 만 써서 10칸·20칸 원문 줄이 8칸·10칸 키워드 아래에 놓였고, LS-DYNA 가 칸을 잘못 읽었다(조용한 손상).
+    덱 전체가 *KEYWORD I10=Y 면 그 줄이 남으므로 '%' 를 덧붙이지 않는다(출력 바이트 유지)."""
+    fmt = None
+    blocks = (getattr(dyna_mgr, "_raw_keyword_dict", None) or {}).get(kw_name, [])
+    fmts = (getattr(dyna_mgr, "_block_formats", None) or {}).get(kw_name, [])
+    for i, b in enumerate(blocks):
+        if b is block:
+            fmt = fmts[i] if i < len(fmts) else None
+            break
+    if fmt == "long":
+        return f"*{kw_name} +\n"
+    if fmt == "i10" and not getattr(dyna_mgr, "_global_i10", False):
+        return f"*{kw_name} %\n"
+    return f"*{kw_name}\n"

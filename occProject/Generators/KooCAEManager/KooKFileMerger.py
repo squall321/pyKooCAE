@@ -157,7 +157,7 @@ def _write_uninterpreted_raw_blocks(f, dynaImporter):
         interpreted = getattr(dynaImporter, 'keywordInterpreted', {}) or {}
         SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END"}
         # 이미 쓴 내용과 같은 카드는 건너뛴다 (공유 writer 와 같은 규약 — KooRawKeywordDedup)
-        from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks, is_case_marker
+        from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks, is_case_marker, raw_keyword_line
         written_so_far = ""
         try:
             pos = f.tell()
@@ -174,7 +174,7 @@ def _write_uninterpreted_raw_blocks(f, dynaImporter):
             if not wrote_header:
                 f.write("$\n$--- Uninterpreted keywords (raw, preserved) ---\n$\n")
                 wrote_header = True
-            f.write(f"*{kw_name}\n")
+            f.write(raw_keyword_line(dyna_mgr, kw_name, block))
             for line in block:
                 f.write(line if line.endswith('\n') else line + '\n')
     except Exception as e:

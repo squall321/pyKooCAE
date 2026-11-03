@@ -1,6 +1,6 @@
 # 실제 덱에서 KMM 이 죽던 기존 결함(말뭉치 V, 2026-11-03)을 작은 덱으로 재현해 고쳐졌는지 보는 회귀 시험
 """
-실행: venv312/bin/python tests/test_kmm_real_deck_crashes.py   (KMM 9회, 약 1분)
+실행: venv312/bin/python tests/test_kmm_real_deck_crashes.py   (KMM 10회, 약 1분)
 수정 전 코드로 볼 때: KMM_GEN=<옛 occProject/Generators> … / 컴파일본: KMM_BIN=<KooMeshModifier 실행 파일> …
 
   B1  *DATABASE_EXTENT_INTFOR 카드 1장(R16 카드 2 는 선택, 기본값 0) — 예전엔 IndexError
@@ -10,6 +10,7 @@
   B5  고정폭 10칸을 넘친 수(82자 줄) — 예전엔 원인 없는 ValueError traceback
   B6  *SECTION_SHELL 필수 카드 2 없음 — 예전엔 IndexError
   C2  KooDynaFloat 의 Fortran 꼴('4.5+01'·'1.0-3'·D 지수) — 예전엔 죽거나 조용히 기본값
+  D   원문 통과 블록(*ELEMENT_DISCRETE) 키워드 줄의 '%'(I10)·'+'(long) 표시 — 예전엔 버려 LS-DYNA 가 칸을 잘못 읽었다
 """
 import os
 import subprocess
@@ -156,6 +157,17 @@ def main():
     d, rc, log = run("b5", base(tied), TRANS)
     check("B5: traceback 대신 원인을 짚는 오류(칸 원문·10칸·80열)",
           rc != 0 and "1.0000E+" in log and "10칸" in log and "80" in log, f"rc={rc} " + log[-600:])
+
+    # D — 원문 통과 블록의 키워드 줄 형식 표시('%'=I10·'+'=long). *ELEMENT_DISCRETE 는 KMM 이 해석하지 않는 키워드이고 표준 칸이
+    #     I8 이라 표시가 뜻을 가진다. 예전엔 '*ELEMENT_DISCRETE' 만 써서 10칸·20칸 원문 줄을 LS-DYNA 가 8칸으로 잘못 읽었다
+    raw = ("*ELEMENT_DISCRETE %\n" + f"{9:10d}{3:10d}{17:10d}{18:10d}{0:10d}{1.0:16.4f}{0:10d}{0.0:16.4f}\n"
+           + "*ELEMENT_DISCRETE +\n" + f"{10:20d}{3:20d}{19:20d}{20:20d}\n")
+    d, rc, log = run("d_marker", base(raw), TRANS)
+    t = out_text(d, "model_trans.k")
+    disc = [ln for ln in t.splitlines() if "ELEMENT_DISCRETE" in ln]
+    check("D: rc 0", rc == 0 and no_traceback(log), f"rc={rc} " + log[-500:])
+    check("D: 원문 블록 '*ELEMENT_DISCRETE %'(I10) 표시가 남음", "*ELEMENT_DISCRETE %" in disc, str(disc))
+    check("D: 원문 블록 '*ELEMENT_DISCRETE +'(long) 표시가 남음", "*ELEMENT_DISCRETE +" in disc, str(disc))
 
     # C2 — KooDynaFloat 단위 시험
     sys.path.insert(0, str(GEN))
