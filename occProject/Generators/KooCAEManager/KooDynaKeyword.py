@@ -10782,6 +10782,33 @@ def _dyna_int(value, default=0):
             return default
 
 
+def _first_int(line, fmt=None):
+    """카드 첫 칸이 정수(SECID 등)면 그 값, 아니면 None — 콤마 줄은 첫 콤마 앞, long 은 20칸, 아니면 10칸."""
+    line = str(line).replace("\n", "")
+    f = (line.split(",")[0] if "," in line else line[:20 if fmt == "long" else 10]).strip()
+    return int(f) if re.fullmatch(r"[+-]?[0-9]+", f) else None
+
+
+def _title_gap(lines, k, fmt):
+    """_TITLE 블록 제목 자리의 빈 줄이 단면 사이를 띄운 것인가 — 다음 줄이 정수 아닌 제목이고 그다음 줄이 정수 SECID 카드면
+    그렇다고 본다. 아니면 LS-DYNA 처럼 빈 제목이다(리뷰 X 🔴1: 빈 줄을 제목으로, 진짜 제목을 SECID 로 읽어 유령 단면이 생겼다)."""
+    n = len(lines)
+    blank = lambda ln: not str(ln).replace("\n", "").strip()
+    return (k + 2 < n and blank(lines[k]) and not blank(lines[k + 1]) and _first_int(lines[k + 1], fmt) is None
+            and _first_int(lines[k + 2], fmt) is not None)
+
+
+def _secid_bad(sid_field, keyword, n_cards):
+    """SECID 가 빈 칸·정수 아님·0 이하면 알리고 참 — 그런 카드 묶음으로 단면을 만들면 새 번호(maxid+1)를 받아 뒤의 실제 단면
+    번호를 밀어내고 파트가 그 유령을 가리켰다(리뷰 W 🔴1·X 🔴1). KMM 은 이름(문자) SECID 를 지원하지 않는다."""
+    sid = str(sid_field).strip()
+    if re.fullmatch(r"[+-]?[0-9]+", sid) and int(sid) > 0:
+        return False
+    why = "비어 있다" if not sid else f"'{sid}' 는 양의 정수가 아니다"
+    print(f"  Warning: *{keyword}: SECID 가 {why} — 카드 {n_cards}장을 단면으로 읽지 않는다(덱 확인)")
+    return True
+
+
 def _card_fields(line, fmt, n=8):
     """카드 한 줄을 칸 n 개로 나눈다. 콤마가 있으면 콤마 자유형식이다(R16: 카드마다 고정폭과 섞을 수 있다).
     블록이 long('+')이면 칸은 20자, 아니면 10자다(R16: long 은 줄 수가 같고 칸만 넓어진다)."""
@@ -10815,6 +10842,9 @@ def _section_card_sets(lines, fmt, title, shell, keyword):
             while k < n and blank(lines[k]):
                 skipped += 1
                 k += 1
+        while title and _title_gap(lines, k, fmt):
+            skipped += 1
+            k += 1
         cs = []
         if title:
             cs.append(_title_field(lines[k], fmt))
@@ -10845,10 +10875,7 @@ def _section_card_sets(lines, fmt, title, shell, keyword):
             m = 1 + max(_dyna_int(c5[0], 0), 0) + -(-max(_dyna_int(c5[5], 0), 0) // 8)
             cs.append(("RAW", [ln.replace("\n", "") for ln in lines[k:k + m]]))
             k += m
-        if not str(c1[0]).strip():
-            # SECID 가 빈 카드 1 로 단면을 만들면 새 번호(maxid+1)를 받아 뒤의 실제 단면 번호를 밀어내고, 파트가 그 유령을
-            # 가리켰다(리뷰 W 🔴1) — 단면을 만들지 않고 알린다
-            print(f"  Warning: *{keyword}: SECID 가 빈 카드 묶음({len(cs)}장)은 단면으로 읽지 않는다(SECID 는 기본값이 없다 — 덱 확인)")
+        if _secid_bad(c1[0], keyword, len(cs)):
             continue
         sets.append(cs)
     if skipped:
@@ -11053,12 +11080,22 @@ class SectionSolid(DynaKeyword):
         super(SectionSolid,self).__init__("SECTION_SOLID")
 
     def parse(self, section_solid_keywords):
-        # 한 *SECTION_SOLID 블록 아래 여러 section 카드가 이어질 수 있음
+        # 한 *SECTION_SOLID 블록 아래 여러 section 카드가 이어질 수 있음. 빈 줄(SECID 기본값 없음)은 카드가 될 수 없어 건너뛰고,
+        # SECID 가 정수가 아닌 줄은 단면으로 읽지 않는다 — 예전엔 블록 끝 빈 줄이 유령 NewSolidSection 이 되어 실제 단면 번호를
+        # 밀어냈다(리뷰 X, v129 부터)
+        skipped = 0
         for i in range(len(section_solid_keywords)):
             block = section_solid_keywords[i]
             for j in range(len(block)):
+                if not str(block[j]).replace("\n", "").strip():
+                    skipped += 1
+                    continue
                 parameters = self.parse_whole(block[j], [10, 10, 10, 10, 10, 10, 10, 10])
+                if _secid_bad(parameters[0], "SECTION_SOLID", 1):
+                    continue
                 self.parameters.append([parameters])
+        if skipped:
+            print(f"  Warning: *SECTION_SOLID 블록의 빈 줄 {skipped}개를 건너뛰었다 — 카드 1(SECID) 자리라 카드가 될 수 없다(덱 확인)")
 
     def AddSectionSolid(self, secid, elform, aet, cohoff, gaskett):
         parameterList = []     
@@ -11104,13 +11141,31 @@ class SectionSolidTitle(DynaKeyword):
         super(SectionSolidTitle,self).__init__("SECTION_SOLID_TITLE")
 
     def parse(self, section_solid_keywords):
-        # 한 *SECTION_SOLID_TITLE 블록 아래 (name, data) 쌍이 여러 번 이어질 수 있음
+        # 한 *SECTION_SOLID_TITLE 블록 아래 (name, data) 쌍이 여러 번 이어질 수 있음. 쌍 사이·끝 빈 줄로 쌍이 어긋나 유령 단면이
+        # 생기던 것을 셸 단면과 같은 규칙으로 맞춘다(리뷰 X)
+        skipped = 0
+        blank = lambda ln: not str(ln).replace("\n", "").strip()
         for i in range(len(section_solid_keywords)):
             block = section_solid_keywords[i]
-            for j in range(0, len(block) - 1, 2):
-                name_params = self.parse_whole(block[j], [80])
-                data_params = self.parse_whole(block[j + 1], [10, 10, 10, 10, 10, 10, 10, 10])
+            k, n = 0, len(block)
+            while k < n:
+                if all(blank(ln) for ln in block[k:]):
+                    skipped += n - k
+                    break
+                while _title_gap(block, k, None):
+                    skipped += 1
+                    k += 1
+                if k + 1 >= n:
+                    print("  Warning: *SECTION_SOLID_TITLE: 제목 줄 뒤에 카드 1 이 없다 — 이 단면은 읽지 않는다")
+                    break
+                name_params = self.parse_whole(block[k], [80])
+                data_params = self.parse_whole(block[k + 1], [10, 10, 10, 10, 10, 10, 10, 10])
+                k += 2
+                if _secid_bad(data_params[0], "SECTION_SOLID_TITLE", 2):
+                    continue
                 self.parameters.append([name_params, data_params])
+        if skipped:
+            print(f"  Warning: *SECTION_SOLID_TITLE 블록의 빈 줄 {skipped}개를 건너뛰었다(덱 확인)")
 
     def AddSectionSolidTitle(self, name, secid, elform, aet, cohoff, gaskett):
         parameterList = []

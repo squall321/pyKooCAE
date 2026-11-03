@@ -1,6 +1,6 @@
 # *SECTION_SHELL·*SECTION_TSHELL(_TITLE) 카드 묶음(한 블록 여러 단면·ICOMP 각도·사용자 요소 카드·long·콤마)과 PART_EXCHANGE TSHELL 단면을 보는 회귀 시험
 """
-실행: venv312/bin/python tests/test_section_card_sets.py   (KMM 6회, 약 40초)
+실행: venv312/bin/python tests/test_section_card_sets.py   (KMM 7회, 약 45초)
 수정 전 코드로 볼 때: KMM_GEN=<옛 occProject/Generators> … / 컴파일본: KMM_BIN=<KooMeshModifier 실행 파일> …
 
 배경 (2026-11-03, 기존 결함 묶음 C1·C3·C4·C5): R16 "For each … section include a set of the following cards. This input ends at
@@ -235,6 +235,50 @@ def main():
           secs.get(42, ("", 0, 0))[2] == 0.7 and secs.get(43, ("", 0, 0))[2] == 0.9 and secs.get(44, ("",))[0] == "*SECTION_TSHELL"
           and secs.get(45, ("",))[0] == "*SECTION_SOLID", str(secs))
     check("🔴1 빈 줄: 건너뛴 빈 줄을 알림", "빈 줄" in log and "SECTION_SHELL" in log, log[-400:])
+    # 리뷰 X 🔴1 — _TITLE 블록 단면 사이 빈 줄(빈 줄을 제목으로, 진짜 제목을 SECID 로 읽어 유령이 다음 단면 번호를 밀어냄),
+    #   SECTION_SOLID(_TITLE) 끝·사이 빈 줄(v129 부터 같은 꼴), 정수 아닌 SECID
+    xdeck = ("*KEYWORD\n*NODE\n" + "".join(f"{i + 1:8d}{float(x):16.6f}{float(y):16.6f}{0.0:16.6f}\n"
+                                         for i, (x, y) in enumerate(((0, 0), (1, 0), (1, 1), (0, 1))))
+             + "*ELEMENT_SHELL\n" + "".join(f"{x:8d}" for x in (1, 61, 1, 2, 3, 4)) + "\n"
+             + "".join(f"*PART\np{k}\n" + f10(k, k, 1) for k in (61, 62, 63, 71, 72, 73))
+             + "*SECTION_SHELL_TITLE\nskinA\n" + f10(61, 2, 0.8333, 3, 1, 0, 0, 1) + f10(0.5, 0.5, 0.5, 0.5, 0.0, 0, 0, 0)
+             + "\nskinB\n" + f10(62, 2, 0.8333, 3, 1, 0, 0, 1) + f10(0.7, 0.7, 0.7, 0.7, 0.0, 0, 0, 0)
+             + "*SECTION_SHELL\n" + f10(63, 2, 0.8333, 3, 1, 0, 0, 1) + f10(0.9, 0.9, 0.9, 0.9, 0.0, 0, 0, 0)
+             + f10("abc", 2, 0.8333, 3, 1, 0, 0, 1) + f10(5.0, 5.0, 5.0, 5.0, 0.0, 0, 0, 0)                                 # 정수 아닌 SECID
+             + "*SECTION_SOLID\n" + f10(71, 2) + "\n"
+             + "*SECTION_SOLID_TITLE\ns72\n" + f10(72, 2) + "\ns73\n" + f10(73, 1) + "\n"
+             + "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3) + "*END\n")
+    d, rc, log = run("xblank", xdeck, TRANS)
+    t = (d / "model_trans.k").read_text(errors="replace") if (d / "model_trans.k").exists() else ""
+    lines = t.splitlines()
+    secs = {}
+    for i, ln in enumerate(lines):
+        u = ln.strip().upper()
+        if u.startswith("*SECTION_"):
+            data = []
+            for x in lines[i + 1:i + 6]:
+                if x.startswith("*"):
+                    break
+                if not x.startswith("$"):
+                    data.append(x)
+            if u.endswith("_TITLE"):
+                data = data[1:]
+            if data:
+                secs[int(float(data[0][:10]))] = (u.replace("_TITLE", ""), num(data[0][10:20]), num(data[1][:10]) if len(data) > 1 else None)
+    parts = {}
+    for i, ln in enumerate(lines):
+        if ln.strip().upper().startswith("*PART"):
+            data = [x for x in lines[i + 1:i + 5] if not x.startswith("$")]
+            if len(data) >= 2:
+                parts[int(data[1][:10])] = int(float(data[1][10:20]))
+    check("X🔴1 _TITLE·SOLID 빈 줄·정수 아닌 SECID: rc 0", rc == 0, f"rc={rc} " + log[-500:])
+    check("X🔴1 단면은 61·62·63·71·72·73 뿐(유령 없음)", sorted(secs) == [61, 62, 63, 71, 72, 73], str(secs))
+    check("X🔴1 파트가 자기 단면을 가리킴", all(parts.get(k) == k for k in (61, 62, 63, 71, 72, 73)), str(parts))
+    check("X🔴1 셸 62·63 두께 0.7·0.9, 솔리드 71·72·73 ELFORM 2·2·1",
+          secs.get(62, ("", 0, 0))[2] == 0.7 and secs.get(63, ("", 0, 0))[2] == 0.9
+          and [secs.get(k, ("", 0))[1] for k in (71, 72, 73)] == [2.0, 2.0, 1.0], str(secs))
+    check("X🔴1 정수 아닌 SECID 'abc' 를 단면으로 읽지 않는다고 알림", "'abc'" in log and "SECID" in log, log[-400:])
+
     # 리뷰 W 🟡7 — PART_EXCHANGE 로 *SECTION_TSHELL 과 *ConvertHexato,TShell 을 함께 주면 그 단면을 쓴다(예전엔 기본 New TShell 로 덮음)
     cpex = ("*Inputfile\nmodel.k\n*Mode\nPART_EXCHANGE,1\n**PartExchange,1\n*PID,5\n*SECTION_TSHELL\n"
             + f"{'SID':>10}" + f10(5, 0.75, 3, 1, 0.0, 0, 1).rstrip("\n") + "\n*ConvertHexato,TShell,(0,0,1),5.0\n**EndPartExchange\n*End\n")
