@@ -6132,6 +6132,7 @@ class ElementTShell(DynaKeyword):
     def __init__(self):
         super(ElementTShell, self).__init__("ELEMENT_TSHELL")
         self.has_i10 = False
+        self.row_pos = []   # 블록마다 줄 위치(원문 블록 안 순번) — 파트로 읽지 않는 PID 의 줄을 원문으로 남길 때 쓴다
 
     def parse(self, elementTShellKeywords):
         fmts = getattr(self, "block_formats", None) or []
@@ -6140,8 +6141,8 @@ class ElementTShell(DynaKeyword):
             w = 10 if fmt == "i10" else (20 if fmt == "long" else 8)
             if w == 10:
                 self.has_i10 = True
-            rows = []
-            for line in block:
+            rows, pos = [], []
+            for j, line in enumerate(block):
                 s = str(line).replace("\n", "").rstrip()
                 if not s.strip() or s.lstrip().startswith("$"):
                     continue
@@ -6150,7 +6151,9 @@ class ElementTShell(DynaKeyword):
                 else:
                     f = [s[k * w:(k + 1) * w].strip() for k in range(10)]
                 rows.append((f + [""] * 10)[:10])
+                pos.append(j)
             self.parameters.append(rows)
+            self.row_pos.append(pos)
 
     def write(self, stream):
         for rows in self.parameters:

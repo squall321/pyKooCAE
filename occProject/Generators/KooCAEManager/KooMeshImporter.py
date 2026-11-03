@@ -683,6 +683,29 @@ class KooDynaImporter():
             nodeSets = setNodeListGenerate.getSetNodeList()
             self.nodeSetManager.AddNodeSetfromDyna(nodeSets)
             
+    def _keep_raw_tshell_rows(self, keyword, leftover):
+        """KMM 이 파트로 읽지 않는 PID 의 *ELEMENT_TSHELL 줄만 원문 블록에 남기고 해석 표시를 푼다 — 원문 기록기가 그 줄을
+        형식 표시(%·+)와 함께 그대로 쓰고, 해석한 줄은 요소 매니저가 쓴다(중복 없음, 리뷰 W 🔴2)."""
+        mgr = self.dynaManager
+        raw = getattr(mgr, "_raw_keyword_dict", None)
+        if raw is None or "ELEMENT_TSHELL" not in raw:
+            return
+        fmts_all = getattr(mgr, "_block_formats", None)
+        fmts = (fmts_all or {}).get("ELEMENT_TSHELL", [])
+        keep = {}
+        for bi, ri in leftover:
+            keep.setdefault(bi, set()).add(keyword.row_pos[bi][ri])
+        new_blocks, new_fmts = [], []
+        for bi, block in enumerate(raw["ELEMENT_TSHELL"]):
+            lines = [ln for j, ln in enumerate(block) if j in keep.get(bi, ())]
+            if lines:
+                new_blocks.append(lines)
+                new_fmts.append(fmts[bi] if bi < len(fmts) else None)
+        raw["ELEMENT_TSHELL"] = new_blocks
+        if fmts_all is not None:
+            fmts_all["ELEMENT_TSHELL"] = new_fmts
+        self.keywordInterpreted["ELEMENT_TSHELL"] = False
+
     def importPart(self):
         dynaKeywords = self.dynaManager.dynaKeywordMan.keywords
         modePart = ""
@@ -931,7 +954,14 @@ class KooDynaImporter():
             #start = time.time()
             self.partManager.AddSolidElementsfromDynaAdvanced(parametersSolid)
         if elementTShellKeyword is not None:
-            self.partManager.AddTShellElementsfromDyna(elementTShellKeyword.parameters)
+            _left = self.partManager.AddTShellElementsfromDyna(elementTShellKeyword.parameters)
+            if _left:
+                self._keep_raw_tshell_rows(elementTShellKeyword, _left)
+        _ts_variants = sorted(k for k in (getattr(self.dynaManager, "_raw_keyword_dict", None) or {})
+                              if k.startswith("ELEMENT_TSHELL_"))
+        if _ts_variants:   # 조용히 빠지지 않게 알린다(리뷰 W)
+            print(f"  ⚠️  {', '.join('*' + k for k in _ts_variants)} 는 원문 그대로 둔다 — 그 요소의 파트는 요소가 없는 파트로 "
+                  f"보여 낙하 접촉 집합(SINGLE_SURFACE·바닥판·RobustContact)에 들어가지 않는다")
         # 입력 요소 카드가 I10(*ELEMENT_… %)였으면 출력도 I10 스타일 보존
         if any(getattr(k, 'has_i10', False) for k in
                (elementShellKeyword, elementShellThickKeyword, elementBeamKeyword, elementSolidKeyword, elementTShellKeyword)

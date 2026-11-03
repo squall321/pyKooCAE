@@ -2687,10 +2687,13 @@ class KooPartManager():
     def AddTShellElementsfromDyna(self, parametersTShell):
         """*ELEMENT_TSHELL(EID PID N1~N8) → 파트에 TSHELL8 요소(2026-11-03). 예전엔 해석하지 않아(원문 통과) TSHELL 파트에
         요소가 없었고, 그래서 DROP_ATTITUDE 의 SINGLE_SURFACE·바닥판·RobustContact 면·Tied 면 감지·D2R 에서 모두 빠졌다.
-        버린 요소는 이유와 함께 읽기 소실 장부에 올린다(🔴 + 종료 코드 3)."""
-        _rec = _add = _pid_miss = _node_miss = _bad = _dup = 0
-        for rows in parametersTShell:
-            for r in rows:
+        KMM 이 파트로 읽지 않는 PID(*PART_COMPOSITE_TSHELL·*PART_CONTACT 등)의 줄은 소실이 아니다 — 그 위치
+        [(블록, 줄)] 를 돌려주면 importer 가 원문 그대로 남긴다(v129 와 같은 출력, 리뷰 W 🔴2).
+        그 밖에 버린 요소는 이유와 함께 읽기 소실 장부에 올린다(🔴 + 종료 코드 3)."""
+        _rec = _add = _node_miss = _bad = _dup = 0
+        leftover, other_pids = [], set()
+        for bi, rows in enumerate(parametersTShell):
+            for ri, r in enumerate(rows):
                 _rec += 1
                 try:
                     eid, pid = int(r[0]), int(r[1])
@@ -2701,7 +2704,8 @@ class KooPartManager():
                         print(f"  Warning: ELEMENT_TSHELL 카드를 정수로 읽지 못함 — 요소 스킵: {r}")
                     continue
                 if pid not in self.parts:
-                    _pid_miss += 1
+                    leftover.append((bi, ri))
+                    other_pids.add(pid)
                     continue
                 part = self.parts[pid]
                 if 0 in nids or _undefined_node(part.nodeManager, nids):
@@ -2712,16 +2716,21 @@ class KooPartManager():
                 part.AddTShellElement(eid, *get_nodes(part.nodeManager, nids))
                 _add += 1
         if not _rec:
-            return
-        if _add == _rec and not _dup:
-            print(f"  ELEMENT_TSHELL 개수 검사: 입력 {_rec} = 등록 {_add} (소실 0)")
-            return
-        print(f"  🔴 ELEMENT_TSHELL 개수 불일치: 입력 {_rec} → 등록 {_add - _dup} (PID 미존재 {_pid_miss}개, "
-              f"절점 0·정의 안 된 절점 {_node_miss}개, 정수로 못 읽음 {_bad}개, EID 중복 {_dup}개). 결과를 신뢰하기 전에 확인 필요")
-        note_import_loss("ELEMENT_TSHELL — PID 에 *PART 없음", _pid_miss)
+            return leftover
+        if leftover:
+            _p = sorted(other_pids)
+            print(f"  ELEMENT_TSHELL: KMM 이 파트로 읽지 않는 PID({', '.join(map(str, _p[:10]))}{' …' if len(_p) > 10 else ''})의 "
+                  f"TSHELL {len(leftover)}개는 원문 그대로 둔다 — *PART_COMPOSITE_TSHELL·*PART_CONTACT 등. 이 파트는 낙하 접촉 집합에 들어가지 않는다")
+        kept = f" + 원문 그대로 {len(leftover)}" if leftover else ""
+        if _add + len(leftover) == _rec and not _dup:
+            print(f"  ELEMENT_TSHELL 개수 검사: 입력 {_rec} = 등록 {_add}{kept} (소실 0)")
+            return leftover
+        print(f"  🔴 ELEMENT_TSHELL 개수 불일치: 입력 {_rec} → 등록 {_add - _dup}{kept} (절점 0·정의 안 된 절점 {_node_miss}개, "
+              f"정수로 못 읽음 {_bad}개, EID 중복 {_dup}개). 결과를 신뢰하기 전에 확인 필요")
         note_import_loss("ELEMENT_TSHELL — 절점 0·정의 안 된 절점", _node_miss)
         note_import_loss("ELEMENT_TSHELL — 정수로 못 읽음", _bad)
         note_import_loss("ELEMENT_TSHELL — 같은 파트 안 EID 중복(뒤 요소가 앞을 덮음)", _dup)
+        return leftover
 
     def AddSolidElementsfromDyna(self, parametersSolid):
         for i in range(len(parametersSolid)):
