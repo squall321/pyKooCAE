@@ -630,8 +630,8 @@ class KooSectionManager():
             
             sec.elform = KooDynaInt(firstLine[1],1)
             sec.aet = KooDynaInt(firstLine[2],0)
-            sec.cohoff = KooDynaFloat(firstLine[3],0.0)
-            sec.gaskett = KooDynaFloat(firstLine[4],0.0)
+            sec.cohoff = KooDynaFloat(firstLine[6],0.0)    # R16 카드 1: SECID ELFORM AET 빈칸×3 COHOFF GASKETT — 예전엔 빈 칸 [3]·[4] 를 읽어
+            sec.gaskett = KooDynaFloat(firstLine[7],0.0)   # 덱의 COHOFF·GASKETT 가 출력에서 0 이 됐다(리뷰 Z)
            
             return sec
         elif dynaSection[0] == "*SECTION_SOLID_TITLE":
@@ -647,8 +647,8 @@ class KooSectionManager():
                                     
             sec.elform = KooDynaInt(firstLine[1],1)
             sec.aet = KooDynaInt(firstLine[2],0)
-            sec.cohoff = KooDynaFloat(firstLine[3],0.0)
-            sec.gaskett = KooDynaFloat(firstLine[4],0.0)
+            sec.cohoff = KooDynaFloat(firstLine[6],0.0)    # R16 카드 1: SECID ELFORM AET 빈칸×3 COHOFF GASKETT — 예전엔 빈 칸 [3]·[4] 를 읽어
+            sec.gaskett = KooDynaFloat(firstLine[7],0.0)   # 덱의 COHOFF·GASKETT 가 출력에서 0 이 됐다(리뷰 Z)
             
             return sec
         elif dynaSection[0] == "*SECTION_SOLID_PERI":

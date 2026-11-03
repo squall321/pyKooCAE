@@ -857,8 +857,11 @@ class KooDynaImporter():
             elementSolidKeyword = None
         elementTShellKeyword = dynaKeywords.get("ELEMENT_TSHELL")
         if modePart == "PART":
+            from KooCAEManager.KooDynaKeyword import _whole_int
+
             def _part_int_or_blank(field, default=0):
-                """PART 필드를 int로 변환. 공백이면 default 반환."""
+                """PART 필드를 int로 변환. 공백이면 default 반환. 정수값 실수('3.0' — R 형 *PARAMETER 치환 등)도 정수로 받는다
+                — 단면은 그 SECID 를 받는데 PART 는 0 으로 읽어 출력 SECID 가 0 이 됐다(리뷰 Z)."""
                 if field is None:
                     return default
                 s = str(field).strip()
@@ -867,10 +870,11 @@ class KooDynaImporter():
                 try:
                     return int(s)
                 except ValueError:
-                    return default
+                    v = _whole_int(s)
+                    return default if v is None else v
 
             def _part_int_or_empty(field):
-                """PART 옵션 필드를 int로 변환. 공백이면 빈 문자열 반환 (write 시 빈칸)."""
+                """PART 옵션 필드를 int로 변환. 공백이면 빈 문자열 반환 (write 시 빈칸). 정수값 실수도 정수로 받는다."""
                 if field is None:
                     return ""
                 s = str(field).strip()
@@ -879,7 +883,8 @@ class KooDynaImporter():
                 try:
                     return int(s)
                 except ValueError:
-                    return ""
+                    v = _whole_int(s)
+                    return "" if v is None else v
 
             parts = partKeyword.getPartList()
             for part in parts:

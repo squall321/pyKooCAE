@@ -328,6 +328,44 @@ def main():
     check("Y⚪5 콤마 *SECTION_SOLID 88·*SECTION_SOLID_TITLE 89, long *SECTION_SOLID + 90: ELFORM 2·1·2",
           [secs.get(k, ("", 0))[1] for k in (88, 89, 90)] == [2.0, 1.0, 2.0], str(secs))
 
+    # 리뷰 Z — 🟡1 *PART 정수 칸의 정수값 실수(R 형 &sec83 '83.0'·'82.0'·PID '93.0')를 0 으로 읽어 SECID 0·파트 소실(v129 부터).
+    #   COHOFF·GASKETT(카드 1 의 7·8번째 칸)를 빈 칸 4·5번째에서 읽어 덱 값이 출력에서 0 이 됐다(v129 부터)
+    zdeck = ("*KEYWORD\n*PARAMETER\n" + f"R {'sec83':<8}{'83.0':>10}\n" + "*NODE\n"
+             + "".join(f"{i + 1:8d}{float(x):16.6f}{float(y):16.6f}{0.0:16.6f}\n" for i, (x, y) in enumerate(((0, 0), (1, 0), (1, 1), (0, 1))))
+             + "*ELEMENT_SHELL\n" + "".join(f"{x:8d}" for x in (1, 81, 1, 2, 3, 4)) + "\n"
+             + "*PART\np81\n" + f10(81, 81, 1) + "*PART\np91\n" + f10(91, "&sec83", 1) + "*PART\np92\n" + f10(92, "82.0", 1)
+             + "*PART\np93\n" + f10("93.0", 81, 1) + "*PART\np94\n" + f10(94, 94, 1) + "*PART\np95\n" + f10(95, 95, 1)
+             + "*SECTION_SHELL\n" + f10(81, 2, 0.8333, 3, 1, 0, 0, 1) + f10(0.6, 0.6, 0.6, 0.6, 0.0, 0, 0, 0)
+             + "*SECTION_SOLID\n" + f10(82, 2) + f10(83, 1) + f10(94, 19, 0, "", "", "", 0.5, 0.25)
+             + "*SECTION_SOLID_TITLE\ncoh95\n" + f10(95, 20, 0, "", "", "", -0.5, 0.125)
+             + "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3) + "*END\n")
+    d, rc, log = run("zfix", zdeck, TRANS)
+    t = (d / "model_trans.k").read_text(errors="replace") if (d / "model_trans.k").exists() else ""
+    lines = t.splitlines()
+    parts, coh = {}, {}
+    for i, ln in enumerate(lines):
+        u = ln.strip().upper()
+        if u.startswith("*PART"):
+            data = [x for x in lines[i + 1:i + 5] if not x.startswith("$")]
+            if len(data) >= 2:
+                parts[int(data[1][:10])] = int(float(data[1][10:20]))
+        if u.startswith("*SECTION_SOLID"):
+            data = []
+            for x in lines[i + 1:i + 5]:
+                if x.startswith("*"):
+                    break
+                if not x.startswith("$"):
+                    data.append(x)
+            if u.endswith("_TITLE"):
+                data = data[1:]
+            if data:
+                coh[int(float(data[0][:10]))] = (num(data[0][60:70]), num(data[0][70:80]))
+    check("Z: rc 0", rc == 0, f"rc={rc} " + log[-500:])
+    check("Z🟡1 *PART SECID &sec83('83.0')·'82.0' → 83·82, PID '93.0' 파트가 남음(SECID 81)",
+          parts.get(91) == 83 and parts.get(92) == 82 and parts.get(93) == 81, str(parts))
+    check("Z COHOFF·GASKETT(7·8번째 칸): 솔리드 94 = 0.5·0.25, _TITLE 95 = -0.5·0.125",
+          coh.get(94) == (0.5, 0.25) and coh.get(95) == (-0.5, 0.125), str(coh))
+
     # 리뷰 W 🟡7 — PART_EXCHANGE 로 *SECTION_TSHELL 과 *ConvertHexato,TShell 을 함께 주면 그 단면을 쓴다(예전엔 기본 New TShell 로 덮음)
     cpex = ("*Inputfile\nmodel.k\n*Mode\nPART_EXCHANGE,1\n**PartExchange,1\n*PID,5\n*SECTION_TSHELL\n"
             + f"{'SID':>10}" + f10(5, 0.75, 3, 1, 0.0, 0, 1).rstrip("\n") + "\n*ConvertHexato,TShell,(0,0,1),5.0\n**EndPartExchange\n*End\n")
