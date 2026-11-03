@@ -279,6 +279,55 @@ def main():
           and [secs.get(k, ("", 0))[1] for k in (71, 72, 73)] == [2.0, 2.0, 1.0], str(secs))
     check("X🔴1 정수 아닌 SECID 'abc' 를 단면으로 읽지 않는다고 알림", "'abc'" in log and "SECID" in log, log[-400:])
 
+    # 리뷰 Y — 🟡1 정수값 실수 SECID('81.0', R 형 *PARAMETER '83.0')는 KooDynaInt 처럼 정수로 받는다(97aaff9 는 버렸다).
+    #   🟡3 _TITLE 단면 사이 빈 줄 2개(셸 3줄 짝이 어긋나 뒤 단면을 모두 버렸다) · 빈 줄 2개 뒤 바로 카드 1(마지막 빈 줄이 빈 제목).
+    #   ⚪5 콤마·long *SECTION_SOLID(_TITLE)(예전엔 콤마 줄이 유령 단면, 97aaff9 는 경고 뒤 버렸다)
+    ydeck = ("*KEYWORD\n*PARAMETER\n" + f"R {'sec83':<8}{'83.0':>10}\n" + "*NODE\n"
+             + "".join(f"{i + 1:8d}{float(x):16.6f}{float(y):16.6f}{0.0:16.6f}\n" for i, (x, y) in enumerate(((0, 0), (1, 0), (1, 1), (0, 1))))
+             + "*ELEMENT_SHELL\n" + "".join(f"{x:8d}" for x in (1, 81, 1, 2, 3, 4)) + "\n"
+             + "".join(f"*PART\np{k}\n" + f10(k, k, 1) for k in (81, 82, 83, 84, 85, 86, 87, 88, 89, 90))
+             + "*SECTION_SHELL\n" + f10("81.0", 2, 0.8333, 3, 1, 0, 0, 1) + f10(0.6, 0.6, 0.6, 0.6, 0.0, 0, 0, 0)
+             + "*SECTION_SOLID\n" + f10("82.0", 2) + f10("&sec83", 1)
+             + "*SECTION_SHELL_TITLE\nskinC\n" + f10(84, 2, 0.8333, 3, 1, 0, 0, 1) + f10(0.4, 0.4, 0.4, 0.4, 0.0, 0, 0, 0)
+             + "\n\nskinD\n" + f10(85, 2, 0.8333, 3, 1, 0, 0, 1) + f10(0.8, 0.8, 0.8, 0.8, 0.0, 0, 0, 0)
+             + "*SECTION_SHELL_TITLE\nskinE\n" + f10(86, 2, 0.8333, 3, 1, 0, 0, 1) + f10(0.3, 0.3, 0.3, 0.3, 0.0, 0, 0, 0)
+             + "\n\n" + f10(87, 2, 0.8333, 3, 1, 0, 0, 1) + f10(0.9, 0.9, 0.9, 0.9, 0.0, 0, 0, 0)
+             + "*SECTION_SOLID\n88,2\n" + "*SECTION_SOLID_TITLE\ns89\n89,1,0\n" + "*SECTION_SOLID +\n" + f"{90:20d}{2:20d}\n"
+             + "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3) + "*END\n")
+    d, rc, log = run("yfix", ydeck, TRANS)
+    t = (d / "model_trans.k").read_text(errors="replace") if (d / "model_trans.k").exists() else ""
+    lines = t.splitlines()
+    secs = {}
+    for i, ln in enumerate(lines):
+        u = ln.strip().upper()
+        if u.startswith("*SECTION_"):
+            data = []
+            for x in lines[i + 1:i + 6]:
+                if x.startswith("*"):
+                    break
+                if not x.startswith("$"):
+                    data.append(x)
+            if u.endswith("_TITLE"):
+                data = data[1:]
+            if data:
+                secs[int(float(data[0][:10]))] = (u.replace("_TITLE", ""), num(data[0][10:20]), num(data[1][:10]) if len(data) > 1 else None)
+    parts = {}
+    for i, ln in enumerate(lines):
+        if ln.strip().upper().startswith("*PART"):
+            data = [x for x in lines[i + 1:i + 5] if not x.startswith("$")]
+            if len(data) >= 2:
+                parts[int(data[1][:10])] = int(float(data[1][10:20]))
+    ks = list(range(81, 91))
+    check("Y: rc 0", rc == 0, f"rc={rc} " + log[-500:])
+    check("Y: 단면은 81~90 열 개뿐(유령·소실 없음)", sorted(secs) == ks, str(secs))
+    check("Y: 파트 81~90 이 자기 단면을 가리킴", all(parts.get(k) == k for k in ks), str(parts))
+    check("Y🟡1 SECID '81.0'(셸 두께 0.6)·'82.0'·R 형 &sec83 '83.0'(솔리드 ELFORM 2·1)",
+          secs.get(81, ("", 0, 0))[2] == 0.6 and secs.get(82, ("", 0))[1] == 2.0 and secs.get(83, ("", 0))[1] == 1.0, str(secs))
+    check("Y🟡3 _TITLE 빈 줄 2개: 셸 85 두께 0.8 · 빈 제목 셸 87 두께 0.9",
+          secs.get(85, ("", 0, 0))[2] == 0.8 and secs.get(87, ("", 0, 0))[2] == 0.9, str(secs))
+    check("Y⚪5 콤마 *SECTION_SOLID 88·*SECTION_SOLID_TITLE 89, long *SECTION_SOLID + 90: ELFORM 2·1·2",
+          [secs.get(k, ("", 0))[1] for k in (88, 89, 90)] == [2.0, 1.0, 2.0], str(secs))
+
     # 리뷰 W 🟡7 — PART_EXCHANGE 로 *SECTION_TSHELL 과 *ConvertHexato,TShell 을 함께 주면 그 단면을 쓴다(예전엔 기본 New TShell 로 덮음)
     cpex = ("*Inputfile\nmodel.k\n*Mode\nPART_EXCHANGE,1\n**PartExchange,1\n*PID,5\n*SECTION_TSHELL\n"
             + f"{'SID':>10}" + f10(5, 0.75, 3, 1, 0.0, 0, 1).rstrip("\n") + "\n*ConvertHexato,TShell,(0,0,1),5.0\n**EndPartExchange\n*End\n")

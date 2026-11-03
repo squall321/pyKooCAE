@@ -10782,30 +10782,51 @@ def _dyna_int(value, default=0):
             return default
 
 
+def _whole_int(text):
+    """정수 칸 글 → 정수, 아니면 None. KooDynaInt 처럼 정수값 실수('2.0' — Altair 등이 정수 칸을 실수로 쓰고, R 형
+    *PARAMETER 를 정수 칸에 넣으면 '3.0' 이 된다)도 받는다. '1.5' 같은 정수 아닌 수와 글은 None(리뷰 Y 🟡1)."""
+    f = str(text).strip()
+    if re.fullmatch(r"[+-]?[0-9]+", f):
+        return int(f)
+    if re.fullmatch(r"[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?", f):
+        v = float(f)
+        if v.is_integer():
+            return int(v)
+    return None
+
+
 def _first_int(line, fmt=None):
     """카드 첫 칸이 정수(SECID 등)면 그 값, 아니면 None — 콤마 줄은 첫 콤마 앞, long 은 20칸, 아니면 10칸."""
     line = str(line).replace("\n", "")
-    f = (line.split(",")[0] if "," in line else line[:20 if fmt == "long" else 10]).strip()
-    return int(f) if re.fullmatch(r"[+-]?[0-9]+", f) else None
+    return _whole_int(line.split(",")[0] if "," in line else line[:20 if fmt == "long" else 10])
 
 
 def _title_gap(lines, k, fmt):
-    """_TITLE 블록 제목 자리의 빈 줄이 단면 사이를 띄운 것인가 — 다음 줄이 정수 아닌 제목이고 그다음 줄이 정수 SECID 카드면
-    그렇다고 본다. 아니면 LS-DYNA 처럼 빈 제목이다(리뷰 X 🔴1: 빈 줄을 제목으로, 진짜 제목을 SECID 로 읽어 유령 단면이 생겼다)."""
+    """_TITLE 블록 제목 자리에서 건너뛸 빈 줄 수. 빈 줄 덩어리 다음 줄이 정수 아닌 제목이고 그다음 줄이 정수 SECID 카드면
+    덩어리 전체(단면 사이를 띄운 것), 덩어리 다음 줄이 바로 정수 카드 1 이면 마지막 빈 줄 하나만 빈 제목으로 남긴다.
+    아니면 0 이다(LS-DYNA 처럼 빈 제목). 리뷰 X 🔴1: 빈 줄을 제목으로, 진짜 제목을 SECID 로 읽어 유령 단면이 생겼다.
+    리뷰 Y 🟡3: 빈 줄이 둘 이상이면 아직 어긋났다."""
     n = len(lines)
     blank = lambda ln: not str(ln).replace("\n", "").strip()
-    return (k + 2 < n and blank(lines[k]) and not blank(lines[k + 1]) and _first_int(lines[k + 1], fmt) is None
-            and _first_int(lines[k + 2], fmt) is not None)
+    j = k
+    while j < n and blank(lines[j]):
+        j += 1
+    if j == k or j >= n:
+        return 0
+    if _first_int(lines[j], fmt) is not None:
+        return j - k - 1
+    return j - k if j + 1 < n and _first_int(lines[j + 1], fmt) is not None else 0
 
 
 def _secid_bad(sid_field, keyword, n_cards):
     """SECID 가 빈 칸·정수 아님·0 이하면 알리고 참 — 그런 카드 묶음으로 단면을 만들면 새 번호(maxid+1)를 받아 뒤의 실제 단면
     번호를 밀어내고 파트가 그 유령을 가리켰다(리뷰 W 🔴1·X 🔴1). KMM 은 이름(문자) SECID 를 지원하지 않는다."""
     sid = str(sid_field).strip()
-    if re.fullmatch(r"[+-]?[0-9]+", sid) and int(sid) > 0:
+    v = _whole_int(sid)
+    if v is not None and v > 0:
         return False
-    why = "비어 있다" if not sid else f"'{sid}' 는 양의 정수가 아니다"
-    print(f"  Warning: *{keyword}: SECID 가 {why} — 카드 {n_cards}장을 단면으로 읽지 않는다(덱 확인)")
+    why = "SECID 가 비어 있다" if not sid else f"SECID '{sid}' 가 양의 정수가 아니다"
+    print(f"  Warning: *{keyword}: {why} — 카드 {n_cards}장을 단면으로 읽지 않는다(덱 확인)")
     return True
 
 
@@ -10842,9 +10863,10 @@ def _section_card_sets(lines, fmt, title, shell, keyword):
             while k < n and blank(lines[k]):
                 skipped += 1
                 k += 1
-        while title and _title_gap(lines, k, fmt):
-            skipped += 1
-            k += 1
+        if title:
+            g = _title_gap(lines, k, fmt)
+            skipped += g
+            k += g
         cs = []
         if title:
             cs.append(_title_field(lines[k], fmt))
@@ -11082,15 +11104,17 @@ class SectionSolid(DynaKeyword):
     def parse(self, section_solid_keywords):
         # 한 *SECTION_SOLID 블록 아래 여러 section 카드가 이어질 수 있음. 빈 줄(SECID 기본값 없음)은 카드가 될 수 없어 건너뛰고,
         # SECID 가 정수가 아닌 줄은 단면으로 읽지 않는다 — 예전엔 블록 끝 빈 줄이 유령 NewSolidSection 이 되어 실제 단면 번호를
-        # 밀어냈다(리뷰 X, v129 부터)
+        # 밀어냈다(리뷰 X, v129 부터). 콤마 자유형식·long('+') 줄은 셸 단면과 같이 읽는다(리뷰 Y ⚪5 — 예전엔 콤마 줄이 유령 단면)
         skipped = 0
+        fmts = getattr(self, "block_formats", None) or []
         for i in range(len(section_solid_keywords)):
             block = section_solid_keywords[i]
+            fmt = fmts[i] if i < len(fmts) else None
             for j in range(len(block)):
                 if not str(block[j]).replace("\n", "").strip():
                     skipped += 1
                     continue
-                parameters = self.parse_whole(block[j], [10, 10, 10, 10, 10, 10, 10, 10])
+                parameters = _card_fields(str(block[j]), fmt)
                 if _secid_bad(parameters[0], "SECTION_SOLID", 1):
                     continue
                 self.parameters.append([parameters])
@@ -11133,7 +11157,7 @@ class SectionSolid(DynaKeyword):
             parameter = self.parameters[i]
             stream.write("*SECTION_SOLID\n")
             stream.write("$$   SECID    ELFORM       AET    COHOFF   GASKETT\n")
-            formatted_elements = f"{str(parameter[0][0]):>10}{str(parameter[0][1]):>10}{str(parameter[0][2]):>10}{str(parameter[0][6]):>10}{str(parameter[0][7]):>10}\n"
+            formatted_elements = f"{_f10(parameter[0][0]):>10}{_f10(parameter[0][1]):>10}{_f10(parameter[0][2]):>10}{_f10(parameter[0][6]):>10}{_f10(parameter[0][7]):>10}\n"
             stream.write(formatted_elements)
 
 class SectionSolidTitle(DynaKeyword):
@@ -11145,21 +11169,23 @@ class SectionSolidTitle(DynaKeyword):
         # 생기던 것을 셸 단면과 같은 규칙으로 맞춘다(리뷰 X)
         skipped = 0
         blank = lambda ln: not str(ln).replace("\n", "").strip()
+        fmts = getattr(self, "block_formats", None) or []
         for i in range(len(section_solid_keywords)):
             block = section_solid_keywords[i]
+            fmt = fmts[i] if i < len(fmts) else None
             k, n = 0, len(block)
             while k < n:
                 if all(blank(ln) for ln in block[k:]):
                     skipped += n - k
                     break
-                while _title_gap(block, k, None):
-                    skipped += 1
-                    k += 1
+                g = _title_gap(block, k, fmt)
+                skipped += g
+                k += g
                 if k + 1 >= n:
                     print("  Warning: *SECTION_SOLID_TITLE: 제목 줄 뒤에 카드 1 이 없다 — 이 단면은 읽지 않는다")
                     break
-                name_params = self.parse_whole(block[k], [80])
-                data_params = self.parse_whole(block[k + 1], [10, 10, 10, 10, 10, 10, 10, 10])
+                name_params = _title_field(str(block[k]), fmt)
+                data_params = _card_fields(str(block[k + 1]), fmt)
                 k += 2
                 if _secid_bad(data_params[0], "SECTION_SOLID_TITLE", 2):
                     continue
@@ -11210,7 +11236,7 @@ class SectionSolidTitle(DynaKeyword):
             stream.write("*SECTION_SOLID_TITLE\n")
             stream.write("{name}\n".format(name=parameter[0][0]))
             stream.write("$$   SECID    ELFORM       AET    COHOFF   GASKETT\n")
-            formatted_elements = f"{str(parameter[1][0]):>10}{str(parameter[1][1]):>10}{str(parameter[1][2]):>10}{str(parameter[1][6]):>10}{str(parameter[1][7]):>10}\n"
+            formatted_elements = f"{_f10(parameter[1][0]):>10}{_f10(parameter[1][1]):>10}{_f10(parameter[1][2]):>10}{_f10(parameter[1][6]):>10}{_f10(parameter[1][7]):>10}\n"
             stream.write(formatted_elements)
 
 class SectionSolidPeri(DynaKeyword):
@@ -15846,6 +15872,7 @@ class DynaManager():
             if "SECTION_SOLID" in lines_with_asterisk:
                 section_solid = keyword_dict["SECTION_SOLID"]
                 ssolid = SectionSolid()
+                ssolid.block_formats = getattr(self, "_block_formats", {}).get("SECTION_SOLID", [])
                 ssolid.parse(section_solid)
                 ssolid.write(file)
                 dynaKeywordMan.addKeyword(ssolid)
@@ -15854,6 +15881,7 @@ class DynaManager():
             if "SECTION_SOLID_TITLE" in lines_with_asterisk:
                 section_solid_title = keyword_dict["SECTION_SOLID_TITLE"]
                 ssolid_title = SectionSolidTitle()
+                ssolid_title.block_formats = getattr(self, "_block_formats", {}).get("SECTION_SOLID_TITLE", [])
                 ssolid_title.parse(section_solid_title)
                 ssolid_title.write(file)
                 dynaKeywordMan.addKeyword(ssolid_title)
