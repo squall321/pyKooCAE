@@ -1,13 +1,15 @@
 # RobustContact 가 TIED 접촉 두께(SST·MST)를 덱 값 그대로 두고, TiedOptions 로 줄 때만 바꾸는지 보는 회귀 시험
 """
-실행: venv312/bin/python tests/test_robust_contact_tied_thickness.py   (KMM 3회, 약 1~2분)
+실행: venv312/bin/python tests/test_robust_contact_tied_thickness.py   (KMM 4회, 약 1~2분)
 수정 전 코드로 볼 때: KMM_GEN=<옛 occProject/Generators> … / 컴파일본: KMM_BIN=<KooMeshModifier 실행 파일> …
 
 배경 (2026-11-03 사용자 결정 "고친다 — 덱 값 보존"): DROP_ATTITUDE 의 RobustContact 는 TiedOptions 에 SAST·SBST 가
 없으면 모든 TIED 접촉의 SST·MST 를 0.005 로 바꿨다(3d3f50c, 근거 기록 없음). R16 접촉 일반 주의 4 의 묶기 거리
 δ = max(0.6×(두 두께 합), 0.05×최소 대각선)에 들어가는 셸 두께를 단위 없이 덮어, mm 덱에선 사실상 0·m 덱에선 5 mm 였다.
   robust      — RobustContact,True → 덱의 SST 0.3·MST 0.4 그대로
-  robust_sast — + TiedOptions.SAST,0.1 → SST 0.1(지정)·MST 0.4(덱), 바꿨다는 로그
+  robust_sast — + TiedOptions.SAST,0.1 → SST 0.1(지정)·MST 0.4(덱), 실제로 바꾼 칸(SST=0.1)을 로그에
+  robust_lower — + TiedOptions.sast,0.1 → 칸 이름은 대문자라 아무것도 안 바뀐다. 덱 값 그대로 + 무시했다는 경고,
+                 '바꿨다' 거짓 로그 없음(리뷰 U 🟡2 — 예전엔 받은 키를 그대로 찍었다)
   plain       — RobustContact 없음 → 그대로
 """
 import os
@@ -105,7 +107,8 @@ def run(name, extra):
 def main():
     for name, extra, sst, mst, log_needle in (
             ("robust", "\nRobustContact,True", 0.3, 0.4, None),
-            ("robust_sast", "\nRobustContact,True\nTiedOptions.SAST,0.1", 0.1, 0.4, "TIED"),
+            ("robust_sast", "\nRobustContact,True\nTiedOptions.SAST,0.1", 0.1, 0.4, "applied"),
+            ("robust_lower", "\nRobustContact,True\nTiedOptions.sast,0.1", 0.3, 0.4, "ignored"),
             ("plain", "", 0.3, 0.4, None)):
         r, out, log = run(name, extra)
         check(f"{name}: rc 0 · DropSet.k", r.returncode == 0 and out is not None, f"rc={r.returncode} " + log[-600:])
@@ -114,8 +117,12 @@ def main():
         c3 = tied_card3(out)
         check(f"{name}: TIED 카드 3 SST {sst}·MST {mst}", c3 is not None and abs(c3[2] - sst) < 1e-9 and abs(c3[3] - mst) < 1e-9,
               str(c3))
-        if log_needle:
-            check(f"{name}: TiedOptions 로 바꾼 사실을 로그에 남김", "SST" in log and "TiedOptions" in log and "0.1" in log, log[-800:])
+        mod_lines = [ln for ln in log.splitlines() if "[ModifyTiedParameters]" in ln]
+        if log_needle == "applied":
+            check(f"{name}: 로그가 실제로 바꾼 칸(SST=0.1)을 적음", any("SST=0.1" in ln and "바꿨다" in ln for ln in mod_lines), str(mod_lines))
+        if log_needle == "ignored":
+            check(f"{name}: 맞는 칸이 없는 키(sast)를 무시했다고 경고", any("sast" in ln and "무시" in ln for ln in mod_lines), str(mod_lines))
+            check(f"{name}: '바꿨다' 거짓 로그 없음", not any("바꿨다" in ln for ln in log.splitlines()), str(mod_lines))
     print()
     if FAILS:
         print(f"FAILED {len(FAILS)}")

@@ -27,7 +27,7 @@ SmartTwinPreprocessor — 프로그램 설명서
   - 오일러 각 회전, 바닥판 메시 또는 강체벽(RigidWall) 자동 생성, 초기 속도 부여
   - GENERAL→SINGLE_SURFACE 접촉 변환 또는 S2S 쌍 분해
   - robust_contact: Tied 인터페이스를 KD-tree + 법선 벡터 필터링으로 자동 감지, SINGLE_SURFACE Segment Set에서 제외(이중 구속 방지), SOFT=2/DEPTH=3 강제
-  - tied_options: Part-to-Part Tied→Segment Set 변환, Contact 카드 전체 필드 일괄 오버라이드(SAST/SBST 디폴트 0.005)
+  - tied_options: Part-to-Part Tied→Segment Set 변환, Contact 카드 전체 필드 일괄 오버라이드(준 칸만 바꾸고 안 준 칸은 덱 값 — 예전 SAST/SBST 기본값 0.005 는 2026-11-03 에 없앰. 칸 이름은 대문자, 안 맞는 키는 경고하고 무시)
 - DROP_WEIGHT_IMPACT_TEST
   - 낙하 중량 충격 시험(Ball Drop) 설정
   - 충격자(Impactor) 메시 자동 생성

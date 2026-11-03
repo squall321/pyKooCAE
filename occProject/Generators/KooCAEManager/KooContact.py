@@ -1519,19 +1519,33 @@ class KooContactManager:
 
         # Alias 처리: SAST → SST, SBST → MST
         opts = dict(tied_options)
+        ignored = []   # 칸에 안 맞아 버리는 키 — 조용히 버리지 않고 로그에 적는다(2026-11-03 리뷰 U)
         if "SAST" in opts and "SST" not in opts:
             opts["SST"] = opts.pop("SAST")
         elif "SAST" in opts:
             opts.pop("SAST")
+            ignored.append("SAST(SST 를 같이 줌)")
         if "SBST" in opts and "MST" not in opts:
             opts["MST"] = opts.pop("SBST")
         elif "SBST" in opts:
             opts.pop("SBST")
+            ignored.append("SBST(MST 를 같이 줌)")
         # DPRFAC alias (DPRFACPA1)
         if "DPRFACPA1" in opts and "DPRFAC" not in opts:
             opts["DPRFAC"] = opts.pop("DPRFACPA1")
         if "DTSTIFPA2" in opts and "DTSTIF" not in opts:
             opts["DTSTIF"] = opts.pop("DTSTIFPA2")
+
+        # 칸 이름은 대문자만 맞는다 — 어느 칸에도 안 맞는 키는 경고하고 뺀다. 바꿀 칸이 없으면 접촉을 세지 않는다
+        known = set(card2_fields) | set(card3_fields) | set(card4_fields) | {f for _, fs in opt_cards.values() for f in fs if f != "_BLANK_"}
+        for k in [k for k in opts if k not in known]:
+            ignored.append(str(k))
+            opts.pop(k)
+        if ignored:
+            print(f"⚠ [ModifyTiedParameters] 맞는 칸이 없어 무시한 키: {', '.join(ignored)} (칸 이름은 대문자 — SAST·SBST·SST·MST·FS·SOFT·THKOPT 등)")
+        if not opts:
+            print("[ModifyTiedParameters] 바꿀 칸이 없어 TIED 접촉을 그대로 둔다")
+            return 0
 
         # 어떤 OptCard 가 수정 대상인지 판별
         opt_card_fields_used = {}  # card_letter → {field: value}
@@ -1578,5 +1592,5 @@ class KooContactManager:
 
             modified += 1
 
-        print(f"[ModifyTiedParameters] {modified} Tied 접촉 파라미터 수정 완료")
+        print(f"[ModifyTiedParameters] TIED 접촉 {modified}개의 {', '.join(f'{k}={v}' for k, v in opts.items())} 를 바꿨다")
         return modified

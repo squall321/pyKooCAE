@@ -2593,10 +2593,11 @@ class KooDynaAdvancedModification:
                 # 두께를 단위 없이 덮어 mm 덱에선 사실상 0, m 덱에선 5 mm 였다 — 이제 덱 값 그대로다(사용자 결정 2026-11-03)
                 _tied_control_keys = {"ConvertToSegment", "Tolerance", "NormalAngleLimit"}
                 tied_params = {k: v for k, v in tied_opts.items() if k not in _tied_control_keys}
+                # 실제로 바꾼 칸과 맞는 칸이 없어 무시한 키는 ModifyTiedParameters 가 적는다(칸 이름은 대문자만 맞는다)
                 if tied_params:
-                    n_tied = self.dynaImporter.contactManager.ModifyTiedParameters(dict(tied_params))
-                    print(f"  RobustContact: TiedOptions 로 TIED 접촉 {n_tied}개의 "
-                          f"{', '.join(f'{k}={v}' for k, v in tied_params.items())} 를 바꿨다(SAST→SST·SBST→MST, 나머지 칸은 덱 값)")
+                    print(f"  RobustContact: TiedOptions 로 받은 키 {', '.join(f'{k}={v}' for k, v in tied_params.items())} "
+                          f"— 바꾼 칸·무시한 키는 [ModifyTiedParameters] 줄(SAST→SST·SBST→MST, 안 준 칸은 덱 값)")
+                    self.dynaImporter.contactManager.ModifyTiedParameters(dict(tied_params))
 
                 # 1. 중복 Tied 먼저 제거
                 n_dup = self.dynaImporter.contactManager.RemoveDuplicateTiedContacts()
