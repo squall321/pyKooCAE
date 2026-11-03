@@ -3049,7 +3049,9 @@ class KooMeshModifier(KooSimulationGenerator):
         
         if part is not None:
             if section is not None:
-                part.section = section
+                # SECID 도 새 단면으로 — 예전엔 part.section 만 바꿔 PART 카드가 옛 SECID 를 가리켰고(모든 단면 형식),
+                # TSHELL·SOLID_PERI 는 AddSectionfromDyna 가 None 이라 아예 'Invalid section ID' 였다(2026-11-03)
+                part.SetSection(section)
                 print("Section is added")
             else:
                 print("Invalid section ID")

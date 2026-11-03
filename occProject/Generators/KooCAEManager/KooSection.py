@@ -665,6 +665,7 @@ class KooSectionManager():
             sec.elform = KooDynaInt(firstLine[1],48)
             sec.dr = KooDynaFloat(secondLine[0],1.01)
             sec.ptype = KooDynaInt(secondLine[1],1)
+            return sec
             
         elif dynaSection[0] == "*SECTION_SOLID_PERI_TITLE":
             firstLine = dynaSection[2]
@@ -679,6 +680,7 @@ class KooSectionManager():
             sec.elform = KooDynaInt(firstLine[1],48)
             sec.dr = KooDynaFloat(secondLine[0],1.01)
             sec.ptype = KooDynaInt(secondLine[1],1)
+            return sec
         
         elif dynaSection[0] == "*SECTION_TSHELL":
             firstLine = dynaSection[1]
@@ -691,6 +693,7 @@ class KooSectionManager():
                 curname = "NewSection"
                 sec = self.CreateTShellSection(curname, 1)
             self._set_tshell_cards(sec, firstLine, dynaSection[2:])
+            return sec   # PART_EXCHANGE 가 파트에 붙인다(예전엔 None — 'Invalid section ID')
                     
         elif dynaSection[0] == "*SECTION_TSHELL_TITLE":
             zeroLine = dynaSection[1]
@@ -704,6 +707,7 @@ class KooSectionManager():
                 curname = "NewSection"
                 sec = self.CreateTShellSection(curname, 1)
             self._set_tshell_cards(sec, firstLine, dynaSection[3:])
+            return sec
             
         return None
 
