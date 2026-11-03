@@ -685,26 +685,37 @@ class KooDynaImporter():
             self.nodeSetManager.AddNodeSetfromDyna(nodeSets)
             
     def _reserve_raw_set_ids(self):
-        """KMM 이 해석하지 않는 *SET_SEGMENT_*·*SET_PART_*·*SET_NODE_*(GENERAL·ADD 등) 원문 블록의 번호를 셋 매니저에 예약한다.
-        KMM 이 새로 만드는 셋(RobustContact_SS·ModelParts_SS 등)이 그 번호를 받아 같은 번호 셋이 둘 생기던 것(리뷰 W 🟡8).
-        정수로 시작하는 줄의 첫 칸을 모두 본다 — 넉넉히 잡으면 새 번호가 커질 뿐 뜻은 같다."""
+        """KMM 이 해석하지 않는 *SET_* 원문 블록(GENERAL·ADD 등)의 번호를 셋 매니저에 예약한다 — KMM 이 새로 만드는 셋
+        (RobustContact_SS·ModelParts_SS·HeatGen *SET_SOLID 등)이 그 번호를 받아 같은 번호 셋이 둘 생기던 것(리뷰 W 🟡8·X).
+        블록마다 첫 데이터 줄(카드 1 의 SID, _TITLE 은 제목 다음 줄)만 본다 — 데이터 줄의 절점·파트 번호까지 잡으면 새 번호가
+        1e8 을 넘어 8칸 칸(*ELEMENT_MASS_NODE_SET NSID 등)이 넘쳤다. long('+') 블록은 20칸이다."""
+        import re as _re
         raw = getattr(self.dynaManager, "_raw_keyword_dict", None) or {}
+        fmts_all = getattr(self.dynaManager, "_block_formats", None) or {}
+        elemMan = getattr(getattr(self, "partManager", None), "elementManager", None)
         fams = (("SET_SEGMENT", getattr(self, "segmentSetManager", None), "maxid"),
                 ("SET_PART", getattr(self, "partManager", None), "maxSID"),
-                ("SET_NODE", getattr(self, "nodeSetManager", None), "maxID"))
+                ("SET_NODE", getattr(self, "nodeSetManager", None), "maxID"),
+                ("SET_SOLID", elemMan, "maxSID"), ("SET_SHELL", elemMan, "maxSID"), ("SET_BEAM", elemMan, "maxSID"),
+                ("SET_TSHELL", elemMan, "maxSID"), ("SET_DISCRETE", elemMan, "maxSID"))
         for kw, blocks in raw.items():
             if self.keywordInterpreted.get(kw, False):
                 continue
             for prefix, mgr, attr in fams:
                 if not kw.startswith(prefix) or mgr is None or not hasattr(mgr, attr):
                     continue
+                fmts = fmts_all.get(kw, [])
                 top = getattr(mgr, attr) or 0
-                for block in blocks:
-                    for ln in block:
-                        ln = str(ln)
-                        f = (ln.split(",")[0] if "," in ln else ln[:10]).strip()
-                        if f.lstrip("+-").isdigit():
-                            top = max(top, int(f))
+                for bi, block in enumerate(blocks):
+                    lines = [str(l) for l in block if str(l).strip()]
+                    if kw.endswith("_TITLE"):
+                        lines = lines[1:]
+                    if not lines:
+                        continue
+                    w = 20 if (fmts[bi] if bi < len(fmts) else None) == "long" else 10
+                    f = (lines[0].split(",")[0] if "," in lines[0] else lines[0][:w]).strip()
+                    if _re.fullmatch(r"[+-]?[0-9]+", f):
+                        top = max(top, int(f))
                 if top > (getattr(mgr, attr) or 0):
                     setattr(mgr, attr, top)
 

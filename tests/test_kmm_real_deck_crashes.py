@@ -1,6 +1,6 @@
 # 실제 덱에서 KMM 이 죽던 기존 결함(말뭉치 V, 2026-11-03)을 작은 덱으로 재현해 고쳐졌는지 보는 회귀 시험
 """
-실행: venv312/bin/python tests/test_kmm_real_deck_crashes.py   (KMM 12회, 약 1분 30초)
+실행: venv312/bin/python tests/test_kmm_real_deck_crashes.py   (KMM 15회, 약 2분)
 수정 전 코드로 볼 때: KMM_GEN=<옛 occProject/Generators> … / 컴파일본: KMM_BIN=<KooMeshModifier 실행 파일> …
 
   B1  *DATABASE_EXTENT_INTFOR 카드 1장(R16 카드 2 는 선택, 기본값 0) — 예전엔 IndexError
@@ -198,6 +198,47 @@ def main():
                 sids.append(int(float(data[0][:10])))
     check("🟡8 세그먼트 셋 번호: KMM 이 쓰는 셋 번호가 겹치지 않고 원문 GENERAL 2 와도 다름",
           rc == 0 and len(sids) == len(set(sids)) and 2 not in sids, f"rc={rc} sids={sids} " + log[-300:])
+
+    # 리뷰 X 🟡2 — 원문 셋 번호 예약이 '--2024'·'①②' 같은 *_TITLE 제목에서 int() 로 죽지 않는다
+    weird = "".join(f"*SET_PART_ADD_TITLE\n{t}\n" + f10(sid) + f10(1) for t, sid in (("--2024", 7), ("①②", 8)))
+    d, rc, log = run("x_title", base(weird), TRANS)
+    check("X🟡2 원문 *SET_PART_ADD_TITLE 제목 '--2024'·'①②': 죽지 않음", rc == 0 and no_traceback(log), f"rc={rc} " + log[-400:])
+    # 리뷰 X 🟡3 — 요소 셋 계열도 예약: 원문 *SET_SOLID_GENERAL 1 이 있으면 THERMAL 발열원 *SET_SOLID 가 1 을 받지 않는다
+    therm = ("*Inputfile\nmodel.k\n*RunDirectoryMode,True,out\n*Mode\nTHERMAL_LOAD,1\n**ThermalLoad,1\nThermalType,ICPower\n"
+             "Phase,thermal\nAnalysisType,transient\nUnitSystem,SI\nInitialTemperatureC,25\nTimestepIts,0.01\nMaterials\n"
+             "1,7.85e-09,4.6e+08,50\n2,7.85e-09,4.6e+08,50\nEndMaterials\nHeatSources\n1,1.5,8.0\nEndHeatSources\n**EndThermalLoad\n*End\n")
+    d, rc, log = run("x_solidset", base("*SET_SOLID_GENERAL\n" + f10(1) + f10("PART", 2)), therm)
+    ts = sorted(d.rglob("ThermalSet.k"))
+    t = ts[0].read_text(errors="replace") if ts else ""
+    lines = t.splitlines()
+    ssids = []
+    for i, ln in enumerate(lines):
+        u = ln.strip().upper()
+        if u.startswith("*SET_SOLID") and not u.startswith("*SET_SOLID_GENERAL"):
+            data = [x for x in lines[i + 1:i + 4] if not x.startswith("$")]
+            if u.endswith("_TITLE"):
+                data = data[1:]
+            if data:
+                ssids.append(int(float(data[0][:10])))
+    check("X🟡3 요소 셋 번호: KMM 의 *SET_SOLID 가 원문 *SET_SOLID_GENERAL 1 과 겹치지 않음",
+          rc == 0 and ssids and 1 not in ssids and len(ssids) == len(set(ssids)), f"rc={rc} ssids={ssids} " + log[-300:])
+    # 리뷰 X ⚪4 — long('+') 원문 셋의 20칸 SID 도 예약(원문 번호를 KMM 의 다음 번호 2 로 둬야 충돌이 드러난다)
+    lseg = ("*SET_SEGMENT\n" + f10(1) + f10(1, 2, 3, 4) + "*SET_SEGMENT_GENERAL +\n" + f"{2:20d}\n" + f"{'PART':>20}{1:20d}\n")
+    d, rc, log = run("x_long", base(lseg), DROP)
+    ds = sorted(d.rglob("DropSet.k"))
+    t = ds[0].read_text(errors="replace") if ds else ""
+    lines = t.splitlines()
+    sids = []
+    for i, ln in enumerate(lines):
+        u = ln.strip().upper()
+        if u.startswith("*SET_SEGMENT") and not u.startswith("*SET_SEGMENT_GENERAL"):
+            data = [x for x in lines[i + 1:i + 4] if not x.startswith("$")]
+            if u.endswith("_TITLE"):
+                data = data[1:]
+            if data:
+                sids.append(int(float(data[0][:10])))
+    check("X⚪4 long 원문 *SET_SEGMENT_GENERAL + 2(=KMM 의 다음 번호): KMM 세그먼트 셋이 2 를 받지 않음", rc == 0 and 2 not in sids and len(sids) == len(set(sids)),
+          f"rc={rc} sids={sids}")
 
     # C2 — KooDynaFloat 단위 시험
     sys.path.insert(0, str(GEN))
