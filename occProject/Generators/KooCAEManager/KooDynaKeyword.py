@@ -12556,7 +12556,7 @@ class DynaManager():
                     elif _kwtail.endswith('+'):
                         latest_fmt = 'long'
                     elif _kwtail.endswith('-'):
-                        latest_fmt = None
+                        latest_fmt = 'std'   # 표준 강제 — 파서들은 'i10' 만 보므로 None 과 같고, 원문 기록기가 '-' 를 되살린다(리뷰 W 🟡6)
                     else:
                         latest_fmt = 'i10' if getattr(self, '_global_i10', False) else None
                 elif line.startswith('$'):

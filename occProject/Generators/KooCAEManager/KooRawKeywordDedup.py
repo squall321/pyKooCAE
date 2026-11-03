@@ -78,9 +78,10 @@ def filter_duplicate_raw_blocks(raw_dict, interpreted, written_text, skip_keywor
 
 
 def raw_keyword_line(dyna_mgr, kw_name, block):
-    """원문 블록의 키워드 줄 — 읽을 때 기록한 블록 형식(키워드 끝 '%'=I10·'+'=long)을 되살린다(2026-11-03).
+    """원문 블록의 키워드 줄 — 읽을 때 기록한 블록 형식(키워드 끝 '%'=I10·'+'=long·'-'=표준 강제)을 되살린다(2026-11-03).
     예전엔 f"*{kw_name}" 만 써서 10칸·20칸 원문 줄이 8칸·10칸 키워드 아래에 놓였고, LS-DYNA 가 칸을 잘못 읽었다(조용한 손상).
-    덱 전체가 *KEYWORD I10=Y 면 그 줄이 남으므로 '%' 를 덧붙이지 않는다(출력 바이트 유지)."""
+    덱 전체가 *KEYWORD I10=Y 여도 '%' 를 붙인다 — 일반 모드·MERGE_K·DECOMPOSE_K 기록기는 '*KEYWORD' 만 써서 그 선언이
+    출력에 남지 않는다(리뷰 W 🟡5). 둘 다 있어도 뜻은 같다."""
     fmt = None
     blocks = (getattr(dyna_mgr, "_raw_keyword_dict", None) or {}).get(kw_name, [])
     fmts = (getattr(dyna_mgr, "_block_formats", None) or {}).get(kw_name, [])
@@ -90,6 +91,8 @@ def raw_keyword_line(dyna_mgr, kw_name, block):
             break
     if fmt == "long":
         return f"*{kw_name} +\n"
-    if fmt == "i10" and not getattr(dyna_mgr, "_global_i10", False):
+    if fmt == "i10":
         return f"*{kw_name} %\n"
+    if fmt == "std":
+        return f"*{kw_name} -\n"
     return f"*{kw_name}\n"
