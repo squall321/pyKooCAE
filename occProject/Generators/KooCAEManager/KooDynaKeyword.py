@@ -5820,7 +5820,7 @@ class ElementBeam(DynaKeyword):
                     s = str(elementBeamKeywords[i][j]).rstrip('\r\n').rstrip()
                     if not s.strip() or s.lstrip().startswith('$'):
                         continue
-                    nf = max(1, len(s) // 10)
+                    nf = max(1, min(10, -(-len(s) // 10)))   # 올림 — 끝 칸이 10자를 못 채워도 읽는다(v131 리뷰 R6)
                     parameterList.append([s[k * 10:(k + 1) * 10].strip() for k in range(nf)])
                 if parameterList:
                     # 레거시(parse_whole)는 첫 줄 청크수로 전 행을 '' 패딩 — 동일 의미 재현 (래그드 행 방지)
@@ -5853,9 +5853,10 @@ class ElementBeam(DynaKeyword):
                 stream.write("\n")
 
 def _n8(line):
-    """8칸 요소 줄의 칸 수 — 줄 끝 공백·개행을 빼고 올림으로 센다. 내림으로 세면 마지막 칸이 8자를 채우지 못한 줄(R16: 칸 안
-    어디에 써도 그 칸 값이다)의 그 칸을 버렸다(사각형 N4 가 사라져 삼각형 — v131 리뷰 R5)."""
-    return -(-len(str(line).replace("\n", "").replace("\r", "").rstrip()) // 8)
+    """8칸 요소 줄의 칸 수 — 줄 끝 공백·개행을 빼고 올림으로 센다(최대 10칸 = 80열). 내림으로 세면 마지막 칸이 8자를 채우지 못한
+    줄(R16: 칸 안 어디에 써도 그 칸 값이다)의 그 칸을 버렸다(사각형 N4 가 사라져 삼각형 — v131 리뷰 R5). 80열 뒤 글자는 R16 도 읽지
+    않는다 — 칸으로 세면 솔리드 블록의 칸 수가 11 이 되어 요소가 모두 빠졌다(리뷰 R6)."""
+    return min(10, -(-len(str(line).replace("\n", "").replace("\r", "").rstrip()) // 8))   # 80열 뒤는 읽지 않는다(R16 — 리뷰 R6)
 
 
 def _comma_to_fixed(line, w):
@@ -5961,7 +5962,7 @@ class ElementShell(DynaKeyword):
                     s = str(elementShellKeywords[i][j]).rstrip('\r\n').rstrip()
                     if not s.strip() or s.lstrip().startswith('$'):
                         continue
-                    n = len(s) // 10
+                    n = min(10, -(-len(s) // 10))   # 올림 — 끝 칸이 10자를 못 채워도 읽는다(v131 리뷰 R6)
                     row = [s[k * 10:(k + 1) * 10].strip() for k in range(n)]
                     if len(row) >= 4:
                         # 8자리 초과 ID 허용 — 출력 writer 가 I10 으로 자동 승격 (dump 는 진단용 예외)
@@ -6080,7 +6081,7 @@ class ElementShellThickness(DynaKeyword):
             return []
 
         def slice_w(s, w):
-            nf = max(1, len(s) // w)
+            nf = max(1, min(10, -(-len(s) // w)))   # 올림 — 끝 칸이 칸 폭을 못 채워도 읽는다(v131 리뷰 R6)
             return [s[k * w:(k + 1) * w].strip() for k in range(nf)]
 
         int_cols = len(slice_w(_comma_to_fixed(first, 10), 10))
@@ -6482,7 +6483,7 @@ class ElementSolid(DynaKeyword):
                     s = str(line).rstrip('\r\n').rstrip()
                     if not s.strip() or s.lstrip().startswith('$'):
                         continue
-                    n = len(s) // 10
+                    n = min(10, -(-len(s) // 10))   # 올림 — 끝 칸이 10자를 못 채워도 읽는다(v131 리뷰 R6)
                     row = [s[k * 10:(k + 1) * 10].strip() for k in range(n)]
                     if len(row) < 6:
                         print("  Warning: ELEMENT_SOLID I10 라인 필드 부족 — 무시:", s[:40])
