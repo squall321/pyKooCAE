@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os 
 import re
+import contextlib
 import datetime, hashlib, uuid
 
 from io import StringIO
@@ -48,6 +49,18 @@ def _value_at_zero(xs, ys):
         i = max(k for k in range(len(pts) - 1) if pts[k][0] <= 0)
         (x0, y0), (x1, y1) = pts[i], pts[i + 1]
     return y0 if x1 == x0 else y0 + (0.0 - x0) * (y1 - y0) / (x1 - x0)
+
+@contextlib.contextmanager
+def keep_i10_class_defaults():
+    """두 번째 임포터(IMPORT_MERGE_K 의 가져올 덱·DTI 의 dynain)가 importNode 에서 I10 클래스 기본값(NodeManager·ElementManager
+    .output_i10)을 그 덱 기준으로 바꾸는 것을 읽는 동안만 두고, 끝나면 기준 덱 값으로 되돌린다. 안 그러면 기준 덱이
+    *KEYWORD I10=Y 일 때 출력 첫 줄은 I10=Y 인데 기본값을 따르는 매니저(가져온 파트 등)가 '%' 없는 8칸으로 나갔다(v131 리뷰 R2)."""
+    saved = (getattr(NodeManager, "output_i10", False), getattr(ElementManager, "output_i10", False))
+    try:
+        yield
+    finally:
+        NodeManager.output_i10, ElementManager.output_i10 = saved
+
 
 class KooDynaImporter():
     def __init__(self, nodeManager = None, partManager = None, resultManager = None, matManager = None, sectionManager = None, nodeSetManager = None, loadManager = None, boundaryNodeManager = None, defineManager = None, contactManager = None, segmentSetManager = None, dynaResultManager = None, controlManager = None, dampingManager = None, databaseManager = None, initialManager = None, additionalManager = None, constrainedManager = None):

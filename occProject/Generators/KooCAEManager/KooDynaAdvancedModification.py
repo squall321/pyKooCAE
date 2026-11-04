@@ -6910,8 +6910,10 @@ class KooDynaAdvancedModification:
         # 'PID 에 *PART 없음' 으로 버린 것은 출력 모델의 소실이 아니다 — 장부를 되돌린다(리뷰 S1: 안 그러면 DTI 가 늘 종료 코드 3)
         from KooCAEManager.KooElement import IMPORT_LOSS
         _loss_before = dict(IMPORT_LOSS)
-        dynainImporter.importDynaFile(dynainpath)
-        dynainImporter.importKeywordstoManager()
+        from KooCAEManager.KooMeshImporter import keep_i10_class_defaults
+        with keep_i10_class_defaults():   # dynain 이 기준 덱의 I10 클래스 기본값을 바꾸지 않게(v131 리뷰 R2)
+            dynainImporter.importDynaFile(dynainpath)
+            dynainImporter.importKeywordstoManager()
         # 단, dynain 이 *PART 를 실었으면(앞 단계 _dti.k·손으로 만든 전체 덱) 그 파트가 출력 파트를 대신하므로 소실은 실제다 —
         # 되돌리지 않는다(리뷰 T1)
         if IMPORT_LOSS != _loss_before and not dynainImporter.partManager.parts:

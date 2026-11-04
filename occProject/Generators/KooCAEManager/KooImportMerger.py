@@ -44,8 +44,10 @@ def import_merge_k(simGenerator, option):
     folder = os.path.dirname(import_file)
     base = os.path.basename(import_file)
     new_importer.dynaManager.SetInputPath(import_file)
-    new_importer.importDynaFile(import_file, writeLog=False)
-    new_importer.importKeywordstoManager()
+    from KooCAEManager.KooMeshImporter import keep_i10_class_defaults
+    with keep_i10_class_defaults():   # 가져올 덱이 기준 덱의 I10 클래스 기본값을 바꾸지 않게(v131 리뷰 R2)
+        new_importer.importDynaFile(import_file, writeLog=False)
+        new_importer.importKeywordstoManager()
     new_importer.SyncronizeMaxID()
     print(f"[IMPORT_MERGE_K] 새 모델 로드 완료: parts={len(new_importer.partManager.parts)}, "
           f"nodes={len(new_importer.nodeManager.nodes)}")
