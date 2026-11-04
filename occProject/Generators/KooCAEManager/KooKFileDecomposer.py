@@ -199,7 +199,7 @@ class KFileDecomposer:
             if elem_mgr is None:
                 continue  # IGA 파트는 elementManager 없을 수 있음 → skip (노드 추적 불가)
             for elem in elem_mgr.elements.values():
-                for node in getattr(elem, 'nodes', []):
+                for node in (getattr(elem, 'nodes', None) or []):   # 절점 셋 질량(*ELEMENT_MASS_NODE_SET)은 nodes 가 없다(v131 M1)
                     if node is None:
                         continue
                     nid = getattr(node, 'id', None)
@@ -497,7 +497,8 @@ class KFileDecomposer:
     def _write_globals_file(self):
         """globals.k — SET_*, DEFINE_*, PARAMETER, RIGIDWALL 등 모델 의존 전역."""
         out_path = os.path.join(self.output_dir, "globals.k")
-        with open(out_path, 'w') as f:
+        with open(out_path, 'w') as fh:
+            f = StringIO()   # 데이터 없는 키워드는 이미 쓴 것을 보고 쓴다(_write_empty_keywords)
             f.write("*KEYWORD\n$ KOO_DECOMPOSED_NO_AUTO_PASSTHROUGH\n")
             # SET_PART (partSets)
             partMan = self.dynaImporter.partManager
@@ -541,10 +542,50 @@ class KFileDecomposer:
                 except Exception as e:
                     print(f"  Warning: {mgr_name} 출력 실패 (skip): {e}")
                 f.write(stream.getvalue())
+            # 파트 없는 요소(PID 없는 *ELEMENT_MASS 등)·요소 셋(*SET_SOLID 등)은 뿌리 요소 매니저에 있다 — 공용 기록기처럼 쓴다.
+            # 예전엔 DECOMPOSE_K 가 쓰지 않아 사라졌다(v131 M1)
+            rootEM = getattr(partMan, 'elementManager', None)
+            if rootEM is not None and (len(rootEM.elements) > 0 or len(getattr(rootEM, 'sets', None) or {}) > 0):
+                stream = StringIO()
+                rootEM.WriteStreamDynaKeyword(stream, 0, 0, 0)
+                f.write(stream.getvalue())
+            # 어느 그룹의 요소도 쓰지 않는 절점 — 원문 요소(*ELEMENT_DISCRETE 등)·파트 없는 질량·셋·경계 조건만 가리킨다.
+            # 예전엔 어느 파일에도 쓰지 않아 그 절점을 가리키는 카드가 정의 안 된 절점을 가리켰다(v131 M1)
+            rest = [(nid, node) for nid, node in self.dynaImporter.nodeManager.nodes.items() if not self.node_to_groups.get(nid)]
+            if rest:
+                f.write("$$ --- Nodes not used by any group element ---\n")
+                f.write("*NODE\n$$   NID               X               Y               Z      TC      RC\n")
+                for nid, node in rest:
+                    tc = getattr(node, 'tc', 0)
+                    rc = getattr(node, 'rc', 0)
+                    f.write(f"{nid:>8}{node.x:>16.8e}{node.y:>16.8e}{node.z:>16.8e}{tc:>8}{rc:>8}\n")
             # 미인터프리트 키워드 raw 보존 (RIGIDWALL_PLANAR 단순형 등)
             self._write_uninterpreted_raw(f)
+            self._write_empty_keywords(f)
             f.write("*END\n")
+            fh.write(f.getvalue())
         print(f"  → {out_path}")
+
+    def _write_empty_keywords(self, f):
+        """데이터 카드 없는 키워드(*CONTROL_MPP_IO_NOD3DUMP 등)는 블록이 없어 원문 보존에서 빠진다 — 공용 기록기처럼 매니저가
+        쓰지 않은 것만 키워드 줄로 남긴다(예전엔 DECOMPOSE_K 에서 사라졌다 — v131 M1). *CASE 표지는 _write_uninterpreted_raw 가 알린다."""
+        from KooCAEManager.KooRawKeywordDedup import index_written_blocks, is_case_marker
+        SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END", "TITLE"}
+        empties = [k for k in dict.fromkeys(getattr(self.dynaImporter.dynaManager, '_empty_keyword_names', None) or [])
+                   if k not in SKIP and not is_case_marker(k)]
+        if not empties:
+            return
+        managed = StringIO()   # controls.k 의 매니저 판(NODUMP 처럼 해석하는 빈 키워드는 매니저가 쓴다)
+        for mgr in (self.dynaImporter.controlManager, self.dynaImporter.databaseManager):
+            if hasattr(mgr, 'WriteStreamDynaKeyword'):
+                mgr.WriteStreamDynaKeyword(managed)
+        written = index_written_blocks(managed.getvalue() + f.getvalue(), empties)
+        kept = [k for k in empties if not written.get(k)]
+        for k in kept:
+            f.write(f"*{k}\n")
+        if kept:
+            print(f"  데이터 카드 없는 키워드 {len(kept)}개를 globals.k 에 키워드 줄만 원문대로 남긴다: "
+                  f"{', '.join('*' + k for k in kept)} (LS-DYNA 는 빈 카드를 기본값으로 읽는다)")
 
     def _write_uninterpreted_raw(self, f):
         """KooDynaImporter가 모르는 키워드를 raw text로 보존 (globals.k에 추가).
