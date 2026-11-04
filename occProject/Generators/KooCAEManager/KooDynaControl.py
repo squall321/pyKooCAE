@@ -16,6 +16,10 @@ class KooControlMppIONodump:
     def GenerateDynaKeyword(self):
         keyword = "*CONTROL_MPP_IO_NODUMP\n"
         return keyword
+
+    def WriteStreamDynaKeyword(self, stream):
+        # 예전엔 이 메서드가 없고 읽기 비교도 '*' 없는 이름이라, 뒤에 빈 줄이 있는 NODUMP·DECOMPOSE_K 에서 사라졌다(v131 P3)
+        stream.write(self.GenerateDynaKeyword())
     
 class KooControlOutput:
     def __init__(self):
@@ -1410,7 +1414,7 @@ class KooControlManager:
                 self.SetControlContact(SLSFAC, RWPNAL, ISLCHK, SHLTHK, PENOPT, THKCHG, ORIEN, ENMASS, USRSTR, USRFRC, NSBCS, INTERM, XPENE, SSTHK, ECDT, TIEDPRJ, SFRIC, DFRIC, EDC, VFC, TH, TH_SF, PEN_SF, PTSCL, IGNORE, FRCENG, SKIPRWG, OUTSEG, SPOTSTP, SPOTDEL, SPOTHIN, ISYM, NSEROD, RWGAPS, RWGDTH, RWKSF, ICOV, SWRADF, ITHOFF, SHLEDG, PSTIFF, ITHCNT, TDCNOF, FTALL, "", SHLTRW, IGACTC)
             else:
                 self.SetControlContact(SLSFAC, RWPNAL, ISLCHK, SHLTHK, PENOPT, THKCHG, ORIEN, ENMASS, USRSTR, USRFRC, NSBCS, INTERM, XPENE, SSTHK, ECDT, TIEDPRJ)
-        elif controlKeyword[0] == "CONTROL_MPP_IO_NODUMP":
+        elif controlKeyword[0] == "*CONTROL_MPP_IO_NODUMP":   # 리더는 '*' 붙은 이름을 넘긴다(다른 분기와 같다)
             self.SetControlMPPIoNodump()
             
     
