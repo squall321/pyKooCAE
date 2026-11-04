@@ -1099,11 +1099,11 @@ class KooDatabaseManager:
                 self.SetDatabaseBinaryIntfor(DTCYCL, LCDT, BEAM, NPLTC, PSETID, CID, IOOPT, name)
                 
         elif databaseKeyword[0] == "*DATABASE_HISTORY_NODE" or databaseKeyword[0] == "*DATABASE_HISTORY_BEAM" or databaseKeyword[0] == "*DATABASE_HISTORY_BEAM_SET" or databaseKeyword[0] == "*DATABASE_HISTORY_SHELL" or databaseKeyword[0] == "*DATABASE_HISTORY_SHELL_SET" or databaseKeyword[0] == "*DATABASE_HISTORY_SOLID" or databaseKeyword[0] == "*DATABASE_HISTORY_SOLID_SET":            
-            keyword = databaseKeyword[1]
-            nodes = [] 
-            for i in range(0,len(keyword)):                
-                if len(keyword[i].strip()) > 0:                 
-                    nodes.append(int(keyword[i]))
+            nodes = []
+            for keyword in databaseKeyword[1:]:   # 모든 데이터 줄 — 예전엔 첫 줄만 읽어 9번째부터의 ID 가 조용히 빠졌다(v131 리뷰 R4)
+                for i in range(0,len(keyword)):
+                    if len(keyword[i].strip()) > 0:
+                        nodes.append(int(keyword[i]))
             if databaseKeyword[0] == "*DATABASE_HISTORY_NODE":
                 self.SetDatabaseHistoryNode(nodes)
             elif databaseKeyword[0] == "*DATABASE_HISTORY_BEAM":

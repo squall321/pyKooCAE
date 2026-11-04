@@ -37,12 +37,11 @@ class DynaKeyword():
             return [a.strip().rjust(chunkList[0]), b.strip()]
         if chunk_size > 1 and ',' in curString and max(chunkList) <= 20:
             vals = curString.replace('\n', '').replace('\r', '').split(',')
-            # 칸 수보다 값이 많으면 버리지 않는다 — 칸 수를 줄 길이로 정하는 리더(DATABASE_HISTORY 등)에서 콤마 줄 뒤쪽 값이
-            # 조용히 잘렸다(v131 리뷰 R1). 끝의 빈 값만 버린다
-            while len(vals) > chunk_size and not vals[-1].strip():
-                vals.pop()
-            widths = list(chunkList) + [chunkList[-1]] * max(0, len(vals) - chunk_size)
-            vals = (vals + [''] * chunk_size)[:max(chunk_size, len(vals))]
+            # 칸 수보다 많은 값은 버린다 — 카드는 칸 수가 정해져 있다. 남기면 다음 카드 줄로 밀려 써져 LS-DYNA 가 다음 카드로
+            # 읽었다(v131 리뷰 R4: PLP 카드 3·4 의 9번째 값이 ES1). 칸 수를 줄 길이로 정하는 리더(DATABASE_HISTORY·
+            # MAT_GENERAL_VISCOELASTIC 카드 1·요소 카드)는 콤마 줄을 따로 센다(리뷰 R1)
+            widths = list(chunkList)
+            vals = (vals + [''] * chunk_size)[:chunk_size]
             # 빈 값은 고정폭 줄처럼 공백 칸(w 자)이다 — '' 로 두면 칸을 이어 원문 카드를 다시 만드는 곳(*MAT_ADD_EROSION·
             # SECTION_BEAM raw_cards)에서 빈 칸이 사라져 뒤 값이 앞 칸으로 당겨졌다(v131 말뭉치 W7: ',,,0.3' 의 MXEPS 가 MNPRES)
             return [v.strip().rjust(w) if v.strip() else ' ' * w for v, w in zip(vals, widths)]
@@ -5196,11 +5195,11 @@ class DatabaseHistoryNode(DynaKeyword):
             spaceVector = []
             parameterList = [] 
             for j in range(len(databaseHistoryNodeKeywords[i])):
-                if j == 0:
-                    curStrVector = str(databaseHistoryNodeKeywords[i][j])
-                    length = len(curStrVector)/10
-                    spaceVector = [10] * int(length)
-                parameters = self.parse_whole(databaseHistoryNodeKeywords[i][j], spaceVector)
+                # 줄마다 칸 수를 그 줄 길이로(콤마 줄은 먼저 10칸 고정폭으로) — 예전엔 첫 줄 길이로 정해 짧은 콤마 줄의 ID 가
+                # 사라지거나 죽었고, 첫 줄보다 긴 줄의 뒤 ID 가 잘렸다(v131 리뷰 R4)
+                line = _comma_to_fixed(databaseHistoryNodeKeywords[i][j], 10)
+                spaceVector = [10] * min(8, -(-len(str(line).replace('\n', '').rstrip()) // 10))   # 카드는 ID 8칸
+                parameters = self.parse_whole(line, spaceVector)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
     
@@ -5233,11 +5232,11 @@ class DatabaseHistoryBeam(DynaKeyword):
             spaceVector = []
             parameterList = []
             for j in range(len(databaseHistoryBeamKeywords[i])):
-                if j == 0:
-                    curStrVector = str(databaseHistoryBeamKeywords[i][j])
-                    length = len(curStrVector)/10
-                    spaceVector = [10] * int(length)
-                parameters = self.parse_whole(databaseHistoryBeamKeywords[i][j], spaceVector)
+                # 줄마다 칸 수를 그 줄 길이로(콤마 줄은 먼저 10칸 고정폭으로) — 예전엔 첫 줄 길이로 정해 짧은 콤마 줄의 ID 가
+                # 사라지거나 죽었고, 첫 줄보다 긴 줄의 뒤 ID 가 잘렸다(v131 리뷰 R4)
+                line = _comma_to_fixed(databaseHistoryBeamKeywords[i][j], 10)
+                spaceVector = [10] * min(8, -(-len(str(line).replace('\n', '').rstrip()) // 10))   # 카드는 ID 8칸
+                parameters = self.parse_whole(line, spaceVector)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
             
@@ -5270,11 +5269,11 @@ class DatabaseHistoryBeamSet(DynaKeyword):
             spaceVector = []
             parameterList = []
             for j in range(len(databaseHistoryBeamSetKeywords[i])):
-                if j == 0:
-                    curStrVector = str(databaseHistoryBeamSetKeywords[i][j])
-                    length = len(curStrVector)/10
-                    spaceVector = [10] * int(length)
-                parameters = self.parse_whole(databaseHistoryBeamSetKeywords[i][j], spaceVector)
+                # 줄마다 칸 수를 그 줄 길이로(콤마 줄은 먼저 10칸 고정폭으로) — 예전엔 첫 줄 길이로 정해 짧은 콤마 줄의 ID 가
+                # 사라지거나 죽었고, 첫 줄보다 긴 줄의 뒤 ID 가 잘렸다(v131 리뷰 R4)
+                line = _comma_to_fixed(databaseHistoryBeamSetKeywords[i][j], 10)
+                spaceVector = [10] * min(8, -(-len(str(line).replace('\n', '').rstrip()) // 10))   # 카드는 ID 8칸
+                parameters = self.parse_whole(line, spaceVector)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
     
@@ -5307,11 +5306,11 @@ class DatabaseHistoryShell(DynaKeyword):
             spaceVector = []
             parameterList = []
             for j in range(len(databaseHistoryShellKeywords[i])):
-                if j == 0:
-                    curStrVector = str(databaseHistoryShellKeywords[i][j])
-                    length = len(curStrVector)/10
-                    spaceVector = [10] * int(length)
-                parameters = self.parse_whole(databaseHistoryShellKeywords[i][j], spaceVector)
+                # 줄마다 칸 수를 그 줄 길이로(콤마 줄은 먼저 10칸 고정폭으로) — 예전엔 첫 줄 길이로 정해 짧은 콤마 줄의 ID 가
+                # 사라지거나 죽었고, 첫 줄보다 긴 줄의 뒤 ID 가 잘렸다(v131 리뷰 R4)
+                line = _comma_to_fixed(databaseHistoryShellKeywords[i][j], 10)
+                spaceVector = [10] * min(8, -(-len(str(line).replace('\n', '').rstrip()) // 10))   # 카드는 ID 8칸
+                parameters = self.parse_whole(line, spaceVector)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
             
@@ -5344,11 +5343,11 @@ class DatabaseHistoryShellSet(DynaKeyword):
             spaceVector = []
             parameterList = []
             for j in range(len(databaseHistoryShellKeywords[i])):
-                if j == 0:
-                    curStrVector = str(databaseHistoryShellKeywords[i][j])
-                    length = len(curStrVector)/10
-                    spaceVector = [10] * int(length)
-                parameters = self.parse_whole(databaseHistoryShellKeywords[i][j], spaceVector)
+                # 줄마다 칸 수를 그 줄 길이로(콤마 줄은 먼저 10칸 고정폭으로) — 예전엔 첫 줄 길이로 정해 짧은 콤마 줄의 ID 가
+                # 사라지거나 죽었고, 첫 줄보다 긴 줄의 뒤 ID 가 잘렸다(v131 리뷰 R4)
+                line = _comma_to_fixed(databaseHistoryShellKeywords[i][j], 10)
+                spaceVector = [10] * min(8, -(-len(str(line).replace('\n', '').rstrip()) // 10))   # 카드는 ID 8칸
+                parameters = self.parse_whole(line, spaceVector)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
     
@@ -5381,11 +5380,11 @@ class DatabaseHistorySolid(DynaKeyword):
             spaceVector = []
             parameterList = []
             for j in range(len(databaseHistorySolidKeywords[i])):
-                if j == 0:
-                    curStrVector = str(databaseHistorySolidKeywords[i][j])
-                    length = len(curStrVector)/10
-                    spaceVector = [10] * int(length)
-                parameters = self.parse_whole(databaseHistorySolidKeywords[i][j], spaceVector)
+                # 줄마다 칸 수를 그 줄 길이로(콤마 줄은 먼저 10칸 고정폭으로) — 예전엔 첫 줄 길이로 정해 짧은 콤마 줄의 ID 가
+                # 사라지거나 죽었고, 첫 줄보다 긴 줄의 뒤 ID 가 잘렸다(v131 리뷰 R4)
+                line = _comma_to_fixed(databaseHistorySolidKeywords[i][j], 10)
+                spaceVector = [10] * min(8, -(-len(str(line).replace('\n', '').rstrip()) // 10))   # 카드는 ID 8칸
+                parameters = self.parse_whole(line, spaceVector)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
     
@@ -5418,11 +5417,11 @@ class DatabaseHistorySolidSet(DynaKeyword):
             spaceVector = []
             parameterList = []
             for j in range(len(databaseHistorySolidKeywords[i])):
-                if j == 0:
-                    curStrVector = str(databaseHistorySolidKeywords[i][j])
-                    length = len(curStrVector)/10
-                    spaceVector = [10] * int(length)
-                parameters = self.parse_whole(databaseHistorySolidKeywords[i][j], spaceVector)
+                # 줄마다 칸 수를 그 줄 길이로(콤마 줄은 먼저 10칸 고정폭으로) — 예전엔 첫 줄 길이로 정해 짧은 콤마 줄의 ID 가
+                # 사라지거나 죽었고, 첫 줄보다 긴 줄의 뒤 ID 가 잘렸다(v131 리뷰 R4)
+                line = _comma_to_fixed(databaseHistorySolidKeywords[i][j], 10)
+                spaceVector = [10] * min(8, -(-len(str(line).replace('\n', '').rstrip()) // 10))   # 카드는 ID 8칸
+                parameters = self.parse_whole(line, spaceVector)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
     
@@ -5456,11 +5455,11 @@ class DatabaseHistoryNodeSet(DynaKeyword):
             spaceVector = []
             parameterList = [] 
             for j in range(len(databaseHistoryNodeSetKeywords[i])):
-                if j == 0:
-                    curStrVector = str(databaseHistoryNodeSetKeywords[i][j])
-                    length = len(curStrVector)/10
-                    spaceVector = [10] * int(length)
-                parameters = self.parse_whole(databaseHistoryNodeSetKeywords[i][j], spaceVector)
+                # 줄마다 칸 수를 그 줄 길이로(콤마 줄은 먼저 10칸 고정폭으로) — 예전엔 첫 줄 길이로 정해 짧은 콤마 줄의 ID 가
+                # 사라지거나 죽었고, 첫 줄보다 긴 줄의 뒤 ID 가 잘렸다(v131 리뷰 R4)
+                line = _comma_to_fixed(databaseHistoryNodeSetKeywords[i][j], 10)
+                spaceVector = [10] * min(8, -(-len(str(line).replace('\n', '').rstrip()) // 10))   # 카드는 ID 8칸
+                parameters = self.parse_whole(line, spaceVector)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
             
@@ -8325,6 +8324,8 @@ class MatGeneralViscoelastic(DynaKeyword):
            반대로 항상 8필드로 읽으면 3필드짜리 기존 덱의 출력이 빈칸으로 늘어난다.
            → 원문 길이에서 실제 필드 수를 세어 그대로 보존한다(왕복 바이트 동일).
         """
+        if ',' in str(line):   # 콤마 줄은 값 수로 센다 — 줄 길이로 세면 짧은 값이 많은 줄의 뒤 칸이 잘린다(v131 리뷰 R4)
+            return [10] * max(3, min(8, len(str(line).replace('\n', '').rstrip().rstrip(',').split(','))))
         n = len(str(line).rstrip())
         return [10] * max(3, min(8, -(-n // 10)))
 
@@ -10076,6 +10077,7 @@ class DynaNode(DynaKeyword):
         bad = []
         for param in self.parameters:
             for entry in param:
+                entry = entry[:6]   # *NODE 카드는 NID X Y Z TC RC 6칸 — 콤마 줄 뒤 남는 값 때문에 줄째 버렸다(v131 리뷰 R4)
                 try:
                     # Convert all elements in the entry to float at once
                     data[jj, :len(entry)] = [float(x) if x.strip() else 0 for x in entry]
