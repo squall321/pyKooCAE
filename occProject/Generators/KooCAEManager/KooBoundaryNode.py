@@ -20,6 +20,16 @@ from KooCAEManager.KooElement import ElementManager
 from KooCAEManager.KooOperator import *
 from KooCAEManager.KooDefine import _real10   # SF 1.0E-4 를 >10.3f 로 쓰면 0.000 → LS-DYNA 기본값 1.0(운동 10⁴ 배)
 
+
+def _e10t(v):
+    """DEATH·BIRTH 칸 — 예전 '>10.3E' 글자가 값과 같으면 그대로(기본값 1.000E+28 바이트 유지), 아니면 덱 값에 가장 가까운
+    10칸 표기다. '>10.3E' 는 유효숫자 4자리라 0.0123456 이 1.235E-02 로 깎였다(v131 리뷰 R1)."""
+    t = format(v, ">10.3E")
+    try:
+        return t if float(t) == float(v) else _real10(float(v))
+    except (TypeError, ValueError):
+        return t
+
 from OCC.Core.GeomAPI import (
     GeomAPI_PointsToBSplineSurface
 )
@@ -167,8 +177,8 @@ class KooBoundaryPrescribedMotionRigid(KooBoundaryNode):
         lcidstr = format(self.lcid, ">10")
         sfstr = _real10(self.sf)
         vidstr = format(self.vid, ">10")
-        deathstr = format(self.death, ">10.3E")
-        birthstr = format(self.birth, ">10.3E")
+        deathstr = _e10t(self.death)
+        birthstr = _e10t(self.birth)
         keywords += nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n"
         return keywords
     
@@ -185,8 +195,8 @@ class KooBoundaryPrescribedMotionRigid(KooBoundaryNode):
         lcidstr = format(self.lcid, ">10")
         sfstr = _real10(self.sf)
         vidstr = format(self.vid, ">10")
-        deathstr = format(self.death, ">10.3E")
-        birthstr = format(self.birth, ">10.3E")
+        deathstr = _e10t(self.death)
+        birthstr = _e10t(self.birth)
         stream.write(nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n")   
          
 class KooBoundaryPrescribedMotionNode(KooBoundaryNode):
@@ -247,8 +257,8 @@ class KooBoundaryPrescribedMotionNode(KooBoundaryNode):
         lcidstr = format(self.lcid, ">10")
         sfstr = _real10(self.sf)
         vidstr = format(self.vid, ">10")
-        deathstr = format(self.death, ">10.3E")
-        birthstr = format(self.birth, ">10.3E")
+        deathstr = _e10t(self.death)
+        birthstr = _e10t(self.birth)
         keywords += nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n"
         return keywords
     
@@ -265,8 +275,8 @@ class KooBoundaryPrescribedMotionNode(KooBoundaryNode):
         lcidstr = format(self.lcid, ">10")
         sfstr = _real10(self.sf)
         vidstr = format(self.vid, ">10")
-        deathstr = format(self.death, ">10.3E")
-        birthstr = format(self.birth, ">10.3E")
+        deathstr = _e10t(self.death)
+        birthstr = _e10t(self.birth)
         stream.write(nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n")
 
 class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
@@ -326,8 +336,8 @@ class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
             lcidstr = format(self.lcids[i], ">10")
             sfstr = _real10(self.sfs[i])
             vidstr = format(self.vids[i], ">10")
-            deathstr = format(self.deaths[i], ">10.3E")
-            birthstr = format(self.births[i], ">10.3E")
+            deathstr = _e10t(self.deaths[i])
+            birthstr = _e10t(self.births[i])
             keywords += nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n"
         return keywords
     
@@ -341,8 +351,8 @@ class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
             lcidstr = format(self.lcids[i], ">10")
             sfstr = _real10(self.sfs[i])
             vidstr = format(self.vids[i], ">10")
-            deathstr = format(self.deaths[i], ">10.3E")
-            birthstr = format(self.births[i], ">10.3E")
+            deathstr = _e10t(self.deaths[i])
+            birthstr = _e10t(self.births[i])
             stream.write(nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n")
 
 class KooBoundaryPZEPOT(KooBoundaryNode):
