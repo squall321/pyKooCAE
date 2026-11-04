@@ -7012,7 +7012,46 @@ class KooDynaAdvancedModification:
 
         if len(removeContactIDList) > 0:
             for cid in removeContactIDList:
-                self.dynaImporter.contactManager.RemoveContactbyID(cid)    
+                self.dynaImporter.contactManager.RemoveContactbyID(cid)
+            self._DropRawD2RofContacts(removeContactIDList)
+
+    def _DropRawD2RofContacts(self, cids):
+        """지운 접촉을 ENTNO 로 가리키는 덱 원문 *DEFORMABLE_TO_RIGID_AUTOMATIC(CODE 2·3·4 — 접촉력으로 전환)을 함께 지운다.
+        누적 낙하 체인에서 앞 단계 DROP 이 만든 D2R 짝이 바닥판 접촉을 지운 뒤에도 남아, 다음 DROP 이 새 짝을 또 만들어 두 쌍이
+        같은 접촉으로 같은 파트를 전환했고, D2R 을 끈 단계에서도 앞 단계 짝이 전환을 켰다(v131 리뷰 R5)."""
+        from KooCAEManager.KooDynaKeyword import _whole_int
+        cids = {_whole_int(str(c)) for c in cids} - {None}
+        dm = self.dynaImporter.dynaManager
+        raw = getattr(dm, "_raw_keyword_dict", None) or {}
+        kw = "DEFORMABLE_TO_RIGID_AUTOMATIC"
+        blocks = raw.get(kw)
+        if not blocks or not cids:
+            return
+        fmts_all = getattr(dm, "_block_formats", None)
+        fmts = fmts_all.get(kw) if fmts_all is not None else None
+        keep, keep_f, dropped = [], [], []
+        for bi, b in enumerate(blocks):
+            rows = [str(l).replace("\n", "") for l in b if str(l).strip() and not str(l).lstrip().startswith("$")]
+            c1 = rows[0] if rows else ""
+            v = (c1.split(",") if "," in c1 else [c1[k:k + 10] for k in range(0, 80, 10)]) + [""] * 8
+            code, entno = _whole_int(v[1].strip()), _whole_int(v[5].strip())
+            if code in (2, 3, 4) and entno in cids:
+                dropped.append(_whole_int(v[0].strip()))
+                continue
+            keep.append(b)
+            if fmts is not None and bi < len(fmts):
+                keep_f.append(fmts[bi])
+        if not dropped:
+            return
+        if keep:
+            raw[kw] = keep
+            if fmts is not None:
+                fmts_all[kw] = keep_f
+        else:
+            raw.pop(kw, None)
+            if fmts_all is not None:
+                fmts_all.pop(kw, None)
+        print(f"  DTI: 지운 접촉 CID {sorted(cids)} 를 가리키는 덱 D2R(SWSET {dropped}) 도 지운다 — 다음 DROP 이 새로 만든다")
 
 
     def _CarryRawInitialStress(self, dynainImporter):
