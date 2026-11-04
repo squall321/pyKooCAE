@@ -10892,7 +10892,7 @@ def _section_card_sets(lines, fmt, title, shell, keyword):
         if shell and 101 <= _dyna_int(c1[1], 0) <= 105 and k < n:
             c5 = _card_fields(lines[k], fmt)
             m = 1 + max(_dyna_int(c5[0], 0), 0) + -(-max(_dyna_int(c5[5], 0), 0) // 8)
-            cs.append(("RAW", [ln.replace("\n", "") for ln in lines[k:k + m]]))
+            cs.append(("RAW", _long_raw_to_std(lines[k:k + m], fmt, keyword)))   # long 이면 10칸으로(v131 리뷰 R1)
             k += m
         if _secid_bad(c1[0], keyword, len(cs)):
             continue
@@ -10900,6 +10900,35 @@ def _section_card_sets(lines, fmt, title, shell, keyword):
     if skipped:
         print(f"  Warning: *{keyword} 블록의 빈 줄 {skipped}개를 건너뛰었다 — 카드 1(SECID) 자리라 카드가 될 수 없다(덱 확인)")
     return sets
+
+
+def _long_raw_to_std(lines, fmt, keyword):
+    """long('+') 블록에서 원문 그대로 지니는 카드 줄(단면 사용자 요소 카드)을 표준 10칸 줄로 바꾼다 — 출력 키워드 줄엔 '+' 가
+    없어 LS-DYNA 가 20칸 칸을 10칸으로 읽었다(NIP·LMC 가 0, 뒤 카드가 새 단면 — v131 리뷰 R1). 10칸에 드는 글자는 그대로,
+    넘는 실수는 덱 값에 가장 가까운 10칸 표기(_real10)다. 콤마 줄은 폭과 무관해 그대로 둔다."""
+    if fmt != "long":
+        return [str(ln).replace("\n", "") for ln in lines]
+    from KooCAEManager.KooDefine import _real10
+    out = []
+    for ln in lines:
+        s = str(ln).replace("\n", "").replace("\r", "")
+        if not s.strip() or "," in s or s.lstrip().startswith("$"):
+            out.append(s)
+            continue
+        cells = []
+        for k in range(-(-len(s.rstrip()) // 20)):
+            f = s[k * 20:(k + 1) * 20].strip()
+            if len(f) <= 10:
+                cells.append(f"{f:>10}")
+                continue
+            try:
+                cells.append(_real10(float(f)))
+            except ValueError:
+                msg = f"🔴 *{keyword}: long 카드 칸 '{f}' 을 10칸으로 바꿀 수 없다 — 이 카드를 표준 10칸으로 고칠 것"
+                print(msg)
+                raise ValueError(msg)
+        out.append("".join(cells))
+    return out
 
 
 def _solid_user_cards(block, k, fmt, c1, keyword):
@@ -10912,7 +10941,7 @@ def _solid_user_cards(block, k, fmt, c1, keyword):
     m = 1 + max(_dyna_int(c2[0], 0), 0) + -(-max(_dyna_int(c2[4], 0), 0) // 8)
     if k + m > len(block):
         print(f"  Warning: *{keyword} SECID {str(c1[0]).strip()}: 사용자 요소 카드 {m}장 중 {len(block) - k}장만 있다(덱 확인)")
-    return ("RAW", [str(ln).replace("\n", "") for ln in block[k:k + m]]), min(k + m, len(block))
+    return ("RAW", _long_raw_to_std(block[k:k + m], fmt, keyword)), min(k + m, len(block))   # long 이면 10칸으로(리뷰 R1)
 
 
 def _f10(x):
