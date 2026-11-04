@@ -148,7 +148,7 @@ def main():
 
     r, out, log = run(base / "pid_missing", deck(8, bad_pid=7))
     lost("*PART 없는 PID 의 솔리드 1개", r, log, "읽기", "1개", "*PART")
-    check("PID 미존재 안내에 *PART_CONTACT 같은 변종 언급(리뷰 S6)", "*PART_CONTACT" in log, log[-600:])
+    check("PID 미존재 안내에 *PART_INERTIA 같은 변종 언급(리뷰 S6 — *PART_CONTACT 는 v131 부터 파트로 읽는다)", "*PART_INERTIA" in log, log[-600:])
     check("PID 미존재: 나머지 요소 1·2 는 출력", out is not None and eids_of(out, "*ELEMENT_SOLID") == [1, 2], str(out and eids_of(out, "*ELEMENT_SOLID")))
 
     r, out, log = run(base / "shell_pid_missing", shell_deck(bad_pid=9))

@@ -3554,7 +3554,7 @@ if __name__ == "__main__":
                     print(f"🔴 요소 소실: 읽기에서 요소 {sum(_iloss.values())}개를 버렸다 — "
                           + " · ".join(f"{why} {n}개" for why, n in _iloss.items()))
                     if any("PID" in why for why in _iloss):
-                        print("   흔한 원인: 요소의 PID 를 정의한 *PART 가 없다 — 다른 파일에 있으면 함께 넣고, *PART_CONTACT 등 "
+                        print("   흔한 원인: 요소의 PID 를 정의한 *PART 가 없다 — 다른 파일에 있으면 함께 넣고, *PART_INERTIA 등 "
                               "KMM 이 파트로 읽지 않는 *PART 변종이면 *PART 로 바꿀 것")
                     if any("정의 안 된 절점" in why for why in _iloss):   # 예전엔 내보내기 소실로만 잡혀 이 안내가 거기 있었다(2026-11-03)
                         print("   흔한 원인: 덱 *NODE 가 LS-DYNA 고정폭(NID 8칸·좌표 16칸)이 아니라 절점을 잘못 읽었다 — "

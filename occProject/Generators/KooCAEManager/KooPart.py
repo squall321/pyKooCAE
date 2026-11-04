@@ -1048,20 +1048,25 @@ class KooPart():
         return curString
 
     def WritetoDynaPart(self,startPID = 0):
-        curString = "*PART\n"
+        # *PART_CONTACT 처럼 덱의 *PART 변형은 그 키워드와 추가 카드(접촉 카드 8 원문)를 그대로 쓴다(v131 P1)
+        curString = getattr(self, "dynaPartKeyword", "*PART") + "\n"
         curString += f"{self.name}\n"        
         
         curString += "$$     PID     SECID       MID     EOSID      HGID      GRAV    ADPOPT      TMID\n"
         formatString = f"{str(self.id + startPID):>10}{str(self.secid):>10}{str(self.mid):>10}{str(self.eosid):>10}{str(self.hgid):>10}{str(self.grav):>10}{str(self.adpopt):>10}{str(self.tmid):>10}\n"
         curString += formatString        
+        for card in getattr(self, "dynaPartExtraCards", ()):
+            curString += card + "\n"
         return curString
     
     def WriteStreamDynaPart(self, stream, startPID = 0):
-        stream.write("*PART\n")
+        stream.write(getattr(self, "dynaPartKeyword", "*PART") + "\n")   # *PART_CONTACT 등 덱의 변형 그대로(v131 P1)
         stream.write(f"{self.name}\n")
         stream.write("$$     PID     SECID       MID     EOSID      HGID      GRAV    ADPOPT      TMID\n")
         formatString = f"{str(self.id + startPID):>10}{str(self.secid):>10}{str(self.mid):>10}{str(self.eosid):>10}{str(self.hgid):>10}{str(self.grav):>10}{str(self.adpopt):>10}{str(self.tmid):>10}\n"
         stream.write(formatString)        
+        for card in getattr(self, "dynaPartExtraCards", ()):
+            stream.write(card + "\n")
     
     def WritetoNasranNodes(self, startNID):
         return self.nodeManager.WritetoNastranKeyword(startNID)
@@ -2687,7 +2692,7 @@ class KooPartManager():
     def AddTShellElementsfromDyna(self, parametersTShell):
         """*ELEMENT_TSHELL(EID PID N1~N8) → 파트에 TSHELL8 요소(2026-11-03). 예전엔 해석하지 않아(원문 통과) TSHELL 파트에
         요소가 없었고, 그래서 DROP_ATTITUDE 의 SINGLE_SURFACE·바닥판·RobustContact 면·Tied 면 감지·D2R 에서 모두 빠졌다.
-        KMM 이 파트로 읽지 않는 PID(*PART_COMPOSITE_TSHELL·*PART_CONTACT 등)의 줄은 소실이 아니다 — 그 위치
+        KMM 이 파트로 읽지 않는 PID(*PART_COMPOSITE_TSHELL·*PART_INERTIA 등)의 줄은 소실이 아니다 — 그 위치
         [(블록, 줄)] 를 돌려주면 importer 가 원문 그대로 남긴다(v129 와 같은 출력, 리뷰 W 🔴2).
         그 밖에 버린 요소는 이유와 함께 읽기 소실 장부에 올린다(🔴 + 종료 코드 3)."""
         _rec = _add = _node_miss = _bad = _dup = 0
@@ -2725,7 +2730,7 @@ class KooPartManager():
                       f"TSHELL {len(leftover)}개(PID {_ids})는 원문 그대로 둔다")
             else:
                 print(f"  ELEMENT_TSHELL: KMM 이 파트로 읽지 않는 PID({_ids})의 TSHELL {len(leftover)}개는 원문 그대로 둔다 — "
-                      f"*PART_COMPOSITE_TSHELL·*PART_CONTACT 등이거나 덱에 *PART 가 없는 PID 다. 이 파트는 낙하 접촉 집합에 들어가지 않는다")
+                      f"*PART_COMPOSITE_TSHELL·*PART_INERTIA 등이거나 덱에 *PART 가 없는 PID 다. 이 파트는 낙하 접촉 집합에 들어가지 않는다")
         kept = f" + 원문 그대로 {len(leftover)}" if leftover else ""
         if _add + len(leftover) == _rec and not _dup:
             print(f"  ELEMENT_TSHELL 개수 검사: 입력 {_rec} = 등록 {_add}{kept} (소실 0)")

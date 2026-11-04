@@ -10187,43 +10187,40 @@ class PartComposite(DynaKeyword):
         return dataList
 
 class PartContact(DynaKeyword):
+    """*PART_CONTACT — R16 카드 묶음(제목·카드 2 PID SECID MID EOSID HGID GRAV ADPOPT TMID·카드 8 FS FD DC VC OPTT SFT SSF CPARM8)을
+    다음 키워드까지 되풀이한다. 예전엔 블록이 2·3줄일 때만 읽고(한 블록 여러 파트면 덤프가 죽었다) 파트를 만들지 않아 그 파트의
+    요소가 사라졌다(v131 P1). 접촉 카드는 원문 그대로 지닌다. 묶음이 3줄씩 맞지 않는 블록이 있으면 ok=False — 임포터가 원문 그대로 둔다."""
     def __init__(self):
         super(PartContact,self).__init__("PART_CONTACT")
+        self.ok = True
 
     def parse(self, partContactKeywords):
-        for i in range(len(partContactKeywords)):
-            parameterList = [] 
-            if len(partContactKeywords[i]) == 2:
-                for j in range(len(partContactKeywords[i])):                
-                    parameters = self.parse_whole(partContactKeywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
-                    parameterList.append(parameters)
-            elif len(partContactKeywords[i]) == 3:
-                parameters = self.parse_whole(partContactKeywords[i][0], [80])
-                parameterList.append(parameters)
-                for j in range(1,len(partContactKeywords[i])):                
-                    parameters = self.parse_whole(partContactKeywords[i][j], [10, 10, 10, 10, 10, 10, 10, 10])
-                    parameterList.append(parameters)
-            self.parameters.append(parameterList)
-    
+        for block in partContactKeywords:
+            lines = [str(l).replace("\n", "").replace("\r", "") for l in block]
+            while lines and not lines[-1].strip():
+                lines.pop()
+            if not lines or len(lines) % 3:
+                self.ok = False
+                print(f"  Warning: *PART_CONTACT 블록 {len(lines)}줄이 (제목·카드 2·접촉 카드) 3줄 묶음으로 나뉘지 않는다 — "
+                      f"원문 그대로 둔다(그 파트의 요소는 KMM 이 읽지 못한다)")
+                self.parameters.append([])
+                continue
+            self.parameters.append([[[lines[k][:80]], self.parse_whole(lines[k + 1], [10] * 8), lines[k + 2]]
+                                    for k in range(0, len(lines), 3)])
+
+    def getPartList(self):
+        """[이름, PID, SECID, MID, EOSID, HGID, GRAV, ADPOPT, TMID, 접촉 카드 원문] — *PART 의 getPartList 에 접촉 카드를 더한 꼴."""
+        return [[name[0]] + list(card2) + [contact] for sets in self.parameters for name, card2, contact in sets]
+
     def write(self, stream):
-        for i in range(len(self.parameters)):
-            parameter = self.parameters[i]
-            if len(parameter) == 2:
+        for sets in self.parameters:
+            for name, card2, contact in sets:
                 stream.write("*PART_CONTACT\n")
+                stream.write("{name}\n".format(name=name[0]))
                 stream.write("$$     PID     SECID       MID     EOSID      HGID      GRAV    ADPOPT      TMID\n")
-                formatted_elements = f"{str(parameter[0][0]):>10}{str(parameter[0][1]):>10}{str(parameter[0][2]):>10}{str(parameter[0][3]):>10}{str(parameter[0][4]):>10}{str(parameter[0][5]):>10}{str(parameter[0][6]):>10}{str(parameter[0][7]):>10}\n"
-                stream.write(formatted_elements)
+                stream.write("".join(f"{str(x):>10}" for x in card2) + "\n")
                 stream.write("$$      FS        FD        DC        VC      OPTT       SFT       SSF    CPARM8\n")
-                formatted_elements = f"{str(parameter[1][0]):>10}{str(parameter[1][1]):>10}{str(parameter[1][2]):>10}{str(parameter[1][3]):>10}{str(parameter[1][4]):>10}{str(parameter[1][5]):>10}{str(parameter[1][6]):>10}{str(parameter[1][7]):>10}\n"
-            elif len(parameter) == 3:
-                stream.write("*PART_CONTACT\n")
-                stream.write("{name}\n".format(name=parameter[0][0]))
-                stream.write("$$     PID     SECID       MID     EOSID      HGID      GRAV    ADPOPT      TMID\n")
-                formatted_elements = f"{str(parameter[1][0]):>10}{str(parameter[1][1]):>10}{str(parameter[1][2]):>10}{str(parameter[1][3]):>10}{str(parameter[1][4]):>10}{str(parameter[1][5]):>10}{str(parameter[1][6]):>10}{str(parameter[1][7]):>10}\n"
-                stream.write(formatted_elements)
-                stream.write("$$      FS        FD        DC        VC      OPTT       SFT       SSF    CPARM8\n")
-                formatted_elements = f"{str(parameter[2][0]):>10}{str(parameter[2][1]):>10}{str(parameter[2][2]):>10}{str(parameter[2][3]):>10}{str(parameter[2][4]):>10}{str(parameter[2][5]):>10}{str(parameter[2][6]):>10}{str(parameter[2][7]):>10}\n"
-            stream.write(formatted_elements)
+                stream.write(contact + "\n")
 
 class RigidWallGeometricFlatDisplay(DynaKeyword):
     def __init__(self):

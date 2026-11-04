@@ -873,36 +873,36 @@ class KooDynaImporter():
         else:
             elementSolidKeyword = None
         elementTShellKeyword = dynaKeywords.get("ELEMENT_TSHELL")
+        from KooCAEManager.KooDynaKeyword import _whole_int
+
+        def _part_int_or_blank(field, default=0):
+            """PART 필드를 int로 변환. 공백이면 default 반환. 정수값 실수('3.0' — R 형 *PARAMETER 치환 등)도 정수로 받는다
+            — 단면은 그 SECID 를 받는데 PART 는 0 으로 읽어 출력 SECID 가 0 이 됐다(리뷰 Z)."""
+            if field is None:
+                return default
+            s = str(field).strip()
+            if not s:
+                return default
+            try:
+                return int(s)
+            except ValueError:
+                v = _whole_int(s)
+                return default if v is None else v
+
+        def _part_int_or_empty(field):
+            """PART 옵션 필드를 int로 변환. 공백이면 빈 문자열 반환 (write 시 빈칸). 정수값 실수도 정수로 받는다."""
+            if field is None:
+                return ""
+            s = str(field).strip()
+            if not s:
+                return ""
+            try:
+                return int(s)
+            except ValueError:
+                v = _whole_int(s)
+                return "" if v is None else v
+
         if modePart == "PART":
-            from KooCAEManager.KooDynaKeyword import _whole_int
-
-            def _part_int_or_blank(field, default=0):
-                """PART 필드를 int로 변환. 공백이면 default 반환. 정수값 실수('3.0' — R 형 *PARAMETER 치환 등)도 정수로 받는다
-                — 단면은 그 SECID 를 받는데 PART 는 0 으로 읽어 출력 SECID 가 0 이 됐다(리뷰 Z)."""
-                if field is None:
-                    return default
-                s = str(field).strip()
-                if not s:
-                    return default
-                try:
-                    return int(s)
-                except ValueError:
-                    v = _whole_int(s)
-                    return default if v is None else v
-
-            def _part_int_or_empty(field):
-                """PART 옵션 필드를 int로 변환. 공백이면 빈 문자열 반환 (write 시 빈칸). 정수값 실수도 정수로 받는다."""
-                if field is None:
-                    return ""
-                s = str(field).strip()
-                if not s:
-                    return ""
-                try:
-                    return int(s)
-                except ValueError:
-                    v = _whole_int(s)
-                    return "" if v is None else v
-
             parts = partKeyword.getPartList()
             for part in parts:
                 if len(part) < 9:
@@ -924,6 +924,28 @@ class KooDynaImporter():
                 tmid = _part_int_or_empty(part[8])
                 elementManager = ElementManager(self.nodeManager,id)
                 self.partManager.CreatePart(id, name, secid, mid, eosid, hgid, grav, adpopt, tmid, self.nodeManager,elementManager)
+                self.elementManager[id] = elementManager
+        pcKeyword = dynaKeywords.get("PART_CONTACT")
+        if pcKeyword is not None and getattr(pcKeyword, "ok", False):
+            # *PART_CONTACT 도 *PART 처럼 파트로 — 예전엔 원문으로만 지나가 그 파트의 요소가 사라졌다(rc 3, v131 P1). 접촉 카드(카드 8)는
+            # 원문 그대로 지니고 파트 기록기가 *PART_CONTACT 로 쓴다
+            self.keywordInterpreted["PART_CONTACT"] = True
+            for part in pcKeyword.getPartList():
+                name = str(part[0]).lstrip()
+                id = _part_int_or_blank(part[1], 0)
+                if id == 0:
+                    print(f"[WARNING] *PART_CONTACT PID 파싱 실패 — 스킵: {part[:2]}")
+                    continue
+                if id > maxID:
+                    maxID = id
+                elementManager = ElementManager(self.nodeManager, id)
+                newPart = self.partManager.CreatePart(id, name, _part_int_or_blank(part[2], 0), _part_int_or_blank(part[3], 0),
+                                                      _part_int_or_empty(part[4]), _part_int_or_empty(part[5]), _part_int_or_empty(part[6]),
+                                                      _part_int_or_empty(part[7]), _part_int_or_empty(part[8]), self.nodeManager, elementManager)
+                created = newPart if newPart is not None else self.partManager.parts.get(id)
+                if created is not None:
+                    created.dynaPartKeyword = "*PART_CONTACT"
+                    created.dynaPartExtraCards = [part[9]]
                 self.elementManager[id] = elementManager
         if modePartComposite == "PART_COMPOSITE":
             parts = partCompositeKeyword.getPartList()
