@@ -189,6 +189,16 @@ def _apply_offsets(new_importer, off):
 
     # 4. NODE SET
     new_importer.nodeSetManager.OffsetID(off['nsid'])
+    # 요소가 정수로 지닌 번호 — 절점 셋 질량(*ELEMENT_MASS_NODE_SET)의 NSID, 뿌리 매니저 질량이 지닌 원래 PID 칸. 예전엔 밀지
+    # 않아 가져온 질량이 기준 덱의 같은 번호 절점 셋·파트를 가리켰다(v131 리뷰 R4)
+    root = getattr(partMan, 'elementManager', None)
+    for em in [root] + [getattr(p, 'elementManager', None) for p in list(partMan.parts.values())
+                        + list(getattr(partMan, 'partsRigid', {}).values())]:
+        for e in (getattr(em, 'elements', None) or {}).values():
+            if getattr(e, 'type', None) == "POINT_NSET" and isinstance(getattr(e, 'nsid', None), int) and e.nsid:
+                e.nsid += off['nsid']
+            if em is root and isinstance(getattr(e, 'pid', None), int) and e.pid:
+                e.pid += off['pid']
     # 5. SEGMENT SET
     new_importer.segmentSetManager.OffsetID(off['ssid'], off['nid'])
     # 6. CONTACT
