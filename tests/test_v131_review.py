@@ -21,6 +21,10 @@
   같은 번호 같은 내용의 재질을 IMPORT_MERGE_K 가 충돌로 본 것(재질 비교 글이 늘 비었다)과, 첫 요소가 삼각형인 두께 블록에서 뒤
   사각형의 N4 가 잘리던 것은 이 시험을 쓰다 찾았다.
   콤마 원문 카드(*MAT_ADD_EROSION·SECTION_BEAM)의 빈 칸이 사라져 값이 앞 칸으로 당겨지던 것은 말뭉치 W7 이 찾았다.
+  R4 처방 운동 카드 3 을 가짜 조건으로 읽었다. 가져온 질량 절점 셋 번호가 밀리지 않았다. 일반 셸·HISTORY 가 첫 줄 길이로 칸 수를
+     정해 뒤 줄 값이 잘렸다. 콤마 줄의 남는 값이 다음 카드로 밀렸다. Fast DROP 강체화가 각도마다 어긋났다. IMPORT_MERGE_K 가
+     TMID 를 MID 로 보고, 원문 EOS·좌표계·long 단면 번호와 기준 덱만의 침식을 놓치고, 재질을 유효숫자 4자리로 견줬다. DTI 가
+     바꿀 것 없는 셸 응력을 지웠다. DROP 바닥판 단면·재질·D2R SWSET 이 원문 번호와 겹쳤다.
 """
 import contextlib
 import io
@@ -190,6 +194,34 @@ def cube_deck(extra="", n=1):
             + part(1) + SOLID1 + ELASTIC + extra + "*END\n")
 
 
+def drop(rolls, extra=""):
+    """여러 각도 DROP_ATTITUDE 옵션(각도 = 롤 목록) — extra 는 **DropAttitude 블록 끝에 더할 줄."""
+    k = len(rolls)
+    rep = lambda v: ",".join([str(v)] * k)
+    return ("*Inputfile\nmodel.k\n*RunDirectoryMode,True,runs\n*Mode\nDROP_ATTITUDE,1\n**DropAttitude,1\n"
+            f"EulerRolling,{','.join(map(str, rolls))}\nEulerPitching,{rep(0)}\nEulerYawing,{rep(0)}\nHeight,{rep(100)}\n"
+            f"InitialVelocityX,{rep(0)}\nInitialVelocityY,{rep(0)}\nInitialVelocityZ,{rep(0)}\nInitialAngularVelocityX,{rep(0)}\n"
+            f"InitialAngularVelocityY,{rep(0)}\nInitialAngularVelocityZ,{rep(0)}\nOffsetDistance,0.05\nDensity,7.85e-9\n"
+            "YoungsModulus,2.0e5\nPoissonRatio,0.3\ntFinal,0.001\ndt,1e-6\n" + extra + "**EndDropAttitude\n*End\n")
+
+
+def dropsets(d):
+    return [p.read_text(errors="replace") for p in sorted(Path(d).rglob("DropSet.k")) if p.parent.parent.name == "runs"]
+
+
+def part_cards(text):
+    """*PART(_TITLE) → {PID: (SECID, MID)}."""
+    out, lines = {}, text.splitlines()
+    for i, ln in enumerate(lines):
+        if ln.split()[:1] and ln.split()[0].upper() in ("*PART", "*PART_TITLE"):
+            data = [x for x in lines[i + 1:i + 6] if not x.startswith("$")]
+            if len(data) >= 2:
+                f = try_(lambda: [int(float(data[1][k:k + 10])) for k in (0, 10, 20)], None)
+                if f:
+                    out[f[0]] = (f[1], f[2])
+    return out
+
+
 def r1():
     print("[R1] 콤마·long 카드, 강체 처방 운동, *PART_CONTACT, 콤마 ID 카드, DEATH·BIRTH, 접촉 빈 카드 A, 'D' 지수 절점")
     # ── 콤마 요소 줄: 뒤쪽 절점이 잘리지 않는다(R1-1·4) ───────────────────────────────────────────────
@@ -330,18 +362,6 @@ def r2():
     INERTIA = "*PART_INERTIA\n" + "".join(f"inertia {nm}\n" + f10(pid, 1, 1) + f10(0.0, 0.0, 0.0, "1e-06", 0, 0)
                                           + f10("1e-06", 0.0, 0.0, "1e-06", 0.0, "1e-06") + f10(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
                                           for nm, pid in (("a", 8), ("b", 9)))
-
-    def drop(rolls):
-        k = len(rolls)
-        rep = lambda v: ",".join([str(v)] * k)
-        return ("*Inputfile\nmodel.k\n*RunDirectoryMode,True,runs\n*Mode\nDROP_ATTITUDE,1\n**DropAttitude,1\n"
-                f"EulerRolling,{','.join(map(str, rolls))}\nEulerPitching,{rep(0)}\nEulerYawing,{rep(0)}\nHeight,{rep(100)}\n"
-                f"InitialVelocityX,{rep(0)}\nInitialVelocityY,{rep(0)}\nInitialVelocityZ,{rep(0)}\nInitialAngularVelocityX,{rep(0)}\n"
-                f"InitialAngularVelocityY,{rep(0)}\nInitialAngularVelocityZ,{rep(0)}\nOffsetDistance,0.05\nDensity,7.85e-9\n"
-                "YoungsModulus,2.0e5\nPoissonRatio,0.3\ntFinal,0.001\ndt,1e-6\n**EndDropAttitude\n*End\n")
-
-    def dropsets(d):
-        return [p.read_text(errors="replace") for p in sorted(Path(d).rglob("DropSet.k")) if p.parent.parent.name == "runs"]
 
     def d2r_count(t):
         return sum(1 for _, rows in kw_blocks(t, "*DEFORMABLE_TO_RIGID_AUTOMATIC") if rows and rows[0][:10].strip() == "1")
@@ -680,10 +700,165 @@ def r3():
           rc == 0 and "*INITIAL_STRESS_SECTION" in kws and "*INITIAL_STRESS_SOLID" in kws, f"rc={rc} {kws}")
 
 
+def r4():
+    print("[R4] 처방 운동 카드 3, 질량 절점 셋 번호, 섞인 셸, Fast DROP 강체화, HISTORY·콤마 남는 값, IMPORT_MERGE_K 원문 번호·재질, DTI, D2R")
+    one = lambda pid, sec, mid, name: ("*KEYWORD\n" + node_block(cubes(1)) + "*ELEMENT_SOLID\n" + hex_row(1, pid, 1)
+                                       + part(pid, sec, mid, name) + "*SECTION_SOLID\n" + f10(sec, 1))
+    steel = "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3)
+    alu2 = "*MAT_ELASTIC\n" + f10(2, "2.70E-09", 70000, 0.33)
+
+    # ── 처방 운동 카드 3(|DOF| 9·10·11, VAD 4): 가짜 조건을 만들지 않고 원인을 밝혀 멈춘다 ─────────────────────────────
+    rig = ("*KEYWORD\n" + node_block(cubes(3)) + "*ELEMENT_SOLID\n" + hex_row(1, 1, 1) + hex_row(2, 4, 9) + hex_row(3, 5, 17)
+           + part(1) + part(4, 1, 4) + part(5, 1, 5) + SOLID1 + ELASTIC
+           + "*MAT_RIGID\n" + f10(4, "7.85E-09", 210000.0, 0.3) + "*MAT_RIGID\n" + f10(5, "7.85E-09", 210000.0, 0.3)
+           + "*DEFINE_CURVE\n" + f10(10) + f"{0.0:20.4f}{0.0:20.4f}\n{1.0:20.4f}{1.0:20.4f}\n")
+    for kw, body in (("RIGID", f10(4, 3, 4, 10, 1.0) + f10(5.0, 0.0, 5, 0, 0) + f10(5, 1, 0, 10, 2.0)),
+                     ("RIGID_ID", f"{71:10d}a\n" + f10(4, 9, 2, 10, 1.0) + f10(5.0, 0.0, 0, 0, 0) + f"{72:10d}b\n" + f10(5, 1, 0, 10, 2.0))):
+        d, rc, log = run("pm_card3", {"model.k": rig + f"*BOUNDARY_PRESCRIBED_MOTION_{kw}\n" + body + "*END\n"})
+        check(f"R4 *BOUNDARY_PRESCRIBED_MOTION_{kw} 카드 3 이 오는 조건(VAD 4·DOF 9): 가짜 조건 없이 원인을 밝혀 멈춘다(rc 1)",
+              rc == 1 and "카드 3" in log, f"rc={rc} " + log[-300:])
+
+    # ── 가져온 *ELEMENT_MASS_NODE_SET 의 절점 셋 번호 ─────────────────────────────────────────────────────────
+    nm = lambda m: "*SET_NODE_LIST\n" + f10(1) + f10(1, 2, 3, 4) + "*ELEMENT_MASS_NODE_SET\n" + f"{60:8d}{1:8d}{m:16.6f}\n"
+    d, rc, log = run("im_mass_nset", {"base.k": one(1, 1, 1, "a") + steel + nm(0.001) + "*END\n",
+                                      "imp.k": one(1, 1, 2, "b") + alu2 + nm(0.555) + "*END\n"}, IMO)
+    t = read(d, "base_imported.k")
+    rows = [r for _, rr in kw_blocks(t, "*ELEMENT_MASS_NODE_SET") for r in rr]
+    ms = try_(lambda: sorted((int(r[:8]), int(r[8:16]), round(float(r[16:32]), 6)) for r in rows), [])
+    nsets = {}
+    for kw in ("*SET_NODE_LIST", "*SET_NODE_LIST_TITLE"):
+        for h, rr in kw_blocks(t, kw):
+            rr = rr[1:] if kw.endswith("_TITLE") else rr
+            nsets[int(rr[0][:10])] = [x for r in rr[1:] for x in ints(r, 10) if x]
+    imp_m = [m for m in ms if m[2] == 0.555]
+    check("R4 IMPORT_MERGE_K 가져온 *ELEMENT_MASS_NODE_SET: 가져온 절점 셋(가져온 절점)을 가리킨다(기준 셋 1 이 아니다)",
+          rc == 0 and len(ms) == 2 and (60, 1, 0.001) in ms and len(imp_m) == 1 and imp_m[0][1] != 1
+          and all(n > 8 for n in nsets.get(imp_m[0][1], [0])), f"rc={rc} {ms} {nsets}")
+
+    # ── 일반 *ELEMENT_SHELL 이 줄마다 칸 수를 센다(4절점 줄 뒤 8절점 줄, 삼각형 줄 뒤 사각형 줄) ───────────────────────────
+    pts = {k: (float(k % 7), float(k // 7), 0.0) for k in (1, 2, 3, 4, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22, 23, 24)}
+    sh = ("*KEYWORD\n" + node_block(pts) + "*ELEMENT_SHELL\n" + f"{1:8d}{1:8d}{1:8d}{2:8d}{3:8d}\n"
+          + f"{2:8d}{1:8d}" + "".join(f"{n:8d}" for n in (11, 12, 13, 14, 15, 16, 17, 18)) + "\n"
+          + f"{3:8d}{1:8d}{21:8d}{22:8d}{23:8d}{24:8d}\n" + part(1, 1, 1, "shell") + "*SECTION_SHELL\n" + f10(1, 2)
+          + f10(1.0, 1.0, 1.0, 1.0) + ELASTIC + "*END\n")
+    d, rc, log = run("shell_mixed", {"model.k": sh})
+    e = elements(read(d, "model_trans.k"), "*ELEMENT_SHELL")
+    check("R4 *ELEMENT_SHELL 삼각형(40자)·8절점·사각형 줄: 중간 절점 N5~N8·뒤 사각형 N4 가 잘리지 않는다",
+          rc == 0 and e.get(2, [(0, [])])[0][1][:8] == [11, 12, 13, 14, 15, 16, 17, 18] and e.get(3, [(0, [])])[0][1][:4] == [21, 22, 23, 24],
+          f"rc={rc} {e}")
+
+    # ── Fast DROP(여러 각도) + 강체화: 각도마다 같은 강체 파트·바닥판, EID 겹침 없음 ────────────────────────────────
+    d, rc, log = run("drop_rigidify", {"model.k": M.base_deck(raw=True)}, drop([0, 90, 180], "RigidifyElementIDs,1\n"))
+    outs = dropsets(d)
+    parts3 = [sorted(M.parts_of(t)) for t in outs]
+    dups = [sorted(k for k, v in elements(t).items() if len(v) > 1) for t in outs]
+    check("R4 DROP 3각도 + RigidifyElementIDs: 각도마다 같은 파트(강체 파트·바닥판)이고 솔리드 EID 가 겹치지 않는다",
+          rc == 0 and len(outs) == 3 and parts3[0] == parts3[1] == parts3[2] and len(parts3[0]) >= 6 and not any(dups),
+          f"rc={rc} {parts3} {dups}")
+
+    # ── *DATABASE_HISTORY: 짧은 콤마 줄·고정폭 두 줄·값 11개(카드는 8칸) ───────────────────────────────────────────
+    d, rc, log = run("hist_r4", {"model.k": cube_deck("*DATABASE_HISTORY_NODE\n1,2,3\n*DATABASE_HISTORY_NODE\n" + f10(1, 2, 3, 4)
+                                                       + f10(5, 6, 7, 8) + "*DATABASE_HISTORY_SOLID\n1,2,3,4,5,6,7,8,9,10,11\n")})
+    t = read(d, "model_trans.k")
+    hn = [x for _, rows in kw_blocks(t, "*DATABASE_HISTORY_NODE") for r in rows for x in ints(r, 10) if x]
+    hs = [x for _, rows in kw_blocks(t, "*DATABASE_HISTORY_SOLID") for r in rows for x in ints(r, 10) if x]
+    check("R4 *DATABASE_HISTORY: '1,2,3'·고정폭 두 줄의 ID 가 모두 남고, 값 11개 콤마 줄은 카드 8칸만",
+          rc == 0 and hn == [1, 2, 3, 1, 2, 3, 4, 5, 6, 7, 8] and hs == [1, 2, 3, 4, 5, 6, 7, 8], f"rc={rc} node={hn} solid={hs}")
+
+    # ── 카드 칸 수보다 많은 콤마 값은 다음 카드로 밀리지 않는다(PLP 카드 3·4 의 9번째 값) ───────────────────────────────
+    plp = ("*MAT_PIECEWISE_LINEAR_PLASTICITY\n" + f10(2, "7.85E-09", 210000.0, 0.3, 250.0, 0.0, 0.0, 0.0) + f10(0.0, 0.0, 0, 0, 0.0)
+           + "0.0,0.01,0.02,0.05,0.1,0.2,0.3,0.5,0.9\n250,260,270,290,310,330,345,360,400\n")
+    d, rc, log = run("plp_comma9", {"model.k": cube_deck(plp)})
+    t = read(d, "model_trans.k")
+    pb = [(rows[1:] if h.split()[0].upper().endswith("_TITLE") else rows)
+          for h, rows in kw_blocks(t, "*MAT_PIECEWISE_LINEAR_PLASTICITY") + kw_blocks(t, "*MAT_PIECEWISE_LINEAR_PLASTICITY_TITLE")]
+    c34 = try_(lambda: [floats(pb[0][2], 10), floats(pb[0][3], 10)], [])
+    check("R4 콤마 PLP 카드 3·4 의 9번째 값: 버려지고 카드 4 첫 값이 ES1 = 250(0.9 가 아니다), 카드는 4장",
+          rc == 0 and len(pb) == 1 and len(pb[0]) == 4 and len(c34) == 2 and c34[0][7] == 0.5 and c34[1][0] == 250.0,
+          f"rc={rc} {pb}")
+
+    # ── IMPORT_MERGE_K: TMID 는 MID 가 아니다·원문 EOS·원문 좌표계·long 원문 단면·기준 덱만의 침식·재질 값 비교 ─────────────────
+    thermal = "*MAT_THERMAL_ISOTROPIC\n" + f10(1, "7.85e-09", 0, 0, 0) + f10(460000000.0, 50.0)
+    d, rc, log = run("im_thermal", {"base.k": one(1, 1, 2, "a") + alu2 + thermal + "*END\n", "imp.k": one(1, 1, 1, "b") + steel + "*END\n"}, IMO)
+    t = read(d, "base_imported.k")
+    mids = sorted(int((rows[1] if h.split()[0].upper().endswith("_TITLE") else rows[0])[:10])
+                  for h, rows in kw_blocks(t, "*MAT_ELASTIC") + kw_blocks(t, "*MAT_ELASTIC_TITLE"))
+    check("R4 IMPORT_MERGE_K 기준 덱 *MAT_THERMAL_ISOTROPIC TMID 1 · 가져온 *MAT_ELASTIC 1: 충돌이 아니다(rc 0, 재질 1·2)",
+          rc == 0 and mids == [1, 2], f"rc={rc} {mids} " + log[-300:])
+    cases = (("im_eos_raw", "*EOS_GRUNEISEN\n" + f10(1, 1480.0, 1.92, 0.0, 0.0, 0.1, 0.0, 0.0) + f10(0.0),
+              "*EOS_LINEAR_POLYNOMIAL\n" + f10(1, 0.0, 2200.0, 0.0, 0.0, 0.0, 0.0, 0.0) + f10(0.0, 0.0), "EOS 1(기준 덱 원문 EOS)"),
+             ("im_cs_nodes", "*DEFINE_COORDINATE_NODES\n" + f10(5, 1, 2, 4),
+              "*DEFINE_COORDINATE_SYSTEM\n" + f10(5, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0) + f10(-1.0, 0.0, 0.0), "좌표계 CID 5(기준 덱 원문 좌표계)"),
+             ("im_ero_base", "*MAT_ADD_EROSION\n" + f10(1, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0) + f10(0.0, 0.0, 0.0, 0.25), "",
+              "MAT_ADD_EROSION MID 1(기준 덱에만 있다"),
+             ("im_mid_near", "", "", "재질 MID 1"))
+    for name, base_x, imp_x, want in cases:
+        imp_mat = steel.replace("210000", "210040") if name == "im_mid_near" else steel
+        d, rc, log = run(name, {"base.k": one(1, 1, 1, "a") + steel + base_x + "*END\n",
+                                "imp.k": one(1, 1, 1, "b") + imp_mat + imp_x + "*END\n"}, IMO)
+        check(f"R4 IMPORT_MERGE_K {name}: 번호 충돌을 🔴 rc 3 으로 알린다('{want}')", rc == 3 and want in log, f"rc={rc} " + log[-300:])
+
+    def l20(*v):
+        return "".join(f"{x:>20}" for x in v) + "\n"
+    d, rc, log = run("im_rawsec_long", {"base.k": one(1, 1, 1, "a") + steel + "*SECTION_DISCRETE +\n" + l20(6, 0, 0.0, 0.0, 0.0, 0.0)
+                                        + l20(0.0, 0.0) + "*MAT_SPRING_ELASTIC\n" + f10(6, 1000.0) + "*END\n",
+                                        "imp.k": one(1, 5, 2, "b") + alu2 + "*END\n"}, IMO)
+    t = read(d, "base_imported.k")
+    secs = []
+    for kw in sorted({ln.split()[0].upper() for ln in t.splitlines() if ln.startswith("*SECTION_")}):
+        for h, rows in kw_blocks(t, kw):
+            w = 20 if "+" in h.split()[1:] else 10
+            r0 = rows[1] if kw.endswith("_TITLE") else rows[0]
+            secs.append(try_(lambda: int(float(r0[:w])), -1))
+    check("R4 IMPORT_MERGE_K 기준 덱 long('+') 원문 *SECTION_DISCRETE 6: 가져온 단면이 6 과 겹치지 않는다",
+          rc == 0 and len(secs) == len(set(secs)) and -1 not in secs, f"rc={rc} {secs}")
+
+    # ── DTI: 이번 dynain 에 같은 종류가 없는 기준 덱 원문 *INITIAL_STRESS_SHELL 은 지우지 않고 알린다 ──────────────────────
+    pts = dict(cubes(1))
+    pts.update({50: (5.0, 0.0, 0.0), 51: (6.0, 0.0, 0.0), 52: (6.0, 1.0, 0.0), 53: (5.0, 1.0, 0.0)})
+    el = "*ELEMENT_SOLID\n" + hex_row(1, 1, 1) + "*ELEMENT_SHELL\n" + f"{9:8d}{3:8d}{50:8d}{51:8d}{52:8d}{53:8d}\n"
+    base = ("*KEYWORD\n*CONTROL_TERMINATION\n" + f10(0.001) + node_block(pts) + el + part(1) + part(3, 3, 1) + SOLID1
+            + "*SECTION_SHELL\n" + f10(3, 2, 0.8333, 3) + f10(0.5, 0.5, 0.5, 0.5) + ELASTIC
+            + "*INITIAL_STRESS_SHELL\n" + f10(9, 1, 1, 0, 0) + f10(0.0, 50.0, 50.0, 0.0, 0.0, 0.0, 0.0, 0.0) + "*END\n")
+    dyn = ("*KEYWORD\n" + node_block({k: (x, y, z + 0.01) for k, (x, y, z) in pts.items()}) + el
+           + "*INITIAL_STRESS_SOLID\n" + f10(1, 1, 0, 0, 0, 0, 0, 0) + f10(1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 0.01) + "*END\n")
+    dti = ("*Inputfile\nmodel.k\n*Mode\nDYNAIN_TO_INITIAL,1\n**DynainToInitial,1\n*DynainPath,dynain\n*IncludeStress,True\n"
+           "*RemoveDynamicRelaxation,True\n**EndDynainToInitial\n*End\n")
+    d, rc, log = run("dti_user_shell", {"model.k": base, "dynain": dyn}, dti)
+    kws = [ln.split()[0].upper() for ln in read(d, "model_dti.k").splitlines() if ln.startswith("*")]
+    check("R4 DTI: dynain 에 셸 응력이 없으면 기준 덱 *INITIAL_STRESS_SHELL 을 지우지 않고 ⚠ 로 알린다",
+          rc == 0 and "*INITIAL_STRESS_SHELL" in kws and "*INITIAL_STRESS_SOLID" in kws and "⚠ DTI" in log, f"rc={rc} {kws}")
+
+    # ── *NODE 콤마 줄의 남는 값(7번째)은 버리고 절점은 읽는다 ─────────────────────────────────────────────────────
+    d, rc, log = run("node_7vals", {"model.k": cube_deck().replace("*ELEMENT_SOLID", "99,1.0,0.0,0.0,0,0,7\n*ELEMENT_SOLID", 1)})
+    nd = nodes(read(d, "model_trans.k"))
+    check("R4 *NODE '99,1.0,0.0,0.0,0,0,7': 절점 99 를 읽는다(rc 0)", rc == 0 and 99 in nd and near(nd[99][0], 1.0), f"rc={rc} " + log[-300:])
+
+    # ── DROP 바닥판 단면·재질 번호가 원문 *SECTION_DISCRETE·*MAT_SPRING_ELASTIC 과 겹치지 않는다 ─────────────────────────────
+    sp = {**cubes(1), 41: (5.0, 0.0, 0.0), 42: (6.0, 0.0, 0.0)}
+    deck = ("*KEYWORD\n" + node_block(sp) + "*ELEMENT_SOLID\n" + hex_row(1, 1, 1) + part(1) + SOLID1 + ELASTIC + part(6, 3, 2, "spring")
+            + "*SECTION_DISCRETE\n" + f10(3, 0, 0.0, 0.0, 0.0, 0.0) + f10(0.0, 0.0) + "*MAT_SPRING_ELASTIC\n" + f10(2, 1000.0)
+            + "*ELEMENT_DISCRETE\n" + f"{50:8d}{6:8d}{41:8d}{42:8d}{0:8d}{1.0:16.4f}{0:8d}{0.0:16.4f}\n" + "*END\n")
+    d, rc, log = run("drop_rawsecmat", {"model.k": deck}, drop([0]))
+    outs = dropsets(d)
+    floor = {pid: sm for pid, sm in part_cards(outs[0]).items() if pid not in (1, 6)} if outs else {}
+    check("R4 DROP 바닥판 SECID·MID 가 원문 *SECTION_DISCRETE 3·*MAT_SPRING_ELASTIC 2 와 겹치지 않는다",
+          rc == 0 and len(floor) == 1 and all(sec != 3 and mid != 2 for sec, mid in floor.values()), f"rc={rc} {floor}")
+
+    # ── 덱 D2R 이 SWSET 20 을 쓰면 KMM 짝 스위치는 다른 번호 ─────────────────────────────────────────────────────
+    d2r20 = "*DEFORMABLE_TO_RIGID_AUTOMATIC\n" + f10(20, 0, 0.0, 0.0, 0.0, 0, 0, 0) + f10(0, 0, 0, 0.0, 1, 0, 0.0) + f10(2, 0)
+    d, rc, log = run("drop_swset20", {"model.k": M.base_deck(raw=True, extra=d2r20)}, drop([0], "DeformableToRigid,True\n"))
+    outs = dropsets(d)
+    sws = sorted(int(rows[0][:10]) for _, rows in kw_blocks(outs[0], "*DEFORMABLE_TO_RIGID_AUTOMATIC") if rows) if outs else []
+    check("R4 DROP DeformableToRigid + 덱 D2R SWSET 20: SWSET 이 겹치지 않는다(덱 20 + KMM 짝 둘)",
+          rc == 0 and len(sws) == 3 and len(set(sws)) == 3 and 20 in sws, f"rc={rc} {sws}")
+
+
 def main():
     r1()
     r2()
     r3()
+    r4()
     print()
     if FAILS:
         print(f"FAILED {len(FAILS)}")
