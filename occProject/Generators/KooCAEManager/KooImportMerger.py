@@ -324,8 +324,8 @@ _CONFLICTS = []   # 같은 번호·다른 내용(곡선·HOURGLASS) — import_m
 
 
 def _card_text(obj):
-    """같은 번호의 두 정의가 같은 내용인지 보는 카드 글 — 키워드 줄·주석과, 그 객체가 _TITLE 판이면 제목 줄을 뺀다
-    (한쪽만 _TITLE 이어도 데이터가 같으면 같다). 쓰지 못하면 None — 부르는 쪽이 다르다고 본다."""
+    """같은 번호의 두 정의가 같은 내용인지 보는 카드 글 — 키워드 줄·주석과, 키워드가 _TITLE 이면 그 다음 제목 줄을 뺀다
+    (한쪽만 _TITLE 이어도 데이터가 같으면 같다 — 곡선·좌표계·재질 모두, v131 리뷰 R3). 쓰지 못하면 None(다르다고 본다)."""
     from io import StringIO
     st = StringIO()
     try:
@@ -335,12 +335,42 @@ def _card_text(obj):
             obj.WriteStreamDynaKeyword(st)
     except Exception:
         return None
-    lines = [ln for ln in st.getvalue().splitlines() if not ln.startswith(("*", "$"))]
-    title = str(getattr(obj, "lctype", "")).upper().endswith("_TITLE")
-    return "\n".join(lines[1:] if title else lines)
+    out, skip_title = [], False
+    for ln in st.getvalue().splitlines():
+        if ln.startswith("*"):
+            skip_title = ln.split()[0].upper().endswith("_TITLE")
+            continue
+        if ln.startswith("$"):
+            continue
+        if skip_title:
+            skip_title = False
+            continue
+        out.append(ln)
+    return "\n".join(out)
+
+
+_NAME_KEYS = {"name", "title", "lctype", "heading"}
+_VALUE_TYPES = {"KooDefineCurve", "KooHourglass", "KooDefineCoordinateSystem", "KooDefineCoordinateSystemTitle"}
+
+
+def _values(obj):
+    """값 비교용 — 이름 칸을 뺀 속성(번호는 같은 키로 견주므로 같다). 곡선 SFA·SFO 의 0 은 LS-DYNA 가 1.0 으로 읽어 맞춘다."""
+    v = {k: (tuple(x) if isinstance(x, list) else x) for k, x in vars(obj).items() if k not in _NAME_KEYS}
+    for k in ("sfa", "sfo"):
+        if k in v and not v[k]:
+            v[k] = 1.0
+    return v
 
 
 def _same_card(a, b):
+    """같은 번호의 두 정의가 같은가 — 곡선·좌표계·HOURGLASS 는 값(전 정밀도)으로, 나머지(재질 등)는 KMM 이 다시 쓴 카드 글로
+    견준다. 예전엔 다시 쓴 글만 견줘 SFA 빈칸·1.0 같은 같은 뜻을 충돌로 보고, 소수 3자리로 쓰는 값의 다름은 놓쳤다(v131 리뷰 R3)."""
+    ta_, tb_ = type(a).__name__, type(b).__name__
+    if ta_ in _VALUE_TYPES and tb_ in _VALUE_TYPES:
+        try:
+            return _values(a) == _values(b)
+        except Exception:
+            return False
     ta, tb = _card_text(a), _card_text(b)
     return ta is not None and ta == tb
 
