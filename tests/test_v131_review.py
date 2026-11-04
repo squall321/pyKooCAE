@@ -28,6 +28,10 @@
   R5 콤마 빈 값을 공백으로 바꿔 빈 칸을 len()==0 으로 가리는 리더가 죽었다. 셸 끝 칸이 8자를 못 채우면 버렸다. 솔리드 둘째 줄이
      짧으면 블록을 2줄 꼴로 뒤섞었다. GENERAL_VISCOELASTIC 카드 2 를 4칸으로 읽었다. IMPORT_MERGE_K 가 침식 카드 3 의 다름을
      놓치고, 쓰지 않는 MID 에 거짓 충돌을 내고, 원문 좌표계 첫 줄만 봤다. 누적 체인에서 D2R 짝이 두 쌍이 됐다.
+  R6 DTI *RemovePartbyID 가 MSTYP 3 인 접촉을 모두 지웠다. 지운 접촉의 덱 D2R 을 지울 때 강체벽 CODE 1·3 까지, 지우지 못한 원문
+     접촉의 D2R 까지 지웠고 짝 한쪽을 남겼다. IMPORT_MERGE_K 가 IDAM 0 침식 카드 3 의 뜻 없는 칸·빈 칸 대 기본값을 다르다고 봤다.
+     81열 뒤 글자로 솔리드 블록이 모두 빠졌고, I10 셸·솔리드·빔 끝 칸이 10자를 못 채우면 버렸다. 번호 없는 강체벽이 _ID 1 에
+     덮였다. 원문 침식 카드 줄 끝에 공백이 붙은 것은 말뭉치 W9·V9 가 찾았다.
 """
 import contextlib
 import io
@@ -897,10 +901,10 @@ def r5():
                                        + part(pid, sec, mid, name) + "*SECTION_SOLID\n" + f10(sec, 1))
     steel = "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3)
     ero = lambda dcrit: ("*MAT_ADD_EROSION\n" + f10(1, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0) + f10(0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0)
-                         + f10(0, 0, 5, 0.0, 2.0, dcrit, 1.0, 0))
+                         + f10(1, 0, 5, 0.0, 2.0, dcrit, 1.0, 0))   # IDAM 1 — 카드 3 의 2~7칸은 IDAM≠0 일 때만 뜻이 있다(R16, 리뷰 R6)
     d, rc, log = run("im_ero_card3", {"base.k": one(1, 1, 1, "a") + steel + ero(0.1) + "*END\n",
                                       "imp.k": one(1, 1, 1, "b") + steel + ero(0.9) + "*END\n"}, IMO)
-    check("R5 IMPORT_MERGE_K 침식 카드 3 의 DCRIT 만 다름(0.1 / 0.9): 번호 충돌 🔴 rc 3", rc == 3 and "MAT_ADD_EROSION MID 1" in log,
+    check("R5 IMPORT_MERGE_K 침식 카드 3(IDAM 1)의 DCRIT 만 다름(0.1 / 0.9): 번호 충돌 🔴 rc 3", rc == 3 and "MAT_ADD_EROSION MID 1" in log,
           f"rc={rc} " + log[-300:])
     alu2 = "*MAT_ELASTIC\n" + f10(2, "2.70E-09", 70000, 0.33)
     d, rc, log = run("im_ero_unused", {"base.k": one(1, 1, 1, "a") + steel + ero(0.1) + "*END\n",
@@ -929,12 +933,129 @@ def r5():
           rc == 0 and "*DEFORMABLE_TO_RIGID_AUTOMATIC" not in kws and "D2R" in log, f"rc={rc} {kws}")
 
 
+def r6():
+    print("[R6] DTI 접촉·D2R(파트 지움·강체벽 CODE·지우지 못한 접촉·짝 한쪽·사용자 짝), 침식 카드 3(IDAM)·원문 칸, 80열 뒤 글자, I10 짧은 끝 칸, 강체벽 번호")
+
+    def deck(n, extra):
+        """파트 k(솔리드 육면체 k) n 개 + extra."""
+        return ("*KEYWORD\n*CONTROL_TERMINATION\n" + f10(0.001) + node_block(cubes(n)) + "*ELEMENT_SOLID\n"
+                + "".join(hex_row(k + 1, k + 1, 8 * k + 1) for k in range(n)) + "".join(part(k + 1) for k in range(n))
+                + SOLID1 + ELASTIC + extra + "*END\n")
+
+    def dyn(n):
+        return ("*KEYWORD\n" + node_block({k: (x, y, z + 0.01) for k, (x, y, z) in cubes(n).items()}) + "*ELEMENT_SOLID\n"
+                + "".join(hex_row(k + 1, k + 1, 8 * k + 1) for k in range(n))
+                + "*INITIAL_STRESS_SOLID\n" + f10(1, 1, 0, 0, 0, 0, 0, 0) + f10(1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 0.01) + "*END\n")
+
+    def dti(lines):
+        return ("*Inputfile\nmodel.k\n*Mode\nDYNAIN_TO_INITIAL,1\n**DynainToInitial,1\n*DynainPath,dynain\n*IncludeStress,True\n"
+                + lines + "**EndDynainToInitial\n*End\n")
+
+    def con(cid, name, ss, ms, kind="AUTOMATIC_SURFACE_TO_SURFACE"):
+        return f"*CONTACT_{kind}_ID\n{cid:10d}{name}\n" + f10(ss, ms, 3, 3) + f10(0.1, 0.1) + f10(1.0, 1.0)
+
+    def d2r(sw, code, entno, rel, paired):
+        """D2R 한 세트 — paired 1 = 파트 1 변형→강체, -1 = 강체→변형."""
+        c2 = f10(0, 0, 0, 0.0, 1, 0, 0.0) + f10(1, 0) if paired >= 0 else f10(0, 0, 0, 0.0, 0, 1, 0.0) + f10(1)
+        return "*DEFORMABLE_TO_RIGID_AUTOMATIC\n" + f10(sw, code, 0.0, "1e20", 0.0, entno, rel, paired) + c2
+
+    def cons_d2r(t):
+        """({접촉 CID: 키워드}, [D2R SWSET…])."""
+        cons = {}
+        for kw in sorted({ln.split()[0].upper() for ln in t.splitlines() if ln.startswith("*CONTACT_")}):
+            for _, rows in kw_blocks(t, kw):
+                cons[try_(lambda: int(rows[0][:10]), -1)] = kw
+        return cons, sorted(try_(lambda: int(rows[0][:10]), -1) for _, rows in kw_blocks(t, "*DEFORMABLE_TO_RIGID_AUTOMATIC") if rows)
+
+    # ── DTI *RemovePartbyID: 지운 파트를 쓰지 않는 접촉(MSTYP 3)은 남는다 ─────────────────────────────────────────────
+    d, rc, log = run("dti_rmpart_tied", {"model.k": deck(3, con(7, "bond12", 1, 2, "TIED_SURFACE_TO_SURFACE") + con(8, "floor", 1, 3)),
+                                         "dynain": dyn(3)}, dti("*RemovePartbyID,3\n*RemoveContactbyID,8\n"))
+    t = read(d, "model_dti.k")
+    cons, sws = cons_d2r(t)
+    check("R6 DTI *RemovePartbyID,3: 파트 1·2 의 TIED 접촉 7 은 남고(MSTYP 3 인 접촉을 모두 지우지 않는다) 파트 3·접촉 8 만 지운다",
+          rc == 0 and cons == {7: "*CONTACT_TIED_SURFACE_TO_SURFACE_ID"} and sorted(M.parts_of(t)) == [1, 2], f"rc={rc} {cons} {M.parts_of(t)}")
+
+    # ── DTI 가 지우는 덱 D2R: 접촉력 전환(CODE 2·4)만, 실제로 없어진 접촉만, 짝은 함께, 다른 접촉의 사용자 짝은 남긴다 ─────────────────
+    rw = "*RIGIDWALL_PLANAR_ID\n" + f"{1:10d}floorwall\n" + f10(0, 0, 0, 0.0, 0.0, "1.0E+20", 1.0) + f10(0.0, 0.0, -0.1, 0.0, 0.0, 1.0, 0.0, 0.0)
+    d, rc, log = run("dti_d2r_rw", {"model.k": deck(2, rw + con(1, "inner", 1, 2) + d2r(20, 1, 1, 10, 1) + d2r(10, 3, 1, 20, -1)),
+                                    "dynain": dyn(2)}, dti("*RemoveContactbyID,1\n"))
+    cons, sws = cons_d2r(read(d, "model_dti.k"))
+    check("R6 DTI *RemoveContactbyID,1 + 강체벽 1 의 D2R 짝(CODE 1·3 = 강체벽 힘): 접촉 1 만 지우고 D2R 짝 20·10 은 남긴다",
+          rc == 0 and cons == {} and sws == [10, 20], f"rc={rc} {cons} {sws}")
+    d, rc, log = run("dti_d2r_raw", {"model.k": deck(2, con(5, "n2sfloor", 1, 2, "AUTOMATIC_NODES_TO_SURFACE") + d2r(20, 2, 5, 10, 1)
+                                                     + d2r(10, 4, 5, 20, -1)), "dynain": dyn(2)}, dti("*RemoveContactbyID,5\n"))
+    cons, sws = cons_d2r(read(d, "model_dti.k"))
+    check("R6 DTI *RemoveContactbyID,5(KMM 이 해석하지 않는 원문 N2S 접촉): 접촉이 남으면 그 D2R 짝도 남고 ⚠ 로 알린다",
+          rc == 0 and ((5 in cons and sws == [10, 20] and "⚠ DTI" in log) or (5 not in cons and sws == [])), f"rc={rc} {cons} {sws}")
+    d, rc, log = run("dti_d2r_half", {"model.k": deck(2, con(1, "floor", 1, 2) + d2r(20, 0, 0, 10, 1) + d2r(10, 4, 1, 20, -1)),
+                                      "dynain": dyn(2)}, dti("*RemoveContactbyID,1\n"))
+    cons, sws = cons_d2r(read(d, "model_dti.k"))
+    check("R6 DTI *RemoveContactbyID,1 + 짝 한쪽만 접촉 1 을 가리킴(SWSET 10 CODE 4 · 짝 20 CODE 0): 짝 둘 다 지운다",
+          rc == 0 and cons == {} and sws == [], f"rc={rc} {cons} {sws}")
+    d, rc, log = run("dti_d2r_user", {"model.k": deck(3, con(1, "user", 1, 2) + d2r(20, 2, 1, 10, 1) + d2r(10, 4, 1, 20, -1)
+                                                      + con(2, "floor", 1, 3) + d2r(40, 2, 2, 30, 1) + d2r(30, 4, 2, 40, -1)),
+                                      "dynain": dyn(3)}, dti("*RemovePartbyID,3\n*RemoveContactbyID,2\n"))
+    cons, sws = cons_d2r(read(d, "model_dti.k"))
+    check("R6 DTI 바닥판 파트·접촉 2 지움 + 사용자 접촉 1 의 D2R 짝: 접촉 1·짝 20·10 은 남고 접촉 2 의 짝 40·30 만 지운다",
+          rc == 0 and cons == {1: "*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_ID"} and sws == [10, 20], f"rc={rc} {cons} {sws}")
+
+    # ── IMPORT_MERGE_K 침식: IDAM 0 이면 카드 3 의 2~7칸은 견주지 않고, 빈 칸·빠진 카드·주석 줄은 기본값과 같다 ───────────────────
+    one = lambda pid, name: ("*KEYWORD\n" + node_block(cubes(1)) + "*ELEMENT_SOLID\n" + hex_row(1, pid, 1) + part(pid, 1, 1, name)
+                             + SOLID1 + "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3))
+    c12 = "*MAT_ADD_EROSION\n" + f10(1, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0) + f10(0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0)
+    pairs = (("IDAM 0 · DCRIT 0.1 / 0.9", c12 + f10(0, 0, 5, 0.0, 2.0, 0.1, 1.0, 0), c12 + f10(0, 0, 5, 0.0, 2.0, 0.9, 1.0, 0)),
+             ("IDAM 1 · 카드 3 빈 칸 / 기본값", c12 + f"{1:10d}" + " " * 60 + f"{0:10d}\n", c12 + f10(1, 0, 0, 0.0, 1.0, 0.0, 1.0, 0)),
+             ("카드 3 없음 / '0'", c12, c12 + f10(0)),
+             ("카드 2장 / 카드 5장(기본값)", c12, c12 + f10(0, 0, 0, 0.0, 1.0, 0.0, 1.0, 0) + f10(0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0)
+              + f10(0.0, 0.5, "1.0E+20", 0.0)),
+             ("끝 주석 줄 '$' / 없음", c12 + "$\n", c12))
+    for k, (what, b, i) in enumerate(pairs):
+        d, rc, log = run(f"im_ero_same{k}", {"base.k": one(1, "a") + b + "*END\n", "imp.k": one(1, "b") + i + "*END\n"}, IMO)
+        check(f"R6 IMPORT_MERGE_K 같은 침식({what}): 충돌이 아니다(rc 0)", rc == 0 and "번호 충돌" not in log, f"rc={rc} " + log[-300:])
+
+    # ── 원문 침식 카드: 콤마 줄의 빈 칸은 자리를 지키고, 고정폭 줄 끝에 공백이 붙지 않는다 ─────────────────────────────────
+    d, rc, log = run("ero_rawcard", {"model.k": cube_deck("*MAT_ADD_EROSION\n" + f10(1, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0) + "0.0,,,0.25\n"
+                                                          + f10(0))})
+    rows = [r for _, rr in kw_blocks(read(d, "model_trans.k"), "*MAT_ADD_EROSION") for r in rr]
+    check("R6 원문 *MAT_ADD_EROSION '0.0,,,0.25'·'         0': MXEPS 0.25 는 넷째 칸, 줄 끝 공백 없음",
+          rc == 0 and rows[1:] == ["       0.0" + " " * 20 + "      0.25", "         0"], f"rc={rc} {rows}")
+
+    # ── 80열 뒤 글자(R16 은 읽지 않는다)와 I10 끝 칸이 10자를 못 채운 셸·솔리드·빔 줄 ───────────────────────────────────────
+    sol = ("*KEYWORD\n" + node_block(cubes(3)) + "*ELEMENT_SOLID\n" + hex_row(1, 1, 1) + hex_row(2, 1, 9) + hex_row(3, 1, 17)[:-1] + "   #3\n"
+           + part(1) + SOLID1 + ELASTIC + "*END\n")
+    d, rc, log = run("solid_col81", {"model.k": sol})
+    e = elements(read(d, "model_trans.k"))
+    check("R6 *ELEMENT_SOLID 셋째 줄 81열 뒤 '   #3': 요소 1·2·3 이 모두 남는다",
+          rc == 0 and [e.get(k, [(0, [])])[0][1] for k in (1, 2, 3)] == [list(range(1, 9)), list(range(9, 17)), list(range(17, 25))],
+          f"rc={rc} {e}")
+    sq = {k: (float(k % 3), float(k // 3), 0.0) for k in range(1, 9)}
+    i10 = (("*ELEMENT_SHELL", sq, f10(1, 1, 1, 2, 3, 4) + f10(2, 1, 2, 5, 6)[:-1] + "   3\n",
+            part(1, 1, 1, "shell") + "*SECTION_SHELL\n" + f10(1, 2) + f10(1.0, 1.0, 1.0, 1.0), 2, [2, 5, 6, 3]),
+           ("*ELEMENT_SOLID", cubes(2), f10(1, 1, *range(1, 9)) + f10(2, 1, *range(9, 16))[:-1] + "  16\n", part(1) + SOLID1, 2, list(range(9, 17))),
+           ("*ELEMENT_BEAM", {1: (0.0, 0.0, 0.0), 2: (1.0, 0.0, 0.0), 3: (0.0, 1.0, 0.0)}, f10(1, 1, 1, 2)[:-1] + "  3\n",
+            part(1, 1, 1, "beam") + "*SECTION_BEAM\n" + f10(1, 1, 1.0, 2) + f10(1.0, 1.0, 0.0, 0.0), 1, [1, 2, 3]))
+    for kw, pts, rows, rest, eid, want in i10:
+        d, rc, log = run("i10_ragged", {"model.k": "*KEYWORD I10=Y\n" + node_block(pts, 10) + kw + "\n" + rows + rest + ELASTIC + "*END\n"})
+        got = elements(read(d, "model_trans.k"), kw).get(eid, [(0, [])])[0][1][:len(want)]
+        check(f"R6 I10 {kw} 끝 칸이 10자를 못 채운 줄: 절점 {want} 를 모두 읽는다", rc == 0 and got == want, f"rc={rc} {got}")
+
+    # ── 번호 없는 *RIGIDWALL_PLANAR 와 *RIGIDWALL_PLANAR_ID 1: 벽 둘이 모두 남는다 ───────────────────────────────────────
+    walls = rw + "*RIGIDWALL_PLANAR\n" + f10(0, 0, 0, 0.0, 0.0, "1.0E+20", 1.0) + f10(0.0, 0.0, -0.2, 0.0, 0.0, 1.0, 0.2, 0.0)
+    d, rc, log = run("rigidwall_ids", {"model.k": cube_deck(walls)})
+    t = read(d, "model_trans.k")
+    got = sorted((try_(lambda: int(rows[0][:10]), -1), try_(lambda: round(floats(rows[2], 10)[2], 4)))
+                 for kw in sorted({ln.split()[0].upper() for ln in t.splitlines() if ln.startswith("*RIGIDWALL")}) for _, rows in kw_blocks(t, kw))
+    check("R6 *RIGIDWALL_PLANAR(번호 없음) + *RIGIDWALL_PLANAR_ID 1: 벽 둘(번호가 다르고 ZT -0.1·-0.2)이 남는다",
+          rc == 0 and len(got) == 2 and len({g[0] for g in got}) == 2 and sorted(g[1] for g in got) == [-0.2, -0.1], f"rc={rc} {got}")
+
+
 def main():
     r1()
     r2()
     r3()
     r4()
     r5()
+    r6()
     print()
     if FAILS:
         print(f"FAILED {len(FAILS)}")
