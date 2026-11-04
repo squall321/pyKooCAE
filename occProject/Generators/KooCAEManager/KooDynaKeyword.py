@@ -10052,13 +10052,19 @@ class DynaNode(DynaKeyword):
                     # Convert all elements in the entry to float at once
                     data[jj, :len(entry)] = [float(x) if x.strip() else 0 for x in entry]
                 except ValueError:
-                    # 읽지 못한 줄은 절점이 아니다 — 예전엔 0 으로 채워 NID 0 유령 절점이 출력에 나갔다
-                    bad.append("".join(entry).strip()[:60])
-                    continue
+                    try:   # 포트란 D 지수(1.0D-03)는 LS-DYNA 가 읽는다 — KooDynaFloat 처럼 받는다(v131 리뷰 R1)
+                        data[jj, :len(entry)] = [float(x.replace('D', 'E').replace('d', 'E')) if x.strip() else 0 for x in entry]
+                    except ValueError:
+                        # 읽지 못한 줄은 절점이 아니다 — 예전엔 0 으로 채워 NID 0 유령 절점이 출력에 나갔다
+                        bad.append("".join(entry).strip()[:60])
+                        continue
                 jj += 1
         if bad:
             print(f"  🔴 NODE: 숫자로 읽지 못한 절점 줄 {len(bad)}개를 버렸다(예: {bad[0]!r}) — 그 절점을 쓰는 요소는 "
                   f"'정의 안 된 절점' 으로 빠진다. 고정폭(8·16칸)·콤마·long('+') 형식을 확인할 것")
+            # 요소가 쓰지 않는 절점(셋·경계만 가리키는)은 요소 장부에 안 걸려 rc 0 이었다 — 카드 소실 장부에도 적는다(v131 리뷰 R1)
+            from KooCAEManager.KooElement import note_content_loss
+            note_content_loss("*NODE — 숫자로 읽지 못한 절점 줄", len(bad))
         return data[:jj]
     def getNodeListOld(self):
         nTotal = 0
