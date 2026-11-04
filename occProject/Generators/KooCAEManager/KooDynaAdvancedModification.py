@@ -7040,7 +7040,8 @@ class KooDynaAdvancedModification:
         removed = {_whole_int(str(c)) for c in removed} - {None}
         left = sorted(c for c in ({_whole_int(str(c)) for c in requested} - {None}) if c not in removed)
         if left:
-            print(f"  ⚠ DTI: *RemoveContactbyID {left} — KMM 이 해석하지 않는 원문 접촉이라 지우지 못했다(그 접촉과 D2R 은 그대로 남는다)")
+            print(f"  ⚠ DTI: *RemoveContactbyID {left} — 지우지 못했다. KMM 이 해석하지 않는 원문 접촉이거나 덱에 없는 번호다"
+                  f"(그 번호를 가리키는 D2R 은 그대로 남는다)")
         dm = self.dynaImporter.dynaManager
         raw = getattr(dm, "_raw_keyword_dict", None) or {}
         kw = "DEFORMABLE_TO_RIGID_AUTOMATIC"
@@ -7049,18 +7050,19 @@ class KooDynaAdvancedModification:
             return
         fmts_all = getattr(dm, "_block_formats", None)
         fmts = fmts_all.get(kw) if fmts_all is not None else None
-        sets = []   # (swset, code, entno, relsw)
+        sets = []   # (swset, code, entno, relsw, paired)
         for bi, b in enumerate(blocks):
             w = 20 if (fmts is not None and bi < len(fmts) and fmts[bi] == "long") else 10
             rows = [str(l).replace("\n", "") for l in b if str(l).strip() and not str(l).lstrip().startswith("$")]
             c1 = rows[0] if rows else ""
             v = (c1.split(",") if "," in c1 else [c1[k:k + w] for k in range(0, 8 * w, w)]) + [""] * 8
-            sets.append(tuple(_whole_int(v[k].strip()) for k in (0, 1, 5, 6)))
-        drop = {bi for bi, (sw, code, entno, rel) in enumerate(sets) if code in (2, 4) and entno in removed}
+            sets.append(tuple(_whole_int(v[k].strip()) for k in (0, 1, 5, 6, 7)))
+        drop = {bi for bi, (sw, code, entno, rel, pr) in enumerate(sets) if code in (2, 4) and entno in removed}
         while True:   # 짝 스위치(RELSW 로 서로 가리키는 세트)도 함께 — 한쪽만 지우면 남은 쪽이 없는 SWSET 을 가리켰다(리뷰 R6)
             sws = {sets[bi][0] for bi in drop}
-            rels = {sets[bi][3] for bi in drop} - {None, 0}
-            more = {bi for bi, (sw, code, entno, rel) in enumerate(sets)
+            # 지운 세트가 가리키는 세트는 PAIRED ±1(짝)일 때만 — PAIRED 0 의 RELSW 는 짝이 아니라 남은 사용자 짝까지 지웠다(리뷰 R7)
+            rels = {sets[bi][3] for bi in drop if sets[bi][4]} - {None, 0}
+            more = {bi for bi, (sw, code, entno, rel, pr) in enumerate(sets)
                     if bi not in drop and ((sw is not None and sw in rels) or (rel and rel in sws))}
             if not more:
                 break
