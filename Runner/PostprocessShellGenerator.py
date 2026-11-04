@@ -869,7 +869,9 @@ def _sphere_auto_resources(n_runs, sif_path, partition, explicit_ncpu, explicit_
         def w_on(x):            # 이 노드에서 코어·모형 메모리(6+0.5W)가 함께 맞는 가장 큰 W(메모리 모름·미설정은 코어만)
             w = min(cpus, x[0]) if x[0] else cpus
             if x[1]:
-                w = min(w, int((x[1] - SPHERE_NEW_MEM_BASE_GB) // SPHERE_NEW_MEM_PER_WORKER_GB))
+                # 요청 메모리는 올림한 정수 GB 라 노드 메모리도 내림한 정수로 잰다 — 0.5 GB/워커면 6+0.5W 가 x.5 가 되어
+                # 올림 요청이 노드를 넘고 다시 깎으며 🔴 를 냈다(W 를 하나 줄이면 맞는다, v131 리뷰 R3)
+                w = min(w, int((math.floor(x[1]) - SPHERE_NEW_MEM_BASE_GB) // SPHERE_NEW_MEM_PER_WORKER_GB))
             return w
         if whole:                                           # 명시 --mem=0 — 어느 노드든 메모리를 받는다
             pool = shapes
