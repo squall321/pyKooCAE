@@ -83,22 +83,12 @@ class KooContact:
     
     def OffsetID(self,offsetid, offsetpid, offsetssid, offsetnsid, offsetpsid):
         self.cid += offsetid
-        if self.SSTYP == 0:
-            self.SSID += offsetssid
-        elif self.SSTYP == 2:
-            self.SSID += offsetpsid
-        elif self.SSTYP == 3:
-            self.SSID += offsetpid
-        elif self.SSTYP == 4:
-            self.SSID += offsetnsid
-        if self.MSTYP == 0:
-            self.MSID += offsetssid
-        elif self.MSTYP == 2:
-            self.MSID += offsetpsid
-        elif self.MSTYP == 3:
-            self.MSID += offsetpid
-        elif self.MSTYP == 4:
-            self.MSID += offsetnsid
+        # 0 은 '없음·전체'(단면 접촉의 MSID 0·MSTYP 0 등)라 밀지 않는다 — 예전엔 없는 셋 번호가 됐다(v131 리뷰 R3)
+        by_type = {0: offsetssid, 2: offsetpsid, 3: offsetpid, 4: offsetnsid}
+        if self.SSID and self.SSTYP in by_type:
+            self.SSID += by_type[self.SSTYP]
+        if self.MSID and self.MSTYP in by_type:
+            self.MSID += by_type[self.MSTYP]
 
     def SetOptCardA(self,SOFT=0, SOFSCL=0.1, LCIDAB=0, MAXPAR=1.025, SBOPT=2, DEPTH=2, BSORT=100, FRCFRQ=1):
         # 정수 옵션이지만 Altair 등이 '2.0' 으로 기록하는 경우가 있어 int() 직접호출은
@@ -678,8 +668,10 @@ class KooContactManager:
         return contactGraph, primarytoSecondaries, secondarytoPrimaries
         
     def OffsetID(self, offsetid, offsetpid, offsetssid, offsetnsid, offsetpsid):
-        self.maxid = offsetid
-        for contact in self.contacts:
+        # 사전의 값(접촉)을 돈다 — 예전엔 키(int)를 돌아 AttributeError 로 IMPORT_MERGE_K 가 죽었고, maxid 를 오프셋으로
+        # 덮어 병합 뒤 새 접촉 번호가 가져온 접촉과 겹칠 수 있었다(v131 리뷰 R3)
+        self.maxid += offsetid
+        for contact in self.contacts.values():
             contact.OffsetID(offsetid, offsetpid, offsetssid, offsetnsid, offsetpsid)
 
     def OverwritefromContactManager(self, contactManager : KooContactManager):
