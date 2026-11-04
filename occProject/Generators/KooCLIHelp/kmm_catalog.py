@@ -1027,7 +1027,7 @@ mode("DECOMPOSE_K", "모델을 그룹별 include 파일 세트로 분해 (master
            K("SeparateMaterials", "True/False", "False", "그룹별 재료 분리"),
            K("SharedNodesPolicy", "duplicate 등", "duplicate", "그룹 경계 공유 절점 처리"),
            K("EmitGroupSets", "True/False", "True", "그룹 SET 출력"),
-           K("ModelIndependentSplit", "True/False", "-", "controls.k 와 globals.k 분리"),
+           K("ModelIndependentSplit", "True/False", "-", "controls.k 와 globals.k 분리 — False 면 CONTROL·DATABASE 를 globals.k 에 함께 쓴다"),
            K("GroupBoundaryPolicy", "inline 등", "inline", "그룹 간 요소 처리")],
      examples=[Example("하우징·배터리 두 그룹으로 분해", _opt("MinimumModel.k", "DECOMPOSE_K,1", """**DecomposeK,1
 Group,housing,HOUSING*,COVER

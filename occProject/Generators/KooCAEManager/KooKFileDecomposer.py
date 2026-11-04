@@ -559,6 +559,14 @@ class KFileDecomposer:
                     tc = getattr(node, 'tc', 0)
                     rc = getattr(node, 'rc', 0)
                     f.write(f"{nid:>8}{node.x:>16.8e}{node.y:>16.8e}{node.z:>16.8e}{tc:>8}{rc:>8}\n")
+            # ModelIndependentSplit False 면 controls.k 를 따로 두지 않고 CONTROL·DATABASE 매니저 판을 여기에 쓴다 — 예전엔
+            # 어느 파일에도 쓰지 않아 *CONTROL_TERMINATION 등이 사라졌다(v131 리뷰 R3)
+            if not self.model_independent_split:
+                for mgr in (self.dynaImporter.controlManager, self.dynaImporter.databaseManager):
+                    stream = StringIO()
+                    if hasattr(mgr, 'WriteStreamDynaKeyword'):
+                        mgr.WriteStreamDynaKeyword(stream)
+                    f.write(stream.getvalue())
             # 미인터프리트 키워드 raw 보존 (RIGIDWALL_PLANAR 단순형 등)
             self._write_uninterpreted_raw(f)
             self._write_empty_keywords(f)
@@ -612,7 +620,7 @@ class KFileDecomposer:
             print(f"  Warning: uninterpreted raw 출력 실패 (skip): {e}")
 
     def _write_controls_file(self):
-        """controls.k — CONTROL_*, DATABASE_* 등 모델 독립 설정."""
+        """controls.k — CONTROL_*, DATABASE_* 등 모델 독립 설정. ModelIndependentSplit False 면 따로 쓰지 않고 globals.k 에 쓴다."""
         if not self.model_independent_split:
             return
         out_path = os.path.join(self.output_dir, "controls.k")

@@ -42,7 +42,7 @@ output_dir/
 | `SeparateMaterials` | `SeparateMaterials,True\|False` | `False` | True 면 공통 `materials.k` 생략(그룹별 분리는 미구현 hook) | KooMeshModifier.py:2220-2221 / KooKFileDecomposer.py:60, 457-458 |
 | `SharedNodesPolicy` | `SharedNodesPolicy,duplicate\|first_group` | `duplicate` | 공유 노드 출력 정책. `duplicate`=사용 그룹 모두 / `first_group`=등록 순서 첫 그룹에만 | KooMeshModifier.py:2222-2223 / KooKFileDecomposer.py:61, 212-227 |
 | `EmitGroupSets` | `EmitGroupSets,True\|False` | `True` | (옵션 저장됨, 본문 사용처 미확인) | KooMeshModifier.py:2224-2225 / KooKFileDecomposer.py:62 |
-| `ModelIndependentSplit` | `ModelIndependentSplit,True\|False` | `True` | `controls.k`(CONTROL/DATABASE) 분리 출력 여부. False 면 생략 | KooMeshModifier.py:2226-2227 / KooKFileDecomposer.py:63, 562-565 |
+| `ModelIndependentSplit` | `ModelIndependentSplit,True\|False` | `True` | `controls.k`(CONTROL/DATABASE) 분리 출력 여부. False 면 controls.k 를 따로 두지 않고 globals.k 에 함께 쓴다(v131 — 예전엔 생략돼 어느 파일에도 남지 않았다) | KooMeshModifier.py:2226-2227 / KooKFileDecomposer.py:63, 562-565 |
 | `GroupBoundaryPolicy` | `GroupBoundaryPolicy,<값>` | `inline` | (옵션 저장됨, 본문 사용처 미확인) | KooMeshModifier.py:2228-2229 / KooKFileDecomposer.py:64 |
 
 - 옵션 키는 대소문자 무시(`line.lower()`)로 비교되며, 알 수 없는 라인은 경고 후 무시된다 (KooMeshModifier.py:2230-2231).
