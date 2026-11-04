@@ -274,7 +274,8 @@ def _merge_materials(target_mat_mgr, new_mat_mgr, base_raw_mids=frozenset(), bas
     """재질은 공통 DB(MID 보존) — 기준 덱에 없는 MID 만 더한다. 같은 MID 인데 내용이 다르거나 기준 덱 원문 재질의 MID 와
     겹치면 기준 덱 것을 남기고 번호 충돌(🔴)로 모은다 — 예전엔 알림 없이 가져온 재질을 버려 가져온 파트가 기준 덱 재질을
     썼다. *MAT_ADD_EROSION·*MAT_ADD_PZELECTRIC 은 MID 에 붙으므로 가져와 더한 재질의 것만 더한다 — 예전엔 기준 덱의 같은
-    MID 재질에 붙어 기준 파트의 거동까지 바꿨다(v131 리뷰 R3). EOS 는 EOSID 로 같은 규칙이다."""
+    MID 재질에 붙어 기준 파트의 거동까지 바꿨다(v131 리뷰 R3). 같은 재질을 함께 쓰는데 붙는 카드가 한쪽 덱에만 있어도 알린다
+    — 기준 덱에만 있으면 가져온 파트에도 붙는다(리뷰 R4). EOS 는 EOSID 로 같은 규칙이다(기준 덱 원문 EOS 번호 포함)."""
     n_added, added = 0, set()
     for mid, mat in new_mat_mgr.materials.items():
         cur = target_mat_mgr.materials.get(mid)
@@ -301,6 +302,9 @@ def _merge_materials(target_mat_mgr, new_mat_mgr, base_raw_mids=frozenset(), bas
                 n_added += 1
             elif not (mid in tgt and _same_card(tgt[mid], card)):
                 _CONFLICTS.append(f"{label} MID {mid}(기준 덱 재질에 붙지 않게 옮기지 않음)")
+        for mid in tgt:
+            if mid in new_mat_mgr.materials and mid not in added and mid not in getattr(new_mat_mgr, attr, {}):
+                _CONFLICTS.append(f"{label} MID {mid}(기준 덱에만 있다 — 같은 재질을 쓰는 가져온 파트에도 붙는다)")
     target_mat_mgr.maxid = max(getattr(target_mat_mgr, 'maxid', 0),
                                 getattr(new_mat_mgr, 'maxid', 0))
     return n_added
@@ -393,13 +397,33 @@ def _values(obj):
     return v
 
 
+_MAT_SKIP = {"id", "name", "dynaKeywordString", "nastranKeywordString", "ansysAPDLKeywordString", "raw_cards"}
+
+
+def _mat_values(obj):
+    """해석한 재질·EOS·*MAT_ADD_* 의 값(전 정밀도) — 다시 쓴 카드 글은 유효숫자 4자리라 E 210000·210040 을 같다고 봤다(v131
+    리뷰 R4). 원문 카드에만 있는 칸(*MAT_ADD_EROSION 의 옛 GISSMO 카드 6~)은 글로 함께 본다."""
+    v = {k: (tuple(x) if isinstance(x, list) else x) for k, x in vars(obj).items()
+         if k not in _MAT_SKIP and isinstance(x, (int, float, str, bool, list, tuple, type(None)))}
+    raw = getattr(obj, "raw_cards", None)
+    if raw:
+        v["_raw_extra"] = tuple(" ".join(str(l).split()) for l in raw[5:])
+    return v
+
+
 def _same_card(a, b):
-    """같은 번호의 두 정의가 같은가 — 곡선·좌표계·HOURGLASS 는 값(전 정밀도)으로, 나머지(재질 등)는 KMM 이 다시 쓴 카드 글로
-    견준다. 예전엔 다시 쓴 글만 견줘 SFA 빈칸·1.0 같은 같은 뜻을 충돌로 보고, 소수 3자리로 쓰는 값의 다름은 놓쳤다(v131 리뷰 R3)."""
+    """같은 번호의 두 정의가 같은가 — 곡선·좌표계·HOURGLASS 와 해석한 재질·EOS 는 값(전 정밀도)으로, 원문 그대로인 재질·EOS
+    는 카드 글로 견준다. 예전엔 다시 쓴 글만 견줘 SFA 빈칸·1.0 같은 같은 뜻을 충돌로 보고(v131 리뷰 R3), 유효숫자 4자리로 쓰는
+    값의 다름은 놓쳤다(리뷰 R3·R4)."""
     ta_, tb_ = type(a).__name__, type(b).__name__
     if ta_ in _VALUE_TYPES and tb_ in _VALUE_TYPES:
         try:
             return _values(a) == _values(b)
+        except Exception:
+            return False
+    if ta_ == tb_ and ta_.startswith(("KooMaterial", "KooEOS")) and ta_ not in ("KooMaterial", "KooEOS"):
+        try:
+            return _mat_values(a) == _mat_values(b)
         except Exception:
             return False
     ta, tb = _card_text(a), _card_text(b)
