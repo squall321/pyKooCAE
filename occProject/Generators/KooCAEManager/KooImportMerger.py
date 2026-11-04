@@ -312,16 +312,26 @@ _NOT_MERGED_PREFIX = ("LOAD_", "INITIAL_", "CONSTRAINED_", "DAMPING_", "RIGIDWAL
 _CONFLICTS = []   # 같은 번호·다른 내용(곡선·HOURGLASS) — import_merge_k 끝에서 🔴 로 알린다
 
 
-def _card_text(obj, title=False):
-    """같은 번호의 두 정의가 같은 내용인지 보는 카드 글 — 키워드 줄·주석·(제목 카드면) 제목 줄은 뺀다."""
+def _card_text(obj):
+    """같은 번호의 두 정의가 같은 내용인지 보는 카드 글 — 키워드 줄·주석과, 그 객체가 _TITLE 판이면 제목 줄을 뺀다
+    (한쪽만 _TITLE 이어도 데이터가 같으면 같다). 쓰지 못하면 None — 부르는 쪽이 다르다고 본다."""
     from io import StringIO
     st = StringIO()
     try:
-        obj.WriteStreamDynaKeyword(st, 0)
-    except TypeError:
-        obj.WriteStreamDynaKeyword(st)
+        try:
+            obj.WriteStreamDynaKeyword(st, 0)
+        except TypeError:
+            obj.WriteStreamDynaKeyword(st)
+    except Exception:
+        return None
     lines = [ln for ln in st.getvalue().splitlines() if not ln.startswith(("*", "$"))]
+    title = str(getattr(obj, "lctype", "")).upper().endswith("_TITLE")
     return "\n".join(lines[1:] if title else lines)
+
+
+def _same_card(a, b):
+    ta, tb = _card_text(a), _card_text(b)
+    return ta is not None and ta == tb
 
 
 def _merge_defines(target, new):
@@ -332,25 +342,15 @@ def _merge_defines(target, new):
             target.defines[key] = d
             target.maxid = max(target.maxid, getattr(d, 'lcid', 0) or 0)
             continue
-        t = str(getattr(d, 'lctype', '')).endswith('_TITLE') or str(getattr(cur, 'lctype', '')).endswith('_TITLE')
-        try:
-            same = _card_text(cur, t) == _card_text(d, t)
-        except Exception:
-            same = False
-        if not same:
+        if not _same_card(cur, d):
             _CONFLICTS.append(f"곡선 LCID {key}")
     for key, c in new.defineCoordinateSystems.items():
         cur = target.defineCoordinateSystems.get(key)
         if cur is None:
             target.defineCoordinateSystems[key] = c
             target.maxcid = max(target.maxcid, getattr(c, 'cid', 0) or 0)
-        else:
-            try:
-                same = _card_text(cur) == _card_text(c)
-            except Exception:
-                same = False
-            if not same:
-                _CONFLICTS.append(f"좌표계 CID {key}")
+        elif not _same_card(cur, c):
+            _CONFLICTS.append(f"좌표계 CID {key}")
 
 
 def _merge_hourglasses(target, new):
@@ -359,7 +359,7 @@ def _merge_hourglasses(target, new):
         cur = target.hourglasses.get(key)
         if cur is None:
             target.hourglasses[key] = hg
-        elif _card_text(cur) != _card_text(hg):
+        elif not _same_card(cur, hg):
             _CONFLICTS.append(f"HOURGLASS HGID {key}")
 
 

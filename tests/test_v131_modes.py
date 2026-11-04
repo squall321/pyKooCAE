@@ -306,6 +306,10 @@ def main():
         conflict = "같은 번호인데 내용이 다른 정의" in log
         check(f"M2e {tag}: 번호 충돌 알림은 내용이 다를 때만(곡선 LCID 1·HOURGLASS HGID 1)",
               conflict == (cv != 1.0) and (not conflict or ("곡선 LCID 1" in log and "HOURGLASS HGID 1" in log)), log[-400:])
+    # 한쪽만 *DEFINE_CURVE_TITLE 이고 값이 같으면 충돌이 아니다(제목 줄은 견주지 않는다)
+    base_t = base_e.replace(curve(1.0), "*DEFINE_CURVE_TITLE\nbase curve\n" + curve(1.0)[len("*DEFINE_CURVE\n"):])
+    d, rc, log = run("m2e_title", {"base.k": base_t, "imp.k": imp_e(1.0, 0.05)}, imo)
+    check("M2e 기준 덱만 _TITLE 곡선·같은 값: 충돌로 알리지 않는다", "곡선 LCID 1" not in log and "Traceback" not in log, log[-400:])
 
     # ── M3 Fast 기록기 ────────────────────────────────────────────────────────────────────────
     def raw_ok(text):
