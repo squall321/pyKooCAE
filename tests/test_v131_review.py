@@ -447,6 +447,26 @@ def r3():
           and sorted(tuple(psets.get(s, [])) for s in ssids) == sorted((p,) for p in pids) and len(pids) == 2,
           f"rc={rc} ssid={ssids} sets={psets} pids={pids} " + log[-300:])
 
+    # ── 셸 요소 셋(SSTYP 1)을 쓰는 가져온 접촉 — 요소 셋 번호가 밀리니 접촉 SSID 도 같이 밀린다 ─────────────────────
+    plate = ("*KEYWORD\n" + node_block({**cubes(1), 9: (0, 0, 2), 10: (1, 0, 2), 11: (1, 1, 2), 12: (0, 1, 2)}) + "*ELEMENT_SOLID\n"
+             + hex_row(1, 1, 1) + "*ELEMENT_SHELL\n" + f"{21:8d}{2:8d}{9:8d}{10:8d}{11:8d}{12:8d}\n" + part(1) + part(2, 2, 1)
+             + SOLID1 + "*SECTION_SHELL\n" + f10(2, 2) + f10(0.5, 0.5, 0.5, 0.5) + ELASTIC + "*SET_SHELL\n" + f10(5) + f10(21)
+             + "*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE\n" + f10(5, 1, 1, 3) + f10(0.1, 0.1) + f10(1.0, 1.0) + "*END\n")
+    d, rc, log = run("im_sstyp1", {"base.k": plate, "imp.k": plate}, IMO)
+    t = read(d, "base_imported.k")
+    cons = [ints(rows[0], 10)[:4] for _, rows in kw_blocks(t, "*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE") if rows]
+    cons += [ints(rows[1], 10)[:4] for _, rows in kw_blocks(t, "*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_ID") if len(rows) > 1]
+    shsets = {}
+    for kw in ("*SET_SHELL", "*SET_SHELL_TITLE", "*SET_SHELL_LIST", "*SET_SHELL_LIST_TITLE"):
+        for h, rows in kw_blocks(t, kw):
+            rows = rows[1:] if kw.endswith("_TITLE") else rows
+            shsets[int(rows[0][:10])] = [x for r in rows[1:] for x in ints(r, 10) if x]
+    shell_pid = {e: v[0][0] for e, v in elements(t, "*ELEMENT_SHELL").items()}
+    imp = [c for c in cons if c[1] != 1]
+    check("R3 IMPORT_MERGE_K 셸 요소 셋(SSTYP 1) 접촉: 가져온 접촉이 기준 덱 셋 5 가 아니라 가져온 셸의 셋을 가리킨다",
+          rc == 0 and len(cons) == 2 and len(imp) == 1 and imp[0][0] != 5
+          and [shell_pid.get(e) for e in shsets.get(imp[0][0], [])] not in ([], [2]), f"rc={rc} {cons} {shsets} {shell_pid}")
+
     # ── 뿌리 요소 매니저: PID 없는 질량·요소 셋(R3-2) ───────────────────────────────────────────────────
     root = lambda m: "*SET_SOLID\n" + f10(1) + f10(1) + "*ELEMENT_MASS\n" + f"{60:8d}{9 - 1:8d}{m:16.6f}\n"
     d, rc, log = run("im_eset", {"base.k": one(1, 1, 1, "base_part") + steel + root(0.001) + "*END\n",

@@ -192,7 +192,7 @@ def _apply_offsets(new_importer, off):
     # 5. SEGMENT SET
     new_importer.segmentSetManager.OffsetID(off['ssid'], off['nid'])
     # 6. CONTACT
-    new_importer.contactManager.OffsetID(off['cid'], off['pid'], off['ssid'], off['nsid'], off['psid'])
+    new_importer.contactManager.OffsetID(off['cid'], off['pid'], off['ssid'], off['nsid'], off['psid'], off['elem_set_sid'])
     # 7. DEFINE
     if hasattr(new_importer.defineManager, 'OffsetID'):
         new_importer.defineManager.OffsetID(off['lcid'], 0)

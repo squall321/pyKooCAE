@@ -81,10 +81,12 @@ class KooContact:
         self.OptCardE = []
         self.OptCardF = []
     
-    def OffsetID(self,offsetid, offsetpid, offsetssid, offsetnsid, offsetpsid):
+    def OffsetID(self,offsetid, offsetpid, offsetssid, offsetnsid, offsetpsid, offsetesid=0):
         self.cid += offsetid
         # 0 은 '없음·전체'(단면 접촉의 MSID 0·MSTYP 0 등)라 밀지 않는다 — 예전엔 없는 셋 번호가 됐다(v131 리뷰 R3)
-        by_type = {0: offsetssid, 2: offsetpsid, 3: offsetpid, 4: offsetnsid}
+        # R16 SSTYP·MSTYP: 0 세그먼트 셋·1 셸 요소 셋·2 파트 셋·3 파트·4 절점 셋·6 제외 파트 셋(5 전체·7 가지는 번호를 밀지 않는다).
+        # 요소 셋 번호도 밀리므로(뿌리 매니저, v131 리뷰 R3) 1 이 빠지면 가져온 접촉이 기준 덱의 같은 번호 셸 셋을 가리킨다
+        by_type = {0: offsetssid, 1: offsetesid, 2: offsetpsid, 3: offsetpid, 4: offsetnsid, 6: offsetpsid}
         if self.SSID and self.SSTYP in by_type:
             self.SSID += by_type[self.SSTYP]
         if self.MSID and self.MSTYP in by_type:
@@ -667,12 +669,12 @@ class KooContactManager:
         
         return contactGraph, primarytoSecondaries, secondarytoPrimaries
         
-    def OffsetID(self, offsetid, offsetpid, offsetssid, offsetnsid, offsetpsid):
+    def OffsetID(self, offsetid, offsetpid, offsetssid, offsetnsid, offsetpsid, offsetesid=0):
         # 사전의 값(접촉)을 돈다 — 예전엔 키(int)를 돌아 AttributeError 로 IMPORT_MERGE_K 가 죽었고, maxid 를 오프셋으로
         # 덮어 병합 뒤 새 접촉 번호가 가져온 접촉과 겹칠 수 있었다(v131 리뷰 R3)
         self.maxid += offsetid
         for contact in self.contacts.values():
-            contact.OffsetID(offsetid, offsetpid, offsetssid, offsetnsid, offsetpsid)
+            contact.OffsetID(offsetid, offsetpid, offsetssid, offsetnsid, offsetpsid, offsetesid)
 
     def OverwritefromContactManager(self, contactManager : KooContactManager):
         self.maxid = max(self.maxid, contactManager.maxid)
