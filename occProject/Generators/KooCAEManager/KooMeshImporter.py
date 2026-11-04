@@ -50,6 +50,12 @@ def _value_at_zero(xs, ys):
         (x0, y0), (x1, y1) = pts[i], pts[i + 1]
     return y0 if x1 == x0 else y0 + (0.0 - x0) * (y1 - y0) / (x1 - x0)
 
+# 원문 *MAT_* 가운데 첫 칸이 재질 MID 가 아닌 키워드(이름 앞부분) — *MAT_ADD_* 는 붙는 재질, 열 재질은 따로 매기는 TMID(R16),
+# *MAT_NONLOCAL·*MAT_WINFRITH_CONCRETE_REINFORCEMENT 는 다른 번호다. 숫자 별칭(*MAT_T01~·*MAT_084_REINF)도 같다 — 긴 이름만
+# 빼서 별칭 덱은 거짓 번호 충돌(rc 3)이었다(v131 리뷰 R7). 원문 재질 번호 예약과 IMPORT_MERGE_K 가 같이 쓴다
+RAW_MAT_NOT_MID = ("MAT_ADD_", "MAT_THERMAL_", "MAT_T0", "MAT_T1", "MAT_NONLOCAL", "MAT_WINFRITH_CONCRETE_REINFORCEMENT",
+                   "MAT_084_REINF")
+
 @contextlib.contextmanager
 def keep_i10_class_defaults():
     """두 번째 임포터(IMPORT_MERGE_K 의 가져올 덱·DTI 의 dynain)가 importNode 에서 I10 클래스 기본값(NodeManager·ElementManager
@@ -764,8 +770,7 @@ class KooDynaImporter():
         for kw, blocks in raw.items():
             if kw.startswith("SECTION_"):
                 fam = "SECTION_"
-            elif kw.startswith("MAT_") and not kw.startswith(("MAT_ADD_", "MAT_THERMAL_", "MAT_NONLOCAL",
-                                                               "MAT_WINFRITH_CONCRETE_REINFORCEMENT")):   # 첫 칸이 EID1(리뷰 R6)
+            elif kw.startswith("MAT_") and not kw.startswith(RAW_MAT_NOT_MID):
                 fam = "MAT_"
             else:
                 continue

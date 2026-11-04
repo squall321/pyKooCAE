@@ -44,7 +44,7 @@ def import_merge_k(simGenerator, option):
     folder = os.path.dirname(import_file)
     base = os.path.basename(import_file)
     new_importer.dynaManager.SetInputPath(import_file)
-    from KooCAEManager.KooMeshImporter import keep_i10_class_defaults
+    from KooCAEManager.KooMeshImporter import keep_i10_class_defaults, RAW_MAT_NOT_MID
     with keep_i10_class_defaults():   # 가져올 덱이 기준 덱의 I10 클래스 기본값을 바꾸지 않게(v131 리뷰 R2)
         new_importer.importDynaFile(import_file, writeLog=False)
         new_importer.importKeywordstoManager()
@@ -62,8 +62,7 @@ def import_merge_k(simGenerator, option):
 
     # 4. MAT/EOS/HG: 기존에 없는 ID만 추가 (병합)
     n_added_mat = _merge_materials(dynaImporter.matManager, new_importer.matManager,
-                                   _raw_ids(dynaImporter, "MAT_", ("MAT_ADD_", "MAT_THERMAL_", "MAT_NONLOCAL",
-                                                                   "MAT_WINFRITH_CONCRETE_REINFORCEMENT")),
+                                   _raw_ids(dynaImporter, "MAT_", RAW_MAT_NOT_MID),
                                    _raw_ids(dynaImporter, "EOS_"), _used_mids(new_importer))
     print(f"[IMPORT_MERGE_K] MAT/EOS 병합: 신규 추가 {n_added_mat}개 (기존 ID는 보존)")
 
