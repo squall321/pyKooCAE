@@ -6909,6 +6909,7 @@ class KooDynaAdvancedModification:
             dynainImporter.initialManager.ClearInitial()
         else:
             self.dynaImporter.initialManager.ClearInitial()
+            self._CarryRawInitialStress(dynainImporter)
 
         self.dynaImporter.OverwritefromManager(dynainImporter)
 
@@ -6954,6 +6955,31 @@ class KooDynaAdvancedModification:
             for cid in removeContactIDList:
                 self.dynaImporter.contactManager.RemoveContactbyID(cid)    
 
+
+    def _CarryRawInitialStress(self, dynainImporter):
+        """dynain 의 원문 *INITIAL_STRESS_SHELL·TSHELL·BEAM·*INITIAL_STRAIN_* 를 출력 모델 원문으로 옮긴다 — KMM 은 이 키워드를
+        해석하지 않아(솔리드만 해석) 예전엔 dynain 임포터에만 남고 버려졌다(v131 M4). 해석한 초기 조건을 지우는 것처럼 앞 단계에서
+        남은 같은 원문도 지운다 — 누적 체인에서도 단계마다 한 벌이다. 요소 번호는 dynain 이 같은 모델에서 나와 그대로 맞다."""
+        main, sub = self.dynaImporter.dynaManager, dynainImporter.dynaManager
+        raw_main = getattr(main, "_raw_keyword_dict", None)
+        if raw_main is None:
+            return
+        kind = ("INITIAL_STRESS_", "INITIAL_STRAIN_")
+        fmts_main = getattr(main, "_block_formats", None)
+        for k in [k for k in raw_main if k.startswith(kind) and not self.dynaImporter.keywordInterpreted.get(k, False)]:
+            del raw_main[k]
+            if fmts_main is not None:
+                fmts_main.pop(k, None)
+        moved = []
+        for k, blocks in (getattr(sub, "_raw_keyword_dict", None) or {}).items():
+            if k.startswith(kind) and not dynainImporter.keywordInterpreted.get(k, False) and blocks:
+                raw_main[k] = [list(b) for b in blocks]
+                fmts = (getattr(sub, "_block_formats", None) or {}).get(k)
+                if fmts is not None and fmts_main is not None:
+                    fmts_main[k] = list(fmts)
+                moved.append(f"*{k}({len(blocks)})")
+        if moved:
+            print(f"  DTI: dynain 의 원문 초기 응력·변형률 {', '.join(moved)} 을 그대로 옮긴다(KMM 은 솔리드 응력만 해석한다)")
 
     def ContactAutoDecomposition(self, option):
         xMargin = option["SearchMarginX"]
