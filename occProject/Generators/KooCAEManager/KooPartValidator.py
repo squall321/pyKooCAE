@@ -394,7 +394,8 @@ def _write_single_part_model(
                     stream.write(f"{eid:>8}{pid:>8}{nids[0]:>8}{nids[1]:>8}{nids[2]:>8}{nids[3]:>8}{nids[4]:>8}{nids[5]:>8}{nids[6]:>8}{nids[7]:>8}\n")
         else:
             # TSHELL8(*ELEMENT_TSHELL 을 읽은 요소) 파트는 *ELEMENT_TSHELL 로 — 솔리드로 쓰면 LS-DYNA 가 단면과 맞지 않는다(2026-11-03)
-            stream.write("*ELEMENT_TSHELL\n" if etype == "TSHELL8" else "*ELEMENT_SOLID\n")
+            from KooCAEManager.KooElement import is_tshell
+            stream.write("*ELEMENT_TSHELL\n" if is_tshell(first_elem, part.elementManager) else "*ELEMENT_SOLID\n")   # TShellMode 도(v131 M7)
             for eid, elem in part.elementManager.elements.items():
                 nids = [n.id for n in elem.nodes if n is not None]
                 while len(nids) < 8:

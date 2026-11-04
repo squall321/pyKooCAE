@@ -3081,10 +3081,11 @@ class KooPartManager():
         manual_eids = set(element_ids) if element_ids else set()
         # LS-DYNA 는 요소 종류마다 EID 를 따로 매긴다 — 같은 번호가 솔리드·셸·빔에도 있으면 TSHELL 은 건드리지 않는다
         # (v129 까지 TSHELL 은 요소로 읽지 않아 대상이 아니었다, 리뷰 W 🟡4). TSHELL 에만 있는 번호만 TSHELL 에 적용한다
+        from KooCAEManager.KooElement import is_tshell   # ConvertHexato,TShell 로 TShellMode 가 된 파트도 TSHELL 이다(v131 M7)
         _non_ts_eids = {e for p in self.parts.values() for e, el in p.elementManager.elements.items()
-                        if getattr(el, 'type', '') != 'TSHELL8'} if manual_eids else set()
+                        if not is_tshell(el, p.elementManager)} if manual_eids else set()
         _ts_skipped = sorted({e for p in self.parts.values() for e, el in p.elementManager.elements.items()
-                              if getattr(el, 'type', '') == 'TSHELL8' and e in manual_eids and e in _non_ts_eids})
+                              if is_tshell(el, p.elementManager) and e in manual_eids and e in _non_ts_eids})
         if _ts_skipped:
             print(f"  ⚠️  RigidifyElementIDs: EID {', '.join(map(str, _ts_skipped[:10]))}{' …' if len(_ts_skipped) > 10 else ''} 는 "
                   f"솔리드·셸 등에도 있어 그쪽만 강체로 한다 — 같은 번호의 TSHELL 은 그대로 둔다")
@@ -3182,7 +3183,7 @@ class KooPartManager():
                     thickness = getattr(part.section, 'thickness', 0.1)
                 rigid_section = sectionMan.CreateShellSection(
                     f"RIGID_SmallDT_P{pid}", thickness if thickness > 0 else 0.1)
-            elif getattr(first_elem, "type", "") == "TSHELL8":
+            elif is_tshell(first_elem, part.elementManager):   # TShellMode(ConvertHexato,TShell) 파트도(v131 M7)
                 # *ELEMENT_TSHELL 요소는 TSHELL 단면이어야 한다 — 솔리드 단면이면 LS-DYNA 가 요소와 맞지 않는다(리뷰 W 🟡4).
                 # 원 파트의 TSHELL 단면 칸을 따른다(강체라 ELFORM 은 결과에 영향이 거의 없다)
                 src = getattr(part, "section", None)
@@ -3197,6 +3198,9 @@ class KooPartManager():
             rigid_part = KooPart(part.nodeManager, None, rigid_mat, rigid_section, part.nodeSetManager)
             rigid_part.SetID(new_pid)
             rigid_part.name = f"RIGID_SmallDT_from_P{pid}"
+            if getattr(part.elementManager, "TShellMode", False):
+                # 원 파트가 TShellMode 면 강체 조각도 *ELEMENT_TSHELL 로 써야 단면(TSHELL)과 맞는다 — 예전엔 솔리드로 나갔다(v131 M7)
+                rigid_part.elementManager.SetTShellMode(True)
 
             # 요소 이동: 원래 파트 → 강체 파트
             moved_elems = {}

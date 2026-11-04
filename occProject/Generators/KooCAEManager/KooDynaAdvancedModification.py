@@ -2866,13 +2866,13 @@ class KooDynaAdvancedModification:
                     # mesh_scale: 바닥판 요소 크기 = 외곽면 평균 요소 크기 * mesh_scale
                     mesh_scale = option.get("DropContact", {}).get("MeshScale", 1.0)
                     if numInnerX == 0 or numInnerY == 0:
-                        from KooCAEManager.KooElement import compute_element_min_edge_length, FaceElement
+                        from KooCAEManager.KooElement import compute_element_min_edge_length, FaceElement, is_tshell
                         edge_lengths = []
                         for pid, p in self.dynaImporter.partManager.parts.items():
                             if not p.elementManager.elements:
                                 continue
                             first_elem = next(iter(p.elementManager.elements.values()))
-                            if getattr(first_elem, "type", "") == "TSHELL8":
+                            if is_tshell(first_elem, p.elementManager):   # ConvertHexato,TShell 파트도(v131 M7)
                                 # TSHELL 은 최소 변이 두께라 바닥판이 수백 배로 잘게 나뉜다 — 표본에서 뺀다(v129 와 같은 크기, 리뷰 W 🟡3)
                                 continue
                             if isinstance(first_elem, FaceElement):

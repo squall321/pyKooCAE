@@ -266,7 +266,8 @@ def _apply_ic_power(dynaImporter, option):
         eids = list(getattr(part_obj.elementManager, "elements", {}).keys())
         if not eids:
             raise ValueError(f"[THERMAL_LOAD] heat_source part={pid}: solid 요소 없음")
-        if any(getattr(e, "type", "") == "TSHELL8" for e in part_obj.elementManager.elements.values()):
+        from KooCAEManager.KooElement import is_tshell
+        if any(is_tshell(e, part_obj.elementManager) for e in part_obj.elementManager.elements.values()):   # ConvertHexato,TShell 파트도(v131 M7)
             # *ELEMENT_TSHELL 을 요소로 읽게 된 뒤(2026-11-03) TSHELL EID 로 *SET_SOLID 를 만들면 LS-DYNA 가 솔리드로 읽는다 —
             # 예전처럼 멈추되 원인을 밝힌다(리뷰 W)
             raise ValueError(f"[THERMAL_LOAD] heat_source part={pid}: TSHELL 파트 발열은 지원하지 않는다"

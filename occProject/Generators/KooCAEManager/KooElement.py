@@ -51,6 +51,13 @@ def note_content_loss(why, n=1):
         CONTENT_LOSS[why] = CONTENT_LOSS.get(why, 0) + n
 
 
+def is_tshell(element, element_manager=None):
+    """*ELEMENT_TSHELL 로 나가는 요소인가 — 덱에서 읽은 TSHELL8, 또는 같은 실행에서 ConvertHexato,TShell 로 TShellMode 가 된
+    매니저의 HEXA8(기록기가 *ELEMENT_TSHELL 로 쓴다). 예전 판정은 TSHELL8 만 봐 TShellMode 파트를 솔리드로 다뤘다(v131 M7)."""
+    t = getattr(element, "type", "")
+    return t == "TSHELL8" or (t == "HEXA8" and bool(getattr(element_manager, "TShellMode", False)))
+
+
 class Element:
     def __init__(self,id=0):
         self.id = id
