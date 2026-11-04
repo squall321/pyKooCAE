@@ -768,6 +768,43 @@ class KooDynaImporter():
                 if top > (getattr(mgr, attr) or 0):
                     setattr(mgr, attr, top)
 
+    def MirrorRawElementRows(self, plane):
+        """MIRROR 가 원문으로 두는 *ELEMENT_TSHELL 줄(KMM 이 파트로 읽지 않는 PID — *PART_COMPOSITE_TSHELL 등)의 절점 순서도
+        HEXA8 처럼 뒤집는다 — 절점 좌표만 거울로 옮겨 그 요소가 뒤집혔다(자코비안 음수, v131 M6). 칸 폭(8·I10 10·long 20·콤마)과
+        칸 글자는 그대로 두고 N1~N8 칸 자리만 바꾼다. 그 밖의 원문 요소 키워드는 뒤집지 못한다고 알린다."""
+        perm = {"xy": (0, 3, 2, 1, 4, 7, 6, 5), "yz": (1, 0, 3, 2, 5, 4, 7, 6), "xz": (0, 3, 2, 1, 4, 7, 6, 5)}[plane]
+        mgr = self.dynaManager
+        raw = getattr(mgr, "_raw_keyword_dict", None) or {}
+        fmts = (getattr(mgr, "_block_formats", None) or {}).get("ELEMENT_TSHELL", [])
+        n = 0
+        if raw.get("ELEMENT_TSHELL") and not self.keywordInterpreted.get("ELEMENT_TSHELL", False):
+            for bi, block in enumerate(raw["ELEMENT_TSHELL"]):
+                fmt = fmts[bi] if bi < len(fmts) else None
+                w = 20 if fmt == "long" else (10 if fmt == "i10" else 8)
+                for li, line in enumerate(block):
+                    s = str(line)
+                    body, nl = (s[:-1], "\n") if s.endswith("\n") else (s, "")
+                    if not body.strip() or body.lstrip().startswith("$"):
+                        continue
+                    if "," in body:
+                        f = body.split(",")
+                        if len(f) >= 10:
+                            f[2:10] = [f[2 + p] for p in perm]
+                            block[li] = ",".join(f) + nl
+                            n += 1
+                        continue
+                    body = body.ljust(10 * w)
+                    f = [body[k * w:(k + 1) * w] for k in range(10)]
+                    block[li] = (body[:2 * w] + "".join(f[2 + p] for p in perm) + body[10 * w:]).rstrip() + nl
+                    n += 1
+        if n:
+            print(f"  MIRROR: 원문 *ELEMENT_TSHELL 줄 {n}개의 절점 순서도 뒤집었다")
+        other = sorted(k for k in raw if k.startswith(("ELEMENT_SHELL", "ELEMENT_SOLID", "ELEMENT_TSHELL_"))
+                       and not self.keywordInterpreted.get(k, False) and raw.get(k))
+        if other:
+            print(f"  ⚠️  MIRROR: 원문 요소 키워드 {', '.join('*' + k for k in other)} 는 절점 순서를 뒤집지 못한다 — 그 요소는 미러 뒤 "
+                  f"뒤집힌다(법선·자코비안 부호, 덱 확인)")
+
     def _keep_raw_tshell_rows(self, keyword, leftover):
         """KMM 이 파트로 읽지 않는 PID 의 *ELEMENT_TSHELL 줄만 원문 블록에 남기고 해석 표시를 푼다 — 원문 기록기가 그 줄을
         형식 표시(%·+)와 함께 그대로 쓰고, 해석한 줄은 요소 매니저가 쓴다(중복 없음, 리뷰 W 🔴2)."""

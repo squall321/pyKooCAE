@@ -3448,6 +3448,8 @@ class KooDynaAdvancedModification:
                     for id in self.dynaImporter.partManager.parts:
                         elemMan : ElementManager = self.dynaImporter.partManager.parts[id].elementManager
                         elemMan.SetMirrorConnectivityXZPlane()
+                if mode.lower() in ("xy", "yz", "xz"):
+                    self.dynaImporter.MirrorRawElementRows(mode.lower())   # 원문 TSHELL 줄도 뒤집는다(v131 M6)
             elif curOptionMode.lower() == "vectorrotation":
                 x = curOption[1]
                 y = curOption[2]

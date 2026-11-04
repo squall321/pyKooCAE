@@ -1022,7 +1022,7 @@ class SolidElement(Element):
             n5 = self.nodes[4]
             n6 = self.nodes[5]
             self.nodes = [n1,n3,n2,n4,n6,n5]
-        elif self.type == "HEXA8":
+        elif self.type in ("HEXA8", "TSHELL8"):   # TSHELL8(*ELEMENT_TSHELL)도 같은 뒤집기 — 예전엔 건너뛰어 미러 뒤 요소가 뒤집혔다(v131 M6)
             n1 = self.nodes[0]
             n2 = self.nodes[1]
             n3 = self.nodes[2]
@@ -1150,7 +1150,7 @@ class SolidElement(Element):
             n5 = self.nodes[4]
             n6 = self.nodes[5]
             self.nodes = [n2,n1,n3,n5,n4,n6]
-        elif self.type == "HEXA8":
+        elif self.type in ("HEXA8", "TSHELL8"):   # TSHELL8(*ELEMENT_TSHELL)도 같은 뒤집기 — 예전엔 건너뛰어 미러 뒤 요소가 뒤집혔다(v131 M6)
             n1 = self.nodes[0]
             n2 = self.nodes[1]
             n3 = self.nodes[2]
@@ -1272,7 +1272,7 @@ class SolidElement(Element):
             n5 = self.nodes[4]
             n6 = self.nodes[5]
             self.nodes = [n4,n5,n6,n1,n2,n3]
-        elif self.type == "HEXA8":
+        elif self.type in ("HEXA8", "TSHELL8"):   # TSHELL8(*ELEMENT_TSHELL)도 같은 뒤집기 — 예전엔 건너뛰어 미러 뒤 요소가 뒤집혔다(v131 M6)
             n1 = self.nodes[0]
             n2 = self.nodes[1]
             n3 = self.nodes[2]
@@ -1517,8 +1517,8 @@ class SolidElement(Element):
         self.AddNode(node8)
     
     def SetNodesTShell8(self, node1, node2, node3, node4, node5, node6, node7, node8):
-        """*ELEMENT_TSHELL 요소(2026-11-03) — HEXA8 과 연결은 같지만 솔리드 전용 처리(작은 dt 강체화·재메싱·층 분할·미러)는
-        HEXA8 분기만 보므로 건너뛴다. 면 계산(SetBoundaries)과 접촉 파트 판정에만 들어온다."""
+        """*ELEMENT_TSHELL 요소(2026-11-03) — HEXA8 과 연결은 같지만 솔리드 전용 처리(작은 dt 강체화·재메싱·층 분할)는
+        HEXA8 분기만 보므로 건너뛴다(미러는 v131 부터 HEXA8 과 같이 뒤집는다). 면 계산(SetBoundaries)과 접촉 파트 판정에만 들어온다."""
         self.SetType("TSHELL8")
         self.nodes = []
         for node in (node1, node2, node3, node4, node5, node6, node7, node8):
