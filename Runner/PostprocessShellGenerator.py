@@ -664,12 +664,13 @@ def _seconds_to_slurm_time(seconds):
 # 24시간 TIMEOUT·MaxRSS 84.7 GB 로 산출물 0개였다.
 # - 옛 도구(모든 런의 흐름을 끝까지 메모리에 든다): 0.087 GB/런 → 32 + 0.10 GB/런.
 # - 새 도구(koo_sphere_report --parallel-runs — 같은 판에 2패스, 상위 60개 흐름만 든다): 누적 ≈ 5.3 GB
-#   + 워커마다 런 하나(실측 전 보수 2 GB). --help 에 --parallel-runs 가 있으면 새 도구로 본다.
+#   + 워커마다 런 하나(a9 실측 ≈ 0.3 GB/워커, 2026-11-04 — 여유를 두어 0.5 GB. 예전엔 실측 전 보수 2 GB 라 979런이 38G 를 청해
+#   대기만 길었다). --help 에 --parallel-runs 가 있으면 새 도구로 본다.
 # - 시간: 캐시 miss 런당 ≈ 3.2분(단일 스레드) → 0.06 h/런, 워커 W 개면 W 로 나눈다. 합치기·HTML 몫 2 h.
 SPHERE_OLD_MEM_BASE_GB = 32
 SPHERE_OLD_MEM_PER_RUN_GB = 0.10
 SPHERE_NEW_MEM_BASE_GB = 6
-SPHERE_NEW_MEM_PER_WORKER_GB = 2
+SPHERE_NEW_MEM_PER_WORKER_GB = 0.5
 SPHERE_HOURS_BASE = 2.0
 SPHERE_HOURS_PER_RUN = 0.06
 SPHERE_MIN_HOURS = 4.0
@@ -837,7 +838,7 @@ def _sphere_auto_resources(n_runs, sif_path, partition, explicit_ncpu, explicit_
     sphere_time_limit 04:00:00 을 넣어 '명시값 우선' 이면 고침이 먹지 않는다). 노드가 감당하지 못하면 줄이고 알린다 —
     요청(CPU·메모리)은 한 노드에 함께 들어가야 한다(아니면 Slurm 이 "Requested node configuration is not available" 로
     거절한다).
-    - 새 도구: 노드마다 코어·메모리(6+2W, 명시 메모리가 더 크면 그것)에 맞는 가장 큰 W 를 골라 다시 잰다.
+    - 새 도구: 노드마다 코어·메모리(6+0.5W, 명시 메모리가 더 크면 그것)에 맞는 가장 큰 W 를 골라 다시 잰다.
     - 옛 도구: 들어가는 노드가 없을 때만 줄인다.
     - 어느 쪽이든 메모리를 아는 노드에 못 들어가고 RealMemory 미설정 노드(--mem=0 만 받음)가 있으면 --mem=0 으로 낸다.
       그것도 없으면 메모리가 가장 큰 노드에 맞추고 🔴 로 알린다.
@@ -865,7 +866,7 @@ def _sphere_auto_resources(n_runs, sif_path, partition, explicit_ncpu, explicit_
         return x[1] is None or (x[1] > 0 and x[1] >= g)
 
     if parallel and shapes:
-        def w_on(x):            # 이 노드에서 코어·모형 메모리(6+2W)가 함께 맞는 가장 큰 W(메모리 모름·미설정은 코어만)
+        def w_on(x):            # 이 노드에서 코어·모형 메모리(6+0.5W)가 함께 맞는 가장 큰 W(메모리 모름·미설정은 코어만)
             w = min(cpus, x[0]) if x[0] else cpus
             if x[1]:
                 w = min(w, int((x[1] - SPHERE_NEW_MEM_BASE_GB) // SPHERE_NEW_MEM_PER_WORKER_GB))

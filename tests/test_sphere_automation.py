@@ -6,7 +6,7 @@
 배경 (2026-10-26, 「sphere_report 자동화 수정안 v1.0」): sphere 잡이 런 수와 무관하게 LS-DYNA 런 환경값(8코어·32G)과 고정
 시간을 받아 979런 캠페인이 24h TIMEOUT·MaxRSS 84.7 GB 로 산출물 0개였다. 도구는 결과 0건이어도 rc 0 이었고, 항복응력은
 350 하나였다.
-  [1] build_sphere_sbatch 가 런 수로 자원을 잰다 — 옛 도구 32+0.10 GB/런·2코어, 새 도구(--parallel-runs) 6+2 GB/워커,
+  [1] build_sphere_sbatch 가 런 수로 자원을 잰다 — 옛 도구 32+0.10 GB/런·2코어, 새 도구(--parallel-runs) 6+0.5 GB/워커(a9 실측 0.3 GB, 11-04 — 예전 2 GB),
       시간 2h+0.06h×N/W(최소 4h). 명시값보다 산출값이 크면 산출값, 파티션 한도를 넘으면 한도로(알림).
   [2] sphere_report.sh 가 실행 시점에 --help 로 --parallel-runs·--yield-map 을 확인해 넘기고, 'Loaded 0 results' 면 비 0 종료.
   [3] KMM 이 DropSet.json 에 model.part_yield 를 쓴다(R16: MAT_024 SIGY 는 LCSS>0 이면 무시 — 커브의 εp=0 값, 가로축
@@ -61,11 +61,11 @@ def test_sizing():
     (c, m, t), _ = build(979)
     check("옛 도구 979런: 2코어·130G·2-12:45:00", (c, m, t) == ("2", "130G", "2-12:45:00"), str((c, m, t)))
     (c, m, t), _ = build(979, {"--parallel-runs"})
-    check("새 도구 979런: 16워커·38G·05:41:00", (c, m, t) == ("16", "38G", "05:41:00"), str((c, m, t)))
+    check("새 도구 979런: 16워커·14G·05:41:00", (c, m, t) == ("16", "14G", "05:41:00"), str((c, m, t)))
     (c, m, t), _ = build(100)
     check("옛 도구 100런: 2코어·42G·08:00:00", (c, m, t) == ("2", "42G", "08:00:00"), str((c, m, t)))
     (c, m, t), _ = build(30, {"--parallel-runs"})
-    check("새 도구 30런: 최소 2워커·10G·최소 4h", (c, m, t) == ("2", "10G", "04:00:00"), str((c, m, t)))
+    check("새 도구 30런: 최소 2워커·7G·최소 4h", (c, m, t) == ("2", "7G", "04:00:00"), str((c, m, t)))
     (c, m, t), _ = build(100, env={"ncpu": 8, "memory": "32G"})
     check("LS-DYNA environment 의 ncpu·memory 를 물려받지 않음", (c, m) == ("2", "42G"), str((c, m)))
     (c, m, t), out = build(979, opts={"sphere_time_limit": "04:00:00", "sphere_memory": "16G"})
@@ -74,7 +74,7 @@ def test_sizing():
     (c, m, t), _ = build(100, opts={"sphere_time_limit": "3-00:00:00", "sphere_memory": "200G"})
     check("명시값이 산출값보다 크면 명시값", (m, t) == ("200G", "3-00:00:00"), str((m, t)))
     (c, m, t), _ = build(979, {"--parallel-runs"}, opts={"sphere_ncpu": 8})
-    check("명시 sphere_ncpu=8 + 새 도구: 8워커 기준 22G·09:21:00", (c, m, t) == ("8", "22G", "09:21:00"), str((c, m, t)))
+    check("명시 sphere_ncpu=8 + 새 도구: 8워커 기준 10G·09:21:00", (c, m, t) == ("8", "10G", "09:21:00"), str((c, m, t)))
     (c, m, t), out = build(979, limits={"max_minutes": 1440, "max_mem_gb": 96.0})
     check("파티션 한도(1일·96G)로 줄임", (m, t) == ("96G", "1-00:00:00"), str((m, t)))
     check("  🔴 로 알림", out.count("🔴") == 2, out[-400:])
@@ -121,20 +121,20 @@ def test_sizing():
           lim_nomem == {"max_minutes": None, "nodes": [(4, 0.0)], "max_cpus": 4}, str(lim_nomem))
     # 노드가 감당할 수 있게 — CPU 상한, 새 도구는 워커 수를 CPU·메모리에 맞춰 다시 잰다
     (c, m, t), out = build(979, {"--parallel-runs"}, limits={"max_cpus": 2})
-    check("새 도구 + 노드 2코어: 워커 2 로 줄여 다시 잼(10G)", (c, m) == ("2", "10G"), str((c, m, t)))
+    check("새 도구 + 노드 2코어: 워커 2 로 줄여 다시 잼(7G)", (c, m) == ("2", "7G"), str((c, m, t)))
     check("  그 사실을 알림", "워커 16 → 2" in out and "코어 2" in out, out[-300:])
-    (c, m, t), out = build(979, {"--parallel-runs"}, limits={"max_mem_gb": 32.0})
-    check("새 도구 + 노드 32G: 워커 13 으로 맞춤(32G·06:32:00)", (c, m, t) == ("13", "32G", "06:32:00"), str((c, m, t)))
+    (c, m, t), out = build(979, {"--parallel-runs"}, limits={"max_mem_gb": 10.0})
+    check("새 도구 + 노드 10G: 워커 8 로 맞춤(10G·09:21:00)", (c, m, t) == ("8", "10G", "09:21:00"), str((c, m, t)))
     (c, m, t), _ = build(979, limits={"max_cpus": 1})
     check("옛 도구 + 노드 1코어: CPU 1", c == "1", str((c, m, t)))
     # 섞인 노드 — 요청은 한 노드에 들어가야 한다(코어 최대 노드와 메모리 최대 노드가 다르면 따로 잰 최댓값은 어느 노드에도 안 맞는다)
     mixed = {"nodes": [(64, 16.0), (4, 256.0)]}
-    (c, m, t), _ = build(979, {"--parallel-runs"}, limits=mixed)
-    check("새 도구 + 노드 64c/16G·4c/256G: 64코어 노드에 맞춘 5워커(16G·13:45:00)", (c, m, t) == ("5", "16G", "13:45:00"), str((c, m, t)))
+    (c, m, t), _ = build(979, {"--parallel-runs"}, limits={"nodes": [(64, 9.0), (4, 256.0)]})
+    check("새 도구 + 노드 64c/9G·4c/256G: 64코어 노드에 맞춘 6워커(9G·11:48:00)", (c, m, t) == ("6", "9G", "11:48:00"), str((c, m, t)))
     (c, m, t), out = build(100, opts={"sphere_ncpu": 32}, limits=mixed)
     check("옛 도구 + ncpu 32 + 같은 노드: 메모리 큰 노드에 맞춰 4코어·42G", (c, m, t) == ("4", "42G", "08:00:00"), f"{(c, m, t)} {out[-200:]}")
     (c, m, t), _ = build(979, {"--parallel-runs"}, limits={"nodes": [(32, 8.0), (8, 64.0)]})
-    check("새 도구 + 노드 32c/8G·8c/64G: 8워커(22G·09:21:00)", (c, m, t) == ("8", "22G", "09:21:00"), str((c, m, t)))
+    check("새 도구 + 노드 32c/8G·8c/64G: 8워커(10G·09:21:00)", (c, m, t) == ("8", "10G", "09:21:00"), str((c, m, t)))
     # RealMemory 미설정(1GB 밑) 노드는 --mem=0 만 받는다(Slurm 이 설정된 RealMemory 로 노드를 거른다) — 리뷰 N
     (c, m, t), out = build(979, limits={"nodes": [(64, 0.5)]})
     check("옛 도구 + 메모리 미설정 노드 → --mem=0(노드 전부)·알림", m == "0" and "--mem=0" in out, f"{m} {out[-200:]}")
@@ -147,7 +147,7 @@ def test_sizing():
     check("새 도구 + 명시 200G + 노드 8c/31G·4c/256G → 4워커·200G(🔴 없음)", (c, m) == ("4", "200G") and "🔴" not in out,
           f"{(c, m, t)} {out[-200:]}")
     (c, m, t), out = build(979, {"--parallel-runs"}, limits={"nodes": [(64, 6.0)]})
-    check("워커 하나도 못 들이는 노드뿐 → 1워커(8G)를 노드 메모리로 깎고 🔴", (c, m) == ("1", "6G") and "🔴" in out, f"{(c, m, t)}")
+    check("워커 하나도 못 들이는 노드뿐 → 1워커(7G)를 노드 메모리로 깎고 🔴", (c, m) == ("1", "6G") and "🔴" in out, f"{(c, m, t)}")
     # 리뷰 O — 명시 --mem=0 에도 CPU 상한, 명시 메모리를 받는 노드가 없으면 W 는 아는 노드로 정하고 깎는다, 코어만 모자라면 코어 큰 노드
     (c, m, t), out = build(162, opts={"sphere_ncpu": 8, "sphere_memory": "0"}, limits={"nodes": [(2, 4.0)]})
     check("옛 도구 + ncpu 8 + 명시 메모리 0 + 2코어 노드 → CPU 2·--mem=0", (c, m) == ("2", "0") and "CPU 8" in out, f"{(c, m, t)} {out[-200:]}")
@@ -166,9 +166,9 @@ def test_sizing():
     (c, m, t), out = build(979, opts={"sphere_ncpu": 8}, limits={"nodes": [(2, 4.0), (64, 0.0)]})
     check("옛 도구 ncpu 8 + 2c/4G·미설정 64c → --mem=0, 2코어 노드는 못 앉으니 🔴 아님", (c, m) == ("8", "0") and "🔴" not in out,
           f"{(c, m, t)} {out[-200:]}")
-    (c, m, t), out = build(979, {"--parallel-runs"}, opts={"sphere_memory": "0"}, limits={"nodes": [(16, 31.25), (16, 0.0)]})
-    check("새 도구 명시 0 + 16c/31G·미설정 16c → 16워커·--mem=0, 31G 노드에 앉으면 38G 에 모자라니 🔴", m == "0" and "🔴" in out
-          and "31G" in out, f"{(c, m, t)} {out[-200:]}")
+    (c, m, t), out = build(979, {"--parallel-runs"}, opts={"sphere_memory": "0"}, limits={"nodes": [(16, 12.0), (16, 0.0)]})
+    check("새 도구 명시 0 + 16c/12G·미설정 16c → 16워커·--mem=0, 12G 노드에 앉으면 14G 에 모자라니 🔴", m == "0" and "🔴" in out
+          and "12G" in out, f"{(c, m, t)} {out[-200:]}")
     # 성질 — 무작위 노드 모양·명시값에서 요청은 늘 한 노드가 받는다(코어 ≤ 노드 코어, --mem=0 이거나 메모리 ≤ RealMemory,
     # 미설정 노드는 --mem=0 만). 리뷰 L~O 가 이 규칙을 깬 꼴을 차례로 찾았다 — 고정 시드로 굳힌다.
     import random
@@ -206,7 +206,7 @@ def test_sizing():
           f"{m} {out[-300:]}")
     # sphere_ncpu 가 글이어도 submit 이 죽지 않는다(LS-DYNA 잡을 다 낸 뒤라 traceback 이면 sphere 잡이 빠진다)
     (c, m, t), _ = build(979, {"--parallel-runs"}, opts={"sphere_ncpu": "8.0"})
-    check("sphere_ncpu '8.0' → 8워커(22G·09:21:00)", (c, m, t) == ("8", "22G", "09:21:00"), str((c, m, t)))
+    check("sphere_ncpu '8.0' → 8워커(10G·09:21:00)", (c, m, t) == ("8", "10G", "09:21:00"), str((c, m, t)))
     (c, m, t), out = build(979, {"--parallel-runs"}, opts={"sphere_ncpu": "auto"})
     check("sphere_ncpu 'auto' → 무시하고 산출값(16)·알림", c == "16" and "읽지 못해" in out, f"{c} {out[-300:]}")
     # --help 탐지 — 실제 argparse 출력으로(metavar 없음 → 'PARALLEL_RUNS', 별칭, nargs='?', 다른 옵션 설명 글 속 언급만)
