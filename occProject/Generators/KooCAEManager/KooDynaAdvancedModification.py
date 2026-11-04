@@ -1988,6 +1988,10 @@ class KooDynaAdvancedModification:
             "part_set_keys": set(self.dynaImporter.partManager.partSets.keys()),   # 각도마다 만드는 파트 셋은 차분에 쓴다(v131 M3)
             "max_psid": self.dynaImporter.partManager.maxSID,
             "max_pid": self.dynaImporter.partManager.maxID,   # 바닥판 PID 가 각도마다 하나씩 밀리지 않게(v131 리뷰 R2)
+            # 각도마다 만드는 강체벽(DropSurface RigidWall)은 차분에 쓰고 되돌릴 때 지운다 — 예전엔 차분에 없어 여러 각도 DropSet.k
+            # 에 바닥 벽이 하나도 없었다(제품이 바닥 없이 떨어짐, rc 0 — v131 리뷰 R7, v130 부터 있던 결함)
+            "rigidwall_keys": set(self.dynaImporter.additionalManager.rigidwalls.keys()),
+            "max_rwid": self.dynaImporter.additionalManager.maxRWID,
         }
         return cached_base, base_state
 
@@ -2021,6 +2025,12 @@ class KooDynaAdvancedModification:
                 self.dynaImporter.nodeSetManager.nodeSets[nsid].Clear()
         # 6. D2R 클리어
         self.dynaImporter.additionalManager.d2r_automatics.clear()
+        # 6a. 각도마다 만든 강체벽 제거 — 다음 각도가 같은 번호로 다시 만든다(v131 리뷰 R7)
+        if "rigidwall_keys" in base_state:
+            am = self.dynaImporter.additionalManager
+            for rwid in [k for k in am.rigidwalls if k not in base_state["rigidwall_keys"]]:
+                del am.rigidwalls[rwid]
+            am.maxRWID = base_state["max_rwid"]
         # 6b. 각도마다 만든 파트 셋 제거 — 다음 각도가 같은 번호로 다시 만든다(v131 M3)
         if "part_set_keys" in base_state:
             for psid in [k for k in self.dynaImporter.partManager.partSets if k not in base_state["part_set_keys"]]:

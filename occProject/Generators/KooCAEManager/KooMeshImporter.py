@@ -2680,6 +2680,10 @@ class KooDynaImporter():
         # 6. D2R automatics
         for key in self.additionalManager.d2r_automatics:
             self.additionalManager.d2r_automatics[key].WriteStreamDynaKeyword(stream)
+        # 6a. 새 강체벽 — 각도마다 만드는 바닥 벽(DropSurface RigidWall). 예전엔 빠져 여러 각도 DropSet.k 에 벽이 없었다(v131 리뷰 R7)
+        for rwid, rw in self.additionalManager.rigidwalls.items():
+            if rwid not in base_state.get("rigidwall_keys", self.additionalManager.rigidwalls.keys()):
+                rw.WriteStreamDynaKeyword(stream)
         # 7. 새 파트 셋 — 각도마다 만드는 접촉(SSTYP 2)이 가리킨다. 예전엔 빠져 접촉이 없는 셋을 가리켰다(v131 M3)
         for psid, ps in self.partManager.partSets.items():
             if psid not in base_state.get("part_set_keys", set()):
