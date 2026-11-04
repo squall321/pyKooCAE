@@ -1982,6 +1982,7 @@ class KooDynaAdvancedModification:
             "reusable_part_ids": reusable_part_ids or set(),
             "part_set_keys": set(self.dynaImporter.partManager.partSets.keys()),   # 각도마다 만드는 파트 셋은 차분에 쓴다(v131 M3)
             "max_psid": self.dynaImporter.partManager.maxSID,
+            "max_pid": self.dynaImporter.partManager.maxID,   # 바닥판 PID 가 각도마다 하나씩 밀리지 않게(v131 리뷰 R2)
         }
         return cached_base, base_state
 
@@ -2020,7 +2021,9 @@ class KooDynaAdvancedModification:
             for psid in [k for k in self.dynaImporter.partManager.partSets if k not in base_state["part_set_keys"]]:
                 del self.dynaImporter.partManager.partSets[psid]
             self.dynaImporter.partManager.maxSID = base_state["max_psid"]
-        # 7. Max ID 복원 (SyncronizeMaxID 불필요)
+        # 7. Max ID 복원 (SyncronizeMaxID 불필요) — 파트 번호도: 예전엔 되돌리지 않아 각도마다 바닥판 PID 가 달랐다(v131 리뷰 R2)
+        if "max_pid" in base_state:
+            self.dynaImporter.partManager.maxID = base_state["max_pid"]
         self.dynaImporter.maxEID = base_state["max_eid"]
         for pid in self.dynaImporter.partManager.parts:
             self.dynaImporter.partManager.parts[pid].elementManager.SetMaxID(base_state["max_eid"])
@@ -2839,6 +2842,10 @@ class KooDynaAdvancedModification:
                 part = self.dynaImporter.partManager.AddSolidPart(self.dynaImporter.nodeManager, None, section, material)
                 if not use_fast_mode:
                     self.dynaImporter.SyncronizeMaxID()
+                else:
+                    # Fast 경로는 동기화를 건너뛰어 새 바닥판 매니저가 0 부터 번호를 매겼다 — 바닥판 솔리드 EID 가 모델 솔리드와
+                    # 겹쳤다(208dc92 부터, v131 리뷰 R2). 전역 최대 EID(각도마다 기준 상태로 되돌린 값) 위에서 매긴다
+                    part.elementManager.SetMaxID(self.dynaImporter.maxEID)
                 bottomSegments = None
                 cornerNodes = None
                 if dropSurface[0] == "Plane":
