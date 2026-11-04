@@ -862,7 +862,7 @@ class KooContactManager:
             contact = self.contacts[cid]
             if contact.SSID == pid and contact.SSTYP == 3:
                 self.RemoveContact(contact)
-            elif contact.MSID == pid or contact.MSTYP == 3:
+            elif contact.MSID == pid and contact.MSTYP == 3:   # 'or' 라 파트 하나를 지우면 MSTYP 3 인 접촉이 모두 사라졌다(v131 리뷰 R6)
                 self.RemoveContact(contact)
 
     def RemoveAll(self):
