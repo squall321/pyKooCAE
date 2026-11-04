@@ -7003,6 +7003,7 @@ class KooDynaAdvancedModification:
                 drTerm = 1.0e+99
             self.dynaImporter.controlManager.SetControlDynamicRelaxation(drNrcyck, drTol, drFctr, drTerm, 0.0, 0, 0.0, 1)
 
+        cids_before = set(self.dynaImporter.contactManager.contacts)
         if len(removePartNameList) > 0:
             for name in removePartNameList:
                 self.dynaImporter.RemovePartbyName(name,True)
@@ -7013,45 +7014,55 @@ class KooDynaAdvancedModification:
         if len(removeContactIDList) > 0:
             for cid in removeContactIDList:
                 self.dynaImporter.contactManager.RemoveContactbyID(cid)
-            self._DropRawD2RofContacts(removeContactIDList)
+        # 실제로 없어진 접촉(전·후 차집합)을 가리키는 덱 D2R 만 지운다 — 지우지 못한 원문 접촉의 D2R 까지 지웠다(v131 리뷰 R6)
+        self._DropRawD2RofContacts(cids_before - set(self.dynaImporter.contactManager.contacts), removeContactIDList)
 
-    def _DropRawD2RofContacts(self, cids):
-        """지운 접촉을 ENTNO 로 가리키는 덱 원문 *DEFORMABLE_TO_RIGID_AUTOMATIC(CODE 2·3·4 — 접촉력으로 전환)을 함께 지운다.
-        누적 낙하 체인에서 앞 단계 DROP 이 만든 D2R 짝이 바닥판 접촉을 지운 뒤에도 남아, 다음 DROP 이 새 짝을 또 만들어 두 쌍이
-        같은 접촉으로 같은 파트를 전환했고, D2R 을 끈 단계에서도 앞 단계 짝이 전환을 켰다(v131 리뷰 R5)."""
+    def _DropRawD2RofContacts(self, removed, requested=()):
+        """없어진 접촉을 ENTNO 로 가리키는 덱 원문 *DEFORMABLE_TO_RIGID_AUTOMATIC 을 짝 스위치(RELSW)까지 함께 지운다. R16 CODE 2·4
+        만 접촉력 전환이다(1·3 은 강체벽 — v131 리뷰 R6). 누적 낙하 체인에서 앞 단계 DROP 이 만든 D2R 짝이 바닥판 접촉을 지운 뒤에도
+        남아, 다음 DROP 이 새 짝을 또 만들어 두 쌍이 같은 접촉으로 같은 파트를 전환했고 D2R 을 끈 단계에서도 전환이 켜졌다(리뷰 R5).
+        *RemoveContactbyID 로 받았지만 KMM 이 해석하지 않아 지우지 못한 원문 접촉은 그 D2R 과 함께 남기고 알린다."""
         from KooCAEManager.KooDynaKeyword import _whole_int
-        cids = {_whole_int(str(c)) for c in cids} - {None}
+        removed = {_whole_int(str(c)) for c in removed} - {None}
+        left = sorted(c for c in ({_whole_int(str(c)) for c in requested} - {None}) if c not in removed)
+        if left:
+            print(f"  ⚠ DTI: *RemoveContactbyID {left} — KMM 이 해석하지 않는 원문 접촉이라 지우지 못했다(그 접촉과 D2R 은 그대로 남는다)")
         dm = self.dynaImporter.dynaManager
         raw = getattr(dm, "_raw_keyword_dict", None) or {}
         kw = "DEFORMABLE_TO_RIGID_AUTOMATIC"
         blocks = raw.get(kw)
-        if not blocks or not cids:
+        if not blocks or not removed:
             return
         fmts_all = getattr(dm, "_block_formats", None)
         fmts = fmts_all.get(kw) if fmts_all is not None else None
-        keep, keep_f, dropped = [], [], []
+        sets = []   # (swset, code, entno, relsw)
         for bi, b in enumerate(blocks):
+            w = 20 if (fmts is not None and bi < len(fmts) and fmts[bi] == "long") else 10
             rows = [str(l).replace("\n", "") for l in b if str(l).strip() and not str(l).lstrip().startswith("$")]
             c1 = rows[0] if rows else ""
-            v = (c1.split(",") if "," in c1 else [c1[k:k + 10] for k in range(0, 80, 10)]) + [""] * 8
-            code, entno = _whole_int(v[1].strip()), _whole_int(v[5].strip())
-            if code in (2, 3, 4) and entno in cids:
-                dropped.append(_whole_int(v[0].strip()))
-                continue
-            keep.append(b)
-            if fmts is not None and bi < len(fmts):
-                keep_f.append(fmts[bi])
-        if not dropped:
+            v = (c1.split(",") if "," in c1 else [c1[k:k + w] for k in range(0, 8 * w, w)]) + [""] * 8
+            sets.append(tuple(_whole_int(v[k].strip()) for k in (0, 1, 5, 6)))
+        drop = {bi for bi, (sw, code, entno, rel) in enumerate(sets) if code in (2, 4) and entno in removed}
+        while True:   # 짝 스위치(RELSW 로 서로 가리키는 세트)도 함께 — 한쪽만 지우면 남은 쪽이 없는 SWSET 을 가리켰다(리뷰 R6)
+            sws = {sets[bi][0] for bi in drop}
+            rels = {sets[bi][3] for bi in drop} - {None, 0}
+            more = {bi for bi, (sw, code, entno, rel) in enumerate(sets)
+                    if bi not in drop and ((sw is not None and sw in rels) or (rel and rel in sws))}
+            if not more:
+                break
+            drop |= more
+        if not drop:
             return
+        keep = [b for bi, b in enumerate(blocks) if bi not in drop]
         if keep:
             raw[kw] = keep
             if fmts is not None:
-                fmts_all[kw] = keep_f
+                fmts_all[kw] = [f for bi, f in enumerate(fmts) if bi not in drop]
         else:
             raw.pop(kw, None)
             if fmts_all is not None:
                 fmts_all.pop(kw, None)
-        print(f"  DTI: 지운 접촉 CID {sorted(cids)} 를 가리키는 덱 D2R(SWSET {dropped}) 도 지운다 — 다음 DROP 이 새로 만든다")
+        print(f"  DTI: 없어진 접촉 CID {sorted(removed)} 를 가리키는 덱 D2R(SWSET {sorted(sets[bi][0] for bi in drop)}, 짝 포함) 도 지운다")
 
 
     def _CarryRawInitialStress(self, dynainImporter):
