@@ -111,9 +111,11 @@ def main():
         check("손실 없음 %r → %r" % (v, out), float(out) == v and len(out) == 10, out)
     check("1e-7 표기 유지 (기존 e2e 토큰)", _d2r_num(1e-7) == "   1.0e-07", repr(_d2r_num(1e-7)))
     ADV = (GEN / "KooCAEManager" / "KooDynaAdvancedModification.py").read_text(encoding="utf-8")
-    check("ADV D2R 세트 code 2 (접촉력 0 → 강체, 매뉴얼 예제)", "swset=20, code=2, entno=dropContactCID" in ADV)
-    check("ADV R2D 세트 code 4 (접촉력 비0 → 변형체)", "swset=10, code=4, entno=dropContactCID" in ADV)
-    check("ADV 구 반전(code 4 D2R) 없음", "swset=20, code=4" not in ADV)
+    # SWSET 은 덱 원문 D2R 과 겹치면 옮긴다(v131 리뷰 R4) — 기본값 20(D→R)·10(R→D)과 세트별 code 를 함께 본다
+    check("ADV 짝 스위치 기본 SWSET 20(D→R)·10(R→D)", "sw_d2r, sw_r2d = 20, 10" in ADV)
+    check("ADV D2R 세트 code 2 (접촉력 0 → 강체, 매뉴얼 예제)", "swset=sw_d2r, code=2, entno=dropContactCID" in ADV)
+    check("ADV R2D 세트 code 4 (접촉력 비0 → 변형체)", "swset=sw_r2d, code=4, entno=dropContactCID" in ADV)
+    check("ADV 구 반전(code 4 D2R) 없음", "swset=20, code=4" not in ADV and "swset=sw_d2r, code=4" not in ADV)
 
     # 카드 전체 출력에 실제로 실리는지
     mgr4 = KooAdditionalManager()
