@@ -5971,16 +5971,16 @@ class ElementShell(DynaKeyword):
             if len(rows) != len(elementShellKeywords[i]):
                 print(f"  Warning: ELEMENT_SHELL 블록의 빈 줄 {len(elementShellKeywords[i]) - len(rows)}개를 건너뛰었다 — "
                       f"LS-DYNA 는 빈 줄을 EID 없는 카드로 읽는다(덱 확인)")
-            spaceVector = []
             parameterList = []
             for j in range(len(rows)):
-                if j == 0:
-                    curStrVector = str(rows[j])
-                    length = len(curStrVector)/8
-                    spaceVector = [8] * int(length)
-                #parameters = elementShellKeywords[i][j].parse_whole(spaceVector)
-                parameters = self.parse_whole(rows[j], spaceVector)
+                # 칸 수는 줄마다 그 줄 길이로 — 첫 줄 길이로 정하면 뒤 줄의 N4·N5~N8 이 rc 0 으로 잘렸다(4절점 줄 뒤 8절점 줄,
+                # 삼각형 줄 뒤 사각형 줄 — v131 리뷰 R4). 받는 쪽(KooPart)이 줄 칸 수로 두께 블록을 가리므로 끝에서 칸 수를 맞춘다
+                parameters = self.parse_whole(rows[j], [8] * int(len(str(rows[j])) / 8))
                 parameterList.append(parameters)
+            if parameterList:
+                rowmax = max(len(r) for r in parameterList)
+                for r in parameterList:
+                    r.extend([''] * (rowmax - len(r)))
             self.parameters.append(parameterList)
     
     def EID(self,ith,jth):
