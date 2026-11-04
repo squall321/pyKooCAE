@@ -437,9 +437,12 @@ class KooDynaAdditionalManager:
         번호 1 을 받은 뒤 *RIGIDWALL_PLANAR_ID 1 이 같은 키를 덮어 벽 하나가 rc 0 으로 사라졌다(v131 리뷰 R6)."""
         if ID in self.rigidwalls:
             self.maxRWID = max(self.maxRWID, ID, *self.rigidwalls.keys()) + 1
-            old = self.rigidwalls.pop(ID)
+            old = self.rigidwalls[ID]
             setattr(old, "ID" if hasattr(old, "ID") else "id", self.maxRWID)   # 강체벽 클래스는 번호를 .ID 로 지닌다
-            self.rigidwalls[self.maxRWID] = old
+            # 제자리에서 번호만 바꾼다 — 끝으로 옮기면 벽 차례가 바뀌어 D2R CODE 1·3 의 ENTNO·RWFORC(R16: 정의 차례)가 다른 벽을 가리켰다(리뷰 R7)
+            items = [(self.maxRWID if k == ID else k, v) for k, v in self.rigidwalls.items()]
+            self.rigidwalls.clear()
+            self.rigidwalls.update(items)
             print(f"  Warning: 강체벽 번호 {ID} 가 겹쳐 먼저 있던 벽을 {self.maxRWID} 로 옮긴다(번호 없는 벽이 자동 번호를 받았거나 덱에 같은 번호가 둘)")
 
     def CreateRigidwallPlanarMovingForces(self, NSID=0, NSIDEX=0, BOXID=0,OFFSET=0.0,BIRTH=0.0,DEATH=1.0e20,RWKSF=1.0,XT=0.0,YT=0.0,ZT=0.0,XH=0.0,YH=0.0,ZH=0.0,FRIC=0.0,WVEL=0.0,MASS=0.0,V0=0.0, SOFT=0,SSID=0,N1=0,N2=0,N3=0,N4=0):
