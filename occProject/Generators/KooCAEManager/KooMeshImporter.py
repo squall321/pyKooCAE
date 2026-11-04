@@ -1055,10 +1055,7 @@ class KooDynaImporter():
 
         if elementShellThickKeyword is not None:
             parametersShellThick = elementShellThickKeyword.parameters
-            self.partManager.AddShellElementsfromDyna(parametersShellThick, thickness=True)
-            if any(parametersShellThick):   # 예전엔 죽던 블록이 이제 읽히므로 두께가 빠지는 것을 조용히 두지 않는다(리뷰 I)
-                print("  ⚠️  *ELEMENT_SHELL_THICKNESS 의 요소별 두께(THIC1~·BETA)는 출력에 쓰지 않는다 — 출력 *ELEMENT_SHELL 은 "
-                      "섹션 두께를 쓴다(KMM 미지원, 덱 확인)")
+            self.partManager.AddShellElementsfromDyna(parametersShellThick, thickness=True)   # 두께 카드는 출력에도 그대로(v131 P2)
                         
         if elementSolidKeyword is not None:
             parametersSolid = elementSolidKeyword.parameters
@@ -1069,8 +1066,8 @@ class KooDynaImporter():
             _left = self.partManager.AddTShellElementsfromDyna(elementTShellKeyword.parameters)
             if _left:
                 self._keep_raw_tshell_rows(elementTShellKeyword, _left)
-        _ts_variants = sorted(k for k in (getattr(self.dynaManager, "_raw_keyword_dict", None) or {})
-                              if k.startswith("ELEMENT_TSHELL_"))
+        _ts_variants = sorted(k for k in (getattr(self.dynaManager, "_raw_keyword_dict", None) or {})   # 셸 변형(*ELEMENT_SHELL_BETA 등)도 같다(v131 P2)
+                              if k.startswith(("ELEMENT_TSHELL_", "ELEMENT_SHELL_")) and not self.keywordInterpreted.get(k))
         if _ts_variants:   # 조용히 빠지지 않게 알린다(리뷰 W)
             print(f"  ⚠️  {', '.join('*' + k for k in _ts_variants)} 는 원문 그대로 둔다 — 그 요소의 파트는 요소가 없는 파트로 "
                   f"보여 낙하 접촉 집합(SINGLE_SURFACE·바닥판·RobustContact)에 들어가지 않는다")

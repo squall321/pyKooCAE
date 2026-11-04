@@ -343,6 +343,7 @@ class FaceElement(Element):
             return 9
         
     def SetMirrorConnectivityXYPlane(self):
+        old = list(self.nodes)
         if self.type == "TRI3":
             n1 = self.nodes[0]
             n2 = self.nodes[1]
@@ -372,8 +373,10 @@ class FaceElement(Element):
             n7 = self.nodes[6]
             n8 = self.nodes[7]
             self.nodes = [n1,n4,n3,n2,n8,n7,n6,n5]
+        self._mirror_theta(old)
 
     def SetMirrorConnectivityYZPlane(self):
+        old = list(self.nodes)
         if self.type == "TRI3":
             n1 = self.nodes[0]
             n2 = self.nodes[1]
@@ -403,8 +406,10 @@ class FaceElement(Element):
             n7 = self.nodes[6]
             n8 = self.nodes[7]
             self.nodes = [n2,n1,n4,n3,n5,n8,n7,n6]   # 새 변 2-1·1-4·4-3·3-2 의 중간 절점(예전 [n6,n5,n8,n7] — v131)
+        self._mirror_theta(old)
 
     def SetMirrorConnectivityXZPlane(self):
+        old = list(self.nodes)
         if self.type == "TRI3":
             n1 = self.nodes[0]
             n2 = self.nodes[1]
@@ -434,7 +439,24 @@ class FaceElement(Element):
             n7 = self.nodes[6]
             n8 = self.nodes[7]
             self.nodes = [n4,n3,n2,n1,n7,n6,n5,n8]   # 새 변 4-3·3-2·2-1·1-4 의 중간 절점(예전 [n8,n7,n6,n5] — v131)
-            
+        self._mirror_theta(old)
+
+    def _mirror_theta(self, old):
+        """두께(THIC1~)도 절점 순서를 따라 바꾼다 — *ELEMENT_SHELL_THICKNESS 의 THICn 은 절점 n 의 두께라 절점만 바꾸면
+        두께가 다른 절점으로 옮겨 갔다(v131 P2). 3절점의 THIC4 는 N4(=N3 되풀이) 자리라 N3 이 바뀌면 새 N3 의 두께를 따른다.
+        절점이 없는 자리(3절점 THIC4 밖·6절점 THIC7~8)는 그대로 둔다."""
+        t = getattr(self, "theta", None)
+        if not t:
+            return
+        new = list(t)
+        for k, n in enumerate(self.nodes):
+            j = next((i for i, m in enumerate(old) if m is n), None)
+            if k < len(t) and j is not None and j < len(t):
+                new[k] = t[j]
+        if self.type == "TRI3" and len(t) > 3 and self.nodes[2] is not old[2]:
+            new[3] = new[2]
+        self.theta = new
+
 
     def GetNumSteps(self):
         if len(self.stress) > 0:
@@ -4226,6 +4248,49 @@ class ElementManager:
                 print(f"  Warning: 2차 솔리드 요소 출력 스킵 총 {_skip_q}개")
         stream.write(self._tshell8_cards(pid, startNID, startEID, w))
                     
+    def _shells_with_thickness(self, pid, startNID, startEID, w):
+        """*ELEMENT_SHELL_THICKNESS 로 읽은 요소(theta 가 있는 요소)는 두께 카드와 함께 *ELEMENT_SHELL_THICKNESS 로, 나머지는
+        예전처럼 *ELEMENT_SHELL 로 쓴다 — 예전엔 모두 *ELEMENT_SHELL 로 써 요소별 두께가 단면 두께로 조용히 바뀌었다(v131 P2).
+        두께 카드는 R16 대로 16칸(THIC1~4·BETA, I10 에서도 16칸). 빈 두께 카드(단면 두께)는 빈 칸 그대로 쓰고, 6·8절점은
+        THIC5~8 카드도 쓴다(리더는 N5 가 있으면 요소마다 카드 3장으로 읽는다)."""
+        head = " %\n" if w == 10 else "\n"
+        out, skip = [], 0
+
+        def f16(x):
+            s = "" if x is None else str(x).strip()
+            if len(s) > 16:   # 콤마 자유형식으로 읽은 긴 수 — 16칸을 넘으면 다음 칸을 밀어 낸다
+                s = f"{KooDynaFloat(s, 0.0):.9E}"
+            return f"{s:>16}"
+
+        for types in (("TRI3", "QUAD4"), ("TRI6", "QUAD8")):
+            group = [e for e in self.elements.values() if e.type in types]
+            for kw, thick in (("*ELEMENT_SHELL", False), ("*ELEMENT_SHELL_THICKNESS", True)):
+                es = [e for e in group if (getattr(e, "theta", None) is not None) == thick]
+                if not es:
+                    continue
+                out.append(kw + head)
+                for e in es:
+                    try:
+                        n = [x.id + startNID for x in e.nodes]
+                        ids = {"TRI3": n[:3] + [n[2], 0, 0, 0, 0], "QUAD4": n[:4] + [0, 0, 0, 0],
+                               "TRI6": n[:6] + [0, 0], "QUAD8": n[:8]}[e.type]
+                        line = f"{str(e.id + startEID):>{w}}{str(pid):>{w}}" + "".join(f"{str(v):>{w}}" for v in ids) + "\n"
+                        if thick:
+                            t = list(e.theta) + [""] * 8
+                            line += "".join(f16(x) for x in t[:4]) + f16(e.beta) + "\n"
+                            if e.type in ("TRI6", "QUAD8"):
+                                line += "".join(f16(x) for x in t[4:8]) + "\n"
+                        out.append(line)
+                    except Exception:
+                        # 요소 하나를 못 쓰면 그 요소만 건너뛰고 장부에 적는다 — KMM 이 끝에서 🔴 + 종료 코드 3(리뷰 R)
+                        skip += 1
+                        _note_export_loss(e)
+                        if skip <= 5:
+                            print(f"  Warning: 셸 요소 출력 실패(EID {getattr(e, 'id', '?')}) — 스킵")
+        if skip:
+            print(f"  Warning: 셸 요소 출력 스킵 총 {skip}개")
+        return "".join(out)
+
     def WritetoDynaKeywordFace(self, pid, startNID, startEID):
         w = 10 if getattr(self, 'output_i10', False) else 8  # I10 스타일 보존 (기본 8 = 기존 바이트 동일)
         if w == 8 and self.elements:
@@ -4235,6 +4300,8 @@ class ElementManager:
                     w = 10
             except (TypeError, ValueError):
                 pass
+        if any(getattr(e, "theta", None) is not None for e in self.elements.values()):
+            return self._shells_with_thickness(pid, startNID, startEID, w)   # 두께 요소가 없으면 아래 그대로(v131 P2)
         dynaString = ""         
         if self.GetNumberofLinearFaceElements() > 0:
             dynaString += ("*ELEMENT_SHELL %\n" if w == 10 else "*ELEMENT_SHELL\n")
@@ -4268,6 +4335,9 @@ class ElementManager:
                     w = 10
             except (TypeError, ValueError):
                 pass
+        if any(getattr(e, "theta", None) is not None for e in self.elements.values()):
+            stream.write(self._shells_with_thickness(pid, startNID, startEID, w))   # 두께 요소가 없으면 아래 그대로(v131 P2)
+            return
         if self.GetNumberofLinearFaceElements() > 0:
             stream.write(("*ELEMENT_SHELL %\n" if w == 10 else "*ELEMENT_SHELL\n"))
             _skip = 0

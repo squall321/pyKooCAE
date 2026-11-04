@@ -178,12 +178,20 @@ for label, body in (("8칸 빈 줄만", "\n\n"), ("I10 빈 줄만", None), ("80�
 
 
 def shells(text):
-    out, f = [], False
+    # *ELEMENT_SHELL_THICKNESS 블록은 요소마다 카드 1 뒤 두께 카드(N5 가 있으면 2장, 빈 줄도 카드)가 온다 — 그 줄은 요소가 아니다(v131 P2:
+    # KMM 이 두께 요소를 *ELEMENT_SHELL_THICKNESS 로 쓴다)
+    out, f, skip = [], None, 0
     for ln in text.splitlines():
         if ln.startswith("*"):
-            f = ln.startswith("*ELEMENT_SHELL")
-        elif f and not ln.startswith("$") and ln.split():
-            out.append(ln.split()[:2])
+            f = ln.split()[0].upper() if ln.startswith("*ELEMENT_SHELL") else None
+            skip = 0
+        elif f and not ln.startswith("$"):
+            if skip:
+                skip -= 1
+            elif ln.split():
+                out.append(ln.split()[:2])
+                if f == "*ELEMENT_SHELL_THICKNESS":
+                    skip = 2 if len(ln.split()) > 6 and int(ln.split()[6]) else 1
     return out
 
 

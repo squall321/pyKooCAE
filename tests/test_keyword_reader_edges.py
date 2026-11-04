@@ -106,12 +106,20 @@ SHELLP = ("*PART\nskin\n" + f10(2, 2, 1) + "*SECTION_SHELL\n" + f10(2, 2) + f10(
 SH = [f"{10:8d}{2:8d}{1:8d}{2:8d}{3:8d}{4:8d}", f"{11:8d}{2:8d}{5:8d}{6:8d}{7:8d}{8:8d}"]
 shell_ref = "*KEYWORD\n" + nodes() + PROPS + SHELLP + "*ELEMENT_SHELL\n" + "\n".join(SH) + "\n*END\n"
 def shells(text):
-    out, f = [], False
+    # *ELEMENT_SHELL_THICKNESS 블록은 요소마다 카드 1 뒤 두께 카드(N5 가 있으면 2장, 빈 줄도 카드)가 온다 — 그 줄은 요소가 아니다(v131 P2:
+    # KMM 이 두께 요소를 *ELEMENT_SHELL_THICKNESS 로 쓴다)
+    out, f, skip = [], None, 0
     for ln in text.splitlines():
         if ln.startswith("*"):
-            f = ln.startswith("*ELEMENT_SHELL")
-        elif f and not ln.startswith("$") and ln.split():
-            out.append(ln.split()[:6])  # 출력은 N5~N8=0 을 채운 8절점 형식
+            f = ln.split()[0].upper() if ln.startswith("*ELEMENT_SHELL") else None
+            skip = 0
+        elif f and not ln.startswith("$"):
+            if skip:
+                skip -= 1
+            elif ln.split():
+                out.append(ln.split()[:6])  # 출력은 N5~N8=0 을 채운 8절점 형식
+                if f == "*ELEMENT_SHELL_THICKNESS":
+                    skip = 2 if len(ln.split()) > 6 and int(ln.split()[6]) else 1
     return out
 
 
