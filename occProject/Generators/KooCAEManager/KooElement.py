@@ -195,6 +195,7 @@ class PointElement(Element):
     def SetNodesPoint(self, node1): 
         if type(node1) == int:
             self.nsid = node1            
+            self.nodes = []   # 절점셋 질량은 직접 가진 절점이 없다 — None 이면 바닥 크기·분해의 절점 반복이 죽었다(v131)
             self.SetType("POINT_NSET")
         else:
             self.nodes = [] 

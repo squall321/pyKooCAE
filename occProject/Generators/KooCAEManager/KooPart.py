@@ -2306,7 +2306,7 @@ class KooPartManager():
         for i in range(len(parametersBeam)):
             parameters = parametersBeam[i]
             for j in range(len(parameters)):
-                parameter = parameters[j] 
+                parameter = list(parameters[j]) + [""] * (10 - len(parameters[j]))   # 짧은 카드(EID PID N1 N2)도 10칸으로(v131 B1)
                 eid = int(parameter[0])
                 pid = int(parameter[1])
                 # integer

@@ -27,6 +27,13 @@ class DynaKeyword():
     def parse_whole(self, curString, chunkList):
         chunk_size = len(chunkList)
         chunks = []
+        # 콤마 자유형식 카드(R16 "free format … separated by commas … can be mixed … within different cards") — 예전엔
+        # 고정폭으로 잘라 *MAT_ELASTIC 값이 조용히 0, *DEFINE_CURVE·*MAT_RIGID 는 죽었다. 칸이 둘 이상이고 모두 20칸 이하인
+        # 숫자 카드만 콤마로 나눈다(제목 [80]·ID+제목 [10,70] 같은 글 칸은 콤마가 글이다). 값은 칸 폭에 오른쪽으로 맞춘다.
+        if chunk_size > 1 and ',' in curString and max(chunkList) <= 20:
+            vals = curString.replace('\n', '').replace('\r', '').split(',')
+            vals = (vals + [''] * chunk_size)[:chunk_size]
+            return [v.strip().rjust(w) if v.strip() else '' for v, w in zip(vals, chunkList)]
 
         start = 0
         for i in range(0,chunk_size):
@@ -5780,12 +5787,30 @@ class ElementMass(DynaKeyword):
 class ElementMassNodeSet(DynaKeyword):
     def __init__(self):
         super(ElementMassNodeSet,self).__init__("ELEMENT_MASS_NODE_SET")
+        self.has_i10 = False
     
     def parse(self, elementMassNodeSetKeywords):
+        # *ELEMENT_MASS 와 같은 칸(EID·NSID 8 또는 10, MASS 16, PID 8 또는 10)·같은 I10 판정 — 예전엔 I10('%'·I10=Y) 블록도
+        # [8,8,16,8] 로 잘라 EID 7002·NSID 77 이 70·2·77·0 이 됐다(v131 I1)
+        fmts = getattr(self, 'block_formats', [])
         for i in range(len(elementMassNodeSetKeywords)):
+            fmt = fmts[i] if i < len(fmts) else None
+            i10 = (fmt == 'i10')
+            if not i10:
+                for line in elementMassNodeSetKeywords[i][:20]:
+                    s = str(line).rstrip('\r\n')
+                    if not s.strip() or s.lstrip().startswith('$'):
+                        continue
+                    if ElementMass._mass_slice_ok(s, [8, 8, 16, 8]):
+                        continue
+                    i10 = ElementMass._mass_slice_ok(s, [10, 10, 16, 10])
+                    break
+            if i10:
+                self.has_i10 = True
+            widths = [10, 10, 16, 10] if i10 else [8, 8, 16, 8]
             parameterList = [] 
             for j in range(len(elementMassNodeSetKeywords[i])):                                
-                parameters = self.parse_whole(elementMassNodeSetKeywords[i][j], [8,8,16,8])
+                parameters = self.parse_whole(elementMassNodeSetKeywords[i][j], widths)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
     
@@ -5832,7 +5857,8 @@ class ElementBeam(DynaKeyword):
                 if j == 0:
                     curStrVector = str(elementBeamKeywords[i][j])
                     length = len(curStrVector)/8
-                    spaceVector = [8] * int(length)
+                    # R16 카드는 EID PID N1~N3 RT1 RR1 RT2 RR2 LOCAL 10칸 — 짧은 줄(EID PID N1 N2)은 칸이 모자라 임포터가 죽었다(v131 B1)
+                    spaceVector = [8] * max(10, int(length))
                 parameters = self.parse_whole(elementBeamKeywords[i][j], spaceVector)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
@@ -8610,26 +8636,7 @@ class MatRigid(DynaKeyword):
     
     def parse(self, mat_keywords):
         for i in range(len(mat_keywords)):
-            parameterList = []
-            #parameters = mat_keywords[i][0].parse_whole([10, 10, 10, 10, 10, 10, 10, 10])
-            parameters = self.parse_whole(mat_keywords[i][0], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            CMO = self.parse_whole(mat_keywords[i][1], [10])
-            if CMO[0] == "":
-                CMO = 0.0
-            else:
-                CMO = float(CMO[0])
-            if CMO == 1.0 or CMO == -1.0:
-                #parameters = mat_keywords[i][1].parse_whole([10, 10, 10])
-                parameters = self.parse_whole(mat_keywords[i][1], [10, 10, 10])
-            else:
-                #parameters = mat_keywords[i][1].parse_whole([10])
-                parameters = self.parse_whole(mat_keywords[i][1], [10])
-            parameterList.append(parameters)
-            #parameters = mat_keywords[i][2].parse_whole([10, 10, 10, 10, 10, 10])
-            parameters = self.parse_whole(mat_keywords[i][2], [10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            self.parameters.append(parameterList)
+            self.parameters.append(_mat_rigid_cards(self, mat_keywords[i], 0))
 
     def MID(self,ith):
         return self.parameters[ith][0][0]
@@ -8707,7 +8714,7 @@ class MatRigid(DynaKeyword):
             formatted_elements = f"{str(parameter[0][0]):>10}{str(parameter[0][1]):>10}{str(parameter[0][2]):>10}{str(parameter[0][3]):>10}{str(parameter[0][4]):>10}{str(parameter[0][5]):>10}{str(parameter[0][6]):>10}{str(parameter[0][7]):>10}\n"
             stream.write(formatted_elements)
             stream.write("$$     CMO      CON1      CON2\n")
-            CMO = float(parameter[1][0])
+            CMO = _dyna_float(parameter[1][0])
             if CMO == 1.0 or CMO == -1.0:
                 formatted_elements = f"{str(parameter[1][0]):>10}{str(parameter[1][1]):>10}{str(parameter[1][2]):>10}\n"
             else:
@@ -8724,30 +8731,8 @@ class MatRigidTitle(DynaKeyword):
     def parse(self, mat_keywords):
         for i in range(len(mat_keywords)):
             parameterList = []
-            #parameters = mat_keywords[i][0].parse_whole([80])
-            parameters = self.parse_whole(mat_keywords[i][0], [80])
-            parameterList.append(parameters)
-            #parameters = mat_keywords[i][1].parse_whole([10, 10, 10, 10, 10, 10, 10, 10])
-            parameters = self.parse_whole(mat_keywords[i][1], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            #CMO = mat_keywords[i][2].parse_whole([10])
-            CMO = self.parse_whole(mat_keywords[i][2], [10])
-            if CMO[0] == "":
-                CMO = 0.0
-            else:
-                CMO = float(CMO[0])
-            
-            if CMO == 1.0 or CMO == -1.0:
-                #parameters = mat_keywords[i][2].parse_whole([10, 10, 10])
-                parameters = self.parse_whole(mat_keywords[i][2], [10, 10, 10])
-            else:
-                #parameters = mat_keywords[i][2].parse_whole([10])
-                parameters = self.parse_whole(mat_keywords[i][2], [10])
-            parameterList.append(parameters)
-            #parameters = mat_keywords[i][3].parse_whole([10, 10, 10, 10, 10, 10])
-            parameters = self.parse_whole(mat_keywords[i][3], [10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            self.parameters.append(parameterList)
+            parameterList.append(self.parse_whole(mat_keywords[i][0], [80]))
+            self.parameters.append(parameterList + _mat_rigid_cards(self, mat_keywords[i], 1))
             
     def AddMatRigidTitle(self, MID, Name, RO, E, PR, N, COUPLE, M, ALIASRE, CMO, CON1, CON2, LCOA1, A2, A3, V1, V2, V3):
         RO = "{:10.3e}".format(RO)
@@ -8845,7 +8830,7 @@ class MatRigidTitle(DynaKeyword):
             formatted_elements = f"{str(parameter[1][0]):>10}{str(parameter[1][1]):>10}{str(parameter[1][2]):>10}{str(parameter[1][3]):>10}{str(parameter[1][4]):>10}{str(parameter[1][5]):>10}{str(parameter[1][6]):>10}{str(parameter[1][7]):>10}\n"
             stream.write(formatted_elements)
             stream.write("$$     CMO      CON1      CON2\n")
-            if parameter[2][0] == 1.0 or parameter[2][0] == -1.0:
+            if _dyna_float(parameter[2][0]) in (1.0, -1.0) and len(parameter[2]) >= 3:
                 formatted_elements = f"{str(parameter[2][0]):>10}{str(parameter[2][1]):>10}{str(parameter[2][2]):>10}\n"
             else:
                 formatted_elements = f"{str(parameter[2][0]):>10}\n"
@@ -9958,7 +9943,7 @@ class DynaNode(DynaKeyword):
         fmts = getattr(self, 'block_formats', [])
         for i in range(len(node_keywords)):
             fmt = fmts[i] if i < len(fmts) else None
-            i10 = (fmt == 'i10') or self._detect_node_i10(node_keywords[i])
+            i10 = fmt != 'long' and ((fmt == 'i10') or self._detect_node_i10(node_keywords[i]))
             if i10:
                 self.has_i10 = True
                 widths = [10, 16, 16, 16, 10, 10]
@@ -9978,8 +9963,8 @@ class DynaNode(DynaKeyword):
                 if not node_keywords[i][j].strip():
                     n_blank += 1
                     continue
-                #parameters = node_keywords[i][j].parse_whole([8, 16, 16, 16, 8, 8])
-                parameters = self.parse_whole(node_keywords[i][j], [8, 16, 16, 16, 8, 8])
+                # long('+', R16 "*NODE +" → (I20,3F20,2I20)) 블록은 20칸 — 예전엔 8·16칸으로 잘라 NID 0·쓰레기 좌표가 됐다
+                parameters = self.parse_whole(node_keywords[i][j], [20] * 6 if fmt == 'long' else [8, 16, 16, 16, 8, 8])
                 parameterList.append(parameters)
             if n_blank:
                 print(f"  Warning: NODE 블록의 빈 줄 {n_blank}개를 건너뛰었다 — "
@@ -10078,16 +10063,21 @@ class DynaNode(DynaKeyword):
         data = np.zeros((nTotal, 6))
 
         jj = 0
+        bad = []
         for param in self.parameters:
             for entry in param:
                 try:
                     # Convert all elements in the entry to float at once
                     data[jj, :len(entry)] = [float(x) if x.strip() else 0 for x in entry]
                 except ValueError:
-                    # If there is a failure, handle it (here assumed 0)
-                    data[jj, :len(entry)] = 0
+                    # 읽지 못한 줄은 절점이 아니다 — 예전엔 0 으로 채워 NID 0 유령 절점이 출력에 나갔다
+                    bad.append("".join(entry).strip()[:60])
+                    continue
                 jj += 1
-        return data
+        if bad:
+            print(f"  🔴 NODE: 숫자로 읽지 못한 절점 줄 {len(bad)}개를 버렸다(예: {bad[0]!r}) — 그 절점을 쓰는 요소는 "
+                  f"'정의 안 된 절점' 으로 빠진다. 고정폭(8·16칸)·콤마·long('+') 형식을 확인할 것")
+        return data[:jj]
     def getNodeListOld(self):
         nTotal = 0
         for i in range(len(self.parameters)):
@@ -10767,6 +10757,23 @@ class SectionBeamTitle(DynaKeyword):
             for j in range(2, len(parameter)):
                 stream.write("".join(str(v) for v in parameter[j]).rstrip("\n"))
                 stream.write("\n")
+
+def _dyna_float(value, default=0.0):
+    """덤프 기록기용 실수 — 빈 칸은 기본값(예전엔 float('') 로 빈 카드가 든 덱이 덤프에서 죽었다)."""
+    from KooCAEManager.KooOperator import KooDynaFloat
+    return KooDynaFloat(str(value), default)
+
+
+def _mat_rigid_cards(dk, block, off):
+    """*MAT_RIGID 카드 1~3(_TITLE 은 제목 다음, off=1). R16 카드 2·3 은 "must be included but may be left blank" 라 빠진 카드는
+    빈 칸이다. 카드 2 는 세 칸으로 나눠 CMO 를 읽는다 — 예전엔 한 칸([10])을 float() 해 콤마 '1,7,7' 과 빈 카드에서 죽었다.
+    구조는 예전과 같다: CMO ±1 이면 [CMO, CON1, CON2], 아니면 [CMO]."""
+    card = lambda k: str(block[off + k]) if off + k < len(block) else ""
+    c1 = dk.parse_whole(card(0), [10] * 8)
+    c2 = dk.parse_whole(card(1), [10, 10, 10])
+    c3 = dk.parse_whole(card(2), [10] * 6)
+    return [c1, c2 if _dyna_float(c2[0]) in (1.0, -1.0) else c2[:1], c3]
+
 
 def _dyna_int(value, default=0):
     """KooOperator.KooDynaInt 와 같은 규칙(빈 칸은 기본값, '2.0' 꼴은 정수) — 키워드 리더와 단면 매니저가 같은 값을 보게 한다."""
@@ -12499,7 +12506,8 @@ class DynaManager():
         #remain file name and ext only
         self.inputFile = os.path.basename(path)
     
-    def ReadKeywordsfromFile(self, path, lines_with_asterisk, keyword_dict):
+    def ReadKeywordsfromFile(self, path, lines_with_asterisk, keyword_dict, default_fmt=None):
+        # default_fmt: 이 파일 블록의 기본 형식 — '*INCLUDE +'·'*INCLUDE -' 는 인클루드 파일의 모든 키워드를 long·표준으로 읽는다(R16)
         curLines = []
         latest_keyword = ""
         includedList = []
@@ -12561,7 +12569,7 @@ class DynaManager():
         except Exception as e:
             print(f"  Warning: PARAMETER 해석 실패 (원본 유지): {e}")
 
-        latest_fmt = 'i10' if getattr(self, '_global_i10', False) else None
+        latest_fmt = default_fmt or ('i10' if getattr(self, '_global_i10', False) else None)
         latest_tennodes = False
         seen_end = False  # 이 파일을 *END 에서 멈췄나 — 멈췄으면 마지막 블록은 이미 마감됐다
 
@@ -12581,7 +12589,7 @@ class DynaManager():
                 # Check if the line starts with an asterisk
                 if line.startswith('*'):
                     if latest_keyword == 'INCLUDE':
-                        includedList.extend(curLines)  # 덮어쓰기가 아닌 추가
+                        includedList.extend((l, latest_fmt) for l in curLines)  # 덮어쓰기가 아닌 추가 — *INCLUDE 의 +·- 표시도 함께
                     raw_kwline = line.rstrip()  # 포맷 마커(' %'=I10, '+'=long) 캡처용 원문
                     # 키워드명 = '*' + [A-Za-z0-9_] 최장 프리픽스. 뒤에 붙는 설명/마커/주석
                     # ('(ten nodes format)', '%', '#', 탭, '$주석') 은 전부 무시 — 접미어 때문에
@@ -12632,6 +12640,14 @@ class DynaManager():
                             self._keyword_line = _kwtail
                         if 'I10=Y' in _kwtail.upper().replace(' ', ''):
                             self._global_i10 = True
+                        # R16: long=y·long=k 는 long(20칸) 입력을 읽고, long=s 는 표준 입력을 읽는다(쓰기만 long). KMM 파서는
+                        # 대부분 10칸이라 덱 전체 long 을 읽으면 조용히 쓰레기가 됐다 — 맨 위 덱에서 알아보게 멈춘다(사용자 결정 11-04)
+                        _lm = re.search(r'LONG=([A-Z])', _kwtail.upper().replace(' ', ''))
+                        if _lm and _lm.group(1) in ('Y', 'K') and len(self._include_stack) == 1:
+                            _msg = (f"🔴 *KEYWORD LONG={_lm.group(1)} — 덱 전체 long(20칸) 입력은 KMM 이 지원하지 않는다. "
+                                    f"표준 형식으로 바꿔 넣어라(R16: long=y·k 는 long 입력을 읽고, long=s 는 표준 입력을 읽는다)")
+                            print(_msg)
+                            raise ValueError(_msg)
                     if _kwtail.endswith('%'):
                         latest_fmt = 'i10'
                     elif _kwtail.endswith('+'):
@@ -12639,7 +12655,7 @@ class DynaManager():
                     elif _kwtail.endswith('-'):
                         latest_fmt = 'std'   # 표준 강제 — 파서들은 'i10' 만 보므로 None 과 같고, 원문 기록기가 '-' 를 되살린다(리뷰 W 🟡6)
                     else:
-                        latest_fmt = 'i10' if getattr(self, '_global_i10', False) else None
+                        latest_fmt = default_fmt or ('i10' if getattr(self, '_global_i10', False) else None)
                 elif line.startswith('$'):
                     continue
                 else:
@@ -12651,7 +12667,7 @@ class DynaManager():
         # *END 에서 멈춘 파일은 그 자리에서 이미 마감됐다.
         if not seen_end and latest_keyword:
             if latest_keyword == 'INCLUDE':
-                includedList.extend(curLines)
+                includedList.extend((l, latest_fmt) for l in curLines)
             if curLines:
                 _store_block(latest_keyword, curLines, latest_fmt, latest_tennodes)
             elif latest_keyword == 'CONTROL_MPP_IO_NODUMP':
@@ -12662,7 +12678,7 @@ class DynaManager():
                 self._empty_keyword_names.append(latest_keyword)
 
         # include 파일 처리
-        for curFile in includedList:
+        for curFile, inc_fmt in includedList:
             include_path = curFile.strip()
             if not include_path:
                 continue  # *INCLUDE 블록의 빈 줄은 파일 이름이 아니다(빈 이름이 폴더로 열려 죽었다)
@@ -12695,7 +12711,8 @@ class DynaManager():
                             print(f"  Warning: 순환 인클루드 — {os.path.basename(include_path)} 는 이미 읽는 중이라 "
                                   f"건너뛴다({' → '.join(chain)})")
                             continue
-                        self.ReadKeywordsfromFile(include_path, lines_with_asterisk, keyword_dict)
+                        self.ReadKeywordsfromFile(include_path, lines_with_asterisk, keyword_dict,
+                                                  default_fmt=inc_fmt if inc_fmt in ('long', 'std') else None)
             else:
                 print(f"Warning: Include file not found: {include_path}")
 
@@ -15175,6 +15192,7 @@ class DynaManager():
             if "ELEMENT_MASS_NODE_SET" in lines_with_asterisk:
                 element_mass_node_set = keyword_dict["ELEMENT_MASS_NODE_SET"]
                 emass_node_set = ElementMassNodeSet()
+                emass_node_set.block_formats = getattr(self, "_block_formats", {}).get("ELEMENT_MASS_NODE_SET", [])
                 emass_node_set.parse(element_mass_node_set)
                 emass_node_set.write(file)
                 dynaKeywordMan.addKeyword(emass_node_set)

@@ -582,6 +582,7 @@ class KooDynaImporter():
         self.importAdditional()
         print("Additional Imported")
         self._reserve_raw_set_ids()
+        self._check_long_blocks()
         print("Import Completed")
         
         
@@ -684,6 +685,22 @@ class KooDynaImporter():
             nodeSets = setNodeListGenerate.getSetNodeList()
             self.nodeSetManager.AddNodeSetfromDyna(nodeSets)
             
+    # long('+') 블록을 20칸으로 읽는 파서 — 나머지는 10칸으로 잘라 값이 조용히 틀어진다
+    _LONG_OK = {"NODE", "ELEMENT_TSHELL", "SECTION_SHELL", "SECTION_SHELL_TITLE", "SECTION_TSHELL", "SECTION_TSHELL_TITLE",
+                "SECTION_SOLID", "SECTION_SOLID_TITLE"}
+
+    def _check_long_blocks(self):
+        """해석한 키워드에 long('+'·*INCLUDE +) 블록이 있는데 그 파서가 20칸을 읽지 못하면 알리고 멈춘다(사용자 결정 11-04 —
+        덱 전체 LONG=Y·K 와 같은 꼴). 해석하지 않는 키워드는 원문 그대로 '+' 표시와 함께 나가므로 괜찮다."""
+        fmts_all = getattr(self.dynaManager, "_block_formats", None) or {}
+        bad = sorted(kw for kw, fl in fmts_all.items()
+                     if "long" in fl and self.keywordInterpreted.get(kw, False) and kw not in self._LONG_OK)
+        if bad:
+            msg = (f"🔴 long('+') 블록을 KMM 이 20칸으로 읽지 못하는 키워드: {', '.join('*' + k for k in bad)} — 10칸으로 잘라 "
+                   f"값이 틀어지므로 지원하지 않는다. 표준 형식(또는 *INCLUDE -)으로 바꿔 넣어라")
+            print(msg)
+            raise ValueError(msg)
+
     def _reserve_raw_set_ids(self):
         """KMM 이 해석하지 않는 *SET_* 원문 블록(GENERAL·ADD 등)의 번호를 셋 매니저에 예약한다 — KMM 이 새로 만드는 셋
         (RobustContact_SS·ModelParts_SS·HeatGen *SET_SOLID 등)이 그 번호를 받아 같은 번호 셋이 둘 생기던 것(리뷰 W 🟡8·X).
