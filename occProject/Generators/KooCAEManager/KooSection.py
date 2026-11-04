@@ -9,6 +9,30 @@ else:
 from KooCAEManager.KooOperator import *
 from KooCAEManager.KooDefine import _real10   # 값 손실 없는 10칸 실수(TSHELL 단면)
 
+def _e10(v):
+    """단면 실수 칸 — '{:10.3e}' 가 값을 그대로 담으면 예전 출력 그대로(바이트 동일), 아니면 _real10(10칸 최대 정밀도).
+    10.3e 는 유효숫자 4자리라 SHRF 0.833333·T 0.012345·MAREA 1.23457E-6 을 깎았다(v131 I6, 사용자 결정 11-04 '덱 값 그대로').
+    깎이는 값만 바뀌므로 4자리 이하 값의 덱 출력은 바이트까지 같다."""
+    s = "{:10.3e}".format(v)
+    try:
+        if float(s) == float(v):
+            return s
+        return _real10(float(v))
+    except (TypeError, ValueError, OverflowError):
+        return s
+
+
+def _f10_1(v):
+    """'{:10.1f}' 칸(SECTION_BEAM SCOOR·NSM) — 소수 한 자리로 값을 잃으면(NSM 0.0012 → 0.0) _real10."""
+    s = "{:10.1f}".format(v)
+    try:
+        if float(s) == float(v):
+            return s
+        return _real10(float(v))
+    except (TypeError, ValueError, OverflowError):
+        return s
+
+
 def _wide_field(x):
     """long(20자) 블록의 칸은 공백을 떼어 10칸 출력에 넣는다. 표준 10칸 칸은 그대로(출력 바이트 유지)."""
     return x.strip() if len(x) > 10 else x
@@ -96,13 +120,13 @@ class KooSectionBeam(KooSection):
         keywordString += "{0}\n".format(self.name)
         # 10 digit for each float
         keywordString += "$$   SECID    ELFORM      SHRF    QRIRID       CST     SCORR       NSM     NAUPD\n"
-        formatted_string = "{:10d}{:10d}{:10.3e}{:10.3e}{:10d}{:10.1f}{:10.1f}{:10d}\n".format(self.id, self.elform, self.shrf, self.qririd, self.cst, self.scoor, self.nsm, self.naupd)
+        formatted_string = "{:10d}{:10d}{}{}{:10d}{}{}{:10d}\n".format(self.id, self.elform, _e10(self.shrf), _e10(self.qririd), self.cst, _f10_1(self.scoor), _f10_1(self.nsm), self.naupd)
         keywordString += formatted_string
         if self.elform == 1 or self.elform == 11:
             keywordString += "$$     TS1       TS2       TT1       TT2     NSLOC     NTLOC\n"             
             formatted_string = ""
             for opt in self.options:
-                formatted_string += "{:10.3e}".format(opt)
+                formatted_string += _e10(opt)
             formatted_string += "\n"
             keywordString += formatted_string
         elif self.elform == 13:
@@ -119,15 +143,15 @@ class KooSectionBeam(KooSection):
             IST= 0.0
             ITORM = 0.0
 
-            keywordString += "$$       A       ISS       ITT         J        SA       IST     ITORM\b"
+            keywordString += "$$       A       ISS       ITT         J        SA       IST     ITORM\n"   # 예전엔 \b 라 카드 2 가 $$ 주석 줄에 붙어 LS-DYNA 가 주석으로 버렸다(v131)
             formatted_string = ""
-            formatted_string += "{:10.3e}".format(A)
-            formatted_string += "{:10.3e}".format(ISS)
-            formatted_string += "{:10.3e}".format(ITT)
-            formatted_string += "{:10.3e}".format(J)
-            formatted_string += "{:10.3e}".format(SA)
-            formatted_string += "{:10.3e}".format(IST)
-            formatted_string += "{:10.3e}".format(ITORM)
+            formatted_string += _e10(A)
+            formatted_string += _e10(ISS)
+            formatted_string += _e10(ITT)
+            formatted_string += _e10(J)
+            formatted_string += _e10(SA)
+            formatted_string += _e10(IST)
+            formatted_string += _e10(ITORM)
             formatted_string += "\n"
             keywordString += formatted_string
             
@@ -186,9 +210,9 @@ class KooSectionShell(KooSection):
         keywordString = "*SECTION_SHELL_TITLE\n"
         keywordString += "{0}\n".format(self.name)
         # 10 digit for each float
-        formatted_string = "{:10d}{:10d}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10d}{:10d}\n".format(self.id, self.elform, self.shrf, self.nip, self.propt, self.qrIrid, self.icomp, self.setyp)
+        formatted_string = "{:10d}{:10d}{}{}{}{}{:10d}{:10d}\n".format(self.id, self.elform, _e10(self.shrf), _e10(self.nip), _e10(self.propt), _e10(self.qrIrid), self.icomp, self.setyp)
         keywordString += formatted_string
-        formatted_string = "{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10}\n".format(self.T1, self.T2, self.T3, self.T4,self.nloc,self.marea,self.idof,self.edgset)
+        formatted_string = "{}{}{}{}{}{}{}{:10}\n".format(_e10(self.T1), _e10(self.T2), _e10(self.T3), _e10(self.T4), _e10(self.nloc), _e10(self.marea), _e10(self.idof), self.edgset)
         keywordString += formatted_string
         if self.icomp == 1:
             # ICOMP=1 각도 카드(카드당 8개) — 예전엔 읽지도 쓰지도 않아 복합 셸 적층이 사라졌다(2026-11-03)
@@ -239,12 +263,12 @@ class KooSectionSolid(KooSection):
         keywordString += "          "
         
         if type(self.cohoff) == float:
-            formatted_string = "{:10.3e}".format(self.cohoff)
+            formatted_string = _e10(self.cohoff)
             keywordString += formatted_string
         else:
             keywordString += "          "
         if type(self.gaskett) == float:
-            formatted_string = "{:10.3e}".format(self.gaskett)
+            formatted_string = _e10(self.gaskett)
             keywordString += formatted_string
         else:
             keywordString += "          "
@@ -274,7 +298,7 @@ class KooSectionSolidPeri(KooSection):
         # 10 digit for each float
         formatted_string = "{:10d}{:10d}\n".format(self.id, self.elform) 
         keywordString += formatted_string           
-        formatted_string = "{:10.3e}{:10d}\n".format(self.dr, self.ptype) 
+        formatted_string = _e10(self.dr) + "{:10d}\n".format(self.ptype) 
         keywordString += formatted_string
         self.SetDynaKeyword(keywordString)
         return keywordString

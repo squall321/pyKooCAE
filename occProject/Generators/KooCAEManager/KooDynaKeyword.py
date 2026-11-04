@@ -11163,8 +11163,10 @@ class SectionSolid(DynaKeyword):
         for i in range(len(self.parameters)):
             parameter = self.parameters[i]
             stream.write("*SECTION_SOLID\n")
-            stream.write("$$   SECID    ELFORM       AET    COHOFF   GASKETT\n")
-            formatted_elements = f"{_f10(parameter[0][0]):>10}{_f10(parameter[0][1]):>10}{_f10(parameter[0][2]):>10}{_f10(parameter[0][6]):>10}{_f10(parameter[0][7]):>10}\n"
+            stream.write("$$   SECID    ELFORM       AET                                  COHOFF   GASKETT\n")
+            # R16 카드 1 자리 그대로(SECID ELFORM AET 빈칸×3 COHOFF GASKETT) — 예전엔 COHOFF·GASKETT 를 4·5번째 칸에 써 덤프를
+            # 다시 읽으면 값이 사라졌다(v131 I7)
+            formatted_elements = "".join(f"{_f10(x):>10}" for x in parameter[0][:8]) + "\n"
             stream.write(formatted_elements)
 
 class SectionSolidTitle(DynaKeyword):
@@ -11242,8 +11244,10 @@ class SectionSolidTitle(DynaKeyword):
             parameter = self.parameters[i]
             stream.write("*SECTION_SOLID_TITLE\n")
             stream.write("{name}\n".format(name=parameter[0][0]))
-            stream.write("$$   SECID    ELFORM       AET    COHOFF   GASKETT\n")
-            formatted_elements = f"{_f10(parameter[1][0]):>10}{_f10(parameter[1][1]):>10}{_f10(parameter[1][2]):>10}{_f10(parameter[1][6]):>10}{_f10(parameter[1][7]):>10}\n"
+            stream.write("$$   SECID    ELFORM       AET                                  COHOFF   GASKETT\n")
+            # R16 카드 1 자리 그대로(SECID ELFORM AET 빈칸×3 COHOFF GASKETT) — 예전엔 COHOFF·GASKETT 를 4·5번째 칸에 써 덤프를
+            # 다시 읽으면 값이 사라졌다(v131 I7)
+            formatted_elements = "".join(f"{_f10(x):>10}" for x in parameter[1][:8]) + "\n"
             stream.write(formatted_elements)
 
 class SectionSolidPeri(DynaKeyword):

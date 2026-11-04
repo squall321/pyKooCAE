@@ -4310,39 +4310,53 @@ class ElementManager:
             if _skip:
                 print(f"  Warning: 셸 요소 출력 스킵 총 {_skip}개")
 
+    def _out_w(self, pid, startEID):
+        """빔·질량 기록기 칸 폭 — I10 스타일 보존(output_i10)이거나 1억(9자리) 이상 ID 면 10칸('%'), 아니면 8칸(기존 바이트 동일).
+        I10=Y 덱의 DropSet.k 가 *KEYWORD I10=Y 아래에 8칸 빔·질량을 써 LS-DYNA 가 잘못 읽었다(v131 I1)."""
+        w = 10 if getattr(self, 'output_i10', False) else 8
+        if w == 8 and self.elements:
+            try:
+                if int(pid or 0) > 99999999 or max(self.elements.keys()) + startEID > 99999999:
+                    w = 10
+            except (TypeError, ValueError):
+                pass
+        return w
+
     def WritetoDynaKeywordLine(self, pid, startNID, startEID):
+        w = self._out_w(pid, startEID)   # I10(%)·1억 이상 ID 는 10칸 — 솔리드·셸 기록기와 같은 규칙(예전엔 8칸 고정)
         dynaString = ""
         if self.GetNumberofLinearLineElements() > 0:
-            dynaString += "*ELEMENT_BEAM\n"
+            dynaString += ("*ELEMENT_BEAM %\n" if w == 10 else "*ELEMENT_BEAM\n")
             for key in self.elements:
                 element : LineElement = self.elements[key]
                 if element.type == "LINE2":
-                    nullStr = "        "
-                    formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{nullStr}{str(element.constraints[0]):>8}{str(element.constraints[1]):>8}{str(element.constraints[2]):>8}{str(element.constraints[3]):>8}{str(element.local):>8}\n"
+                    nullStr = " " * w
+                    formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{nullStr}{str(element.constraints[0]):>{w}}{str(element.constraints[1]):>{w}}{str(element.constraints[2]):>{w}}{str(element.constraints[3]):>{w}}{str(element.local):>{w}}\n"
                     dynaString += formatString                    
         if self.GetNumberofQuadraticLineElements() > 0:
-            dynaString += "*ELEMENT_BEAM\n"
+            dynaString += ("*ELEMENT_BEAM %\n" if w == 10 else "*ELEMENT_BEAM\n")
             for key in self.elements:
                 element : LineElement = self.elements[key]
                 if element.type == "LINE3":
                     if element.nodes[2] == 0:
-                        nullStr = "        "
-                        formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{nullStr}{str(element.constraints[0]):>8}{str(element.constraints[1]):>8}{str(element.constraints[2]):>8}{str(element.constraints[3]):>8}{str(element.local):>8}\n"
+                        nullStr = " " * w
+                        formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{nullStr}{str(element.constraints[0]):>{w}}{str(element.constraints[1]):>{w}}{str(element.constraints[2]):>{w}}{str(element.constraints[3]):>{w}}{str(element.local):>{w}}\n"
                     else:
-                        formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.constraints[0]):>8}{str(element.constraints[1]):>8}{str(element.constraints[2]):>8}{str(element.constraints[3]):>8}{str(element.local):>8}\n"
+                        formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.constraints[0]):>{w}}{str(element.constraints[1]):>{w}}{str(element.constraints[2]):>{w}}{str(element.constraints[3]):>{w}}{str(element.local):>{w}}\n"
                     dynaString += formatString
         return dynaString
 
     def WriteStreamDynaKeywordLine(self, stream, pid, startNID, startEID):
+        w = self._out_w(pid, startEID)   # I10(%)·1억 이상 ID 는 10칸 — 솔리드·셸 기록기와 같은 규칙(예전엔 8칸 고정)
         if self.GetNumberofLinearLineElements() > 0:
-            stream.write("*ELEMENT_BEAM\n")             
+            stream.write(("*ELEMENT_BEAM %\n" if w == 10 else "*ELEMENT_BEAM\n"))             
             _skip = 0
             for key in self.elements:
                 element : LineElement = self.elements[key]
                 try:
                     if element.type == "LINE2":
-                        nullStr = "        "
-                        formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{nullStr}{str(element.constraints[0]):>8}{str(element.constraints[1]):>8}{str(element.constraints[2]):>8}{str(element.constraints[3]):>8}{str(element.local):>8}\n"
+                        nullStr = " " * w
+                        formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{nullStr}{str(element.constraints[0]):>{w}}{str(element.constraints[1]):>{w}}{str(element.constraints[2]):>{w}}{str(element.constraints[3]):>{w}}{str(element.local):>{w}}\n"
                         stream.write(formatString)
                 except Exception:
                     # 요소 하나를 못 쓰면 그 요소만 건너뛰고 장부에 적는다 — KMM 이 끝에서 🔴 + 종료 코드 3(리뷰 R)
@@ -4353,17 +4367,17 @@ class ElementManager:
             if _skip:
                 print(f"  Warning: 빔 요소 출력 스킵 총 {_skip}개")
         if self.GetNumberofQuadraticLineElements() > 0:
-            stream.write("*ELEMENT_BEAM\n")
+            stream.write(("*ELEMENT_BEAM %\n" if w == 10 else "*ELEMENT_BEAM\n"))
             _skip = 0
             for key in self.elements:
                 element : LineElement = self.elements[key]
                 try:
                     if element.type == "LINE3":
                         if element.nodes[2].id == 0:
-                            nullStr = "        "
-                            formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{nullStr}{str(element.constraints[0]):>8}{str(element.constraints[1]):>8}{str(element.constraints[2]):>8}{str(element.constraints[3]):>8}{str(element.local):>8}\n"
+                            nullStr = " " * w
+                            formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{nullStr}{str(element.constraints[0]):>{w}}{str(element.constraints[1]):>{w}}{str(element.constraints[2]):>{w}}{str(element.constraints[3]):>{w}}{str(element.local):>{w}}\n"
                         else:
-                            formatString = f"{str(element.id + startEID):>8}{str(pid):>8}{str(element.nodes[0].id + startNID):>8}{str(element.nodes[1].id + startNID):>8}{str(element.nodes[2].id + startNID):>8}{str(element.constraints[0]):>8}{str(element.constraints[1]):>8}{str(element.constraints[2]):>8}{str(element.constraints[3]):>8}{str(element.local):>8}\n"
+                            formatString = f"{str(element.id + startEID):>{w}}{str(pid):>{w}}{str(element.nodes[0].id + startNID):>{w}}{str(element.nodes[1].id + startNID):>{w}}{str(element.nodes[2].id + startNID):>{w}}{str(element.constraints[0]):>{w}}{str(element.constraints[1]):>{w}}{str(element.constraints[2]):>{w}}{str(element.constraints[3]):>{w}}{str(element.local):>{w}}\n"
                         stream.write(formatString)
                 except Exception:
                     # 요소 하나를 못 쓰면 그 요소만 건너뛰고 장부에 적는다 — KMM 이 끝에서 🔴 + 종료 코드 3(리뷰 R)
@@ -4375,6 +4389,7 @@ class ElementManager:
                 print(f"  Warning: 빔 요소 출력 스킵 총 {_skip}개")
     
     def WritetoDynaKeywordPoint(self, pid, startNID, startEID):
+        w = self._out_w(pid, startEID)   # I10(%)·1억 이상 ID 는 10칸 — 솔리드·셸 기록기와 같은 규칙(예전엔 8칸 고정)
         dynaString = ""
         if self.GetNumberofPointElements() > 0:
             i = 0
@@ -4384,10 +4399,10 @@ class ElementManager:
                     # mass characters exponent has 8 characters
                     i = i + 1
                     if i == 1:
-                        dynaString += "*ELEMENT_MASS\n"
+                        dynaString += ("*ELEMENT_MASS %\n" if w == 10 else "*ELEMENT_MASS\n")
                     massStr = _format_mass16(element.mass)
                     ePid = getattr(element, "pid", 0) or pid
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{massStr:>16}{str(ePid):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(element.nodes[0].id + startNID):>{w}}{massStr:>16}{str(ePid):>{w}}\n"
                     dynaString += formatString
             i = 0
             for key in self.elements:
@@ -4395,14 +4410,15 @@ class ElementManager:
                 if element.type == "POINT_NSET":
                     i = i + 1
                     if i == 1:
-                        dynaString += "*ELEMENT_MASS_NODE_SET\n"
+                        dynaString += ("*ELEMENT_MASS_NODE_SET %\n" if w == 10 else "*ELEMENT_MASS_NODE_SET\n")
                     massStr = _format_mass16(element.mass)
                     ePid = getattr(element, "pid", 0) or pid
-                    formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{massStr:>16}{str(ePid):>8}\n"
+                    formatString = f"{str(element.id + startEID):>{w}}{str(element.nsid):>{w}}{massStr:>16}{str(ePid):>{w}}\n"
                     dynaString += formatString
         return dynaString
 
     def WriteStreamDynaKeywordPoint(self, stream, pid, startNID, startEID):
+        w = self._out_w(pid, startEID)   # I10(%)·1억 이상 ID 는 10칸 — 솔리드·셸 기록기와 같은 규칙(예전엔 8칸 고정)
         if self.GetNumberofPointElements() > 0:
             i = 0
             _skip = 0
@@ -4412,10 +4428,10 @@ class ElementManager:
                     if element.type == "POINT":
                         i = i + 1
                         if i == 1:
-                            stream.write("*ELEMENT_MASS\n")
+                            stream.write(("*ELEMENT_MASS %\n" if w == 10 else "*ELEMENT_MASS\n"))
                         massStr = _format_mass16(element.mass)
                         ePid = getattr(element, "pid", 0) or pid
-                        formatString = f"{str(element.id + startEID):>8}{str(element.nodes[0].id + startNID):>8}{massStr:>16}{str(ePid):>8}\n"
+                        formatString = f"{str(element.id + startEID):>{w}}{str(element.nodes[0].id + startNID):>{w}}{massStr:>16}{str(ePid):>{w}}\n"
                         stream.write(formatString)
                 except Exception:
                     # 요소 하나를 못 쓰면 그 요소만 건너뛰고 장부에 적는다 — KMM 이 끝에서 🔴 + 종료 코드 3(리뷰 R)
@@ -4433,10 +4449,10 @@ class ElementManager:
                     if element.type == "POINT_NSET":
                         i = i + 1
                         if i == 1:
-                            stream.write("*ELEMENT_MASS_NODE_SET\n")
+                            stream.write(("*ELEMENT_MASS_NODE_SET %\n" if w == 10 else "*ELEMENT_MASS_NODE_SET\n"))
                         massStr = _format_mass16(element.mass)
                         ePid = getattr(element, "pid", 0) or pid
-                        formatString = f"{str(element.id + startEID):>8}{str(element.nsid):>8}{massStr:>16}{str(ePid):>8}\n"
+                        formatString = f"{str(element.id + startEID):>{w}}{str(element.nsid):>{w}}{massStr:>16}{str(ePid):>{w}}\n"
                         stream.write(formatString)
                 except Exception:
                     # 요소 하나를 못 쓰면 그 요소만 건너뛰고 장부에 적는다 — KMM 이 끝에서 🔴 + 종료 코드 3(리뷰 R)
