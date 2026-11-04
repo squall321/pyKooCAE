@@ -36,6 +36,9 @@
      옮겨 벽 차례가 바뀌었다. *MAT_084_REINF·*MAT_T01 별칭을 재질 MID 로 읽었다. IDAM≠0 침식 끝 빈 줄로 거짓 rc 3 이었다. D2R 닫힘이
      PAIRED 0 세트를 따라가 사용자 짝을 지웠고, DROP 은 long D2R SWSET 을 10칸으로 읽었다. 여러 각도 DROP 의 RigidWall 바닥은
      DropSet.k 에 없었다(v130 부터).
+  R8 RobustContact 의 TIED 면 찾기가 각도 번호 i 를 덮어 RunID 를 준 여러 각도가 Run 폴더 하나에 겹쳤다(v130 부터). 원문
+     접촉의 CID 를 예약하지 않아 KMM 바닥판·DWI 접촉이 같은 번호를 받았고(실제 덱 KooRemapper 예제), DTI 가 그 번호를
+     지울 때 원문 접촉의 D2R 까지 지웠다.
 """
 import contextlib
 import io
@@ -1163,6 +1166,57 @@ def cons_of(t):
     return out
 
 
+def r8():
+    print("[R8] RobustContact 의 각도 번호(RunID), 원문 접촉 번호 예약, DWI 다음 단계의 원문 접촉 D2R")
+    # ── RobustContact(파트끼리 TIED) + 여러 각도 + RunID: 각도마다 제 Run 폴더 ─────────────────────────────────────────
+    tied = "*CONTACT_TIED_SURFACE_TO_SURFACE_ID\n" + f"{5:10d}bond\n" + f10(1, 2, 3, 3) + f10(0.0, 0.0) + f10(1.0, 1.0)
+    deck = ("*KEYWORD\n" + node_block(cubes(2, dx=1.0)) + "*ELEMENT_SOLID\n" + hex_row(1, 1, 1) + hex_row(2, 2, 9) + part(1) + part(2)
+            + SOLID1 + ELASTIC + tied + "*END\n")
+    d, rc, log = run("drop_robust_runid", {"model.k": deck}, drop([0, 10, 20], "RobustContact,True\nRunID,101,102,103\n"))
+    runs = sorted(p.name for p in Path(d).glob("runs/Run_*") if (p / "DropSet.k").exists())
+    check("R8 DROP 3각도 + RobustContact(파트끼리 TIED) + RunID 101~103: 각도마다 제 Run 폴더(Run_101·102·103)",
+          rc == 0 and runs == ["Run_101", "Run_102", "Run_103"], f"rc={rc} {runs}")
+
+    # ── 원문(해석하지 않는) 접촉의 CID 를 예약한다 — KMM 바닥판 접촉이 그 번호를 받지 않는다 ───────────────────────────────
+    s2s = "*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_ID\n" + f"{1:10d}user\n" + f10(1, 1, 3, 3) + f10(0.1, 0.1) + f10(1.0, 1.0)
+    n2s = lambda cid: ("*CONTACT_AUTOMATIC_NODES_TO_SURFACE_ID\n" + f"{cid:10d}usernts\n" + f10(1, 1, 3, 3) + f10(0.1, 0.1)
+                       + f10(1.0, 1.0))
+    d, rc, log = run("drop_raw_cid", {"model.k": cube_deck(s2s + n2s(2))}, drop([0]))
+    outs = dropsets(d)
+    cids = cons_of(outs[0]) if outs else []
+    check("R8 DROP + 해석한 접촉 1·원문 N2S 접촉 2: 바닥판 접촉이 2 를 받지 않는다(접촉 번호가 모두 다르다)",
+          rc == 0 and len(cids) >= 3 and len(cids) == len(set(cids)) and {1, 2} <= set(cids), f"rc={rc} {cids}")
+
+    # ── DWI 다음 단계 DTI: 원문 N2S 접촉 8 과 그 접촉을 가리키는 사용자 D2R 짝은 남는다 ───────────────────────────────────
+    grid = {i * 4 + j + 1: (float(j), float(i), 0.0) for i in range(4) for j in range(4)}
+    quads = "".join(f"{3 * i + j + 1:8d}{1:8d}" + "".join(f"{n:8d}" for n in (4 * i + j + 1, 4 * i + j + 2, 4 * i + j + 6, 4 * i + j + 5)) + "\n"
+                    for i in range(3) for j in range(3))
+    pair = ("*DEFORMABLE_TO_RIGID_AUTOMATIC\n" + f10(20, 2, 0.0, "1e20", 0.0, 8, 10, 1) + f10(0, 0, 0, 0.0, 1, 0, 0.0) + f10(1, 0)
+            + "*DEFORMABLE_TO_RIGID_AUTOMATIC\n" + f10(10, 4, 0.0, "1e20", 0.0, 8, 20, -1) + f10(0, 0, 0, 0.0, 0, 1, 0.0) + f10(1))
+    plate = ("*KEYWORD\n*CONTROL_TERMINATION\n" + f10(0.001) + node_block(grid) + "*ELEMENT_SHELL\n" + quads + part(1, 1, 1, "plate")
+             + "*SECTION_SHELL\n" + f10(1, 2) + f10(0.5, 0.5, 0.5, 0.5) + "*MAT_ELASTIC\n" + f10(1, "2.70E-09", 70000, 0.33)
+             + "*CONTACT_TIED_SURFACE_TO_SURFACE_ID\n" + f"{7:10d}usertied\n" + f10(1, 1, 3, 3) + f10(0.0, 0.0) + f10(1.0, 1.0)
+             + n2s(8) + pair + "*END\n")
+    dwi = ("*Inputfile\nmodel.k\n*RunDirectoryMode,True,runs\n*Mode\nDROP_WEIGHT_IMPACT_TEST,1\n**DropWeightImpactTest,1\nTFinal,0.0001\n"
+           "DT,1e-05\nLocationX,1.5\nLocationY,1.5\nHeight,100\nInitialVelocityX,0\nInitialVelocityY,0\nInitialVelocityZ,0\nGravity,9810\n"
+           "ImpactorType,Sphere\nImpactorDimension,0.5\nMeshSize,0.25\nDensityImpactor,7.85e-09\nYoungsModulusImpactor,200000.0\n"
+           "PoissonRatioImpactor,0.3\nGenerationMode,OutsideRigidElement\nBoundaryDistance,0.6\nOffsetDistance,0.05\n"
+           "YoungsModulusWall,10000.0\nPoissonRatioWall,0.3\nDensityWall,1e-09\n**EndDropWeightImpactTest\n*End\n")
+    d, rc, log = run("dwi_raw_n2s", {"model.k": plate}, dwi)
+    runs = sorted(Path(d).glob("runs/Run_*"))
+    deck = read(runs[0], "DropWeightImpactTestSet.k") if runs else ""
+    dti_opt = read(runs[0] / "DynamicRelaxation", "dynaintoinitial.txt") if runs else ""
+    dyn = "*KEYWORD\n" + node_block({k: (x, y, z + 0.01) for k, (x, y, z) in grid.items()}) + "*END\n"
+    d2, rc2, log2 = run("dwi_raw_n2s_dti", {"DropWeightImpactTestSet.k": deck, "dynain": dyn},
+                        "\n".join("**DynainPath,dynain" if ln.startswith("**DynainPath") else ln for ln in dti_opt.splitlines()) + "\n")
+    t = read(d2, "DropWeightImpactTestSet_dti.k")
+    sws = sorted(try_(lambda: int(rows[0][:10]), -1) for _, rows in kw_blocks(t, "*DEFORMABLE_TO_RIGID_AUTOMATIC") if rows)
+    dwi_cids = cons_of(deck)
+    check("R8 DWI + 원문 N2S 8·그 D2R 짝: DWI 접촉이 8 을 받지 않고, 다음 단계 DTI 뒤 접촉 7·8 과 D2R 짝 20·10 이 남는다",
+          rc == 0 and rc2 == 0 and len(dwi_cids) == len(set(dwi_cids)) and sorted(cons_of(t)) == [7, 8] and sws == [10, 20],
+          f"rc={rc}/{rc2} dwi={dwi_cids} left={cons_of(t)} d2r={sws}")
+
+
 def main():
     r1()
     r2()
@@ -1171,6 +1225,7 @@ def main():
     r5()
     r6()
     r7()
+    r8()
     print()
     if FAILS:
         print(f"FAILED {len(FAILS)}")
