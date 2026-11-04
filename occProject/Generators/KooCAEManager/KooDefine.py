@@ -237,6 +237,17 @@ class KooDefineManager:
             coord.cid += offsetcid
         self.maxcid += offsetcid
 
+    def TransformCoordinateSystemPoints(self, f):
+        """좌표계는 점(원점 O·x축 점 L·xy평면 점 P)으로 정의된다 — 모델 절점을 옮기는 변환(TRANSFORM)을 같은 함수 f(x, y, z)
+        → (x, y, z) 로 그 점들에도 적용한다. 좌표계를 출력에 쓰기 시작하며(v131 리뷰 R3) 회전·대칭한 모델의 좌표계가 제자리에
+        남으면 그 좌표계를 쓰는 재질 축이 조용히 틀린다. CIDL 이 있는 좌표계는 점이 그 좌표계 기준이라 따라가므로 두지 않는다."""
+        for c in self.defineCoordinateSystems.values():
+            if getattr(c, 'CIDL', 0):
+                continue
+            c.XO, c.YO, c.ZO = f(c.XO, c.YO, c.ZO)
+            c.XL, c.YL, c.ZL = f(c.XL, c.YL, c.ZL)
+            c.XP, c.YP, c.ZP = f(c.XP, c.YP, c.ZP)
+
     def OverwritefromDefineManager(self, defineManager: KooDefineManager):
         self.maxid = max(self.maxid, defineManager.maxid)
         self.maxcid = max(self.maxcid, defineManager.maxcid)

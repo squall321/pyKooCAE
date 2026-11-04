@@ -17,6 +17,7 @@
      죽었다(고쳐도 E·PR 이 뒤바뀜). 같은 모드 ID 옵션 블록 두 벌이 조용히 덮였다. sphere 워커 0.5 GB 가 x.5 GB 요청을 만들었다.
      DTI 가 dynain 이 싣지 않는 *INITIAL_STRESS_SECTION 까지 지웠다. *NODE 없이 설정만 든 덱을 가져오면 KeyError 로 죽었다.
      *SET_NODE_LIST_GENERATE 가 든 덱은 모든 모드가 쓰기에서 죽었다(읽을 때 NSID 도 버렸다).
+  좌표계를 출력에 쓰기 시작하며 TRANSFORM(회전·이동·대칭·확대)이 좌표계 점을 옮기지 않던 것도 이 시험을 쓰다 막았다.
   같은 번호 같은 내용의 재질을 IMPORT_MERGE_K 가 충돌로 본 것(재질 비교 글이 늘 비었다)과, 첫 요소가 삼각형인 두께 블록에서 뒤
   사각형의 N4 가 잘리던 것은 이 시험을 쓰다 찾았다.
 """
@@ -529,6 +530,25 @@ def r3():
         check(f"R3 TRANSFORM *DEFINE_COORDINATE_SYSTEM{'_TITLE' if name == 'title' else ''} CID 5: 출력에 같은 값으로 남는다",
               rc == 0 and len(got) == 1 and got[0][0][:7] == [5, 0, 0, 0, 1.0, 0, 0] and got[0][1][:3] == [0, 1.0, 0],
               f"rc={rc} {got} " + log[-300:])
+
+    # ── TRANSFORM 이 점으로 정의한 좌표계도 절점과 같이 옮긴다(좌표계를 쓰기 시작해서 — CIDL 이 있는 좌표계는 그대로) ──────────
+    def csys(t):
+        out = {}
+        for h, rows in kw_blocks(t, "*DEFINE_COORDINATE_SYSTEM") + kw_blocks(t, "*DEFINE_COORDINATE_SYSTEM_TITLE"):
+            rows = rows[1:] if h.split()[0].upper().endswith("_TITLE") else rows
+            a, b = floats(rows[0], 10), floats(rows[1], 10)
+            out[int(a[0])] = (a[1:7], int(a[7]) if len(a) > 7 else 0, b[:3])
+        return out
+    cs2 = ("*DEFINE_COORDINATE_SYSTEM\n" + f10(5, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0) + f10(0.0, 1.0, 0.0)
+           + "*DEFINE_COORDINATE_SYSTEM\n" + f10(6, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 5) + f10(0.0, 1.0, 0.0))
+    for line, (ol, pp) in (("Rotation,0,0,90", ([0, 0, 0, 0, 1, 0], [-1, 0, 0])), ("Mirror,yz", ([0, 0, 0, -1, 0, 0], [0, 1, 0])),
+                           ("Translation,1,2,3", ([1, 2, 3, 2, 2, 3], [1, 3, 3]))):
+        d, rc, log = run("cs_move", {"model.k": cube_deck(cs2)}, TRANS.replace("Translation,0,0,0", line))
+        got = try_(lambda: csys(read(d, "model_trans.k")), {})
+        ok5 = 5 in got and all(abs(a - b) < 1e-9 for a, b in zip(got[5][0] + got[5][2], ol + pp))
+        ok6 = 6 in got and got[6][1] == 5 and all(abs(a - b) < 1e-9 for a, b in zip(got[6][0] + got[6][2], [0, 0, 0, 1, 0, 0, 0, 1, 0]))
+        check(f"R3 TRANSFORM {line}: 좌표계 CID 5 의 점(O·L·P)이 절점과 같이 옮겨지고, CIDL 5 인 CID 6 은 그대로",
+              rc == 0 and ok5 and ok6, f"rc={rc} {got}")
 
     # ── DECOMPOSE_K ModelIndependentSplit False(R3-9) ────────────────────────────────────────────────────
     dec = ("*Inputfile\nmodel.k\n*Mode\nDECOMPOSE_K,1\n**DecomposeK,1\nGroup,housing,housing\nGroup,fpcb,fpcb\n"

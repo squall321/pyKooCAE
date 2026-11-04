@@ -3404,6 +3404,13 @@ class KooDynaAdvancedModification:
 
     def Transform(self, option):
         nodeMan : NodeManager = self.dynaImporter.nodeManager
+        defMan = self.dynaImporter.defineManager
+
+        def cs_trsf(trsf):   # 점으로 정의한 좌표계도 절점과 같은 변환으로 — 좌표계를 출력에 쓰기 시작해서(v131 리뷰 R3)
+            def f(x, y, z):
+                p = gp_Pnt(x, y, z).Transformed(trsf)
+                return p.X(), p.Y(), p.Z()
+            defMan.TransformCoordinateSystemPoints(f)
         for i in range(len(option)):
             curOption = option[i]
             curOptionMode = curOption[0]
@@ -3412,6 +3419,7 @@ class KooDynaAdvancedModification:
                 ty = curOption[2]
                 tz = curOption[3]
                 nodeMan.MoveNodes(tx, ty, tz)
+                defMan.TransformCoordinateSystemPoints(lambda x, y, z: (x + tx, y + ty, z + tz))
             elif curOptionMode.lower() == "rotation":
                 angleX = curOption[1]
                 angleY = curOption[2]
@@ -3428,11 +3436,13 @@ class KooDynaAdvancedModification:
                 combinedTrsf = trsfX.Multiplied(trsfY)
                 combinedTrsf = combinedTrsf.Multiplied(trsfZ)
                 nodeMan.Transform(combinedTrsf)
+                cs_trsf(combinedTrsf)
             elif curOptionMode.lower() == "scale":
                 sx = curOption[1]
                 sy = curOption[2]
                 sz = curOption[3]
                 nodeMan.Scaling(sx, sy, sz)
+                defMan.TransformCoordinateSystemPoints(lambda x, y, z: (x * sx, y * sy, z * sz))   # 절점처럼 원점 기준
             elif curOptionMode.lower() == "mirror":
                 mode = curOption[1]
                 
@@ -3462,6 +3472,7 @@ class KooDynaAdvancedModification:
                         elemMan.SetMirrorConnectivityXZPlane()
                 if mode.lower() in ("xy", "yz", "xz"):
                     self.dynaImporter.MirrorRawElementRows(mode.lower())   # 원문 TSHELL 줄도 뒤집는다(v131 M6)
+                    cs_trsf(trsf)
             elif curOptionMode.lower() == "vectorrotation":
                 x = curOption[1]
                 y = curOption[2]
@@ -3483,6 +3494,7 @@ class KooDynaAdvancedModification:
                 ax = gp_Ax1(gp_Pnt(0,0,0), gp_Dir(vectorXCrossR))
                 trsf.SetRotation(ax, angleBetweenXR)
                 nodeMan.Transform(trsf)
+                cs_trsf(trsf)
             elif curOptionMode.lower() == "vectortovectorrotation":
                 x1 = curOption[1]
                 y1 = curOption[2]
@@ -3506,7 +3518,8 @@ class KooDynaAdvancedModification:
                 trsf : gp_Trsf = gp_Trsf()
                 ax = gp_Ax1(gp_Pnt(0,0,0), gp_Dir(vector1CrossVector2))
                 trsf.SetRotation(ax, angleBetweenVector1Vector2)
-                nodeMan.Transform(trsf)                
+                nodeMan.Transform(trsf)
+                cs_trsf(trsf)
                 
     # 낙하추 충격(DWI) 재질 폴백 감시 — 세 DWI 함수 공용
     # 🔴 폴백값이 SI(E=2.07e11 Pa, rho=7800 kg/m^3)인데 이 프로젝트의 모델은
