@@ -5852,6 +5852,12 @@ class ElementBeam(DynaKeyword):
                     stream.write(formatted_elements)
                 stream.write("\n")
 
+def _n8(line):
+    """8칸 요소 줄의 칸 수 — 줄 끝 공백·개행을 빼고 올림으로 센다. 내림으로 세면 마지막 칸이 8자를 채우지 못한 줄(R16: 칸 안
+    어디에 써도 그 칸 값이다)의 그 칸을 버렸다(사각형 N4 가 사라져 삼각형 — v131 리뷰 R5)."""
+    return -(-len(str(line).replace("\n", "").replace("\r", "").rstrip()) // 8)
+
+
 def _comma_to_fixed(line, w):
     """콤마 자유형식 요소 줄을 그 블록의 고정폭(w칸) 줄로 바꾼다. 요소 리더는 칸 수를 줄 길이로 정해(8칸이면 /8), 콤마 줄은 뒤쪽
     절점이 조용히 잘리거나(육면체가 쐐기로) 짧은 줄이 통째로 버려졌다(v131 리뷰 R1). 칸에 들어가지 않는 값은 고정폭으로 나타낼
@@ -5977,7 +5983,7 @@ class ElementShell(DynaKeyword):
             for j in range(len(rows)):
                 # 칸 수는 줄마다 그 줄 길이로 — 첫 줄 길이로 정하면 뒤 줄의 N4·N5~N8 이 rc 0 으로 잘렸다(4절점 줄 뒤 8절점 줄,
                 # 삼각형 줄 뒤 사각형 줄 — v131 리뷰 R4). 받는 쪽(KooPart)이 줄 칸 수로 두께 블록을 가리므로 끝에서 칸 수를 맞춘다
-                parameters = self.parse_whole(rows[j], [8] * int(len(str(rows[j])) / 8))
+                parameters = self.parse_whole(rows[j], [8] * _n8(rows[j]))   # 끝 칸이 8자를 못 채워도 읽는다(리뷰 R5)
                 parameterList.append(parameters)
             if parameterList:
                 rowmax = max(len(r) for r in parameterList)
@@ -6125,7 +6131,7 @@ class ElementShellThickness(DynaKeyword):
                 # 카드 1 칸 수는 줄마다 줄 길이로 — 첫 요소 줄 길이로 정하면 뒤의 8절점 줄 N5~N8 이 잘렸다(v131 리뷰 R2).
                 # 콤마 줄은 먼저 8칸 고정폭으로(짧은 콤마 줄은 칸이 하나뿐이라 EID 칸에서 죽었다)
                 l = _comma_to_fixed(l, 8)
-                return self.parse_whole(l, [8] * int(len(str(l))/8))
+                return self.parse_whole(l, [8] * _n8(l))   # 끝 칸이 8자를 못 채워도 읽는다(리뷰 R5)
             self.parameters.extend(self._walk_cards(
                 block, card1, lambda l, t, n: self.parse_whole(l, thickVectors[(n, t)])))
     
@@ -6494,6 +6500,16 @@ class ElementSolid(DynaKeyword):
             if len(rows) != len(block):
                 print(f"  Warning: ELEMENT_SOLID 블록의 빈 줄 {len(block) - len(rows)}개를 건너뛰었다 — "
                       f"LS-DYNA 는 빈 줄을 EID 없는 카드로 읽는다(덱 확인)")
+            if rows and _n8(rows[0]) > 2:
+                # 1줄 꼴(EID PID N1~N8 — 2줄 꼴은 첫 줄이 EID·PID 두 칸뿐이다): 줄마다 그 줄 길이로 읽고 끝에서 칸 수를 맞춘다.
+                # 예전엔 둘째 줄 길이가 첫 줄과 다르면(사면체 줄·줄 끝 공백) 받는 쪽(KooPart)이 블록 전체를 2줄 꼴로 읽어 요소를
+                # rc 0 으로 뒤섞었다(v131 리뷰 R5, 기존 결함)
+                parameterList = [self.parse_whole(r, [8] * _n8(r)) for r in rows]
+                rowmax = max(len(r) for r in parameterList)
+                for r in parameterList:
+                    r.extend([''] * (rowmax - len(r)))
+                self.parameters.append(parameterList)
+                continue
             spaceVector = []
             parameterList = []
             mode = 1
