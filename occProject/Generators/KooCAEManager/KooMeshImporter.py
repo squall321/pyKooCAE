@@ -1455,6 +1455,8 @@ class KooDynaImporter():
                 continue
             if kw.startswith("MAT_ADD_"):
                 continue            # 기존 MID 를 참조할 뿐 정의하지 않는다
+            if not self.keywordInterpreted.get(kw, False):
+                continue            # 해석하지 않는 재질은 원문 그대로 나가 MID 가 출력에 있다 — 예전엔 🔴 로 잘못 알렸다(v131 X1)
             idx = 1 if kw.endswith("_TITLE") else 0
             for block in blocks:
                 lines = [ln for ln in block if str(ln).strip() != ""]
@@ -1488,8 +1490,8 @@ class KooDynaImporter():
             print(f"     이대로 두면 LS-DYNA 가 Error 10157 (MAT not found) 로 실패한다. "
                   f"재질 카드의 키워드/내용 불일치를 확인할 것")
         if unreferenced:
-            print(f"  Info: 등록되지 않은 재질 MID {len(unreferenced)}개 (참조 파트 없음) — "
-                  f"미해석 raw 보존일 수 있다: {unreferenced if len(unreferenced) <= 12 else str(unreferenced[:12]) + ' ...'}")
+            print(f"  Info: 등록되지 않은 재질 MID {len(unreferenced)}개 (참조 파트 없음) — 해석하는 재질 카드를 읽지 못했다"
+                  f"(덱 확인): {unreferenced if len(unreferenced) <= 12 else str(unreferenced[:12]) + ' ...'}")
 
     def importDefine(self):
         dynaKeyword = self.dynaManager.dynaKeywordMan.keywords
