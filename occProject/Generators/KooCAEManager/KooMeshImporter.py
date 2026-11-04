@@ -2361,11 +2361,9 @@ class KooDynaImporter():
             additionals = interfaceSpringbackKeyword.getInterfaceSpringbackLSDYNA()
             for additional in additionals:
                 self.additionalManager.SetAdditionalfromDyna(additional)
-        if "DEFORMABLE_TO_RIGID_AUTOMATIC" in dynaKeyword:
-            d2rKeyword = dynaKeyword["DEFORMABLE_TO_RIGID_AUTOMATIC"]
-            additionals = d2rKeyword.getDeformableToRigidAutomatic()
-            for additional in additionals:
-                self.additionalManager.SetAdditionalfromDyna(additional)
+        # 덱의 *DEFORMABLE_TO_RIGID_AUTOMATIC 은 매니저에 넣지 않고 원문 그대로 둔다 — 매니저 기록기는 D2R·R2D 카드를 늘 'PART'
+        # 형식으로 다시 써 PSET 같은 덱 카드를 옮기지 못하고, 해석 표시가 없어 원문과 매니저 판이 두 번 나갔다. 여러 각도 DROP 은
+        # 각도 사이에 매니저 D2R 을 지워 둘째 각도부터 덱 D2R 이 사라졌다(v131 리뷰 R2). 매니저에는 KMM 이 만드는 D2R 만 둔다
         pass
                     
     def importDynaResult(self):
