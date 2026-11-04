@@ -68,6 +68,18 @@ from KooCAEManager.KooMeshManagerGMSH import KooMeshManagerGMSH
 from KooCAEManager.KooDynaAdvancedModification import KooDynaAdvancedModification
 
 
+class _OptionBlocks(dict):
+    """모드 ID → 옵션 사전. 같은 ID 에 두 번 넣으면(옵션 블록이 둘) 그 ID 를 dups 에 적는다 — ImportOption 끝에서 멈춘다(v131 리뷰 R3)."""
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.dups = set()
+
+    def __setitem__(self, key, value):
+        if key in self:
+            self.dups.add(key)
+        super().__setitem__(key, value)
+
+
 class KooMeshModifier(KooSimulationGenerator):
     def __init__(self, dynaImporter : KooDynaImporter = None):
         if dynaImporter == None:
@@ -92,7 +104,7 @@ class KooMeshModifier(KooSimulationGenerator):
         self.appFileName = "appfile.txt"
         self.modeList = []
         self.modeIDList = []
-        self.modeIDOption = {}
+        self.modeIDOption = _OptionBlocks()
         self.advancedModification = KooDynaAdvancedModification(dynaImporter)
         self.advancedModification.runDirectoryMode = False
         self.modelInfoMetadata = {}
@@ -2783,6 +2795,14 @@ class KooMeshModifier(KooSimulationGenerator):
                 line = line.strip()
                 if not line:  # Empty line, skip it
                     continue
+
+        # 같은 모드 ID 의 옵션 블록(**…,ID)이 둘 이상이면 뒤 블록이 앞 블록을 조용히 덮었다(블록을 복사하고 ID 를 안 바꾼 경우
+        # 등 — v131 리뷰 R3). 모드 ID 가 겹치는 것과 같은 실수라 멈춘다
+        dup = sorted(getattr(self.modeIDOption, "dups", ()))
+        if dup:
+            print(f"🔴 옵션 블록: 모드 ID {', '.join(map(str, dup))} 의 옵션 블록이 두 번 이상 있다 — 뒤 블록이 앞 블록을 덮는다. "
+                  f"블록마다 다른 ID 를 주고 *Mode 의 ID 와 맞출 것 (종료 코드 1)")
+            sys.exit(1)
 
         # *Recipe 로 펼친 글은 레시피의 모드 그대로 읽혀야 한다. *Recipe 앞의 *End 같은 줄로 모드가 빠지면 KMM 은 모드 0개로
         # 돌아 입력 모델 이름 그대로 다시 쓴다(리뷰 R2). 그러기 전에 멈춘다
