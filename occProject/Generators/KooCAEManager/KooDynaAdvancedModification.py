@@ -3257,10 +3257,12 @@ class KooDynaAdvancedModification:
                 # 겹치지 않으면 예전처럼 20·10 이다
                 from KooCAEManager.KooDynaKeyword import _whole_int
                 _used_sw = set()
-                for _blk in (getattr(self.dynaImporter.dynaManager, "_raw_keyword_dict", None) or {}).get("DEFORMABLE_TO_RIGID_AUTOMATIC", []):
+                _fmts = (getattr(self.dynaImporter.dynaManager, "_block_formats", None) or {}).get("DEFORMABLE_TO_RIGID_AUTOMATIC", [])
+                for _bi, _blk in enumerate((getattr(self.dynaImporter.dynaManager, "_raw_keyword_dict", None) or {}).get("DEFORMABLE_TO_RIGID_AUTOMATIC", [])):
                     _rows = [str(l) for l in _blk if str(l).strip() and not str(l).lstrip().startswith("$")]
+                    _w = 20 if _bi < len(_fmts) and _fmts[_bi] == "long" else 10   # long('+') 블록은 20칸(v131 리뷰 R7)
                     if _rows:
-                        _v = _whole_int((_rows[0].split(",")[0] if "," in _rows[0] else _rows[0][:10]).strip())
+                        _v = _whole_int((_rows[0].split(",")[0] if "," in _rows[0] else _rows[0][:_w]).strip())
                         if _v:
                             _used_sw.add(_v)
                 sw_d2r, sw_r2d = 20, 10
