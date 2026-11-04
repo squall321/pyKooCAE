@@ -410,10 +410,16 @@ def _mat_values(obj):
     v = {k: (tuple(x) if isinstance(x, list) else x) for k, x in vars(obj).items()
          if k not in _MAT_SKIP and isinstance(x, (int, float, str, bool, list, tuple, type(None)))}
     raw = getattr(obj, "raw_cards", None)
-    if raw:   # 속성에 안 담기는 원문 칸 — *MAT_ADD_EROSION 카드 3 의 2~7칸(DMGTYP…FADEXP)과 카드 6~(옛 GISSMO). 리뷰 R5
-        c3 = (list(_norm_card(raw[2])) + [""] * 8)[1:7] if len(raw) > 2 else []
-        v["_raw_uncaptured"] = (tuple(c3), tuple(_norm_card(l) for l in raw[5:]))
+    if raw and getattr(obj, "IDAM", 0):
+        # 속성에 안 담기는 원문 칸 — *MAT_ADD_EROSION 카드 3 의 2~7칸(DMGTYP…FADEXP)과 카드 6~ 은 IDAM≠0(옛 GISSMO·DIEM)일 때만
+        # 뜻이 있다(R16, 리뷰 R6). 빈 칸은 기본값과 같다 — 빈 칸·빠진 카드를 기본값과 다르게 봐 같은 침식에 거짓 rc 3 이었다(리뷰 R6)
+        c3 = (list(_norm_card(raw[2])) + [""] * 8)[1:7] if len(raw) > 2 else [""] * 6
+        c3 = tuple(d if x == "" else x for x, d in zip(c3, _ERO_C3_DEFAULTS))
+        v["_raw_uncaptured"] = (c3, tuple(_norm_card(l) for l in raw[5:]))
     return v
+
+
+_ERO_C3_DEFAULTS = (0.0, 0.0, 0.0, 1.0, 0.0, 1.0)   # *MAT_ADD_EROSION 카드 3: DMGTYP LCSDG ECRIT DMGEXP DCRIT FADEXP
 
 
 def _norm_card(line):
