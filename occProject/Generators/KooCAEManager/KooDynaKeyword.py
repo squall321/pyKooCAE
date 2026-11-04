@@ -1059,16 +1059,8 @@ class ContactAutomaticSingleSurface(DynaKeyword):
             self.parameters.append(parameterList)
     
     def getAutomaticSingleSurfaceList(self):
-        automaticSingleSurfaceList = []
-        for i in range(len(self.parameters)):
-            curAutomaticSingleSurface = []
-            curAutomaticSingleSurface.append("*CONTACT_AUTOMATIC_SINGLE_SURFACE")
-            parameter = self.parameters[i]
-            curAutomaticSingleSurface.append(parameter[0])
-            curAutomaticSingleSurface.append(parameter[1])
-            curAutomaticSingleSurface.append(parameter[2])
-            automaticSingleSurfaceList.append(curAutomaticSingleSurface)
-        return automaticSingleSurfaceList
+        # 선택 카드 A~F 까지 모두 넘긴다 — 예전엔 카드 1~3만 넘겨 SOFT·SBOPT·DEPTH 등이 출력에서 사라졌다(v131 C1)
+        return [_contact_cards("*CONTACT_AUTOMATIC_SINGLE_SURFACE", parameter, 3) for parameter in self.parameters]
                 
 
     def write(self, stream):
@@ -1103,17 +1095,8 @@ class ContactAutomaticSingleSurfaceID(DynaKeyword):
             self.parameters.append(parameterList)
     
     def getAutomaticSingleSurfaceIDList(self):
-        automaticSingleSurfaceList = []
-        for i in range(len(self.parameters)):
-            curAutomaticSingleSurface = []
-            curAutomaticSingleSurface.append("*CONTACT_AUTOMATIC_SINGLE_SURFACE_ID")
-            parameter = self.parameters[i]
-            curAutomaticSingleSurface.append(parameter[0])
-            curAutomaticSingleSurface.append(parameter[1])
-            curAutomaticSingleSurface.append(parameter[2])
-            curAutomaticSingleSurface.append(parameter[3])
-            automaticSingleSurfaceList.append(curAutomaticSingleSurface)
-        return automaticSingleSurfaceList
+        # 선택 카드 A~F 까지 모두 넘긴다 — 예전엔 카드 1~3(ID 카드 포함)만 넘겨 SOFT·SBOPT·DEPTH 등이 출력에서 사라졌다(v131 C1)
+        return [_contact_cards("*CONTACT_AUTOMATIC_SINGLE_SURFACE_ID", parameter, 4) for parameter in self.parameters]
     
     def AddAutomaticSingleSurfaceID(self, id, name, ssid, msid, sstyp, mstyp, sboxid, mboxid, spr, mpr, fs, fd, dc, vc, vdc, penchk, bt, dt, sfs, sfm, sst, mst, sfst, sfmt, fsf, vsf):
         parameterList = [] 
@@ -1156,16 +1139,8 @@ class ContactAutomaticSurfaceToSurface(DynaKeyword):
             self.parameters.append(parameterList)
     
     def getAutomaticSurfacetoSurfaceList(self):
-        automaticSurfacetoSurfaceList = []
-        for i in range(len(self.parameters)):
-            curAutomaticSurfacetoSurface = []
-            curAutomaticSurfacetoSurface.append("*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE")
-            parameter = self.parameters[i]
-            curAutomaticSurfacetoSurface.append(parameter[0])
-            curAutomaticSurfacetoSurface.append(parameter[1])
-            curAutomaticSurfacetoSurface.append(parameter[2])
-            automaticSurfacetoSurfaceList.append(curAutomaticSurfacetoSurface)
-        return automaticSurfacetoSurfaceList
+        # 선택 카드 A~F 까지 모두 넘긴다 — 예전엔 카드 1~3만 넘겨 SOFT·SBOPT·DEPTH 등이 출력에서 사라졌다(v131 C1)
+        return [_contact_cards("*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE", parameter, 3) for parameter in self.parameters]
     
 
     def write(self, stream):
@@ -1208,17 +1183,8 @@ class ContactAutomaticSurfaceToSurfaceID(DynaKeyword):
         self.parameters.append(parameterList)
         
     def getAutomaticSurfacetoSurfaceIDList(self):
-        automaticSurfacetoSurfaceList = []
-        for i in range(len(self.parameters)):
-            curAutomaticSurfacetoSurface = []
-            curAutomaticSurfacetoSurface.append("*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_ID")
-            parameter = self.parameters[i]
-            curAutomaticSurfacetoSurface.append(parameter[0])
-            curAutomaticSurfacetoSurface.append(parameter[1])
-            curAutomaticSurfacetoSurface.append(parameter[2])
-            curAutomaticSurfacetoSurface.append(parameter[3])
-            automaticSurfacetoSurfaceList.append(curAutomaticSurfacetoSurface)
-        return automaticSurfacetoSurfaceList
+        # 선택 카드 A~F 까지 모두 넘긴다 — 예전엔 카드 1~3(ID 카드 포함)만 넘겨 SOFT·SBOPT·DEPTH 등이 출력에서 사라졌다(v131 C1)
+        return [_contact_cards("*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_ID", parameter, 4) for parameter in self.parameters]
         
     def write(self,stream):
         for i in range(len(self.parameters)):
@@ -2656,17 +2622,8 @@ class ContactErodingNodesToSurface(DynaKeyword):
             self.parameters.append(parameterList)
             
     def getErodingNodesToSurfaceList(self):
-        contactList = [] 
-        for i in range(len(self.parameters)):
-            curContactList = []
-            curContactList.append("*CONTACT_ERODING_NODES_TO_SURFACE")
-            curParameter = self.parameters[i]
-            curContactList.append(curParameter[0])
-            curContactList.append(curParameter[1])
-            curContactList.append(curParameter[2])
-            curContactList.append(curParameter[3])
-            contactList.append(curContactList)
-        return contactList
+        # 선택 카드 A~F 까지 모두 넘긴다 — 예전엔 카드 1~4만 넘겨 SOFT·SBOPT·DEPTH 등이 출력에서 사라졌다(v131 C1)
+        return [_contact_cards("*CONTACT_ERODING_NODES_TO_SURFACE", parameter, 4) for parameter in self.parameters]
             
             
     
@@ -2705,18 +2662,8 @@ class ContactErodingNodesToSurfaceID(DynaKeyword):
             self.parameters.append(parameterList)
     
     def getErodingNodesToSurfaceIDList(self):
-        contactList = [] 
-        for i in range(len(self.parameters)):
-            curContactList = []
-            curContactList.append("*CONTACT_ERODING_NODES_TO_SURFACE")
-            curParameter = self.parameters[i]
-            curContactList.append(curParameter[0])
-            curContactList.append(curParameter[1])
-            curContactList.append(curParameter[2])
-            curContactList.append(curParameter[3])
-            curContactList.append(curParameter[4])
-            contactList.append(curContactList)
-        return contactList      
+        # 선택 카드 A~F 까지 모두 넘긴다 — 예전엔 카드 1~4(ID 카드 포함)만 넘겨 SOFT·SBOPT·DEPTH 등이 출력에서 사라졌다(v131 C1)
+        return [_contact_cards("*CONTACT_ERODING_NODES_TO_SURFACE_ID", parameter, 5) for parameter in self.parameters]      
     
     def write(self, stream):
         for i in range(len(self.parameters)):
@@ -2754,17 +2701,8 @@ class ContactErodingSurfaceToSurface(DynaKeyword):
             self.parameters.append(parameterList)
     
     def getErodingSurfaceToSurfaceList(self):
-        contactList = []
-        for i in range(len(self.parameters)):
-            curContactList = []
-            curContactList.append("*CONTACT_ERODING_SURFACE_TO_SURFACE")
-            curParameter = self.parameters[i]
-            curContactList.append(curParameter[0])
-            curContactList.append(curParameter[1])
-            curContactList.append(curParameter[2])
-            curContactList.append(curParameter[3])
-            contactList.append(curContactList)
-        return contactList
+        # 선택 카드 A~F 까지 모두 넘긴다 — 예전엔 카드 1~4만 넘겨 SOFT·SBOPT·DEPTH 등이 출력에서 사라졌다(v131 C1)
+        return [_contact_cards("*CONTACT_ERODING_SURFACE_TO_SURFACE", parameter, 4) for parameter in self.parameters]
         
     def write(self, stream):
         for i in range(len(self.parameters)):
@@ -2801,18 +2739,8 @@ class ContactErodingSurfaceToSurfaceID(DynaKeyword):
             self.parameters.append(parameterList)
     
     def getErodingSurfaceToSurfaceIDList(self):
-        contactList = []
-        for i in range(len(self.parameters)):
-            curContactList = []
-            curContactList.append("*CONTACT_ERODING_SURFACE_TO_SURFACE_ID")
-            curParameter = self.parameters[i]
-            curContactList.append(curParameter[0])
-            curContactList.append(curParameter[1])
-            curContactList.append(curParameter[2])
-            curContactList.append(curParameter[3])
-            curContactList.append(curParameter[4])
-            contactList.append(curContactList)
-        return contactList
+        # 선택 카드 A~F 까지 모두 넘긴다 — 예전엔 카드 1~4(ID 카드 포함)만 넘겨 SOFT·SBOPT·DEPTH 등이 출력에서 사라졌다(v131 C1)
+        return [_contact_cards("*CONTACT_ERODING_SURFACE_TO_SURFACE_ID", parameter, 5) for parameter in self.parameters]
     
             
 
@@ -10757,6 +10685,20 @@ class SectionBeamTitle(DynaKeyword):
             for j in range(2, len(parameter)):
                 stream.write("".join(str(v) for v in parameter[j]).rstrip("\n"))
                 stream.write("\n")
+
+def _contact_cards(kw, parameter, need):
+    """접촉 블록의 카드 전부(선택 카드 A~F 포함)를 키워드 이름과 함께 — 받는 쪽(KooContact.AddContactfromDyna*)이 필수 카드 뒤의
+    카드를 OptCardA~F 로 읽는다. need 장보다 적으면 R16 필수 카드가 빠진 덱이라 원인을 밝혀 멈춘다 — 예전엔 IndexError 로
+    죽었다(v131 I8: *CONTACT_ERODING_* 카드 4 "Required for ERODING_type")."""
+    if len(parameter) < need:
+        cid = str(parameter[0][0]).strip() if kw.endswith("_ID") and parameter and parameter[0] else "?"
+        what = ("필수 카드 4(ISYM·EROSOP·IADJ)가 없다 — R16 'Card 4 Required for ERODING_type', 빈 줄이면 기본값"
+                if "_ERODING_" in kw else f"필수 카드가 {need - len(parameter)}장 모자란다(카드 1~3)")
+        msg = f"🔴 {kw} (CID {cid}): {what}. 덱을 확인하라"
+        print(msg)
+        raise ValueError(msg)
+    return [kw] + list(parameter)
+
 
 def _dyna_float(value, default=0.0):
     """덤프 기록기용 실수 — 빈 칸은 기본값(예전엔 float('') 로 빈 카드가 든 덱이 덤프에서 죽었다)."""
