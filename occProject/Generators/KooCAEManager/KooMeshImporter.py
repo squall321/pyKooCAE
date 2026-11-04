@@ -82,7 +82,7 @@ class KooDynaImporter():
         if sectionManager is None:
             self.sectionManager = KooSectionManager()
         if nodeSetManager is None:
-            self.nodeSetManager = NodeSetManager()
+            self.nodeSetManager = NodeSetManager(self.nodeManager)   # 절점 셋은 절점 매니저로 절점을 찾는다 — 없으면 *SET_NODE_LIST 에서 죽었다(v131 M2)
         if loadManager is None:
             self.loadManager = KooLoadManager()
         if boundaryNodeManager is None:

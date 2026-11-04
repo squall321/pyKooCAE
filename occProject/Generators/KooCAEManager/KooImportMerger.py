@@ -1,9 +1,11 @@
 """K-File Import Merger: 외부 .k 파일을 기존 모델에 병합 import.
 
 핵심 동작:
-- 새 파일의 PID/NID/EID/SID/NSID/PSID/SSID/CID/DefineID는 기존 max + 1부터 자동 재할당
-- MID/EOSID/HGID는 그대로 보존 (재료는 공통 DB)
-- 기존 모델에 없는 MID만 새로 추가 (충돌 없는 병합)
+- 새 파일의 PID/NID/EID/SID/NSID/PSID/SSID/CID(접촉)는 기존 max + 1부터 자동 재할당
+- MID/EOSID/HGID·곡선 LCID·좌표계 CID 는 그대로 보존 (재료·곡선은 공통 DB — 재질이 곡선 번호를 참조한다)
+- 기존 모델에 없는 번호만 새로 추가. 곡선·HOURGLASS 가 같은 번호로 내용이 다르면 기준 덱 것을 남기고 🔴(종료 코드 3)
+- 경계 조건은 새 번호로 더한다. 번호를 밀 수 없는 구속·부분 감쇠·강체벽·INTERFACE·하중·초기 조건·원문 블록은
+  옮기지 않고 🔴, CONTROL·DATABASE·DAMPING_GLOBAL 은 기준 덱 설정을 쓴다(알림)(v131 M2)
 - 새 파일의 *INCLUDE는 모두 인라인 (IGA passthrough 비활성)
 
 사용 케이스:
@@ -60,13 +62,23 @@ def import_merge_k(simGenerator, option):
     n_added_mat = _merge_materials(dynaImporter.matManager, new_importer.matManager)
     print(f"[IMPORT_MERGE_K] MAT/EOS 병합: 신규 추가 {n_added_mat}개 (기존 ID는 보존)")
 
-    # 5. 나머지 매니저는 OverwritefromXxx로 통합 병합
-    _merge_managers(dynaImporter, new_importer)
+    # 5. 나머지 매니저 병합(번호를 민 것만 — _merge_managers)
+    _merge_managers(dynaImporter, new_importer, offsets)
 
     # 6. 최종 maxID 동기화
     dynaImporter.SyncronizeMaxID()
     print(f"[IMPORT_MERGE_K] 병합 완료. 통합 후 parts={len(dynaImporter.partManager.parts)}, "
           f"nodes={len(dynaImporter.nodeManager.nodes)}")
+
+    # 7. 옮기지 못한 것을 알린다 — 예전엔 가져온 덱의 원문 블록·하중·초기 조건이 경고 없이 사라졌다(v131 M2)
+    _report_unmerged(new_importer)
+    if _CONFLICTS:
+        from KooCAEManager.KooElement import note_content_loss
+        print(f"  🔴 [IMPORT_MERGE_K] 같은 번호인데 내용이 다른 정의 — 기준 덱 것을 남겼다: {', '.join(_CONFLICTS)}")
+        print("     가져온 덱의 재질·요소가 그 번호를 쓰면 기준 덱 정의를 쓰게 된다. 가져올 덱의 번호를 바꿀 것")
+        for c in _CONFLICTS:
+            note_content_loss(f"IMPORT_MERGE_K — 번호 충돌 {c}")
+        _CONFLICTS.clear()
 
 
 # ============================================================================
@@ -101,11 +113,14 @@ def _compute_offsets(dynaImporter):
         'eid': max_eid,
         'sid': getattr(secMan, 'maxid', 0),
         'nsid': getattr(nodeSetMan, 'maxID', 0),
-        'psid': max((getattr(ps, 'sid', 0) for ps in getattr(partMan, 'partSets', {}).values()), default=0),
+        # PartSet 번호는 .psid 다 — 예전엔 .sid 를 읽어 늘 0 이라 가져온 셋이 기준 덱 셋 번호와 겹쳤다(v131 M2)
+        'psid': max([getattr(partMan, 'maxSID', 0) or 0]
+                    + [getattr(ps, 'psid', 0) for ps in getattr(partMan, 'partSets', {}).values()]),
         'ssid': getattr(segMan, 'maxid', 0),
         'cid': getattr(contactMan, 'maxid', 0),
-        'lcid': max((getattr(d, 'id', 0) for d in getattr(defineMan, 'defines', {}).values()), default=0)
-                if hasattr(defineMan, 'defines') else 0,
+        # 곡선 LCID 는 보존한다 — 재질(LCSS 등)·경계가 번호로 참조해 곡선만 밀면 참조가 틀린다. 예전엔 .id(없는 속성)를 읽어
+        # 늘 0 이었고, 병합이 같은 번호의 기준 덱 곡선을 덮어썼다(v131 M2 — _merge_defines 가 막는다)
+        'lcid': 0,
         'elem_set_sid': max((getattr(part.elementManager, 'maxSID', 0)
                              for part in partMan.parts.values()), default=0),
     }
@@ -152,10 +167,19 @@ def _apply_offsets(new_importer, off):
             partMan.constrainedParts[key].id += off['pid']
         partMan.maxID += off['pid']
         partMan.maxSID += off['psid']
-        for key in getattr(partMan, 'partSets', {}):
-            partMan.partSets[key].id += off['psid']
+        for key in getattr(partMan, 'partSets', {}):   # .psid 와 담은 PID — 예전엔 .id 라 여기서 멈춰 셋이 밀리지 않았다(v131 M2)
+            ps = partMan.partSets[key]
+            if getattr(ps, 'name', '') == f"PartSet_{ps.psid}":   # 이름 없는 셋의 기본 이름은 번호를 따른다(기준 덱 셋과 같은 이름이 되지 않게)
+                ps.name = f"PartSet_{ps.psid + off['psid']}"
+            ps.psid += off['psid']
+            ps.pids = [p + off['pid'] for p in ps.pids]
     except Exception as e:
         print(f"  Warning: PartManager offset 실패: {e}")
+    # 파트의 SECID 는 단면 객체를 따라간다 — 단면 번호만 밀고 파트 secid 는 그대로라 기준 덱 단면을 가리켰다(v131 M2).
+    # 원문 단면(*SECTION_DISCRETE 등)을 가리키는 파트는 단면 객체가 없다 — 그 원문은 옮기지 못한다고 따로 알린다
+    for part in list(partMan.parts.values()) + list(getattr(partMan, 'partsRigid', {}).values()):
+        if getattr(part, 'section', None) is not None:
+            part.secid = part.section.id
 
     # 4. NODE SET
     new_importer.nodeSetManager.OffsetID(off['nsid'])
@@ -191,7 +215,7 @@ def _rekey_all_managers(new_importer):
     if hasattr(pm, 'constrainedParts'):
         pm.constrainedParts = {p.id: p for p in pm.constrainedParts.values()}
     if hasattr(pm, 'partSets'):
-        pm.partSets = {ps.id: ps for ps in pm.partSets.values()}
+        pm.partSets = {ps.psid: ps for ps in pm.partSets.values()}
     # 각 part의 elementManager
     for part in list(pm.parts.values()) + list(getattr(pm, 'partsRigid', {}).values()):
         em = getattr(part, 'elementManager', None)
@@ -238,13 +262,24 @@ def _merge_materials(target_mat_mgr, new_mat_mgr):
         if hid not in getattr(target_mat_mgr, 'addErosions', {}):
             target_mat_mgr.addErosions[hid] = hg
             n_added += 1
+    for pid_, pz in getattr(new_mat_mgr, 'addPZElectric', {}).items():   # MID 키(*MAT_ADD_PZELECTRIC) — 예전엔 빠졌다(v131 M2)
+        if pid_ not in getattr(target_mat_mgr, 'addPZElectric', {}):
+            target_mat_mgr.addPZElectric[pid_] = pz
+            n_added += 1
     target_mat_mgr.maxid = max(getattr(target_mat_mgr, 'maxid', 0),
                                 getattr(new_mat_mgr, 'maxid', 0))
     return n_added
 
 
-def _merge_managers(target_importer, new_importer):
-    """MaterialManager 외 모든 매니저를 OverwritefromXxx로 병합."""
+def _merge_managers(target_importer, new_importer, off=None):
+    """MaterialManager 외 매니저 병합. 번호를 민 매니저만 OverwritefromXxx 로 합친다. 곡선·경계·HOURGLASS 는 기준 덱 것을
+    덮지 않게 따로 합치고, 번호를 밀 수 없는 구속·감쇠·강체벽 등과 설정(CONTROL·DATABASE)은 옮기지 않는다 — 예전엔 모두
+    Overwrite 로 합쳐 같은 번호의 기준 덱 정의·설정을 덮었고, 구속·감쇠·강체벽은 기준 덱 파트·셋을 가리켰다(v131 M2).
+    옮기지 않은 것은 _report_unmerged 가 알린다."""
+    off = off or {}
+    _merge_defines(target_importer.defineManager, new_importer.defineManager)
+    _merge_boundaries(target_importer.boundaryNodeManager, new_importer.boundaryNodeManager, off)
+    _merge_hourglasses(target_importer.additionalManager, new_importer.additionalManager)
     pairs = [
         ('nodeManager', 'OverwritefromNodeManager'),
         ('partManager', 'OverwritefromPartManager'),
@@ -252,13 +287,6 @@ def _merge_managers(target_importer, new_importer):
         ('nodeSetManager', 'OverwritefromNodeSetManager'),
         ('segmentSetManager', 'OverwritefromSegmentSetManager'),
         ('contactManager', 'OverwritefromContactManager'),
-        ('defineManager', 'OverwritefromDefineManager'),
-        ('boundaryNodeManager', 'OverwritefromBoundaryNodeManager'),
-        ('dampingManager', 'OverwritefromDampingManager'),
-        ('constrainedManager', 'OverwritefromConstrainedManager'),
-        ('controlManager', 'OverwritefromControlManager'),
-        ('databaseManager', 'OverwritefromDatabaseManager'),
-        ('additionalManager', 'OverwritefromDynaAdditionalManager'),
     ]
     for mgr_name, method_name in pairs:
         target = getattr(target_importer, mgr_name, None)
@@ -273,3 +301,109 @@ def _merge_managers(target_importer, new_importer):
             method(new)
         except Exception as e:
             print(f"  Warning: {mgr_name} 병합 실패 (skip): {e}")
+
+
+# 기준 덱 설정을 쓰므로 옮기지 않아도 되는 것(알리기만 한다). *PARAMETER 는 읽을 때 값을 이미 넣었다
+_SETTINGS_PREFIX = ("CONTROL_", "DATABASE_", "TITLE", "PARAMETER", "DAMPING_GLOBAL")
+_SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END"}
+# 해석은 하지만 병합하지 않는 것 — 정수로 지닌 PID·NSID·NID·SSID 를 밀 수 없어 합치면 기준 덱 파트·셋을 가리킨다
+_NOT_MERGED_PREFIX = ("LOAD_", "INITIAL_", "CONSTRAINED_", "DAMPING_", "RIGIDWALL_", "INTERFACE_", "DEFORMABLE_TO_RIGID",
+                      "BOUNDARY_NON_REFLECTING")
+_CONFLICTS = []   # 같은 번호·다른 내용(곡선·HOURGLASS) — import_merge_k 끝에서 🔴 로 알린다
+
+
+def _card_text(obj, title=False):
+    """같은 번호의 두 정의가 같은 내용인지 보는 카드 글 — 키워드 줄·주석·(제목 카드면) 제목 줄은 뺀다."""
+    from io import StringIO
+    st = StringIO()
+    try:
+        obj.WriteStreamDynaKeyword(st, 0)
+    except TypeError:
+        obj.WriteStreamDynaKeyword(st)
+    lines = [ln for ln in st.getvalue().splitlines() if not ln.startswith(("*", "$"))]
+    return "\n".join(lines[1:] if title else lines)
+
+
+def _merge_defines(target, new):
+    """곡선·좌표계 — 번호를 보존해 없는 번호만 더한다. 같은 번호·같은 내용은 하나로, 다르면 기준 덱 것을 남기고 알린다."""
+    for key, d in new.defines.items():
+        cur = target.defines.get(key)
+        if cur is None:
+            target.defines[key] = d
+            target.maxid = max(target.maxid, getattr(d, 'lcid', 0) or 0)
+            continue
+        t = str(getattr(d, 'lctype', '')).endswith('_TITLE') or str(getattr(cur, 'lctype', '')).endswith('_TITLE')
+        try:
+            same = _card_text(cur, t) == _card_text(d, t)
+        except Exception:
+            same = False
+        if not same:
+            _CONFLICTS.append(f"곡선 LCID {key}")
+    for key, c in new.defineCoordinateSystems.items():
+        cur = target.defineCoordinateSystems.get(key)
+        if cur is None:
+            target.defineCoordinateSystems[key] = c
+            target.maxcid = max(target.maxcid, getattr(c, 'cid', 0) or 0)
+        else:
+            try:
+                same = _card_text(cur) == _card_text(c)
+            except Exception:
+                same = False
+            if not same:
+                _CONFLICTS.append(f"좌표계 CID {key}")
+
+
+def _merge_hourglasses(target, new):
+    """*HOURGLASS — HGID 는 재질처럼 보존한다(파트가 번호로 참조). 없는 번호만 더하고, 같은 번호·다른 내용은 알린다."""
+    for key, hg in new.hourglasses.items():
+        cur = target.hourglasses.get(key)
+        if cur is None:
+            target.hourglasses[key] = hg
+        elif _card_text(cur) != _card_text(hg):
+            _CONFLICTS.append(f"HOURGLASS HGID {key}")
+
+
+def _merge_boundaries(target, new, off):
+    """경계 조건 — 가져온 조건은 기준 덱 번호 뒤 새 번호로 더한다(예전엔 같은 번호의 기준 덱 조건을 덮어썼다). 절점·절점 셋은
+    객체라 오프셋을 따라가고, 정수로 지닌 참조(PZEPOT NSID·강체 PID)는 여기서 민다. 곡선 LCID 는 보존이라 그대로다."""
+    from KooCAEManager.KooBoundaryNode import KooBoundaryPZEPOT, KooBoundaryPrescribedMotionRigid, _PartRef
+    target.maxid = max([target.maxid or 0] + [k for k in target.boundaries if isinstance(k, int)])
+    for b in list(new.boundaries.values()):
+        if isinstance(b, KooBoundaryPZEPOT):
+            b.nsid += off.get('nsid', 0)
+        if isinstance(b, KooBoundaryPrescribedMotionRigid) and isinstance(b.node, _PartRef):
+            b.node.id += off.get('pid', 0)
+        target.maxid += 1
+        b.bid = target.maxid
+        target.boundaries[b.bid] = b
+
+
+def _report_unmerged(new_importer):
+    """가져온 덱에서 병합하지 못한 것을 알린다 — 원문 블록(KMM 이 해석하지 않는 키워드)과, 해석했지만 병합하지 않는 하중·초기
+    조건·구속·부분 감쇠·강체벽·INTERFACE. 모델 카드는 🔴 + 종료 코드 3(카드 소실 장부), 설정(CONTROL·DATABASE·TITLE·PARAMETER·
+    DAMPING_GLOBAL)은 기준 덱 것을 쓰므로 알리기만 한다(v131 M2)."""
+    from KooCAEManager.KooElement import note_content_loss
+    mgr = new_importer.dynaManager
+    raw = getattr(mgr, "_raw_keyword_dict", None) or {}
+    interpreted = getattr(new_importer, "keywordInterpreted", {}) or {}
+    counts = {k: len(v) for k, v in raw.items()}
+    for k in getattr(mgr, "_empty_keyword_names", None) or []:   # 데이터 카드 없는 키워드
+        counts.setdefault(k, 0)
+    lost, settings = [], []
+    for kw, n in counts.items():
+        if kw in _SKIP or kw.startswith("INCLUDE"):
+            continue
+        if kw.startswith(_SETTINGS_PREFIX):
+            settings.append((kw, n))
+        elif not interpreted.get(kw, False) or kw.startswith(_NOT_MERGED_PREFIX):
+            lost.append((kw, n))
+    if settings:
+        print(f"[IMPORT_MERGE_K] 가져온 덱의 설정 카드는 옮기지 않는다(기준 덱 설정을 쓴다): "
+              f"{', '.join('*' + k for k, _ in settings)}")
+    if lost:
+        print(f"  🔴 [IMPORT_MERGE_K] 가져온 덱의 다음 카드는 옮기지 못했다 — 병합 결과에 없다: "
+              f"{', '.join(f'*{k}({n})' if n else '*' + k for k, n in lost)}")
+        print("     원문 키워드(KMM 이 해석하지 않는 것)와 하중·초기 조건·구속·부분 감쇠·강체벽·INTERFACE 는 참조 번호를 함께 밀 수 "
+              "없어 옮기지 않는다. 가져올 덱에서 빼거나 병합 뒤 직접 넣을 것")
+        for kw, n in lost:
+            note_content_loss(f"IMPORT_MERGE_K — 가져온 덱 *{kw}", max(n, 1))

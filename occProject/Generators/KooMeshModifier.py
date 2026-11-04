@@ -3548,8 +3548,11 @@ if __name__ == "__main__":
             simGenerator.GenerateModifiedFile()
             # 요소가 빠졌으면(읽기에서 버렸거나 내보내기에서 못 썼으면) 결과 .k 는 쓸 수 없다 — 🔴 요약 + 종료 코드 3
             # (1 은 예외·입력 오류). 출력 .k 는 진단용으로 남긴다. 러너·MCP 는 rc≠0 이면 멈춘다(사용자 결정 10-26).
-            from KooCAEManager.KooElement import EXPORT_LOSS as _loss, IMPORT_LOSS as _iloss
-            if _iloss or _loss["n"]:
+            from KooCAEManager.KooElement import EXPORT_LOSS as _loss, IMPORT_LOSS as _iloss, CONTENT_LOSS as _closs
+            if _iloss or _loss["n"] or _closs:
+                if _closs:   # 요소가 아닌 카드를 옮기지 못했다(IMPORT_MERGE_K 가져온 덱의 원문 블록 등 — v131 M2)
+                    print(f"🔴 카드 소실: 카드 {sum(_closs.values())}개를 옮기지 못했다 — "
+                          + " · ".join(f"{why} {n}개" for why, n in _closs.items()))
                 if _iloss:
                     print(f"🔴 요소 소실: 읽기에서 요소 {sum(_iloss.values())}개를 버렸다 — "
                           + " · ".join(f"{why} {n}개" for why, n in _iloss.items()))

@@ -30,6 +30,8 @@ def element_set_key(aSet):
 # IMPORT_LOSS: 읽기에서 버린 요소 수(이유별 — PID 에 *PART 없음·코너 절점 0 등). KooPart 의 요소 읽기가 채운다(리뷰 R).
 EXPORT_LOSS = {"n": 0, "eids": []}
 IMPORT_LOSS = {}
+# CONTENT_LOSS: 요소가 아닌 카드(블록)를 옮기지 못한 수(이유별) — IMPORT_MERGE_K 가 가져온 덱의 원문 블록 등을 적는다(v131 M2).
+CONTENT_LOSS = {}
 
 
 def _note_export_loss(element):
@@ -42,6 +44,11 @@ def _note_export_loss(element):
 def note_import_loss(why, n=1):
     if n > 0:
         IMPORT_LOSS[why] = IMPORT_LOSS.get(why, 0) + n
+
+
+def note_content_loss(why, n=1):
+    if n > 0:
+        CONTENT_LOSS[why] = CONTENT_LOSS.get(why, 0) + n
 
 
 class Element:
