@@ -32,6 +32,10 @@
      접촉의 D2R 까지 지웠고 짝 한쪽을 남겼다. IMPORT_MERGE_K 가 IDAM 0 침식 카드 3 의 뜻 없는 칸·빈 칸 대 기본값을 다르다고 봤다.
      81열 뒤 글자로 솔리드 블록이 모두 빠졌고, I10 셸·솔리드·빔 끝 칸이 10자를 못 채우면 버렸다. 번호 없는 강체벽이 _ID 1 에
      덮였다. 원문 침식 카드 줄 끝에 공백이 붙은 것은 말뭉치 W9·V9 가 찾았다.
+  R7 'or' 를 고치자 DWI 다음 단계 DTI 에 DWI 벽·임팩터 접촉이 남았다(DWI 는 임팩터 파트만 지우라고 적었다). 겹친 강체벽을 끝으로
+     옮겨 벽 차례가 바뀌었다. *MAT_084_REINF·*MAT_T01 별칭을 재질 MID 로 읽었다. IDAM≠0 침식 끝 빈 줄로 거짓 rc 3 이었다. D2R 닫힘이
+     PAIRED 0 세트를 따라가 사용자 짝을 지웠고, DROP 은 long D2R SWSET 을 10칸으로 읽었다. 여러 각도 DROP 의 RigidWall 바닥은
+     DropSet.k 에 없었다(v130 부터).
 """
 import contextlib
 import io
@@ -1049,6 +1053,116 @@ def r6():
           rc == 0 and len(got) == 2 and len({g[0] for g in got}) == 2 and sorted(g[1] for g in got) == [-0.2, -0.1], f"rc={rc} {got}")
 
 
+def r7():
+    print("[R7] DWI 다음 단계 DTI 의 DWI 접촉, 강체벽 차례, 재질 숫자 별칭, 침식 끝 빈 카드, D2R PAIRED 0 닫힘, long D2R SWSET, Fast DROP 강체벽")
+
+    def walls_of(t):
+        """출력 강체벽 [(번호, XT·YT·ZT, 법선)] — 덱 차례대로(KMM 은 *RIGIDWALL_PLANAR_MOVING_FORCES_ID 로 쓴다)."""
+        out = []
+        for ln_i, ln in enumerate(t.splitlines()):
+            if ln.startswith("*RIGIDWALL"):
+                rows = [r for r in t.splitlines()[ln_i + 1:ln_i + 8] if r.strip() and not r.startswith("$")]
+                c = try_(lambda: floats(rows[2], 10), [0.0] * 6) + [0.0] * 6
+                out.append((try_(lambda: int(rows[0][:10]), -1), tuple(round(x, 4) for x in c[:3]),
+                            tuple(round(c[k + 3] - c[k], 4) for k in range(3))))
+        return out
+
+    # ── DWI 다음 단계 DTI: DWI 가 만든 접촉(벽·임팩터·단 사이 TIED)은 지우고 사용자 접촉은 남긴다 ─────────────────────────────
+    grid = {i * 4 + j + 1: (float(j), float(i), 0.0) for i in range(4) for j in range(4)}
+    quads = "".join(f"{3 * i + j + 1:8d}{1:8d}" + "".join(f"{n:8d}" for n in (4 * i + j + 1, 4 * i + j + 2, 4 * i + j + 6, 4 * i + j + 5)) + "\n"
+                    for i in range(3) for j in range(3))
+    plate = ("*KEYWORD\n*CONTROL_TERMINATION\n" + f10(0.001) + node_block(grid) + "*ELEMENT_SHELL\n" + quads + part(1, 1, 1, "plate")
+             + "*SECTION_SHELL\n" + f10(1, 2) + f10(0.5, 0.5, 0.5, 0.5) + "*MAT_ELASTIC\n" + f10(1, "2.70E-09", 70000, 0.33)
+             + "*CONTACT_TIED_SURFACE_TO_SURFACE_ID\n" + f"{7:10d}usertied\n" + f10(1, 1, 3, 3) + f10(0.0, 0.0) + f10(1.0, 1.0) + "*END\n")
+    dwi = ("*Inputfile\nmodel.k\n*RunDirectoryMode,True,runs\n*Mode\nDROP_WEIGHT_IMPACT_TEST,1\n**DropWeightImpactTest,1\nTFinal,0.0001\n"
+           "DT,1e-05\nLocationX,1.5\nLocationY,1.5\nHeight,100\nInitialVelocityX,0\nInitialVelocityY,0\nInitialVelocityZ,0\nGravity,9810\n"
+           "@IMP@MeshSize,0.25\nDensityImpactor,7.85e-09\nYoungsModulusImpactor,200000.0\nPoissonRatioImpactor,0.3\n"
+           "GenerationMode,OutsideRigidElement\nBoundaryDistance,0.6\nOffsetDistance,0.05\nYoungsModulusWall,10000.0\nPoissonRatioWall,0.3\n"
+           "DensityWall,1e-09\n**EndDropWeightImpactTest\n*End\n")
+    dyn = "*KEYWORD\n" + node_block({k: (x, y, z + 0.01) for k, (x, y, z) in grid.items()}) + "*END\n"
+    for name, imp in (("sphere", "ImpactorType,Sphere\nImpactorDimension,0.5\n"),
+                      ("cyl3", "ImpactorType,Cylinder\nImpactorDimension,0.3,0.4,0.2,0.35,0.2,0.4,0.2\n")):
+        d, rc, log = run(f"dwi_{name}", {"model.k": plate}, dwi.replace("@IMP@", imp))
+        runs = sorted(Path(d).glob("runs/Run_*"))
+        deck = read(runs[0], "DropWeightImpactTestSet.k") if runs else ""
+        dti_opt = read(runs[0] / "DynamicRelaxation", "dynaintoinitial.txt") if runs else ""
+        cids = sorted(c for c in cons_of(deck) if c != 7)
+        rm = [ln for ln in dti_opt.splitlines() if ln.startswith("*RemoveContactbyID")]
+        d2, rc2, log2 = run(f"dwi_{name}_dti", {"DropWeightImpactTestSet.k": deck, "dynain": dyn},
+                            "\n".join("**DynainPath,dynain" if ln.startswith("**DynainPath") else ln for ln in dti_opt.splitlines()) + "\n")
+        left = cons_of(read(d2, "DropWeightImpactTestSet_dti.k"))
+        check(f"R7 DWI({name}) 다음 단계 DTI: DWI 접촉 {cids} 을 *RemoveContactbyID 로 적어 지우고 사용자 TIED 7 만 남긴다",
+              rc == 0 and rc2 == 0 and len(cids) >= 2 and rm == ["*RemoveContactbyID," + ",".join(map(str, cids))] and sorted(left) == [7],
+              f"rc={rc}/{rc2} {rm} cids={cids} left={left}")
+
+    # ── 번호가 겹친 강체벽은 제자리에서 번호만 바꾼다(덱 정의 차례 = D2R CODE 1·3 ENTNO·RWFORC 차례) ──────────────────────────
+    pl = lambda zt: f10(0, 0, 0, 0.0, 0.0, "1.0E+20", 1.0) + f10(0.0, 0.0, zt, 0.0, 0.0, 1.0, 0.0, 0.0)
+    d, rc, log = run("rigidwall_order", {"model.k": cube_deck("*RIGIDWALL_PLANAR\n" + pl(-0.1) + "*RIGIDWALL_PLANAR\n" + pl(-0.2)
+                                                              + "*RIGIDWALL_PLANAR_ID\n" + f"{1:10d}w1\n" + pl(-0.3))})
+    got = walls_of(read(d, "model_trans.k"))
+    check("R7 번호 없는 벽 둘(ZT -0.1·-0.2) + _ID 1(-0.3): 출력도 덱 차례 -0.1·-0.2·-0.3 이고 번호가 모두 다르다",
+          rc == 0 and [g[1][2] for g in got] == [-0.1, -0.2, -0.3] and len({g[0] for g in got}) == 3, f"rc={rc} {got}")
+
+    # ── IMPORT_MERGE_K: 숫자 별칭 *MAT_084_REINF(첫 칸 EID1)·*MAT_T01(TMID)은 재질 MID 가 아니다, 침식 끝 빈 카드 ─────────────────
+    one = lambda pid, mid, name: ("*KEYWORD\n" + node_block(cubes(1)) + "*ELEMENT_SOLID\n" + hex_row(1, pid, 1) + part(pid, 1, mid, name)
+                                  + SOLID1)
+    for kw, card in (("*MAT_084_REINF", f10(5, 5, 1, 0.01, 0.01, 0.01)), ("*MAT_T01", f10(5, "7.8E-09", 0.0, 0.0, 0.0) + f10(450.0, 50.0))):
+        d, rc, log = run("im_alias", {"base.k": one(1, 1, "a") + "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3) + kw + "\n" + card + "*END\n",
+                                      "imp.k": one(1, 5, "b") + "*MAT_ELASTIC\n" + f10(5, "2.70E-09", 70000, 0.33) + "*END\n"}, IMO)
+        mids = sorted(int((rows[1] if h.split()[0].upper().endswith("_TITLE") else rows[0])[:10])
+                      for h, rows in kw_blocks(read(d, "base_imported.k"), "*MAT_ELASTIC") + kw_blocks(read(d, "base_imported.k"), "*MAT_ELASTIC_TITLE"))
+        check(f"R7 IMPORT_MERGE_K 기준 덱 {kw} 5 · 가져온 *MAT_ELASTIC 5: 충돌이 아니다(rc 0, 재질 1·5)",
+              rc == 0 and "번호 충돌" not in log and mids == [1, 5], f"rc={rc} {mids} " + log[-300:])
+    ero = ("*MAT_ADD_EROSION\n" + f10(1, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0) + f10(0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0)
+           + f10(1, 0, 0, 0.0, 1.0, 0.0, 1.0, 0) + f10(0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0) + f10(0.0, 0.5, "1.0E+20", 0.0))
+    steel = "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3)
+    d, rc, log = run("im_ero_blank6", {"base.k": one(1, 1, "a") + steel + ero + "\n*END\n", "imp.k": one(1, 1, "b") + steel + ero + "*END\n"}, IMO)
+    check("R7 IMPORT_MERGE_K 같은 침식(IDAM 1, 카드 5 뒤 빈 줄 / 없음): 충돌이 아니다(rc 0)", rc == 0 and "번호 충돌" not in log,
+          f"rc={rc} " + log[-300:])
+
+    # ── DTI D2R 닫힘은 PAIRED ±1 짝만 따라간다 — PAIRED 0 으로 사용자 세트를 RELSW 로 가리킨 바닥판 세트만 지운다 ──────────────────
+    def d2r(sw, code, entno, rel, paired):
+        c2 = f10(0, 0, 0, 0.0, 1, 0, 0.0) + f10(1, 0) if paired >= 0 else f10(0, 0, 0, 0.0, 0, 1, 0.0) + f10(1)
+        return "*DEFORMABLE_TO_RIGID_AUTOMATIC\n" + f10(sw, code, 0.0, "1e20", 0.0, entno, rel, paired) + c2
+    con = lambda cid, name, ms: f"*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_ID\n{cid:10d}{name}\n" + f10(1, ms, 3, 3) + f10(0.1, 0.1) + f10(1.0, 1.0)
+    deck = ("*KEYWORD\n*CONTROL_TERMINATION\n" + f10(0.001) + node_block(cubes(3)) + "*ELEMENT_SOLID\n"
+            + "".join(hex_row(k + 1, k + 1, 8 * k + 1) for k in range(3)) + "".join(part(k + 1) for k in range(3)) + SOLID1 + ELASTIC
+            + con(1, "user", 2) + con(2, "floor", 3) + d2r(40, 2, 2, 10, 0) + d2r(20, 2, 1, 10, 1) + d2r(10, 4, 1, 20, -1) + "*END\n")
+    dyn3 = ("*KEYWORD\n" + node_block({k: (x, y, z + 0.01) for k, (x, y, z) in cubes(3).items()}) + "*ELEMENT_SOLID\n"
+            + "".join(hex_row(k + 1, k + 1, 8 * k + 1) for k in range(3)) + "*END\n")
+    d, rc, log = run("dti_d2r_paired0", {"model.k": deck, "dynain": dyn3},
+                     "*Inputfile\nmodel.k\n*Mode\nDYNAIN_TO_INITIAL,1\n**DynainToInitial,1\n*DynainPath,dynain\n*IncludeStress,True\n"
+                     "*RemovePartbyID,3\n*RemoveContactbyID,2\n**EndDynainToInitial\n*End\n")
+    sws = sorted(try_(lambda: int(rows[0][:10]), -1) for _, rows in kw_blocks(read(d, "model_dti.k"), "*DEFORMABLE_TO_RIGID_AUTOMATIC") if rows)
+    check("R7 DTI 바닥판 접촉 2 의 세트 40(PAIRED 0, RELSW 10) 만 지우고 남은 사용자 접촉 1 의 짝 20·10 은 남긴다",
+          rc == 0 and sws == [10, 20], f"rc={rc} {sws}")
+
+    # ── DROP 의 SWSET 겹침 검사는 long('+') 덱 D2R 을 20칸으로 읽는다 ──────────────────────────────────────────────
+    l20 = lambda *v: "".join(f"{x:>20}" for x in v) + "\n"
+    long_pair = ("*DEFORMABLE_TO_RIGID_AUTOMATIC +\n" + l20(20, 2, 0.0, "1e20", 0.0, 1, 10, 1) + l20(0, 0, 0, 0.0, 1, 0, 0.0) + l20(2, 0)
+                 + "*DEFORMABLE_TO_RIGID_AUTOMATIC +\n" + l20(10, 4, 0.0, "1e20", 0.0, 1, 20, -1) + l20(0, 0, 0, 0.0, 0, 1, 0.0) + l20(2))
+    d, rc, log = run("drop_long_d2r", {"model.k": M.base_deck(raw=True, extra=long_pair)}, drop([0], "DeformableToRigid,True\n"))
+    outs = dropsets(d)
+    kmm_sw = sorted(try_(lambda: int(rows[0][:10]), -1) for h, rows in kw_blocks(outs[0], "*DEFORMABLE_TO_RIGID_AUTOMATIC")
+                    if rows and "+" not in h.split()[1:]) if outs else []   # 덱 짝은 '+' 블록으로 그대로 나간다
+    check("R7 DROP DeformableToRigid + long('+') 덱 D2R SWSET 20·10: KMM 짝 스위치는 다른 번호(20·10 과 겹치지 않음)",
+          rc == 0 and len(kmm_sw) == 2 and not set(kmm_sw) & {10, 20}, f"rc={rc} {kmm_sw}")
+
+    # ── Fast DROP(여러 각도) + DropSurface RigidWall: 각도마다 DropSet.k 에 그 각도의 바닥 벽이 하나 ───────────────────────────
+    d, rc, log = run("drop_rigidwall2", {"model.k": cube_deck()}, drop([0, 30], "DropSurface,RigidWall\n"))
+    ws = [walls_of(t) for t in dropsets(d)]
+    check("R7 Fast DROP 2각도 + RigidWall: DropSet.k 마다 강체벽이 하나씩이고 두 벽의 법선이 다르다",
+          rc == 0 and len(ws) == 2 and all(len(w) == 1 for w in ws) and ws[0][0][2] != ws[1][0][2], f"rc={rc} {ws}")
+
+
+def cons_of(t):
+    """출력 접촉 CID 목록(_ID 꼴 첫 카드)."""
+    out = []
+    for kw in sorted({ln.split()[0].upper() for ln in t.splitlines() if ln.startswith("*CONTACT_")}):
+        out += [try_(lambda: int(rows[0][:10]), -1) for _, rows in kw_blocks(t, kw)]
+    return out
+
+
 def main():
     r1()
     r2()
@@ -1056,6 +1170,7 @@ def main():
     r4()
     r5()
     r6()
+    r7()
     print()
     if FAILS:
         print(f"FAILED {len(FAILS)}")
