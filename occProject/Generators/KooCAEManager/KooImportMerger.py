@@ -61,7 +61,7 @@ def import_merge_k(simGenerator, option):
     _apply_offsets(new_importer, offsets)
 
     # 4. MAT/EOS/HG: 기존에 없는 ID만 추가 (병합)
-    n_added_mat = _merge_materials(dynaImporter.matManager, new_importer.matManager)
+    n_added_mat = _merge_materials(dynaImporter.matManager, new_importer.matManager, _raw_mids(dynaImporter))
     print(f"[IMPORT_MERGE_K] MAT/EOS 병합: 신규 추가 {n_added_mat}개 (기존 ID는 보존)")
 
     # 5. 나머지 매니저 병합(번호를 민 것만 — _merge_managers)
@@ -114,7 +114,8 @@ def _compute_offsets(dynaImporter):
         'pid': getattr(partMan, 'maxID', 0),
         'nid': getattr(nodeMan, 'maxID', 0),
         'eid': max_eid,
-        'sid': getattr(secMan, 'maxid', 0),
+        # 기준 덱의 원문 단면(*SECTION_DISCRETE 등) 번호도 넘는다 — 예전엔 해석한 단면만 봐 같은 SECID 가 둘 생겼다(v131 리뷰 R3)
+        'sid': max(getattr(secMan, 'maxid', 0) or 0, _raw_first_field_max(dynaImporter, "SECTION_")),
         'nsid': getattr(nodeSetMan, 'maxID', 0),
         # PartSet 번호는 .psid 다 — 예전엔 .sid 를 읽어 늘 0 이라 가져온 셋이 기준 덱 셋 번호와 겹쳤다(v131 M2)
         'psid': max([getattr(partMan, 'maxSID', 0) or 0]
@@ -258,25 +259,37 @@ def _rekey_all_managers(new_importer):
     # MaterialManager는 OffsetID 안 했으므로 (MID 보존) 재구성 불필요
 
 
-def _merge_materials(target_mat_mgr, new_mat_mgr):
-    """기존 MaterialManager에 없는 MID만 추가 (충돌 방지)."""
-    n_added = 0
+def _merge_materials(target_mat_mgr, new_mat_mgr, base_raw_mids=frozenset()):
+    """재질은 공통 DB(MID 보존) — 기준 덱에 없는 MID 만 더한다. 같은 MID 인데 내용이 다르거나 기준 덱 원문 재질의 MID 와
+    겹치면 기준 덱 것을 남기고 번호 충돌(🔴)로 모은다 — 예전엔 알림 없이 가져온 재질을 버려 가져온 파트가 기준 덱 재질을
+    썼다. *MAT_ADD_EROSION·*MAT_ADD_PZELECTRIC 은 MID 에 붙으므로 가져와 더한 재질의 것만 더한다 — 예전엔 기준 덱의 같은
+    MID 재질에 붙어 기준 파트의 거동까지 바꿨다(v131 리뷰 R3). EOS 는 EOSID 로 같은 규칙이다."""
+    n_added, added = 0, set()
     for mid, mat in new_mat_mgr.materials.items():
-        if mid not in target_mat_mgr.materials:
+        cur = target_mat_mgr.materials.get(mid)
+        if cur is None and mid not in base_raw_mids:
             target_mat_mgr.materials[mid] = mat
+            added.add(mid)
             n_added += 1
+        elif cur is None or not _same_card(cur, mat):
+            _CONFLICTS.append(f"재질 MID {mid}" + ("(기준 덱 원문 재질)" if cur is None else ""))
     for eid, eos in getattr(new_mat_mgr, 'eos', {}).items():
-        if eid not in getattr(target_mat_mgr, 'eos', {}):
+        cur = getattr(target_mat_mgr, 'eos', {}).get(eid)
+        if cur is None:
             target_mat_mgr.eos[eid] = eos
             n_added += 1
-    for hid, hg in getattr(new_mat_mgr, 'addErosions', {}).items():
-        if hid not in getattr(target_mat_mgr, 'addErosions', {}):
-            target_mat_mgr.addErosions[hid] = hg
-            n_added += 1
-    for pid_, pz in getattr(new_mat_mgr, 'addPZElectric', {}).items():   # MID 키(*MAT_ADD_PZELECTRIC) — 예전엔 빠졌다(v131 M2)
-        if pid_ not in getattr(target_mat_mgr, 'addPZElectric', {}):
-            target_mat_mgr.addPZElectric[pid_] = pz
-            n_added += 1
+        elif not _same_card(cur, eos):
+            _CONFLICTS.append(f"EOS {eid}")
+    for attr, label in (('addErosions', 'MAT_ADD_EROSION'), ('addPZElectric', 'MAT_ADD_PZELECTRIC')):
+        tgt = getattr(target_mat_mgr, attr, None)
+        if tgt is None:
+            continue
+        for mid, card in getattr(new_mat_mgr, attr, {}).items():
+            if mid in added and mid not in tgt:
+                tgt[mid] = card
+                n_added += 1
+            elif not (mid in tgt and _same_card(tgt[mid], card)):
+                _CONFLICTS.append(f"{label} MID {mid}(기준 덱 재질에 붙지 않게 옮기지 않음)")
     target_mat_mgr.maxid = max(getattr(target_mat_mgr, 'maxid', 0),
                                 getattr(new_mat_mgr, 'maxid', 0))
     return n_added
@@ -329,10 +342,17 @@ def _card_text(obj):
     from io import StringIO
     st = StringIO()
     try:
-        try:
-            obj.WriteStreamDynaKeyword(st, 0)
-        except TypeError:
-            obj.WriteStreamDynaKeyword(st)
+        if hasattr(obj, "WriteStreamDynaKeyword"):
+            try:
+                obj.WriteStreamDynaKeyword(st, 0)
+            except TypeError:
+                obj.WriteStreamDynaKeyword(st)
+        else:
+            # 재질·EOS·*MAT_ADD_* 는 쓰는 메서드 없이 GenerateDynaKeyword 로 글을 만든다 — 예전엔 글이 늘 None 이라 같은 재질도
+            # 번호 충돌(rc 3)이 됐다. 원문 그대로인 KooMaterial·KooEOS 는 읽은 글 그대로다(재질 매니저 기록기와 같다)
+            if type(obj).__name__ not in ("KooMaterial", "KooEOS"):
+                obj.GenerateDynaKeyword()
+            st.write(obj.dynaKeywordString)
     except Exception:
         return None
     out, skip_title = [], False
@@ -448,3 +468,40 @@ def _report_unmerged(new_importer):
               "없어 옮기지 않는다. 가져올 덱에서 빼거나 병합 뒤 직접 넣을 것")
         for kw, n in lost:
             note_content_loss(f"IMPORT_MERGE_K — 가져온 덱 *{kw}", max(n, 1))
+
+
+def _raw_blocks(importer, prefix):
+    raw = getattr(importer.dynaManager, "_raw_keyword_dict", None) or {}
+    interp = getattr(importer, "keywordInterpreted", {}) or {}
+    for kw, blocks in raw.items():
+        if kw.startswith(prefix) and not interp.get(kw, False):
+            for b in blocks:
+                yield kw, [str(l) for l in b if str(l).strip() and not str(l).lstrip().startswith("$")]
+
+
+def _raw_first_field_max(importer, prefix):
+    """원문(해석하지 않는) 블록 데이터 줄의 첫 칸 중 순수 정수의 최댓값 — 번호를 넘기 위한 값이라 넉넉해도 된다."""
+    import re
+    top = 0
+    for kw, lines in _raw_blocks(importer, prefix):
+        for ln in lines:
+            tok = (ln.split(",")[0] if "," in ln else ln[:10]).strip()
+            if re.fullmatch(r"\+?\d+", tok) and int(tok) <= 2147483647:
+                top = max(top, int(tok))
+    return top
+
+
+def _raw_mids(importer):
+    """기준 덱 원문 재질(*MAT_*, MAT_ADD_* 제외)의 MID — 카드 1 첫 칸(_TITLE 이면 제목 다음 줄)."""
+    mids = set()
+    for kw, lines in _raw_blocks(importer, "MAT_"):
+        if kw.startswith("MAT_ADD_"):
+            continue
+        idx = 1 if kw.endswith("_TITLE") else 0
+        if len(lines) > idx:
+            tok = (lines[idx].split(",")[0] if "," in lines[idx] else lines[idx][:10]).strip()
+            try:
+                mids.add(int(round(float(tok))))
+            except (ValueError, OverflowError):
+                pass
+    return mids
