@@ -1,0 +1,61 @@
+<!-- KMM 남은 기존 결함 묶음(v131) 체크리스트 -->
+# 체크리스트 — KMM 남은 기존 결함 묶음 (2026-11-04, v131)
+
+- [x] 사용자 결정 — 셸 단면 정밀도 고침, 덱 전체 LONG 은 알아보고 멈춤, 검증 뒤 v131 배포까지, Post v43 지금 배포
+- [x] Post v43(KooD3plotReader eccde7f) — 굽기·판정(v42 아는 불량)·헤드 /opt·알림 — 헤드리스 94b98c46·GUI a6b95a76, tar v43, a9 verify_v43 대기
+- [x] 조사 — I1~I8·M1~M8·P1~P4 원인 자리 확인
+- [x] I1 I10 덱의 KMM 블록 폭
+- [x] I2 DEFINE_CURVE 콤마
+- [x] I3 MAT_RIGID 콤마
+- [x] I4 콤마·long *NODE
+- [x] I5 덱 전체 LONG 멈춤
+- [x] I6 셸 단면 정밀도
+- [x] I7 덤프 COHOFF·GASKETT 칸
+- [x] I8 ERODING_ID 오류
+- [x] M1 DECOMPOSE_K 절점
+- [x] M2 IMPORT_MERGE_K 넷
+- [x] M3 FastDOE 원문 블록
+- [x] M4 DTI INITIAL_STRESS_TSHELL
+- [x] M5 DWI OutsideRigid 자리
+- [x] M6 MIRROR TSHELL8
+- [x] M7 TShellMode 판정
+- [x] M8 PART_EXCHANGE 경고
+- [x] X1 원문 재질 거짓 'MID 소실'·X2 모드 ID 겹침
+- [x] M2e IMPORT_MERGE_K 가 기준 덱을 덮던 것(곡선·경계·HOURGLASS·설정)·B1~B3 경계 조건 리더(M2 중 찾음)
+- [x] 모든 최종 기록기 원본 *KEYWORD 줄(M3 중 찾음)
+- [x] P1 *PART_CONTACT
+- [x] P2 *ELEMENT_SHELL_THICKNESS
+- [x] P3 NODUMP
+- [x] P4 *SECTION_SOLID 사용자 요소 카드
+- [x] R1·R2 원문 *PART_* PID·원문 요소 EID 예약(조사 중 찾음)
+- [x] 2차 셸 MIRROR YZ·XZ 중간 절점 순서(P2 중 찾음)
+- [x] K1 sphere 워커 메모리 0.5 GB
+- [x] help·문서(IMPORT_MERGE_K·DECOMPOSE_K·DTI, ModelIndependentSplit False)
+- [x] 적대 리뷰 R1~R3 → 고침(8fccfde~6e0fa2e, 26 커밋) — R2-6 섞인 두께 블록·R3-14 *NODE 없는 덱·*SET_NODE_LIST_GENERATE 포함
+- [x] 시험 test_v131_review.py(47 판정) — 아는 불량 bae54a8 에서 44 실패
+- [x] 기존 시험 전부 — f676eb0 워크트리 49개 모두 rc 0(test_drop_attitude_angles 는 pytest 대역 30경우)
+- [x] 좌표계 TRANSFORM 점 변환(100a028)·GENERATE 펼치기 성능(2976643) — 시험 판정 50개
+- [x] 집중 리뷰 R4 → 고침(a879d11~4c964c4, 14 커밋) · 말뭉치 W7 분류(결함 2 고침: aadecca·b405ccb)
+- [x] 시험 판정 69개(R1~R4) — 수정 전 판에서 실패 확인
+- [x] 집중 리뷰 R5(b405ccb~01e8581) → 고침(2fd16c6~8323b0e, 7 커밋) · 시험 판정 78개
+- [x] 말뭉치 W8(의도만)·V8(88건 rc 모두 같음, 의도만)
+- [x] 집중 리뷰 R6(2fd16c6~8323b0e) → 고침(2588784~15e86c9, 8 커밋) · 시험 판정 95개(새 판정 16개 중 15개가 8323b0e 에서 FAIL)
+- [x] suite20(8323b0e) — 49개 모두 rc 0, test_v131_review 78 판정 ALL OK
+- [x] 말뭉치 W9·V9(8323b0e) — V9 는 V8 대비 바뀐 43건이 모두 줄 끝 공백(daf0184 채움 → 15893dc 로 고침)
+- [x] suite21(15e86c9) 전체 시험 — 49개 모두 rc 0(15분), test_v131_review 95 판정 ALL OK
+- [x] 말뭉치 W10·V10(15e86c9) — W10 747건 rc 같음, 덤프 셸 81열 뒤 2건(의도)·줄 끝 공백 줄음 / V10 은 V8 과 88건 바이트까지 같음
+- [x] 집중 리뷰 R7(2588784~15e86c9) → 고침(44e3b44~4f63f92, 8 커밋) · 시험 판정 104개(새 판정 9개 모두 15e86c9 에서 FAIL)
+- [x] suite22(4f63f92) 전체 시험 — 49개 모두 rc 0(16분), test_v131_review 104 판정 ALL OK
+- [x] 집중 리뷰 R8(44e3b44~4f63f92) → 고침(d4cb0fe~9316745, 3 커밋) · 시험 판정 107개(새 판정 3개 모두 4f63f92 에서 FAIL)
+- [x] 말뭉치 W11·V11(4f63f92) — W10·V10 과 출력이 완전히 같다
+- [x] suite23(9316745) 전체 시험 — 49개 모두 rc 0, test_v131_review 107 판정 ALL OK
+- [x] 말뭉치 W12·V12(9316745) — W12 는 W11 과 같음, V12 는 3건에서 DROP 바닥판 접촉 CID 만 바뀜(원문 접촉 번호 예약, 의도)
+- [x] 최종 HEAD 전체 시험(suite19, 01e8581) — 48 rc 0, test_d2r_options 소스 글자 판정 2개만 SWSET 변수 꼴로 고침(048815c)
+- [x] 굽기 전 확인(20:20) — 헤드·compute-node-images 9d166fd0, 마지막 tar v130, 잡 없음, 가용 32 GB, KooRemapper b9d4c12d(kooremapper-fd 에 알림)
+- [x] 빌드(캡 scope, 9316745) — 19:07~20:00 BUILD_RC 0, 최저 가용 23 GB. KMM 92bc27ce(19:50)·KCR fc699478(19:59)·KAM 580f028e 그대로, NFS = SIF 소스 트리
+- [x] 컴파일본 e2e — 아는 불량(헤드 /opt v130 KMM): test_v131_review 21 OK / 85 FAIL. 새 컴파일본: 10절점·파일 끝 8종 ALL PASS, KMM 시험 22종 FAIL 0(test_v131_review 107 OK), KCR 결과 귀환·help·sphere 사이징 ALL PASS
+- [x] SIF v131 · compute-node-images · tar · Drive · 메일 — 20:24~20:32, SIF 32260efb(1,582,186,496 B) = compute-node-images, tar v131 1,346,493,780 B, Drive ApptainerImages:SmartTwinPreprocessor/, 메일 sent OK. KooRemapper b9d4c12d 그대로
+- [x] SIF e2e — 바이너리 셋 = SIF 소스 트리, KooRemapper b9d4c12d(80열 18 OK), 10절점·파일 끝 8종 ALL PASS, SIF 안 KMM 시험 22종 FAIL 0(DWI 임팩터 gmsh 포함), KAM PKG ALL OK
+- [x] push
+- [x] 헤드 /opt 교체(21:04) — v131 32260efb, v130(9d166fd0)은 하드 링크 SmartTwinPreprocessor_backup_20261104_210443.sif · 확인: KMM 시험 6종 FAIL 0·KooRemapper 80열 18 OK
+- [ ] 알림·메모리·문서
