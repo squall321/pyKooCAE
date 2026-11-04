@@ -5971,68 +5971,90 @@ class ElementShellThickness(DynaKeyword):
         self.has_i10 = False
 
     @staticmethod
-    def _walk_cards(lines, step, card1, thick):
-        """카드 자리를 따라 [카드1, 두께 카드…] 를 요소마다 step 장씩 낸다(R16 Appendix V).
+    def _walk_cards(lines, card1, thick):
+        """카드 자리를 따라 [카드1, 두께 카드…] 를 요소마다 낸다(R16 Appendix V).
+        - 카드 수는 요소마다 정한다 — N5 가 있는 요소(6·8절점)만 THIC5~8 카드까지 3장, 나머지는 2장. 예전엔 블록 첫 요소로
+          한 번 정해 4·8절점이 섞인 블록이 어긋나 죽었다(v131 리뷰 R2). 받는 쪽(KooPart·write)은 블록마다 카드 수가 하나라
+          카드 수가 바뀌는 곳에서 블록을 나눠 [블록, …] 으로 내고, 블록 안 카드 1 칸 수를 맞춘다(받는 쪽이 칸 수로 가린다).
         - 카드 1(EID 기본값 없음) 자리의 빈 줄은 카드가 될 수 없어 건너뛰고 센다 — 쌍 사이·블록 끝 빈 줄이 카드 1 로
           읽혀 짝이 어긋나 죽었다(리뷰 G).
         - 두께 카드(THIC1~4·BETA 모두 기본값 0, THIC 0 은 섹션 두께) 자리의 빈 줄은 기본값 카드다(리뷰 F).
         - 블록이 카드 1 뒤에서 끝나면 빠진 두께 카드는 기본값이다 — 마지막 선택 카드는 생략해도 같다. 예전엔 IndexError.
-        card1(line)·thick(line, t) 는 줄을 칸 목록으로 바꾼다. 빈 줄이 없는 블록은 예전과 같은 결과다."""
-        rows, state, skipped = [], 0, 0
+        card1(line)·thick(line, t, n) 는 줄을 칸 목록으로 바꾼다(t 번째 두께 카드, 그 요소의 카드 수 n). 빈 줄이 없고 섞이지
+        않은 블록은 예전과 같은 결과다."""
+        blocks, rows, cards1, state, n, skipped = [], [], [], 0, 2, 0
+
+        def close():
+            w = max(len(r) for r in cards1)
+            for r in cards1:
+                r.extend([''] * (w - len(r)))
+            blocks.append(rows)
+
         for line in lines:
             if state == 0:
                 if not str(line).strip():
                     skipped += 1
                     continue
-                rows.append(card1(line))
+                row = card1(line)
+                try:
+                    k = 3 if len(row) > 6 and int(str(row[6]).strip() or 0) > 0 else 2
+                except ValueError:
+                    k = 2
+                if rows and k != n:
+                    close()
+                    rows, cards1 = [], []
+                n = k
+                rows.append(row)
+                cards1.append(row)
                 state = 1
             else:
-                rows.append(thick(line, state))
-                state = (state + 1) % step
+                rows.append(thick(line, state, n))
+                state = (state + 1) % n
         while state:
-            rows.append(thick('', state))
-            state = (state + 1) % step
+            rows.append(thick('', state, n))
+            state = (state + 1) % n
+        if rows:
+            close()
         if skipped:
             print(f"  Warning: ELEMENT_SHELL_THICKNESS 블록의 빈 줄 {skipped}개를 건너뛰었다 — 요소 카드 자리라 "
                   f"LS-DYNA 는 빈 줄을 EID 없는 카드로 읽는다(덱 확인)")
-        return rows
+        return blocks
 
     def _parse_i10_block(self, block):
         # I10 THICKNESS: 정수줄 10칸 슬라이스, 두께(실수)줄 16칸 유지. 8노드(N5 존재) → 두께줄 2장(3줄 주기)
+        # 콤마 줄: 카드 1 은 10칸 고정폭으로 바꾸고, 두께 카드는 콤마로 나눈다(실수는 칸 폭에 매이지 않는다 — v131 리뷰 R2)
         lines = []
         for line in block:
             s = str(line).rstrip('\r\n').rstrip()
             if s.lstrip().startswith('$'):
                 continue
             lines.append(s)   # 빈 줄도 제자리에 둔다 — 카드인지는 자리로 정한다(_walk_cards)
-        parameterList = []
         first = next((s for s in lines if s.strip()), None)
         if first is None:
-            return parameterList
+            return []
 
         def slice_w(s, w):
             nf = max(1, len(s) // w)
             return [s[k * w:(k + 1) * w].strip() for k in range(nf)]
 
-        f1 = slice_w(first, 10)
-        try:
-            three = len(f1) > 7 and int(f1[6] or 0) > 0
-        except (TypeError, ValueError):
-            three = False
-        step = 3 if three else 2
-        int_cols = len(f1)
+        int_cols = len(slice_w(_comma_to_fixed(first, 10), 10))
 
         def card1(s):
-            row = slice_w(s, 10)
+            row = slice_w(_comma_to_fixed(s, 10), 10)
             row.extend([''] * (int_cols - len(row)))  # 레거시 '' 패딩 의미 재현
             return row
 
-        def thick(s, t):
-            frow = slice_w(s, 16)
+        def thick(s, t, n):
+            if ',' in s:
+                frow = [v.strip() for v in s.split(',')]
+                while len(frow) > 5 and not frow[-1]:
+                    frow.pop()
+            else:
+                frow = slice_w(s, 16)
             frow.extend([''] * (5 - len(frow)))  # BETA blank 절삭 대응(KooPart parameter2[4])
             return frow
 
-        return self._walk_cards(lines, step, card1, thick)
+        return self._walk_cards(lines, card1, thick)
 
     def parse(self, elementShellThickKeywords):
         fmts = getattr(self, 'block_formats', [])
@@ -6040,7 +6062,7 @@ class ElementShellThickness(DynaKeyword):
             fmt = fmts[_bi] if _bi < len(fmts) else None
             if fmt == 'i10' or ElementShell._detect_field_width(elementShellThickKeywords[_bi]) == 10:
                 self.has_i10 = True
-                self.parameters.append(self._parse_i10_block(elementShellThickKeywords[_bi]))
+                self.parameters.extend(self._parse_i10_block(elementShellThickKeywords[_bi]))
             else:
                 # 레거시 본문(하단)을 1블록 리스트로 호출 — 기존 동작 그대로
                 self._parse_legacy_blocks([elementShellThickKeywords[_bi]])
@@ -6054,26 +6076,18 @@ class ElementShellThickness(DynaKeyword):
             if k0 is None:
                 self.parameters.append([])
                 continue
-            length = len(str(block[k0]))/8
-            spaceVector1 = [8] * int(length)
-            parameters1 = self.parse_whole(block[k0], spaceVector1)
-            mode = 1
-            try:
-                if length > 7 and int(parameters1[6] or 0) > 0:
-                    mode = 2
-            except ValueError:
-                pass
-            if mode == 1:
-                length2 = len(str(block[k0 + 1]))/16 if k0 + 1 < len(block) else 0
-                # THIC1~4·BETA 는 늘 5칸 — 첫 두께 줄이 빈 줄(=섹션 두께, R16 정상 카드)이거나 BETA 를
-                # 생략한 64자면 칸이 모자라 KooPart 의 parameter2[4] 에서 IndexError 였다(리뷰 D)
-                thickVectors = {1: [16] * max(5, int(length2))}
-            else:
-                thickVectors = {1: [16, 16, 16, 16, 16], 2: [16, 16, 16, 16]}
-            self.parameters.append(self._walk_cards(
-                block, 2 if mode == 1 else 3,
-                lambda l: self.parse_whole(l, spaceVector1),
-                lambda l, t: self.parse_whole(l, thickVectors[t])))
+            length2 = len(str(block[k0 + 1]))/16 if k0 + 1 < len(block) else 0
+            # THIC1~4·BETA 는 늘 5칸 — 첫 두께 줄이 빈 줄(=섹션 두께, R16 정상 카드)이거나 BETA 를
+            # 생략한 64자면 칸이 모자라 KooPart 의 parameter2[4] 에서 IndexError 였다(리뷰 D)
+            thickVectors = {(2, 1): [16] * max(5, int(length2)), (3, 1): [16, 16, 16, 16, 16], (3, 2): [16, 16, 16, 16]}
+
+            def card1(l):
+                # 카드 1 칸 수는 줄마다 줄 길이로 — 첫 요소 줄 길이로 정하면 뒤의 8절점 줄 N5~N8 이 잘렸다(v131 리뷰 R2).
+                # 콤마 줄은 먼저 8칸 고정폭으로(짧은 콤마 줄은 칸이 하나뿐이라 EID 칸에서 죽었다)
+                l = _comma_to_fixed(l, 8)
+                return self.parse_whole(l, [8] * int(len(str(l))/8))
+            self.parameters.extend(self._walk_cards(
+                block, card1, lambda l, t, n: self.parse_whole(l, thickVectors[(n, t)])))
     
     def write(self, stream):
         for i in range(len(self.parameters)):
