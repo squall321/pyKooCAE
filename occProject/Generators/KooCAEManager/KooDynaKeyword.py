@@ -8350,10 +8350,17 @@ class MatGeneralViscoelastic(DynaKeyword):
            반대로 항상 8필드로 읽으면 3필드짜리 기존 덱의 출력이 빈칸으로 늘어난다.
            → 원문 길이에서 실제 필드 수를 세어 그대로 보존한다(왕복 바이트 동일).
         """
-        if ',' in str(line):   # 콤마 줄은 값 수로 센다 — 줄 길이로 세면 짧은 값이 많은 줄의 뒤 칸이 잘린다(v131 리뷰 R4)
-            return [10] * max(3, min(8, len(str(line).replace('\n', '').rstrip().rstrip(',').split(','))))
-        n = len(str(line).rstrip())
-        return [10] * max(3, min(8, -(-n // 10)))
+        return MatGeneralViscoelastic._card_widths(line, 3, 8)
+
+    @staticmethod
+    def _card_widths(line, lo, hi):
+        """칸 수를 원문에서 세어(lo~hi) 그대로 보존한다. 콤마 줄은 값 수로 센다 — 줄 길이로 세면 짧은 값이 많은 줄의 뒤 칸이
+        잘린다(v131 리뷰 R4)."""
+        if ',' in str(line):
+            n = len(str(line).replace('\n', '').rstrip().rstrip(',').split(','))
+        else:
+            n = -(-len(str(line).rstrip()) // 10)
+        return [10] * max(lo, min(hi, n))
 
     def parse(self, mat_keywords):
         for i in range(len(mat_keywords)):
@@ -8362,7 +8369,10 @@ class MatGeneralViscoelastic(DynaKeyword):
                                           MatGeneralViscoelastic._card1_widths(mat_keywords[i][0]))
             parameterList.append(parameters)
             for j in range(1,len(mat_keywords[i])):
-                parameters = self.parse_whole(mat_keywords[i][j], [10, 10, 10, 10])
+                # 카드 2(LCID NT BSTART TRAMP LCIDK NTK BSTARTK TRAMPK)는 8칸이다 — 상수 줄처럼 4칸으로 읽어 체적 이완 곡선
+                # (LCIDK·NTK…)이 조용히 빠졌다(v131 리뷰 R5). 4칸만 적힌 덱은 예전과 같다
+                parameters = self.parse_whole(mat_keywords[i][j], MatGeneralViscoelastic._card_widths(mat_keywords[i][j], 4, 8)
+                                              if j == 1 else [10, 10, 10, 10])
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
 
@@ -8404,7 +8414,8 @@ class MatGeneralViscoelasticTitle(DynaKeyword):
                                           MatGeneralViscoelastic._card1_widths(mat_keywords[i][1]))
             parameterList.append(parameters)
             for j in range(2, len(mat_keywords[i])):
-                parameters = self.parse_whole(mat_keywords[i][j], [10, 10, 10, 10])
+                parameters = self.parse_whole(mat_keywords[i][j], MatGeneralViscoelastic._card_widths(mat_keywords[i][j], 4, 8)
+                                              if j == 2 else [10, 10, 10, 10])   # 카드 2 는 8칸(리뷰 R5)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
 
