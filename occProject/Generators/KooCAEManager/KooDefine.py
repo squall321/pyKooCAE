@@ -62,17 +62,17 @@ class KooDefineCoordinateSystem:
     def WritetoDynaKeyword(self, startID):
         keyword = "*DEFINE_COORDINATE_SYSTEM\n"
         cidStr = format(self.cid + startID, ">10")
-        XOStr = format(self.XO, ">10.3f")
-        YOStr = format(self.YO, ">10.3f")
-        ZOStr = format(self.ZO, ">10.3f")
-        XLStr = format(self.XL, ">10.3f")
-        YLStr = format(self.YL, ">10.3f")
-        ZLStr = format(self.ZL, ">10.3f")
+        XOStr = _real10(self.XO)
+        YOStr = _real10(self.YO)
+        ZOStr = _real10(self.ZO)
+        XLStr = _real10(self.XL)
+        YLStr = _real10(self.YL)
+        ZLStr = _real10(self.ZL)
         CIDLStr = format(self.CIDL, ">10")
         keyword += cidStr + XOStr + YOStr + ZOStr + XLStr + YLStr + ZLStr + CIDLStr + "\n"
-        XPStr = format(self.XP, ">10.3f")
-        YPStr = format(self.YP, ">10.3f")
-        ZPStr = format(self.ZP, ">10.3f")
+        XPStr = _real10(self.XP)
+        YPStr = _real10(self.YP)
+        ZPStr = _real10(self.ZP)
         keyword += XPStr + YPStr + ZPStr + "\n"        
         
         return keyword
@@ -80,17 +80,17 @@ class KooDefineCoordinateSystem:
     def WriteStreamDynaKeyword(self, stream, startID):
         stream.write("*DEFINE_COORDINATE_SYSTEM\n")
         cidStr = format(self.cid + startID, ">10")
-        XOStr = format(self.XO, ">10.3f")
-        YOStr = format(self.YO, ">10.3f")
-        ZOStr = format(self.ZO, ">10.3f")
-        XLStr = format(self.XL, ">10.3f")
-        YLStr = format(self.YL, ">10.3f")
-        ZLStr = format(self.ZL, ">10.3f")
+        XOStr = _real10(self.XO)
+        YOStr = _real10(self.YO)
+        ZOStr = _real10(self.ZO)
+        XLStr = _real10(self.XL)
+        YLStr = _real10(self.YL)
+        ZLStr = _real10(self.ZL)
         CIDLStr = format(self.CIDL, ">10")
         stream.write(cidStr + XOStr + YOStr + ZOStr + XLStr + YLStr + ZLStr + CIDLStr + "\n")
-        XPStr = format(self.XP, ">10.3f")
-        YPStr = format(self.YP, ">10.3f")
-        ZPStr = format(self.ZP, ">10.3f")
+        XPStr = _real10(self.XP)
+        YPStr = _real10(self.YP)
+        ZPStr = _real10(self.ZP)
         stream.write(XPStr + YPStr + ZPStr + "\n")
     
 class KooDefineCoordinateSystemTitle(KooDefineCoordinateSystem):
@@ -102,17 +102,17 @@ class KooDefineCoordinateSystemTitle(KooDefineCoordinateSystem):
         keyword = "*DEFINE_COORDINATE_SYSTEM_TITLE\n"
         keyword += self.name + "\n"
         cidStr = format(self.cid + startID, ">10")
-        XOStr = format(self.XO, ">10.3f")
-        YOStr = format(self.YO, ">10.3f")
-        ZOStr = format(self.ZO, ">10.3f")
-        XLStr = format(self.XL, ">10.3f")
-        YLStr = format(self.YL, ">10.3f")
-        ZLStr = format(self.ZL, ">10.3f")
+        XOStr = _real10(self.XO)
+        YOStr = _real10(self.YO)
+        ZOStr = _real10(self.ZO)
+        XLStr = _real10(self.XL)
+        YLStr = _real10(self.YL)
+        ZLStr = _real10(self.ZL)
         CIDLStr = format(self.CIDL, ">10")
         keyword += cidStr + XOStr + YOStr + ZOStr + XLStr + YLStr + ZLStr + CIDLStr + "\n"
-        XPStr = format(self.XP, ">10.3f")
-        YPStr = format(self.YP, ">10.3f")
-        ZPStr = format(self.ZP, ">10.3f")
+        XPStr = _real10(self.XP)
+        YPStr = _real10(self.YP)
+        ZPStr = _real10(self.ZP)
         keyword += XPStr + YPStr + ZPStr + "\n"        
         return keyword
 
@@ -120,17 +120,17 @@ class KooDefineCoordinateSystemTitle(KooDefineCoordinateSystem):
         stream.write("*DEFINE_COORDINATE_SYSTEM_TITLE\n")
         stream.write(self.name + "\n")
         cidStr = format(self.cid + startID, ">10")
-        XOStr = format(self.XO, ">10.3f")
-        YOStr = format(self.YO, ">10.3f")
-        ZOStr = format(self.ZO, ">10.3f")
-        XLStr = format(self.XL, ">10.3f")
-        YLStr = format(self.YL, ">10.3f")
-        ZLStr = format(self.ZL, ">10.3f")
+        XOStr = _real10(self.XO)
+        YOStr = _real10(self.YO)
+        ZOStr = _real10(self.ZO)
+        XLStr = _real10(self.XL)
+        YLStr = _real10(self.YL)
+        ZLStr = _real10(self.ZL)
         CIDLStr = format(self.CIDL, ">10")
         stream.write(cidStr + XOStr + YOStr + ZOStr + XLStr + YLStr + ZLStr + CIDLStr + "\n")
-        XPStr = format(self.XP, ">10.3f")
-        YPStr = format(self.YP, ">10.3f")
-        ZPStr = format(self.ZP, ">10.3f")
+        XPStr = _real10(self.XP)
+        YPStr = _real10(self.YP)
+        ZPStr = _real10(self.ZP)
         stream.write(XPStr + YPStr + ZPStr + "\n")
     
 
@@ -304,7 +304,8 @@ class KooDefineManager:
     def AddDefinefromDyna(self, dynaDefine):
         if dynaDefine[0] == "*DEFINE_COORDINATE_SYSTEM_TITLE":
             parameters = dynaDefine[1] 
-            name = parameters[0]
+            name = parameters[0][0] if isinstance(parameters[0], (list, tuple)) else parameters[0]   # 제목 글 — 예전엔 목록째 넘겨 쓸 때 죽었다
+            name = str(name).rstrip("\r\n")
             firstLine = parameters[1]
             cid = int(firstLine[0])
             XO = KooDynaFloat(firstLine[1])
@@ -314,7 +315,7 @@ class KooDefineManager:
             YL = KooDynaFloat(firstLine[5])
             ZL = KooDynaFloat(firstLine[6])
             CIDL = KooDynaInt(firstLine[7])
-            secondLine = parameters[1]
+            secondLine = parameters[2]   # 카드 2(XP YP ZP) — 예전엔 카드 1 을 다시 읽어 xy 평면 점이 (CID,XO,YO) 가 됐다(v131 리뷰 R3)
             XP = KooDynaFloat(secondLine[0])
             YP = KooDynaFloat(secondLine[1])
             ZP = KooDynaFloat(secondLine[2])
@@ -381,9 +382,13 @@ class KooDefineManager:
         keyword = ""
         for key in self.defines:
             keyword += self.defines[key].WritetoDynaKeyword(startID)
+        for key in self.defineCoordinateSystems:   # 좌표계도 쓴다 — 예전엔 읽고(해석 표시) 어디에도 쓰지 않아 모든 출력에서 사라졌다(v131 리뷰 R3)
+            keyword += self.defineCoordinateSystems[key].WritetoDynaKeyword(startID)
         return keyword
         
     def WriteStreamDynaKeyword(self, stream, startID):
         for key in self.defines:
             self.defines[key].WriteStreamDynaKeyword(stream, startID)
+        for key in self.defineCoordinateSystems:   # 좌표계도 쓴다(v131 리뷰 R3)
+            self.defineCoordinateSystems[key].WriteStreamDynaKeyword(stream, startID)
     
