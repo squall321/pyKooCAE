@@ -42,9 +42,9 @@ class DynaKeyword():
             # MAT_GENERAL_VISCOELASTIC 카드 1·요소 카드)는 콤마 줄을 따로 센다(리뷰 R1)
             widths = list(chunkList)
             vals = (vals + [''] * chunk_size)[:chunk_size]
-            # 빈 값은 고정폭 줄처럼 공백 칸(w 자)이다 — '' 로 두면 칸을 이어 원문 카드를 다시 만드는 곳(*MAT_ADD_EROSION·
-            # SECTION_BEAM raw_cards)에서 빈 칸이 사라져 뒤 값이 앞 칸으로 당겨졌다(v131 말뭉치 W7: ',,,0.3' 의 MXEPS 가 MNPRES)
-            return [v.strip().rjust(w) if v.strip() else ' ' * w for v, w in zip(vals, widths)]
+            # 빈 값은 '' 다(빈 칸을 len()==0 으로 가리는 리더가 많다 — 공백으로 두면 *INITIAL_VELOCITY·*EOS_TABULATED 콤마 줄이
+            # 죽었다, v131 리뷰 R5). 칸을 이어 원문 카드를 다시 만드는 곳은 _join_card 가 빈 칸을 공백 w 자로 채운다
+            return [v.strip().rjust(w) if v.strip() else '' for v, w in zip(vals, widths)]
 
         start = 0
         for i in range(0,chunk_size):
@@ -109,8 +109,8 @@ def _pm_card_groups(block, keyword, with_id):
 
 def _join_card(fields, w=10, strict=True):
     """parse_whole 칸들을 원문 고정폭 줄로 다시 잇는다 — 원문 카드를 그대로 지니는 곳(SECTION_BEAM·*MAT_ADD_EROSION raw_cards)이
-    쓴다. 고정폭 줄에서 온 칸은 그대로라 예전과 같다. 콤마 줄에서 온 칸이 w 자를 넘으면(긴 실수) 덱 값에 가장 가까운 10칸 표기로
-    줄인다 — 넘친 칸은 뒤 칸을 밀어 LS-DYNA 가 다른 칸으로 읽는다(v131 말뭉치 W7). 줄일 수 없는 칸(긴 정수·글)은 strict 면
+    쓴다. 고정폭 줄에서 온 칸은 그대로라 예전과 같다. 콤마 줄의 빈 값('')은 공백 w 자로 채우고, w 자를 넘는 칸(긴 실수)은 덱 값에
+    가장 가까운 10칸 표기로 줄인다 — 넘친 칸은 뒤 칸을 밀어 LS-DYNA 가 다른 칸으로 읽는다(v131 말뭉치 W7). 줄일 수 없는 칸(긴 정수·글)은 strict 면
     🔴 로 멈추고, 덤프처럼 해석에 쓰지 않는 출력은 그대로 둔다."""
     out = []
     for f in fields:
@@ -129,6 +129,8 @@ def _join_card(fields, w=10, strict=True):
                     raise ValueError(msg)
         elif len(s) > w:
             s = t.rjust(w)
+        elif s == "":
+            s = " " * w   # 콤마 줄의 빈 값 — 칸 자리를 지킨다(빠지면 뒤 값이 앞 칸으로 당겨졌다, v131 말뭉치 W7)
         out.append(s)
     return "".join(out).rstrip("\n")
 
