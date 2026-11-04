@@ -58,4 +58,4 @@
 - [x] SIF e2e — 바이너리 셋 = SIF 소스 트리, KooRemapper b9d4c12d(80열 18 OK), 10절점·파일 끝 8종 ALL PASS, SIF 안 KMM 시험 22종 FAIL 0(DWI 임팩터 gmsh 포함), KAM PKG ALL OK
 - [x] push
 - [x] 헤드 /opt 교체(21:04) — v131 32260efb, v130(9d166fd0)은 하드 링크 SmartTwinPreprocessor_backup_20261104_210443.sif · 확인: KMM 시험 6종 FAIL 0·KooRemapper 80열 18 OK
-- [ ] 알림·메모리·문서
+- [x] 알림·메모리·문서 — kooremapper-fd(굽기 앞뒤)·smarttwinmcp-c8·4c(KMM 출력·rc 변화)·kood3plotreader-a9(K1 반영 — 0.5 GB 한계 회신 받아 기록), 메모리 3건, 문서 커밋 9cd6981·a3b8ec1, 임시 트리·worktree 정리
