@@ -1064,7 +1064,10 @@ mode("IMPORT_MERGE_K", "다른 .k 파일을 불러와 ID 충돌 없이 현재 �
      category="k 파일", aliases=["import", "가져오기", "파트추가", "imported"],
      when=["별도로 만든 파트(.k)를 기존 모델에 붙일 때"],
      syntax=["**ImportMergeK,<ID>", "ImportFile,<파일.k>", "**End"],
-     keys=[K("ImportFile", "경로", "-", "붙일 .k (ID 는 자동 재번호)")],
+     keys=[K("ImportFile", "경로", "-", "붙일 .k (파트·절점·요소·단면·셋·접촉 ID 는 기준 덱 뒤로 재번호)")],
+     notes=["재질 MID·EOS·HOURGLASS·곡선 LCID·좌표계 CID 는 번호를 지킨다(공통 DB). 같은 번호에 내용이 다른 곡선·HOURGLASS 는 기준 덱 것을 남기고 🔴(종료 코드 3).",
+            "구속·부분 감쇠·강체벽·INTERFACE·하중·초기 조건과 KMM 이 해석하지 않는 원문 키워드는 번호를 밀 수 없어 옮기지 않고 🔴(종료 코드 3) — 로그 목록을 보고 병합 뒤 직접 넣을 것.",
+            "CONTROL·DATABASE·DAMPING_GLOBAL 설정은 기준 덱 것을 쓴다(가져온 설정은 알리기만 한다)."],
      examples=[Example("new_part.k 를 base_model 에 합침", _opt("base_model.k", "IMPORT_MERGE_K,1", """**ImportMergeK,1
 ImportFile,new_part.k
 **End"""),

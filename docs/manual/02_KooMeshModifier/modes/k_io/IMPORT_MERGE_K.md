@@ -6,10 +6,15 @@
 
 핵심 동작 (근거: `KooImportMerger.py:1-12` 모듈 docstring):
 
-- 새 파일의 PID/NID/EID/SID/NSID/PSID/SSID/CID/DefineID 는 **기존 max + 1 부터 자동 재할당**한다.
-- MID/EOSID/HGID(Add-Erosion)는 **그대로 보존**한다. 재료는 공통 DB로 취급한다.
-- 기존 모델에 **없는 MID 만 새로 추가**한다(충돌 없는 병합).
+- 새 파일의 PID/NID/EID/SID(단면)/NSID/PSID/SSID/CID(접촉)는 **기존 max + 1 부터 자동 재할당**한다. 가져온 파트의 SECID 는 밀린 단면을 따라간다.
+- MID/EOSID/HGID·곡선 LCID·좌표계 CID 는 **그대로 보존**한다. 재료·곡선은 공통 DB로 취급한다(재질이 곡선 번호를 참조하므로 곡선만 밀 수 없다).
+- 기존 모델에 **없는 번호만 새로 추가**한다. 곡선·좌표계·HOURGLASS 가 같은 번호인데 내용이 다르면 기준 덱 것을 남기고 🔴 + 종료 코드 3 으로 알린다(v131).
+- 경계 조건(*BOUNDARY_SPC_*·*BOUNDARY_PRESCRIBED_MOTION_*·PZEPOT)은 기준 덱 번호 뒤 새 번호로 더한다. 절점·절점 셋·강체 PID 참조는 오프셋을 따라간다.
+- 번호를 함께 밀 수 없는 카드 — 구속(*CONSTRAINED_*)·부분 감쇠(*DAMPING_PART_*)·강체벽(*RIGIDWALL_*)·*INTERFACE_*·*DEFORMABLE_TO_RIGID*·하중(*LOAD_*)·초기 조건(*INITIAL_*), 그리고 KMM 이 해석하지 않는 원문 키워드 — 는 **옮기지 않고** 🔴 + 종료 코드 3('카드 소실')으로 알린다.
+- 설정 카드(*CONTROL_*·*DATABASE_*·*DAMPING_GLOBAL·*TITLE·*PARAMETER)는 **기준 덱 것을 쓴다**(가져온 덱 설정은 옮기지 않고 알린다).
 - 새 파일의 `*INCLUDE` 는 모두 인라인하며, IGA passthrough 는 비활성화한다.
+
+> v131(2026-11-04) 전에는 PSID·LCID 오프셋이 늘 0 이었고(속성 이름 잘못), 같은 번호의 기준 덱 곡선·경계 조건·HOURGLASS·CONTROL 설정을 가져온 것으로 덮어썼으며, 구속·감쇠·강체벽은 밀리지 않은 PID·NSID 로 기준 덱 파트·셋을 가리켰다. 원문 블록·하중·초기 조건은 경고 없이 사라졌다.
 
 사용 케이스 (docstring 기준): 신규 파트를 따로 모델링한 뒤 기존 모델에 합치기, 멀티 모델 통합(조립 시뮬레이션 빌드).
 
@@ -67,7 +72,8 @@ ImportFile,new_part.k
 3. **오프셋 적용** — `_apply_offsets()` 가 새 매니저들의 ID 에 offset 을 가한다. NODE/SECTION/PART/NODESET/SEGMENTSET/CONTACT/DEFINE 순으로 처리하며 **MAT/EOS/HG 는 건드리지 않는다**. 각 파트의 `elementManager.OffsetID(eid, elem_set_sid)` 는 직접 호출하고(KooPart.OffsetID 가 파트별 elementManager 를 처리하지 않는 한계 우회), PID/PSID 는 수동으로 `+= offset` 한다 (KooImportMerger.py:56-57, 114-168).
 4. **dict re-key** — `OffsetID` 는 객체의 `.id` 만 바꾸고 dict key 는 그대로 두므로, `_rekey_all_managers()` 로 모든 매니저 dict 를 새 id 기준으로 재구성한다. 이를 빠뜨리면 Overwrite 시 기존 모델의 같은 key 를 덮어쓰는 버그가 생긴다 (KooImportMerger.py:170-172, 175-222).
 5. **재료 병합** — `_merge_materials()` 가 기존에 **없는 MID/EOSID/HGID 만** 추가한다(충돌 시 기존 보존). `maxid` 는 양쪽 max 로 갱신한다 (KooImportMerger.py:59-61, 225-242).
-6. **나머지 매니저 통합** — `_merge_managers()` 가 node/part/section/nodeset/segmentset/contact/define/boundaryNode/damping/constrained/control/database/additional 매니저를 각각 `OverwritefromXxx(new)` 메서드로 병합한다. 메서드가 없거나 예외가 나면 경고 후 skip 한다 (KooImportMerger.py:63-64, 245-274). 마지막으로 `dynaImporter.SyncronizeMaxID()` 로 통합 maxID 를 맞춘다 (KooImportMerger.py:66-69).
+6. **나머지 매니저 통합** — `_merge_managers()` 는 번호를 민 매니저(node/part/section/nodeset/segmentset/contact)만 `OverwritefromXxx(new)` 로 합친다. 곡선·좌표계(`_merge_defines`)·HOURGLASS(`_merge_hourglasses`)는 없는 번호만 더하고 같은 번호·다른 내용을 충돌로 모은다. 경계 조건(`_merge_boundaries`)은 새 번호로 더한다. 구속·감쇠·강체벽 등과 CONTROL·DATABASE 매니저는 합치지 않는다. 마지막으로 `dynaImporter.SyncronizeMaxID()` 로 통합 maxID 를 맞춘다.
+7. **옮기지 못한 것 알리기** — `_report_unmerged()` 가 가져온 덱의 키워드를 훑어, 원문 키워드와 합치지 않는 키워드(위 목록)는 🔴 와 함께 '카드 소실' 장부에 적고(KMM 이 끝에서 종료 코드 3), 설정 카드는 알리기만 한다. 번호 충돌(곡선·HOURGLASS)도 같은 장부에 적는다.
 
 ### 4.3 출력
 
@@ -75,8 +81,9 @@ ImportFile,new_part.k
 
 ## 5. 주의사항 · 한계
 
-- **MID 충돌 시 소스 재료가 무시됨**: 같은 MID 가 양쪽에 있으면 기존(타깃) 모델 재료가 유지되고, 가져온 모델의 동일 MID 재료는 추가되지 않는다 (KooImportMerger.py:228-231). 두 모델이 서로 다른 재료에 같은 MID 를 쓰면 가져온 파트가 의도와 다른 재료를 참조하게 된다 — 사전 MID 정리 필요.
-- **MAT/EOS/HG 만 ID 보존**, 그 외 모든 ID 는 오프셋된다. 가져온 모델의 PID/NID/EID 등은 원본과 달라지므로, 절대 ID 로 참조하던 외부 스크립트/후처리와는 호환되지 않는다.
+- **MID 충돌 시 소스 재료가 무시됨**: 같은 MID 가 양쪽에 있으면 기존(타깃) 모델 재료가 유지되고, 가져온 모델의 동일 MID 재료는 추가되지 않는다. 두 모델이 서로 다른 재료에 같은 MID 를 쓰면 가져온 파트가 의도와 다른 재료를 참조하게 된다 — 사전 MID 정리 필요(곡선·HOURGLASS 는 내용이 다르면 🔴 로 알리지만 재질은 알리지 않는다).
+- **MAT/EOS/HG·곡선·좌표계는 ID 보존**, 파트·절점·요소·셋·접촉 ID 는 오프셋된다. 가져온 모델의 PID/NID/EID 등은 원본과 달라지므로, 절대 ID 로 참조하던 외부 스크립트/후처리와는 호환되지 않는다.
+- **종료 코드 3 이면 병합 결과에 빠진 카드가 있다**: 로그의 🔴 목록(구속·감쇠·강체벽·하중·초기 조건·원문 키워드·번호 충돌)을 확인하고, 가져올 덱에서 빼거나 병합 뒤 직접 넣는다.
 - **substring 매칭 충돌 주의**: 모드/옵션 키워드는 부분 문자열 매칭(`if "<kw>" in ...`)이라 `import_merge_k` 를 `merge_k` 보다 먼저 검사하는 식의 순서 의존이 있다 (KooMeshModifier.py:330-336, 2381 vs 2402). 새 키워드 추가 시 충돌 주의.
 - **새 모델 로드 시 IGA 보존 비활성**: 가져올 파일의 `*INCLUDE` 는 전부 인라인되고 IGA passthrough 가 꺼진다 (KooImportMerger.py:39-40). IGA(`*PARAMETER_LOCAL` 스코프 의존) 모델을 가져오면 스코프가 깨질 수 있음 — 확인 필요.
 - **OffsetID/Overwrite 의존**: 일부 매니저(예: boundaryNode/damping/control/database/additional)는 `OverwritefromXxx` 메서드 부재나 예외 시 조용히 skip 된다 (KooImportMerger.py:265-274). 해당 카드가 가져온 모델에 있으면 병합 누락 가능 — 결과 검증 필요.

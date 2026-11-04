@@ -26,7 +26,7 @@
 | 옵션 키 (입력 라인) | 기본값 | 설명 | 근거 |
 |---|---|---|---|
 | `*DynainPath,<경로>` | `dynain` | 적용할 dynain 파일 경로. `dynain`이면 현재 디렉터리의 `dynain` 사용, 그 외에는 `folderPath` 기준 상대경로로 결합 | `KooMeshModifier.py:451,472-474`; `KooDynaAdvancedModification.py:6222-6226` |
-| `*IncludeStress,True\|False` | `True` | True면 dynain의 초기 응력을 유지하고 원본 모델의 기존 초기조건을 제거; False면 dynain의 초기조건을 제거(형상만 적용) | `KooMeshModifier.py:452,475-480`; `KooDynaAdvancedModification.py:6287-6290` |
+| `*IncludeStress,True\|False` | `True` | True면 dynain의 초기 응력을 유지하고 원본 모델의 기존 초기조건을 제거; False면 dynain의 초기조건을 제거(형상만 적용). KMM 이 해석하지 않는 *INITIAL_STRESS_SHELL·TSHELL·BEAM·*INITIAL_STRAIN_* 는 dynain 원문 그대로 옮기고 앞 단계의 같은 원문은 지운다(v131 — 예전엔 솔리드 응력만 남고 사라졌다) | `KooMeshModifier.py:452,475-480`; `KooDynaAdvancedModification.py:6287-6290` |
 | `*RemoveDynamicRelaxation,True\|False` | `True` | True면 기존 `*CONTROL_DYNAMIC_RELAXATION` 카드를 제거 | `KooMeshModifier.py:453,481-486`; `KooDynaAdvancedModification.py:6241-6242` |
 | `*DynamicRelaxation,True\|False` | `False` | True면 control/database 초기화 후 동적 이완 카드를 신규 설정(`SetControlDynamicRelaxation(250,1e-5,0.35,1e99,0.3,0,1e-4,-1)`) | `KooMeshModifier.py:458,487-492`; `KooDynaAdvancedModification.py:6302-6305` |
 | `*MovetoOriginbyNode,<n1>,<n2>,<n3>` | `[]` | 원점 정렬 기준이 될 세 노드 ID. 정확히 3개여야 사용됨 | `KooMeshModifier.py:454,493-495`; `KooDynaAdvancedModification.py:6255-6270` |
