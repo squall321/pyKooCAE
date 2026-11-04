@@ -415,7 +415,10 @@ def _mat_values(obj):
         # 뜻이 있다(R16, 리뷰 R6). 빈 칸은 기본값과 같다 — 빈 칸·빠진 카드를 기본값과 다르게 봐 같은 침식에 거짓 rc 3 이었다(리뷰 R6)
         c3 = (list(_norm_card(raw[2])) + [""] * 8)[1:7] if len(raw) > 2 else [""] * 6
         c3 = tuple(d if x == "" else x for x, d in zip(c3, _ERO_C3_DEFAULTS))
-        v["_raw_uncaptured"] = (c3, tuple(_norm_card(l) for l in raw[5:]))
+        tail = [_norm_card(l) for l in raw[5:]]
+        while tail and not tail[-1]:   # 끝의 빈 카드(빈 줄)는 빠진 카드와 같다 — 카드 5 뒤 빈 줄 하나로 거짓 rc 3 이었다(리뷰 R7)
+            tail.pop()
+        v["_raw_uncaptured"] = (c3, tuple(tail))
     return v
 
 
