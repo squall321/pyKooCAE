@@ -25,6 +25,9 @@
      정해 뒤 줄 값이 잘렸다. 콤마 줄의 남는 값이 다음 카드로 밀렸다. Fast DROP 강체화가 각도마다 어긋났다. IMPORT_MERGE_K 가
      TMID 를 MID 로 보고, 원문 EOS·좌표계·long 단면 번호와 기준 덱만의 침식을 놓치고, 재질을 유효숫자 4자리로 견줬다. DTI 가
      바꿀 것 없는 셸 응력을 지웠다. DROP 바닥판 단면·재질·D2R SWSET 이 원문 번호와 겹쳤다.
+  R5 콤마 빈 값을 공백으로 바꿔 빈 칸을 len()==0 으로 가리는 리더가 죽었다. 셸 끝 칸이 8자를 못 채우면 버렸다. 솔리드 둘째 줄이
+     짧으면 블록을 2줄 꼴로 뒤섞었다. GENERAL_VISCOELASTIC 카드 2 를 4칸으로 읽었다. IMPORT_MERGE_K 가 침식 카드 3 의 다름을
+     놓치고, 쓰지 않는 MID 에 거짓 충돌을 내고, 원문 좌표계 첫 줄만 봤다. 누적 체인에서 D2R 짝이 두 쌍이 됐다.
 """
 import contextlib
 import io
@@ -854,11 +857,84 @@ def r4():
           rc == 0 and len(sws) == 3 and len(set(sws)) == 3 and 20 in sws, f"rc={rc} {sws}")
 
 
+def r5():
+    print("[R5] 콤마 빈 칸 리더·제어 기본값, 셸 짧은 끝 칸, 솔리드 1줄 꼴, GENERAL_VISCOELASTIC 카드 2, IMPORT_MERGE_K 침식·좌표계, DTI D2R")
+    # ── 콤마 줄 빈 값은 '' — 빈 칸을 len()==0 으로 가리는 리더가 죽지 않고, 제어 카드 빈 칸은 R16 기본값 ─────────────────────
+    d, rc, log = run("initvel_comma", {"model.k": cube_deck("*SET_NODE_LIST\n" + f10(1) + f10(1, 2) + "*INITIAL_VELOCITY\n1,\n"
+                                                             + f10(0.0, 0.0, -1000.0))})
+    check("R5 콤마 *INITIAL_VELOCITY '1,': 죽지 않는다(rc 0)", rc == 0 and no_tb(log), f"rc={rc} " + log[-300:])
+    d, rc, log = run("ctrl_comma", {"model.k": cube_deck("*CONTROL_HOURGLASS\n4,\n")})
+    hg = [floats(rows[0], 10) for _, rows in kw_blocks(read(d, "model_trans.k"), "*CONTROL_HOURGLASS") if rows]
+    check("R5 콤마 *CONTROL_HOURGLASS '4,': 빈 QH 는 R16 기본값 0.1(0 이 아니다)", rc == 0 and hg and hg[0][:2] == [4, 0.1], f"rc={rc} {hg}")
+
+    # ── 셸 끝 칸이 8자를 못 채운 줄·솔리드 둘째 줄이 짧은 1줄 꼴(사면체) ─────────────────────────────────────────────────
+    pts = {k: (float(k % 3), float(k // 3), 0.0) for k in range(1, 9)}
+    sh = ("*KEYWORD\n" + node_block(pts) + "*ELEMENT_SHELL\n" + f"{1:8d}{1:8d}{1:8d}{2:8d}{3:8d}{4:8d}\n"
+          + f"{2:8d}{1:8d}{2:8d}{5:8d}{6:8d}" + "   3\n" + part(1, 1, 1, "shell") + "*SECTION_SHELL\n" + f10(1, 2)
+          + f10(1.0, 1.0, 1.0, 1.0) + ELASTIC + "*END\n")
+    d, rc, log = run("shell_ragged", {"model.k": sh})
+    e = elements(read(d, "model_trans.k"), "*ELEMENT_SHELL")
+    check("R5 *ELEMENT_SHELL 끝 칸 '   3'(44자 줄): 사각형 N4 = 3 을 읽는다(삼각형이 되지 않는다)",
+          rc == 0 and e.get(2, [(0, [])])[0][1][:4] == [2, 5, 6, 3], f"rc={rc} {e}")
+    sol = ("*KEYWORD\n" + node_block(cubes(3)) + "*ELEMENT_SOLID\n" + hex_row(1, 1, 1)
+           + f"{2:8d}{1:8d}{9:8d}{10:8d}{11:8d}{13:8d}\n" + hex_row(3, 1, 17) + part(1) + SOLID1 + ELASTIC + "*END\n")
+    d, rc, log = run("solid_short2nd", {"model.k": sol})
+    e = elements(read(d, "model_trans.k"))
+    check("R5 *ELEMENT_SOLID 둘째 줄이 사면체(48자): 2줄 꼴로 뒤섞지 않고 요소 1·2·3 그대로",
+          rc == 0 and e.get(1, [(0, [])])[0][1] == list(range(1, 9)) and e.get(2, [(0, [])])[0][1][:4] == [9, 10, 11, 13]
+          and e.get(3, [(0, [])])[0][1] == list(range(17, 25)), f"rc={rc} {e}")
+
+    # ── *MAT_GENERAL_VISCOELASTIC 카드 2 는 8칸 ─────────────────────────────────────────────────────────────────
+    gv = "*MAT_GENERAL_VISCOELASTIC\n2,1.0E-9,2000.0\n7,6,0.0,0.0,8,6,0.0,0.0\n10.0,100.0,20.0,200.0\n"
+    d, rc, log = run("gv_card2", {"model.k": cube_deck(gv)})
+    rows = [r for _, rr in kw_blocks(read(d, "model_trans.k"), "*MAT_GENERAL_VISCOELASTIC") for r in rr]
+    c2 = try_(lambda: floats(rows[1], 10), [])
+    check("R5 *MAT_GENERAL_VISCOELASTIC 카드 2 'LCID…TRAMPK' 8칸: LCIDK 8·NTK 6 이 남는다", rc == 0 and c2[:6] == [7, 6, 0, 0, 8, 6],
+          f"rc={rc} {rows}")
+
+    # ── IMPORT_MERGE_K: 침식 카드 3 의 다름·쓰지 않는 MID 의 기준 덱 침식·원문 좌표계 둘째 줄 ────────────────────────────
+    one = lambda pid, sec, mid, name: ("*KEYWORD\n" + node_block(cubes(1)) + "*ELEMENT_SOLID\n" + hex_row(1, pid, 1)
+                                       + part(pid, sec, mid, name) + "*SECTION_SOLID\n" + f10(sec, 1))
+    steel = "*MAT_ELASTIC\n" + f10(1, "7.85E-09", 210000, 0.3)
+    ero = lambda dcrit: ("*MAT_ADD_EROSION\n" + f10(1, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0) + f10(0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0)
+                         + f10(0, 0, 5, 0.0, 2.0, dcrit, 1.0, 0))
+    d, rc, log = run("im_ero_card3", {"base.k": one(1, 1, 1, "a") + steel + ero(0.1) + "*END\n",
+                                      "imp.k": one(1, 1, 1, "b") + steel + ero(0.9) + "*END\n"}, IMO)
+    check("R5 IMPORT_MERGE_K 침식 카드 3 의 DCRIT 만 다름(0.1 / 0.9): 번호 충돌 🔴 rc 3", rc == 3 and "MAT_ADD_EROSION MID 1" in log,
+          f"rc={rc} " + log[-300:])
+    alu2 = "*MAT_ELASTIC\n" + f10(2, "2.70E-09", 70000, 0.33)
+    d, rc, log = run("im_ero_unused", {"base.k": one(1, 1, 1, "a") + steel + ero(0.1) + "*END\n",
+                                       "imp.k": one(1, 1, 2, "b") + steel + alu2 + "*END\n"}, IMO)
+    check("R5 IMPORT_MERGE_K 기준 덱만의 침식 MID 1 을 가져온 파트가 쓰지 않으면(MID 2): 충돌이 아니다(rc 0)",
+          rc == 0 and "번호 충돌" not in log, f"rc={rc} " + log[-300:])
+    d, rc, log = run("im_cs_nodes2", {"base.k": one(1, 1, 1, "a") + steel + "*DEFINE_COORDINATE_NODES\n" + f10(5, 1, 2, 4) + f10(6, 1, 3, 4)
+                                      + "*END\n", "imp.k": one(1, 1, 2, "b") + alu2 + "*DEFINE_COORDINATE_SYSTEM\n"
+                                      + f10(6, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0) + f10(-1.0, 0.0, 0.0) + "*END\n"}, IMO)
+    check("R5 IMPORT_MERGE_K 원문 *DEFINE_COORDINATE_NODES 둘째 줄 CID 6 과 가져온 좌표계 6: 번호 충돌 🔴 rc 3",
+          rc == 3 and "좌표계 CID 6" in log, f"rc={rc} " + log[-300:])
+
+    # ── DTI 가 지운 접촉을 가리키는 덱 D2R 짝도 지운다(누적 낙하 체인) ─────────────────────────────────────────────────────
+    con = ("*CONTACT_AUTOMATIC_SURFACE_TO_SURFACE_ID\n" + f"{1:10d}floor\n" + f10(1, 2, 3, 3) + f10(0.1, 0.1) + f10(1.0, 1.0)
+           + "*DEFORMABLE_TO_RIGID_AUTOMATIC\n" + f10(20, 2, 0.0, "1e20", 0.0, 1, 10, 1) + f10(0, 0, 0, 0.0, 1, 0, 0.0) + f10(1, 0)
+           + "*DEFORMABLE_TO_RIGID_AUTOMATIC\n" + f10(10, 4, 0.0, "1e20", 0.0, 1, 20, -1) + f10(0, 0, 0, 0.0, 0, 1, 0.0) + f10(1))
+    base = ("*KEYWORD\n*CONTROL_TERMINATION\n" + f10(0.001) + node_block(cubes(2)) + "*ELEMENT_SOLID\n" + hex_row(1, 1, 1)
+            + hex_row(2, 2, 9) + part(1) + part(2) + SOLID1 + ELASTIC + con + "*END\n")
+    dyn = ("*KEYWORD\n" + node_block({k: (x, y, z + 0.01) for k, (x, y, z) in cubes(2).items()}) + "*ELEMENT_SOLID\n" + hex_row(1, 1, 1)
+           + hex_row(2, 2, 9) + "*INITIAL_STRESS_SOLID\n" + f10(1, 1, 0, 0, 0, 0, 0, 0) + f10(1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 0.01) + "*END\n")
+    dti = ("*Inputfile\nmodel.k\n*Mode\nDYNAIN_TO_INITIAL,1\n**DynainToInitial,1\n*DynainPath,dynain\n*IncludeStress,True\n"
+           "*RemoveContactbyID,1\n**EndDynainToInitial\n*End\n")
+    d, rc, log = run("dti_d2r", {"model.k": base, "dynain": dyn}, dti)
+    kws = [ln.split()[0].upper() for ln in read(d, "model_dti.k").splitlines() if ln.startswith("*")]
+    check("R5 DTI *RemoveContactbyID,1: 그 접촉을 ENTNO 로 가리키는 덱 D2R 짝(SWSET 20·10)도 지운다",
+          rc == 0 and "*DEFORMABLE_TO_RIGID_AUTOMATIC" not in kws and "D2R" in log, f"rc={rc} {kws}")
+
+
 def main():
     r1()
     r2()
     r3()
     r4()
+    r5()
     print()
     if FAILS:
         print(f"FAILED {len(FAILS)}")
