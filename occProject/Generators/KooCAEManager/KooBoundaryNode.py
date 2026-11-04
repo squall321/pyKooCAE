@@ -91,6 +91,12 @@ from KooCAEManager.KooGeometry import (
 )
 
 
+class _PartRef:
+    """*BOUNDARY_PRESCRIBED_MOTION_RIGID 의 PID — 기록기는 self.node.id 를 쓴다(KMM 이 만드는 조건은 파트 객체를 넘긴다)."""
+    def __init__(self, pid):
+        self.id = pid
+
+
 class KooBoundaryNode:
     def __init__(self, bid, name):
         self.bid = bid
@@ -267,16 +273,17 @@ class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
     def __init__(self, bid, name="", node=[], dof=[], vad=[], lcid=[], sf=[], vid=[], death=[], birth=[]):
         if name == "":
             name = "PrescribedMotionNodes" + str(bid)
-        super(KooBoundaryPrescribedMotionNode,self).__init__(bid,name)
+        super(KooBoundaryPrescribedMotionNodes,self).__init__(bid,name)   # 예전엔 다른 클래스(…Node)를 넘겨 TypeError 였다(v131)
         self.btype = "PrescribedMotionNodes"
-        self.nodes = node
-        self.dofs = dof
-        self.vads = vad
-        self.lcids = lcid
-        self.sfs = sf
-        self.vids = vid
-        self.deaths = death
-        self.births = birth
+        # 목록은 새로 만든다 — 기본 인자 [] 를 그대로 쓰면 모든 객체가 한 목록을 같이 써 블록마다 모든 절점을 되풀이해 썼다(v131)
+        self.nodes = list(node)
+        self.dofs = list(dof)
+        self.vads = list(vad)
+        self.lcids = list(lcid)
+        self.sfs = list(sf)
+        self.vids = list(vid)
+        self.deaths = list(death)
+        self.births = list(birth)
     
     def AddNode(self, node):
         self.nodes.append(node)
@@ -313,7 +320,7 @@ class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
         keywords += "*BOUNDARY_PRESCRIBED_MOTION_NODE\n"
                 
         for i in range(len(self.nodes)):            
-            nidstr = format(self.node[i].id + startnid, ">10")
+            nidstr = format(self.nodes[i].id + startnid, ">10")   # 예전엔 self.node(없는 속성)라 AttributeError(v131)
             dofstr = format(self.dofs[i], ">10")
             vadstr = format(self.vads[i], ">10")
             lcidstr = format(self.lcids[i], ">10")
@@ -328,7 +335,7 @@ class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
         stream.write("*BOUNDARY_PRESCRIBED_MOTION_NODE\n")
                 
         for i in range(len(self.nodes)):            
-            nidstr = format(self.node[i].id + startnid, ">10")
+            nidstr = format(self.nodes[i].id + startnid, ">10")   # 예전엔 self.node(없는 속성)라 AttributeError(v131)
             dofstr = format(self.dofs[i], ">10")
             vadstr = format(self.vads[i], ">10")
             lcidstr = format(self.lcids[i], ">10")
@@ -469,14 +476,15 @@ class KooBoundarySPCNodes(KooBoundaryNode):
             name = "SPCNode" + str(bid)
         super(KooBoundarySPCNodes,self).__init__(bid,name)
         self.btype = "SPCNode"
-        self.nodes = nodes
-        self.cids = cids
-        self.dofxs = dofxs
-        self.dofys = dofys
-        self.dofzs = dofzs
-        self.dofrxs = dofrxs
-        self.dofrys = dofrys
-        self.dofrzs = dofrzs
+        # 목록은 새로 만든다 — 기본 인자 [] 를 같이 써 *BOUNDARY_SPC_NODE 블록마다 모든 블록의 절점을 되풀이해 썼다(v131)
+        self.nodes = list(nodes)
+        self.cids = list(cids)
+        self.dofxs = list(dofxs)
+        self.dofys = list(dofys)
+        self.dofzs = list(dofzs)
+        self.dofrxs = list(dofrxs)
+        self.dofrys = list(dofrys)
+        self.dofrzs = list(dofrzs)
     
     def AddNode(self, node):
         self.nodes.append(node)        
@@ -984,7 +992,7 @@ class KooBoundaryNodeManager:
             self.CreateBoundarySPCNodeSetwithID(bid,name,nset,cid,dofx,dofy,dofz,dofrx,dofry,dofrz)
 
         elif header == "*BOUNDARY_PRESCRIBED_MOTION_NODE":
-            boundary = self.CreateBoundaryPrescribedMotionNode()
+            boundary = self.CreateBoundaryPrescribedMotionNodes()   # 여러 절점 그릇 — 예전엔 단수 함수를 인자 없이 불러 TypeError(v131)
             # 이전 코드는 [2:]부터 순회해서 [1]을 놓치는 구조였음 — [1:]로 통일
             for i in range(1, len(dynaBoundaryNode)):
                 firstLine = dynaBoundaryNode[i]
@@ -1054,9 +1062,7 @@ class KooBoundaryNodeManager:
             vid = _ki(firstLine, 5)
             death = _kf(firstLine, 6, 1.0E28)
             birth = _kf(firstLine, 7, 0.0)
-            node = _get_node_or_none(typeid)
-            if node is None:
-                return
+            node = _PartRef(typeid)   # TYPEID 는 강체 PID 다 — 예전엔 같은 번호 절점을 찾아, 없으면 조건을 버리고 절점 번호가 바뀌면 다른 PID 를 썼다(v131)
             name = "PrescribedMotionNode" + str(typeid)
             self.CreateBoundaryPrescribedMotionRigid(node,dof,vad,lcid,sf,vid,death,birth,name)
 
@@ -1081,9 +1087,7 @@ class KooBoundaryNodeManager:
             vid = _ki(secondLine, 5)
             death = _kf(secondLine, 6, 1.0E28)
             birth = _kf(secondLine, 7, 0.0)
-            node = _get_node_or_none(typeid)
-            if node is None:
-                return
+            node = _PartRef(typeid)   # TYPEID 는 강체 PID 다 — 예전엔 같은 번호 절점을 찾아, 없으면 조건을 버리고 절점 번호가 바뀌면 다른 PID 를 썼다(v131)
             self.CreateBoundaryPrescribedMotionRigidwithID(bid,name,node,dof,vad,lcid,sf,vid,death,birth)
                 
     
