@@ -113,8 +113,9 @@ def _join_card(fields, w=10, strict=True):
     가장 가까운 10칸 표기로 줄인다 — 넘친 칸은 뒤 칸을 밀어 LS-DYNA 가 다른 칸으로 읽는다(v131 말뭉치 W7). 줄일 수 없는 칸(긴 정수·글)은 strict 면
     🔴 로 멈추고, 덤프처럼 해석에 쓰지 않는 출력은 그대로 둔다."""
     out = []
-    for f in fields:
-        s = str(f).replace("\n", "").replace("\r", "")
+    fields = [str(f).replace("\n", "").replace("\r", "") for f in fields]
+    last = max((i for i, f in enumerate(fields) if f != ""), default=-1)
+    for s in fields[:last + 1]:   # 끝의 빈 칸('' — 고정폭 줄 끝 너머)은 떼어 예전처럼 줄이 끝난다(채우면 줄 끝 공백이 붙었다)
         t = s.strip()
         if len(s) > w and len(t) > w:
             try:
