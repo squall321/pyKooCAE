@@ -470,7 +470,7 @@ class KooDynaImporter():
         self.SyncronizeMaxEID()
     
     def SyncronizeMaxEID(self):
-        maxEID = 0 
+        maxEID = getattr(self, "_raw_max_eid", 0) or 0   # 원문 요소 EID 도 넘는 번호에서 새 요소를 매긴다(v131 R2)
         for id in self.partManager.parts:
             curPart = self.partManager.parts[id]
             maxEID = max(maxEID, curPart.elementManager.GetMaxID())
@@ -582,6 +582,7 @@ class KooDynaImporter():
         self.importAdditional()
         print("Additional Imported")
         self._reserve_raw_set_ids()
+        self._reserve_raw_part_elem_ids()
         self._check_long_blocks()
         print("Import Completed")
         
@@ -700,6 +701,35 @@ class KooDynaImporter():
                    f"값이 틀어지므로 지원하지 않는다. 표준 형식(또는 *INCLUDE -)으로 바꿔 넣어라")
             print(msg)
             raise ValueError(msg)
+
+    def _reserve_raw_part_elem_ids(self):
+        """원문으로 두는 *PART_* 변형의 PID 와 원문 요소(*ELEMENT_*)의 EID 를 번호 매기기에 넣는다 — KMM 이 새로 만드는 파트
+        (바닥판·충격체·강체 조각)·요소가 그 번호를 받아 겹칠 수 있었다(v131 R1·R2). 파트는 블록마다 첫 카드 2(제목 다음 줄)의
+        PID, 요소는 데이터 줄마다 첫 칸을 본다. 덜 정확해도 큰 번호를 예약할 뿐이라 안전하다(새 번호가 커질 뿐)."""
+        from KooCAEManager.KooDynaKeyword import _whole_int
+        raw = getattr(self.dynaManager, "_raw_keyword_dict", None) or {}
+        fmts_all = getattr(self.dynaManager, "_block_formats", None) or {}
+        top_pid = top_eid = 0
+        for kw, blocks in raw.items():
+            is_part, is_elem = kw.startswith("PART_"), kw.startswith("ELEMENT_")
+            if not (is_part or is_elem) or self.keywordInterpreted.get(kw, False):
+                continue
+            fmts = fmts_all.get(kw, [])
+            for bi, block in enumerate(blocks):
+                fmt = fmts[bi] if bi < len(fmts) else None
+                w = 20 if fmt == "long" else (10 if (fmt == "i10" or is_part) else 8)
+                lines = [str(l) for l in block]
+                for ln in (lines[1:2] if is_part else [l for l in lines if l.strip()]):
+                    v = _whole_int(ln.split(",")[0] if "," in ln else ln[:w])
+                    if v is None:
+                        continue
+                    if is_part:
+                        top_pid = max(top_pid, v)
+                    else:
+                        top_eid = max(top_eid, v)
+        if top_pid > (self.partManager.maxID or 0):
+            self.partManager.maxID = top_pid
+        self._raw_max_eid = top_eid
 
     def _reserve_raw_set_ids(self):
         """KMM 이 해석하지 않는 *SET_* 원문 블록(GENERAL·ADD 등)의 번호를 셋 매니저에 예약한다 — KMM 이 새로 만드는 셋
