@@ -360,6 +360,17 @@ class KooMeshModifier(KooSimulationGenerator):
                         else:
                             print("Invalid mode")
                             sys.exit(1)
+                    # 옵션 블록(**…,ID)은 모드 ID 하나에 한 벌이라, 서로 다른 모드가 같은 ID 를 쓰면 뒤 블록이 앞 블록을 덮어 엉뚱한
+                    # 자리에서 죽거나 다른 옵션으로 돌았다(v131 X2). 같은 모드를 같은 ID 로 두 번 쓰는 것(같은 옵션 되풀이)은 그대로 둔다
+                    _byid = {}
+                    for _m, _i in zip(self.modeList, self.modeIDList):
+                        _byid.setdefault(_i, []).append(_m)
+                    _dup = {i: ms for i, ms in _byid.items() if len(set(ms)) > 1}
+                    if _dup:
+                        for i, ms in _dup.items():
+                            print(f"🔴 *Mode: 모드 ID {i} 를 {'·'.join(dict.fromkeys(ms))} 가 같이 쓴다 — 옵션 블록(**…,{i})이 서로 덮인다. "
+                                  f"모드마다 다른 ID 를 줄 것 (종료 코드 1)")
+                        sys.exit(1)
                     continue
                 elif "**remove_duplicate_tied_contacts" in line.lower():
                     svector = line.split(",")
