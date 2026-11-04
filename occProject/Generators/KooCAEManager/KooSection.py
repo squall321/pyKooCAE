@@ -237,6 +237,7 @@ class KooSectionSolid(KooSection):
         self.aet = ""
         self.cohoff = ""
         self.gaskett = ""
+        self.extraCards = []   # ELFORM 101~105 사용자 요소 카드(원문 그대로, v131 P4)
     
     def SetElform(self, elform, aet = "", cohoff = "", gaskett = ""):
         self.elform = elform
@@ -273,6 +274,8 @@ class KooSectionSolid(KooSection):
         else:
             keywordString += "          "
         keywordString += "\n"
+        for line in self.extraCards:   # ELFORM 101~105 사용자 요소 카드 — 예전엔 유령 단면이 되어 사라졌다(v131 P4)
+            keywordString += line + "\n"
         self.SetDynaKeyword(keywordString)
         return keywordString 
    
@@ -656,6 +659,7 @@ class KooSectionManager():
             sec.aet = KooDynaInt(firstLine[2],0)
             sec.cohoff = KooDynaFloat(firstLine[6],0.0)    # R16 카드 1: SECID ELFORM AET 빈칸×3 COHOFF GASKETT — 예전엔 빈 칸 [3]·[4] 를 읽어
             sec.gaskett = KooDynaFloat(firstLine[7],0.0)   # 덱의 COHOFF·GASKETT 가 출력에서 0 이 됐다(리뷰 Z)
+            sec.extraCards = [ln for c in dynaSection[2:] if isinstance(c, tuple) for ln in c[1]]   # 사용자 요소 카드(v131 P4)
            
             return sec
         elif dynaSection[0] == "*SECTION_SOLID_TITLE":
@@ -673,6 +677,7 @@ class KooSectionManager():
             sec.aet = KooDynaInt(firstLine[2],0)
             sec.cohoff = KooDynaFloat(firstLine[6],0.0)    # R16 카드 1: SECID ELFORM AET 빈칸×3 COHOFF GASKETT — 예전엔 빈 칸 [3]·[4] 를 읽어
             sec.gaskett = KooDynaFloat(firstLine[7],0.0)   # 덱의 COHOFF·GASKETT 가 출력에서 0 이 됐다(리뷰 Z)
+            sec.extraCards = [ln for c in dynaSection[3:] if isinstance(c, tuple) for ln in c[1]]   # 사용자 요소 카드(v131 P4)
             
             return sec
         elif dynaSection[0] == "*SECTION_SOLID_PERI":

@@ -10851,6 +10851,19 @@ def _section_card_sets(lines, fmt, title, shell, keyword):
     return sets
 
 
+def _solid_user_cards(block, k, fmt, c1, keyword):
+    """*SECTION_SOLID ELFORM 101~105(사용자 요소) 카드 1 뒤 카드 — R16 카드 2(NIP NXDOF IHGF ITAJ LMC NHSV XNOD) · 적분점 카드
+    NIP 장 · 속성 카드 ceil(LMC/8) 장을 자리대로(빈 줄 포함) 원문 그대로 지닌다. 예전엔 이 줄들을 카드 1 로 읽어 유령 단면이
+    생기고 실제 단면 번호를 밀어냈다(v131 P4). 돌려주는 값 = (("RAW", 줄들) 또는 None, 다음 줄 자리)."""
+    if not (101 <= _dyna_int(c1[1], 0) <= 105) or k >= len(block):
+        return None, k
+    c2 = _card_fields(str(block[k]), fmt)
+    m = 1 + max(_dyna_int(c2[0], 0), 0) + -(-max(_dyna_int(c2[4], 0), 0) // 8)
+    if k + m > len(block):
+        print(f"  Warning: *{keyword} SECID {str(c1[0]).strip()}: 사용자 요소 카드 {m}장 중 {len(block) - k}장만 있다(덱 확인)")
+    return ("RAW", [str(ln).replace("\n", "") for ln in block[k:k + m]]), min(k + m, len(block))
+
+
 def _f10(x):
     """단면 덤프 칸 — long(20자)·콤마 칸은 공백을 떼고 10칸에 쓴다. 표준 10칸 칸은 그대로(덤프 바이트 유지)."""
     x = str(x)
@@ -11056,14 +11069,17 @@ class SectionSolid(DynaKeyword):
         for i in range(len(section_solid_keywords)):
             block = section_solid_keywords[i]
             fmt = fmts[i] if i < len(fmts) else None
-            for j in range(len(block)):
+            j = 0
+            while j < len(block):
                 if not str(block[j]).replace("\n", "").strip():
                     skipped += 1
+                    j += 1
                     continue
                 parameters = _card_fields(str(block[j]), fmt)
-                if _secid_bad(parameters[0], "SECTION_SOLID", 1):
+                raw, j = _solid_user_cards(block, j + 1, fmt, parameters, "SECTION_SOLID")   # ELFORM 101~105 카드(v131 P4)
+                if _secid_bad(parameters[0], "SECTION_SOLID", 1 + (len(raw[1]) if raw else 0)):
                     continue
-                self.parameters.append([parameters])
+                self.parameters.append([parameters] + ([raw] if raw else []))
         if skipped:
             print(f"  Warning: *SECTION_SOLID 블록의 빈 줄 {skipped}개를 건너뛰었다 — 카드 1(SECID) 자리라 카드가 될 수 없다(덱 확인)")
 
@@ -11095,6 +11111,7 @@ class SectionSolid(DynaKeyword):
             curSection = []
             curSection.append("*SECTION_SOLID")
             curSection.append(parameter[0])
+            curSection.extend(parameter[1:])   # ELFORM 101~105 사용자 요소 카드("RAW", v131 P4)
             sectionList.append(curSection)
         return sectionList
     
@@ -11107,6 +11124,7 @@ class SectionSolid(DynaKeyword):
             # 다시 읽으면 값이 사라졌다(v131 I7)
             formatted_elements = "".join(f"{_f10(x):>10}" for x in parameter[0][:8]) + "\n"
             stream.write(formatted_elements)
+            _write_section_extra_cards(stream, parameter[1:])   # ELFORM 101~105 사용자 요소 카드(v131 P4)
 
 class SectionSolidTitle(DynaKeyword):
     def __init__(self):
@@ -11134,10 +11152,10 @@ class SectionSolidTitle(DynaKeyword):
                     break
                 name_params = _title_field(str(block[k]), fmt)
                 data_params = _card_fields(str(block[k + 1]), fmt)
-                k += 2
-                if _secid_bad(data_params[0], "SECTION_SOLID_TITLE", 2):
+                raw, k = _solid_user_cards(block, k + 2, fmt, data_params, "SECTION_SOLID_TITLE")   # ELFORM 101~105 카드(v131 P4)
+                if _secid_bad(data_params[0], "SECTION_SOLID_TITLE", 2 + (len(raw[1]) if raw else 0)):
                     continue
-                self.parameters.append([name_params, data_params])
+                self.parameters.append([name_params, data_params] + ([raw] if raw else []))
         if skipped:
             print(f"  Warning: *SECTION_SOLID_TITLE 블록의 빈 줄 {skipped}개를 건너뛰었다(덱 확인)")
 
@@ -11175,6 +11193,7 @@ class SectionSolidTitle(DynaKeyword):
             curSection.append("*SECTION_SOLID_TITLE")
             curSection.append(parameter[0])
             curSection.append(parameter[1])            
+            curSection.extend(parameter[2:])   # ELFORM 101~105 사용자 요소 카드("RAW", v131 P4)
             sectionList.append(curSection)
         return sectionList
     
@@ -11188,6 +11207,7 @@ class SectionSolidTitle(DynaKeyword):
             # 다시 읽으면 값이 사라졌다(v131 I7)
             formatted_elements = "".join(f"{_f10(x):>10}" for x in parameter[1][:8]) + "\n"
             stream.write(formatted_elements)
+            _write_section_extra_cards(stream, parameter[2:])   # ELFORM 101~105 사용자 요소 카드(v131 P4)
 
 class SectionSolidPeri(DynaKeyword):
     def __init__(self):
