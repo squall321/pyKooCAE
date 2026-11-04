@@ -7008,17 +7008,24 @@ class KooDynaAdvancedModification:
         kind = ("INITIAL_STRESS_", "INITIAL_STRAIN_")
         fmts_main = getattr(main, "_block_formats", None)
         sub_raw = getattr(sub, "_raw_keyword_dict", None) or {}
-        # 지우는 것은 LS-DYNA dynain 이 쓰는 종류와 이번 dynain 에 든 종류뿐이다 — *INITIAL_STRESS_SECTION 같은 사용자 카드까지
-        # 지웠고 알리지도 않았다(v131 리뷰 R3)
-        replace = _DYNAIN_RAW_KINDS | {k for k in sub_raw if k.startswith(kind)}
+        # 바꾸는 것은 이번 dynain 에 든 종류뿐이다(앞 단계 것을 지우고 새 것을 넣는다). 예전엔 *INITIAL_STRESS_SECTION 같은 사용자
+        # 카드(v131 리뷰 R3)와 dynain 에 같은 종류가 없는 셸 응력(리뷰 R4)까지 지웠다. LS-DYNA dynain 이 쓰는 종류가 남으면 앞
+        # 단계 dynain 값일 수 있어 알린다
+        interp_main = self.dynaImporter.keywordInterpreted
+        replace = {k for k, b in sub_raw.items() if k.startswith(kind) and b and not dynainImporter.keywordInterpreted.get(k, False)}
         dropped = []
-        for k in [k for k in raw_main if k in replace and not self.dynaImporter.keywordInterpreted.get(k, False)]:
+        for k in [k for k in raw_main if k in replace and not interp_main.get(k, False)]:
             dropped.append(f"*{k}({len(raw_main[k])})")
             del raw_main[k]
             if fmts_main is not None:
                 fmts_main.pop(k, None)
         if dropped:
             print(f"  DTI: 앞 단계의 원문 초기 응력·변형률 {', '.join(dropped)} 을 지우고 이번 dynain 의 것으로 바꾼다")
+        kept = [f"*{k}({len(raw_main[k])})" for k in raw_main
+                if k in _DYNAIN_RAW_KINDS and k not in replace and not interp_main.get(k, False)]
+        if kept:
+            print(f"  ⚠ DTI: 기준 덱의 원문 {', '.join(kept)} 은 이번 dynain 에 같은 종류가 없어 그대로 둔다 — 앞 단계 dynain 의 "
+                  f"값이면 기준 덱에서 빼고 다시 돌릴 것")
         moved = []
         for k, blocks in (getattr(sub, "_raw_keyword_dict", None) or {}).items():
             if k.startswith(kind) and not dynainImporter.keywordInterpreted.get(k, False) and blocks:
