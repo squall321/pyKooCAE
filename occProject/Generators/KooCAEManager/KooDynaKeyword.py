@@ -30,10 +30,20 @@ class DynaKeyword():
         # 콤마 자유형식 카드(R16 "free format … separated by commas … can be mixed … within different cards") — 예전엔
         # 고정폭으로 잘라 *MAT_ELASTIC 값이 조용히 0, *DEFINE_CURVE·*MAT_RIGID 는 죽었다. 칸이 둘 이상이고 모두 20칸 이하인
         # 숫자 카드만 콤마로 나눈다(제목 [80]·ID+제목 [10,70] 같은 글 칸은 콤마가 글이다). 값은 칸 폭에 오른쪽으로 맞춘다.
+        if chunk_size == 2 and chunkList[0] <= 20 < chunkList[1] and ',' in curString[:chunkList[0]]:
+            # ID 카드(ID·HEADING [10,70]) 콤마 자유형식 — 첫 콤마가 ID 칸 안에 있을 때만 거기서 나눈다(제목 안 콤마는 지킨다).
+            # 예전엔 '8,auto contact' 를 ID 칸으로 int() 해 traceback 으로 죽었다(v131 리뷰 R1)
+            a, b = curString.replace('\n', '').replace('\r', '').split(',', 1)
+            return [a.strip().rjust(chunkList[0]), b.strip()]
         if chunk_size > 1 and ',' in curString and max(chunkList) <= 20:
             vals = curString.replace('\n', '').replace('\r', '').split(',')
-            vals = (vals + [''] * chunk_size)[:chunk_size]
-            return [v.strip().rjust(w) if v.strip() else '' for v, w in zip(vals, chunkList)]
+            # 칸 수보다 값이 많으면 버리지 않는다 — 칸 수를 줄 길이로 정하는 리더(DATABASE_HISTORY 등)에서 콤마 줄 뒤쪽 값이
+            # 조용히 잘렸다(v131 리뷰 R1). 끝의 빈 값만 버린다
+            while len(vals) > chunk_size and not vals[-1].strip():
+                vals.pop()
+            widths = list(chunkList) + [chunkList[-1]] * max(0, len(vals) - chunk_size)
+            vals = (vals + [''] * chunk_size)[:max(chunk_size, len(vals))]
+            return [v.strip().rjust(w) if v.strip() else '' for v, w in zip(vals, widths)]
 
         start = 0
         for i in range(0,chunk_size):
@@ -5802,6 +5812,26 @@ class ElementBeam(DynaKeyword):
                     stream.write(formatted_elements)
                 stream.write("\n")
 
+def _comma_to_fixed(line, w):
+    """콤마 자유형식 요소 줄을 그 블록의 고정폭(w칸) 줄로 바꾼다. 요소 리더는 칸 수를 줄 길이로 정해(8칸이면 /8), 콤마 줄은 뒤쪽
+    절점이 조용히 잘리거나(육면체가 쐐기로) 짧은 줄이 통째로 버려졌다(v131 리뷰 R1). 칸에 들어가지 않는 값은 고정폭으로 나타낼
+    수 없어 원인을 밝혀 멈춘다. 콤마가 없는 줄은 그대로다."""
+    s = str(line)
+    if "," not in s or s.lstrip().startswith("$"):
+        return line
+    nl = "\n" if s.endswith("\n") else ""
+    vals = [v.strip() for v in s.replace("\n", "").replace("\r", "").split(",")]
+    while vals and not vals[-1]:
+        vals.pop()
+    over = [v for v in vals if len(v) > w]
+    if over:
+        msg = (f"🔴 콤마 요소 줄의 값 '{over[0]}' 이 칸 폭 {w} 를 넘어 고정폭으로 읽을 수 없다 — 이 블록을 고정폭"
+               f"(10자리 ID 면 I10 '%')으로 바꿀 것: {s.strip()[:60]}")
+        print(msg)
+        raise ValueError(msg)
+    return "".join(f"{v:>{w}}" for v in vals) + nl
+
+
 class ElementShell(DynaKeyword):
     def __init__(self):
         super(ElementShell,self).__init__("ELEMENT_SHELL")
@@ -5870,6 +5900,9 @@ class ElementShell(DynaKeyword):
     def parse(self, elementShellKeywords):
         fmts = getattr(self, 'block_formats', [])
         for i in range(len(elementShellKeywords)):
+            # 콤마 줄은 먼저 그 블록 폭의 고정폭 줄로 — 칸 수를 줄 길이로 정하는 아래 판정이 그대로 맞는다(v131 리뷰 R1)
+            elementShellKeywords[i] = [_comma_to_fixed(l, 10 if (i < len(fmts) and fmts[i] == 'i10') else 8)
+                                       for l in elementShellKeywords[i]]
             width = self._detect_field_width(elementShellKeywords[i])
             if i < len(fmts) and fmts[i] == 'i10':
                 width = 10  # % 마커는 폭도 강제 (내용 게이트가 중의적이어도 신뢰)
@@ -6348,7 +6381,11 @@ class ElementSolid(DynaKeyword):
         return parameterList, saw_i10
 
     def parse(self, elementSolidKeywords):
+        fmts0 = getattr(self, 'block_formats', [])
         for i in range(len(elementSolidKeywords)):
+            # 콤마 줄은 먼저 그 블록 폭의 고정폭 줄로 — 아래 판정(2줄 꼴·I10·1줄 길이)이 그대로 맞는다(v131 리뷰 R1)
+            elementSolidKeywords[i] = [_comma_to_fixed(l, 10 if (i < len(fmts0) and fmts0[i] == 'i10') else 8)
+                                       for l in elementSolidKeywords[i]]
             block = elementSolidKeywords[i]
             # *ELEMENT_SOLID (ten nodes format): 첫 데이터 줄이 EID/PID 2필드뿐인 2줄(+분할) 포맷.
             # 필드 폭이 8칸이 아닐 수 있어(예: I10) 폭 감지 + 상태머신 그룹핑으로 파싱.
