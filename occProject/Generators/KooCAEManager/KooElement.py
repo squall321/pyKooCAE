@@ -386,7 +386,7 @@ class FaceElement(Element):
             n4 = self.nodes[3]
             n5 = self.nodes[4]
             n6 = self.nodes[5]
-            self.nodes = [n2,n1,n3,n5,n4,n6]
+            self.nodes = [n2,n1,n3,n4,n6,n5]   # 중간 절점은 새 변(2-1·1-3·3-2)을 따른다 — 예전 [n5,n4,n6] 은 변과 어긋났다(v131)
         elif self.type == "QUAD4":
             n1 = self.nodes[0]
             n2 = self.nodes[1]
@@ -402,7 +402,7 @@ class FaceElement(Element):
             n6 = self.nodes[5]
             n7 = self.nodes[6]
             n8 = self.nodes[7]
-            self.nodes = [n2,n1,n4,n3,n6,n5,n8,n7]          
+            self.nodes = [n2,n1,n4,n3,n5,n8,n7,n6]   # 새 변 2-1·1-4·4-3·3-2 의 중간 절점(예전 [n6,n5,n8,n7] — v131)
 
     def SetMirrorConnectivityXZPlane(self):
         if self.type == "TRI3":
@@ -417,7 +417,7 @@ class FaceElement(Element):
             n4 = self.nodes[3]
             n5 = self.nodes[4]
             n6 = self.nodes[5]
-            self.nodes = [n3,n2,n1,n6,n5,n4]
+            self.nodes = [n3,n2,n1,n5,n4,n6]   # 새 변 3-2·2-1·1-3 의 중간 절점(예전 [n6,n5,n4] — v131)
         elif self.type == "QUAD4":
             n1 = self.nodes[0]
             n2 = self.nodes[1]
@@ -433,7 +433,7 @@ class FaceElement(Element):
             n6 = self.nodes[5]
             n7 = self.nodes[6]
             n8 = self.nodes[7]
-            self.nodes = [n4,n3,n2,n1,n8,n7,n6,n5]
+            self.nodes = [n4,n3,n2,n1,n7,n6,n5,n8]   # 새 변 4-3·3-2·2-1·1-4 의 중간 절점(예전 [n8,n7,n6,n5] — v131)
             
 
     def GetNumSteps(self):
