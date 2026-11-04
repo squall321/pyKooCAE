@@ -704,9 +704,10 @@ class KooDynaImporter():
 
     def _reserve_raw_part_elem_ids(self):
         """원문으로 두는 *PART_* 변형의 PID 와 원문 요소(*ELEMENT_*)의 EID 를 번호 매기기에 넣는다 — KMM 이 새로 만드는 파트
-        (바닥판·충격체·강체 조각)·요소가 그 번호를 받아 겹칠 수 있었다(v131 R1·R2). 파트는 블록마다 첫 카드 2(제목 다음 줄)의
-        PID, 요소는 데이터 줄마다 첫 칸을 본다. 덜 정확해도 큰 번호를 예약할 뿐이라 안전하다(새 번호가 커질 뿐)."""
-        from KooCAEManager.KooDynaKeyword import _whole_int
+        (바닥판·충격체·강체 조각)·요소가 그 번호를 받아 겹칠 수 있었다(v131 R1·R2). 데이터 줄마다 첫 칸을 본다 — 파트는 한
+        블록에 카드 묶음을 되풀이할 수 있고(R16) 변형마다 카드 수가 달라 모든 줄을 본다(첫 묶음만 보면 둘째 파트가 빠졌다 —
+        리뷰 R2). 칸 글자가 순수 정수(1 ~ 2,147,483,647)일 때만 번호로 받는다 — 실수 카드의 '2.5e10' 을 번호로 받아 예약이
+        칸을 넘었다(리뷰 R2). 덜 정확해도 더 큰 번호를 예약할 뿐이라 안전하다."""
         raw = getattr(self.dynaManager, "_raw_keyword_dict", None) or {}
         fmts_all = getattr(self.dynaManager, "_block_formats", None) or {}
         top_pid = top_eid = 0
@@ -718,10 +719,14 @@ class KooDynaImporter():
             for bi, block in enumerate(blocks):
                 fmt = fmts[bi] if bi < len(fmts) else None
                 w = 20 if fmt == "long" else (10 if (fmt == "i10" or is_part) else 8)
-                lines = [str(l) for l in block]
-                for ln in (lines[1:2] if is_part else [l for l in lines if l.strip()]):
-                    v = _whole_int(ln.split(",")[0] if "," in ln else ln[:w])
-                    if v is None:
+                for ln in (str(l) for l in block):
+                    if not ln.strip() or ln.lstrip().startswith("$"):
+                        continue
+                    tok = (ln.split(",")[0] if "," in ln else ln[:w]).strip()
+                    if not re.fullmatch(r"\+?\d+", tok):
+                        continue
+                    v = int(tok)
+                    if not 0 < v <= 2147483647:
                         continue
                     if is_part:
                         top_pid = max(top_pid, v)
