@@ -2121,13 +2121,6 @@ class NodeSetManager:
         nodeSet = NodeSetListGenerate(name, self.maxID)        
         return self.AddNodeSet(nodeSet)
     
-    def CreateNodeSetListGeneratewithPairs(self, name, da1, da2, da3, da4, solver, its, nodeidPairs):
-        self.maxID += 1
-        nodeSet = NodeSetListGenerate(name, self.maxID)
-        nodeSet.SetDynaOption("SET_NODE_LIST", da1, da2, da3, da4, solver, its)
-        for pair in nodeidPairs:
-            nodeSet.AddNodePair(pair[0],pair[1])
-        return self.AddNodeSet(nodeSet)
             
 
     def AddNodeSet(self, nodeSet):
@@ -2304,7 +2297,11 @@ class NodeSetManager:
                     if start != 0 and end != 0:
                         nodeidPairs.append([start,end])
                         
-                self.CreateNodeSetListGeneratewithPairs(name, da1, da2, da3, da4, solver, its, nodeidPairs)
+                # 범위(BiBEG~BiEND) 안에 정의된 절점을 펼쳐 같은 NSID 의 *SET_NODE_LIST 로 둔다(R16: 범위 안의 정의된 ID 를 모두
+                # 더한다 — 뜻이 같다). 예전엔 NSID 를 maxID+1 로 바꾸고, 셋 객체에 쓰기 메서드가 없어 모든 모드가 쓰기에서 죽었다(v131 리뷰 R3)
+                ids = sorted(i for i in nodeManager.nodes if any(a <= i <= b for a, b in nodeidPairs))
+                print(f"  SET_NODE_LIST_GENERATE {nsid}: 범위 {len(nodeidPairs)}개 안의 절점 {len(ids)}개를 *SET_NODE_LIST 로 쓴다")
+                self.CreateNodeSetwithNodesNodeSetID(nsid, name, da1, da2, da3, da4, solver, its, nodeManager.FindNodesfromIDs(ids))
            
                 
             
