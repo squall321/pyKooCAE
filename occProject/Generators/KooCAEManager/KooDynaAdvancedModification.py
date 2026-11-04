@@ -2065,7 +2065,7 @@ class KooDynaAdvancedModification:
         node_stream = StringIO()
         self.dynaImporter.nodeManager.WriteStreamDynaKeyword(node_stream, 0)
         with open(curPath, "w") as f:
-            f.write("*KEYWORD\n")
+            f.write(self.dynaImporter.GetKeywordLine())   # 원본 옵션(I10=Y 등) 보존 — 예전엔 '*KEYWORD' 로 고정했다(v131 M3)
             f.write(cached_pre)
             f.write(node_stream.getvalue())
             f.write(cached_post)
@@ -5337,7 +5337,7 @@ class KooDynaAdvancedModification:
                 curPath = filePath + modifiedPath + ".k"
                 
                 with open(curPath, "w") as f:
-                    f.write("*Keyword\n")
+                    f.write(self.dynaImporter.GetKeywordLine())   # 원본 *KEYWORD 줄(옵션 포함) — 예전엔 '*Keyword' 로 고정했다(v131 M3)
                     f.write(self.dynaImporter.WriteStreamDynaKeyword())
                     f.write("*End\n")
                     
@@ -6493,7 +6493,7 @@ class KooDynaAdvancedModification:
                 modifiedKey = f"_DimensionalTolerance_{i}.k"
                 curPath = filePath + modifiedKey 
                 with open(curPath, "w") as f:
-                    f.write("*Keyword\n")
+                    f.write(self.dynaImporter.GetKeywordLine())   # 원본 *KEYWORD 줄(옵션 포함) — 예전엔 '*Keyword' 로 고정했다(v131 M3)
                     f.write(self.dynaImporter.WriteStreamDynaKeyword())
                     f.write("*End\n")
 
@@ -6594,7 +6594,7 @@ class KooDynaAdvancedModification:
                 modifiedKey = f"_DimensionalTolerance_{i}.k"
                 curPath = filePath + modifiedKey 
                 with open(curPath, "w") as f:
-                    f.write("*Keyword\n")
+                    f.write(self.dynaImporter.GetKeywordLine())   # 원본 *KEYWORD 줄(옵션 포함) — 예전엔 '*Keyword' 로 고정했다(v131 M3)
                     f.write(self.dynaImporter.WriteStreamDynaKeyword())
                     f.write("*End\n")
             
@@ -6726,7 +6726,7 @@ class KooDynaAdvancedModification:
                 modifiedKey = f"_DimensionalTolerance_{i}.k"
                 curPath = filePath + modifiedKey
                 with open(curPath, "w") as f:
-                    f.write("*Keyword\n")
+                    f.write(self.dynaImporter.GetKeywordLine())   # 원본 *KEYWORD 줄(옵션 포함) — 예전엔 '*Keyword' 로 고정했다(v131 M3)
                     f.write(self.dynaImporter.WriteStreamDynaKeyword())
                     f.write("*End\n")
                 initStressIDList = [initStress.id for initStress in initList]
@@ -7004,14 +7004,14 @@ class KooDynaAdvancedModification:
                 node_stream = StringIO()
                 self.dynaImporter.nodeManager.WriteStreamDynaKeyword(node_stream, 0)
                 with open(curPath, "w") as f:
-                    f.write("*KEYWORD\n")
+                    f.write(self.dynaImporter.GetKeywordLine())   # 원본 *KEYWORD 줄(옵션 포함, v131 M3)
                     f.write(cached_pre)
                     f.write(node_stream.getvalue())
                     f.write(cached_post)
                     f.write("*END\n")
             else:
                 with open(curPath, "w") as f:
-                    f.write("*Keyword\n")
+                    f.write(self.dynaImporter.GetKeywordLine())   # 원본 *KEYWORD 줄(옵션 포함) — 예전엔 '*Keyword' 로 고정했다(v131 M3)
                     f.write(self.dynaImporter.WriteStreamDynaKeyword())
                     f.write("*End\n")
             jsonDict[i] = {}

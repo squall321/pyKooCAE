@@ -75,7 +75,7 @@ def merge_k_file(dynaImporter, cur_dir, input_filename, option):
 
     # 출력
     with open(output_path, 'w') as f:
-        f.write("*KEYWORD\n")
+        f.write(dynaImporter.GetKeywordLine())   # 원본 *KEYWORD 줄(옵션 포함) — 예전엔 '*KEYWORD' 로 고정했다(v131 M3)
         # 매니저 내용 (이미 인라인된 일반 include 포함)
         f.write(dynaImporter.WriteStreamDynaKeyword())
 

@@ -3287,7 +3287,7 @@ class KooMeshModifier(KooSimulationGenerator):
             sys.exit(1)
         outputDir = os.path.dirname(filePath)
         with open(filePath, "w") as f:
-            f.write("*KEYWORD\n")
+            f.write(self.dynaImporter.GetKeywordLine())   # 원본 *KEYWORD 줄(I10=Y·메모리 옵션 등) — 예전엔 '*KEYWORD' 로 고정해 옵션이 빠졌다(v131 M3)
             f.write(self.dynaImporter.WriteStreamDynaKeyword())
 
             # IGA Include 문 추가 (FEM_TO_IGA 모드에서 생성된 경우)
