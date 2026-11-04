@@ -315,7 +315,7 @@ def _merge_managers(target_importer, new_importer, off=None):
 
 
 # 기준 덱 설정을 쓰므로 옮기지 않아도 되는 것(알리기만 한다). *PARAMETER 는 읽을 때 값을 이미 넣었다
-_SETTINGS_PREFIX = ("CONTROL_", "DATABASE_", "TITLE", "PARAMETER", "DAMPING_GLOBAL")
+_SETTINGS_PREFIX = ("CONTROL_", "DATABASE_", "TITLE", "PARAMETER", "DAMPING_GLOBAL", "INCLUDE_PATH")
 _SKIP = {"_INCLUDE_PASSTHROUGH", "INCLUDE", "KEYWORD", "END"}
 # 해석은 하지만 병합하지 않는 것 — 정수로 지닌 PID·NSID·NID·SSID 를 밀 수 없어 합치면 기준 덱 파트·셋을 가리킨다
 _NOT_MERGED_PREFIX = ("LOAD_", "INITIAL_", "CONSTRAINED_", "DAMPING_", "RIGIDWALL_", "INTERFACE_", "DEFORMABLE_TO_RIGID",
@@ -402,7 +402,7 @@ def _report_unmerged(new_importer):
         counts.setdefault(k, 0)
     lost, settings = [], []
     for kw, n in counts.items():
-        if kw in _SKIP or kw.startswith("INCLUDE"):
+        if kw in _SKIP:   # *INCLUDE 는 읽을 때 펼쳤다. *INCLUDE_TRANSFORM 등 변형은 원문으로 남아 옮기지 못한다 — 예전엔 건너뛰어 조용히 빠졌다(리뷰 R3)
             continue
         if kw.startswith(_SETTINGS_PREFIX):
             settings.append((kw, n))
