@@ -2711,21 +2711,23 @@ class KooDynaAdvancedModification:
                         segsA, centersA, normalsA, treeA = _get_part_surface(pidA)
                         segsB, centersB, normalsB, treeB = _get_part_surface(pidB)
 
+                        # 세그먼트 번호는 si — 예전엔 i 라 바깥 각도 루프의 i 를 덮어 runids[i] 가 틀렸다(여러 각도가 Run 폴더
+                        # 하나에 겹쳐 쓰여 나머지가 rc 0 으로 사라짐 — v131 리뷰 R8, v130 부터)
                         if treeB and centersA:
-                            for i, seg in enumerate(segsA):
-                                dists, idxs = treeB.query(centersA[i], k=1)
+                            for si, seg in enumerate(segsA):
+                                dists, idxs = treeB.query(centersA[si], k=1)
                                 if dists < rc_tolerance:
                                     j = int(idxs)
-                                    if are_segments_facing(normalsA[i], normalsB[j], rc_normal_angle):
+                                    if are_segments_facing(normalsA[si], normalsB[j], rc_normal_angle):
                                         tied_interface_segments.add(frozenset(seg))
                                         tied_interface_segments.add(frozenset(segsB[j]))
 
                         if treeA and centersB:
-                            for i, seg in enumerate(segsB):
-                                dists, idxs = treeA.query(centersB[i], k=1)
+                            for si, seg in enumerate(segsB):
+                                dists, idxs = treeA.query(centersB[si], k=1)
                                 if dists < rc_tolerance:
                                     j = int(idxs)
-                                    if are_segments_facing(normalsB[i], normalsA[j], rc_normal_angle):
+                                    if are_segments_facing(normalsB[si], normalsA[j], rc_normal_angle):
                                         tied_interface_segments.add(frozenset(seg))
                                         tied_interface_segments.add(frozenset(segsA[j]))
 
