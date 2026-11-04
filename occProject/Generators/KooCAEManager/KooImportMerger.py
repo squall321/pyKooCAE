@@ -62,7 +62,8 @@ def import_merge_k(simGenerator, option):
 
     # 4. MAT/EOS/HG: 기존에 없는 ID만 추가 (병합)
     n_added_mat = _merge_materials(dynaImporter.matManager, new_importer.matManager,
-                                   _raw_ids(dynaImporter, "MAT_", ("MAT_ADD_", "MAT_THERMAL_", "MAT_NONLOCAL")),
+                                   _raw_ids(dynaImporter, "MAT_", ("MAT_ADD_", "MAT_THERMAL_", "MAT_NONLOCAL",
+                                                                   "MAT_WINFRITH_CONCRETE_REINFORCEMENT")),
                                    _raw_ids(dynaImporter, "EOS_"), _used_mids(new_importer))
     print(f"[IMPORT_MERGE_K] MAT/EOS 병합: 신규 추가 {n_added_mat}개 (기존 ID는 보존)")
 

@@ -764,7 +764,8 @@ class KooDynaImporter():
         for kw, blocks in raw.items():
             if kw.startswith("SECTION_"):
                 fam = "SECTION_"
-            elif kw.startswith("MAT_") and not kw.startswith(("MAT_ADD_", "MAT_THERMAL_", "MAT_NONLOCAL")):
+            elif kw.startswith("MAT_") and not kw.startswith(("MAT_ADD_", "MAT_THERMAL_", "MAT_NONLOCAL",
+                                                               "MAT_WINFRITH_CONCRETE_REINFORCEMENT")):   # 첫 칸이 EID1(리뷰 R6)
                 fam = "MAT_"
             else:
                 continue
