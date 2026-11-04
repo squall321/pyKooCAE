@@ -757,14 +757,14 @@ class KooDynaImporter():
         """KMM 이 해석하지 않는 원문 *SECTION_*·*MAT_* 의 번호를 단면·재질 매니저에 예약한다 — DROP 바닥판 등 KMM 이 새로 만드는
         단면·재질이 원문 *SECTION_DISCRETE·*MAT_SPRING_ELASTIC 의 번호를 받아 같은 번호 단면·재질이 둘 생겼다(v131 리뷰 R4, 기존
         결함). PID·EID 예약처럼 데이터 줄 첫 칸의 순수 정수를 본다(_TITLE 의 제목 줄은 뺀다 — 덜 정확해도 더 큰 번호를 예약할
-        뿐이다). *MAT_ADD_*·*MAT_THERMAL_* 은 재질 MID 와 따로 매기는 번호라 뺀다. long('+') 블록은 20칸이다."""
+        뿐이다). *MAT_ADD_*·*MAT_THERMAL_*·*MAT_NONLOCAL 은 재질 MID 와 따로 매기는 번호라 뺀다. long('+') 블록은 20칸이다."""
         raw = getattr(self.dynaManager, "_raw_keyword_dict", None) or {}
         fmts_all = getattr(self.dynaManager, "_block_formats", None) or {}
         tops = {"SECTION_": 0, "MAT_": 0}
         for kw, blocks in raw.items():
             if kw.startswith("SECTION_"):
                 fam = "SECTION_"
-            elif kw.startswith("MAT_") and not kw.startswith(("MAT_ADD_", "MAT_THERMAL_")):
+            elif kw.startswith("MAT_") and not kw.startswith(("MAT_ADD_", "MAT_THERMAL_", "MAT_NONLOCAL")):
                 fam = "MAT_"
             else:
                 continue

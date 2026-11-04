@@ -62,7 +62,8 @@ def import_merge_k(simGenerator, option):
 
     # 4. MAT/EOS/HG: 기존에 없는 ID만 추가 (병합)
     n_added_mat = _merge_materials(dynaImporter.matManager, new_importer.matManager,
-                                   _raw_ids(dynaImporter, "MAT_", ("MAT_ADD_", "MAT_THERMAL_")), _raw_ids(dynaImporter, "EOS_"))
+                                   _raw_ids(dynaImporter, "MAT_", ("MAT_ADD_", "MAT_THERMAL_", "MAT_NONLOCAL")),
+                                   _raw_ids(dynaImporter, "EOS_"), _used_mids(new_importer))
     print(f"[IMPORT_MERGE_K] MAT/EOS 병합: 신규 추가 {n_added_mat}개 (기존 ID는 보존)")
 
     # 5. 나머지 매니저 병합(번호를 민 것만 — _merge_managers)
@@ -270,12 +271,13 @@ def _rekey_all_managers(new_importer):
     # MaterialManager는 OffsetID 안 했으므로 (MID 보존) 재구성 불필요
 
 
-def _merge_materials(target_mat_mgr, new_mat_mgr, base_raw_mids=frozenset(), base_raw_eos=frozenset()):
+def _merge_materials(target_mat_mgr, new_mat_mgr, base_raw_mids=frozenset(), base_raw_eos=frozenset(), used_mids=None):
     """재질은 공통 DB(MID 보존) — 기준 덱에 없는 MID 만 더한다. 같은 MID 인데 내용이 다르거나 기준 덱 원문 재질의 MID 와
     겹치면 기준 덱 것을 남기고 번호 충돌(🔴)로 모은다 — 예전엔 알림 없이 가져온 재질을 버려 가져온 파트가 기준 덱 재질을
     썼다. *MAT_ADD_EROSION·*MAT_ADD_PZELECTRIC 은 MID 에 붙으므로 가져와 더한 재질의 것만 더한다 — 예전엔 기준 덱의 같은
     MID 재질에 붙어 기준 파트의 거동까지 바꿨다(v131 리뷰 R3). 같은 재질을 함께 쓰는데 붙는 카드가 한쪽 덱에만 있어도 알린다
-    — 기준 덱에만 있으면 가져온 파트에도 붙는다(리뷰 R4). EOS 는 EOSID 로 같은 규칙이다(기준 덱 원문 EOS 번호 포함)."""
+    — 기준 덱에만 있으면 가져온 파트에도 붙는다(리뷰 R4). 붙는 카드 충돌은 가져온 파트가 그 MID 를 쓸 때만 알린다(used_mids —
+    같은 재질 인클루드를 함께 쓰는 덱에서 거짓 rc 3 이었다, 리뷰 R5). EOS 는 EOSID 로 같은 규칙이다(기준 덱 원문 EOS 번호 포함)."""
     n_added, added = 0, set()
     for mid, mat in new_mat_mgr.materials.items():
         cur = target_mat_mgr.materials.get(mid)
@@ -300,10 +302,11 @@ def _merge_materials(target_mat_mgr, new_mat_mgr, base_raw_mids=frozenset(), bas
             if mid in added and mid not in tgt:
                 tgt[mid] = card
                 n_added += 1
-            elif not (mid in tgt and _same_card(tgt[mid], card)):
+            elif not (mid in tgt and _same_card(tgt[mid], card)) and (used_mids is None or mid in used_mids):
                 _CONFLICTS.append(f"{label} MID {mid}(기준 덱 재질에 붙지 않게 옮기지 않음)")
         for mid in tgt:
-            if mid in new_mat_mgr.materials and mid not in added and mid not in getattr(new_mat_mgr, attr, {}):
+            if (mid in new_mat_mgr.materials and mid not in added and mid not in getattr(new_mat_mgr, attr, {})
+                    and (used_mids is None or mid in used_mids)):
                 _CONFLICTS.append(f"{label} MID {mid}(기준 덱에만 있다 — 같은 재질을 쓰는 가져온 파트에도 붙는다)")
     target_mat_mgr.maxid = max(getattr(target_mat_mgr, 'maxid', 0),
                                 getattr(new_mat_mgr, 'maxid', 0))
@@ -316,7 +319,8 @@ def _merge_managers(target_importer, new_importer, off=None):
     Overwrite 로 합쳐 같은 번호의 기준 덱 정의·설정을 덮었고, 구속·감쇠·강체벽은 기준 덱 파트·셋을 가리켰다(v131 M2).
     옮기지 않은 것은 _report_unmerged 가 알린다."""
     off = off or {}
-    _merge_defines(target_importer.defineManager, new_importer.defineManager, _raw_ids(target_importer, "DEFINE_COORDINATE_"))
+    _merge_defines(target_importer.defineManager, new_importer.defineManager,
+                   _raw_ids(target_importer, "DEFINE_COORDINATE_", all_lines=True))
     _merge_boundaries(target_importer.boundaryNodeManager, new_importer.boundaryNodeManager, off)
     _merge_hourglasses(target_importer.additionalManager, new_importer.additionalManager)
     pairs = [
@@ -402,13 +406,30 @@ _MAT_SKIP = {"id", "name", "dynaKeywordString", "nastranKeywordString", "ansysAP
 
 def _mat_values(obj):
     """해석한 재질·EOS·*MAT_ADD_* 의 값(전 정밀도) — 다시 쓴 카드 글은 유효숫자 4자리라 E 210000·210040 을 같다고 봤다(v131
-    리뷰 R4). 원문 카드에만 있는 칸(*MAT_ADD_EROSION 의 옛 GISSMO 카드 6~)은 글로 함께 본다."""
+    리뷰 R4). 속성에 안 담기는 원문 칸은 칸 값으로 함께 본다(카드 3 의 DCRIT 다름을 놓쳤다 — 리뷰 R5)."""
     v = {k: (tuple(x) if isinstance(x, list) else x) for k, x in vars(obj).items()
          if k not in _MAT_SKIP and isinstance(x, (int, float, str, bool, list, tuple, type(None)))}
     raw = getattr(obj, "raw_cards", None)
-    if raw:
-        v["_raw_extra"] = tuple(" ".join(str(l).split()) for l in raw[5:])
+    if raw:   # 속성에 안 담기는 원문 칸 — *MAT_ADD_EROSION 카드 3 의 2~7칸(DMGTYP…FADEXP)과 카드 6~(옛 GISSMO). 리뷰 R5
+        c3 = (list(_norm_card(raw[2])) + [""] * 8)[1:7] if len(raw) > 2 else []
+        v["_raw_uncaptured"] = (tuple(c3), tuple(_norm_card(l) for l in raw[5:]))
     return v
+
+
+def _norm_card(line):
+    """원문 카드 줄 → 칸 값(10칸 또는 콤마). 숫자는 수로(표기 차이 '0.1'·'0.100' 은 같다), 빈 칸은 '' 로 두고 끝의 빈 칸은 뗀다."""
+    s = str(line).replace("\n", "").replace("\r", "")
+    cells = s.split(",") if "," in s else [s[k:k + 10] for k in range(0, len(s), 10)]
+    out = []
+    for c in cells:
+        c = c.strip()
+        try:
+            out.append(float(c.replace("D", "E").replace("d", "E")) if c else "")
+        except ValueError:
+            out.append(c)
+    while out and out[-1] == "":
+        out.pop()
+    return tuple(out)
 
 
 def _same_card(a, b):
@@ -535,18 +556,30 @@ def _raw_first_field_max(importer, prefix):
     return top
 
 
-def _raw_ids(importer, prefix, skip=()):
+def _raw_ids(importer, prefix, skip=(), all_lines=False):
     """기준 덱 원문 블록(prefix 로 시작, skip 으로 시작하는 것은 뺀다)의 번호 — 카드 1 첫 칸(_TITLE 이면 제목 다음 줄).
     *MAT_THERMAL_* 의 TMID 는 재질 MID 와 따로 매기는 번호라(R16) 재질에서 뺀다 — 예전엔 같은 번호의 구조 재질을 충돌로 봐
-    가져온 재질을 버렸다(리뷰 R4)."""
+    가져온 재질을 버렸다(리뷰 R4). all_lines 면 블록의 모든 정의 줄을 본다 — *DEFINE_COORDINATE_NODES 처럼 한 블록에 정의를
+    되풀이하는 키워드(리뷰 R5)."""
     ids = set()
     for kw, lines, w in _raw_blocks(importer, prefix):
         if skip and kw.startswith(tuple(skip)):
             continue
         idx = 1 if kw.endswith("_TITLE") else 0
-        if len(lines) > idx:
+        for ln in (lines[idx:] if all_lines else lines[idx:idx + 1]):
             try:
-                ids.add(int(round(float(_first_field(lines[idx], w)))))
+                ids.add(int(round(float(_first_field(ln, w)))))
             except (ValueError, OverflowError):
                 pass
     return ids
+
+
+def _used_mids(importer):
+    """가져온 덱 파트가 쓰는 MID(복합재 층 재질 포함)."""
+    pm = importer.partManager
+    used = set()
+    for p in list(pm.parts.values()) + list(getattr(pm, 'partsRigid', {}).values()):
+        if getattr(p, 'mid', 0):
+            used.add(p.mid)
+        used.update(m for m in (getattr(p, 'midi', None) or []) if m)
+    return used
