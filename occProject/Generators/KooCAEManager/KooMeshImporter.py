@@ -603,6 +603,7 @@ class KooDynaImporter():
         self._reserve_raw_set_ids()
         self._reserve_raw_part_elem_ids()
         self._reserve_raw_sec_mat_ids()
+        self._reserve_raw_contact_ids()
         self._check_long_blocks()
         print("Import Completed")
         
@@ -788,6 +789,27 @@ class KooDynaImporter():
             self.sectionManager.maxid = tops["SECTION_"]
         if tops["MAT_"] > (getattr(self.matManager, "maxid", 0) or 0):
             self.matManager.maxid = tops["MAT_"]
+
+    def _reserve_raw_contact_ids(self):
+        """KMM 이 해석하지 않는 원문 *CONTACT_…_ID 의 CID 를 접촉 매니저에 예약한다 — KMM 이 새로 만드는 접촉(DROP 바닥판·DWI 벽·
+        임팩터)이 해석한 접촉 번호 다음만 받아, 원문 *CONTACT_TIED_SURFACE_TO_SURFACE_THERMAL_ID 3 이 있는 실제 덱에서 바닥판 접촉도
+        3 이 되어 같은 번호 접촉이 둘 생겼다(v131 리뷰 R8, v130 부터). DTI 가 그 번호의 KMM 접촉을 지울 때 원문 접촉을 가리키는
+        사용자 D2R 까지 지웠다. 블록마다 ID 카드(첫 데이터 줄)의 첫 칸만 본다. long('+') 블록은 20칸이다."""
+        raw = getattr(self.dynaManager, "_raw_keyword_dict", None) or {}
+        fmts_all = getattr(self.dynaManager, "_block_formats", None) or {}
+        top = 0
+        for kw, blocks in raw.items():
+            if not kw.startswith("CONTACT_") or self.keywordInterpreted.get(kw, False) or not {"ID", "TITLE"} & set(kw.split("_")):
+                continue
+            fmts = fmts_all.get(kw, [])
+            for bi, block in enumerate(blocks):
+                w = 20 if (bi < len(fmts) and fmts[bi] == "long") else 10
+                lines = [str(l) for l in block if str(l).strip() and not str(l).lstrip().startswith("$")]
+                tok = ((lines[0].split(",")[0] if "," in lines[0] else lines[0][:w]).strip()) if lines else ""
+                if re.fullmatch(r"\+?\d+", tok) and 0 < int(tok) <= 2147483647:
+                    top = max(top, int(tok))
+        if top > (getattr(self.contactManager, "maxid", 0) or 0):
+            self.contactManager.maxid = top
 
     def _reserve_raw_set_ids(self):
         """KMM 이 해석하지 않는 *SET_* 원문 블록(GENERAL·ADD 등)의 번호를 셋 매니저에 예약한다 — KMM 이 새로 만드는 셋
