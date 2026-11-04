@@ -544,7 +544,8 @@ class KooSectionManager():
                 # 밖의 elform — 재구성 불가 → card1 포함 원문 그대로 보존(verbatim round-trip).
                 # (기존: card2 소실 + CST '1.0'→0 재작성 → LS-DYNA Error 10246)
                 sec.raw_keyword = "*SECTION_BEAM"
-                sec.raw_cards = ["".join(str(v) for v in line).rstrip("\n") for line in dynaSection[1:]]
+                from KooCAEManager.KooDynaKeyword import _join_card   # 콤마 줄의 빈 칸이 사라져 값이 당겨지지 않게(v131 말뭉치 W7)
+                sec.raw_cards = [_join_card(line) for line in dynaSection[1:]]
             elif sec.elform == 1 or sec.elform == 11:
                 secondLine = dynaSection[2]
                 for opt in secondLine:
@@ -575,7 +576,8 @@ class KooSectionManager():
             if _cards and (self._beam_card2_is_label(_cards[0]) or sec.elform not in (1, 11)):
                 # 표준단면 등 — 제목줄 제외 card1 부터 원문 보존(verbatim round-trip)
                 sec.raw_keyword = "*SECTION_BEAM_TITLE"
-                sec.raw_cards = ["".join(str(v) for v in line).rstrip("\n") for line in dynaSection[2:]]
+                from KooCAEManager.KooDynaKeyword import _join_card   # 콤마 줄의 빈 칸이 사라져 값이 당겨지지 않게(v131 말뭉치 W7)
+                sec.raw_cards = [_join_card(line) for line in dynaSection[2:]]
             elif sec.elform == 1 or sec.elform == 11:
                 secondLine = dynaSection[3]
                 for opt in secondLine:

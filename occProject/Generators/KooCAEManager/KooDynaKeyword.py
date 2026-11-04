@@ -43,7 +43,9 @@ class DynaKeyword():
                 vals.pop()
             widths = list(chunkList) + [chunkList[-1]] * max(0, len(vals) - chunk_size)
             vals = (vals + [''] * chunk_size)[:max(chunk_size, len(vals))]
-            return [v.strip().rjust(w) if v.strip() else '' for v, w in zip(vals, widths)]
+            # 빈 값은 고정폭 줄처럼 공백 칸(w 자)이다 — '' 로 두면 칸을 이어 원문 카드를 다시 만드는 곳(*MAT_ADD_EROSION·
+            # SECTION_BEAM raw_cards)에서 빈 칸이 사라져 뒤 값이 앞 칸으로 당겨졌다(v131 말뭉치 W7: ',,,0.3' 의 MXEPS 가 MNPRES)
+            return [v.strip().rjust(w) if v.strip() else ' ' * w for v, w in zip(vals, widths)]
 
         start = 0
         for i in range(0,chunk_size):
@@ -88,6 +90,32 @@ def _id_card_pairs(block, keyword):
     if len(lines) % 2:
         print(f"  Warning: *{keyword} 블록의 마지막 줄 '{lines[-1].strip()[:40]}' 은 짝(카드 1)이 없어 읽지 않는다(덱 확인)")
     return [(lines[k], lines[k + 1]) for k in range(0, len(lines) - 1, 2)]
+
+
+def _join_card(fields, w=10, strict=True):
+    """parse_whole 칸들을 원문 고정폭 줄로 다시 잇는다 — 원문 카드를 그대로 지니는 곳(SECTION_BEAM·*MAT_ADD_EROSION raw_cards)이
+    쓴다. 고정폭 줄에서 온 칸은 그대로라 예전과 같다. 콤마 줄에서 온 칸이 w 자를 넘으면(긴 실수) 덱 값에 가장 가까운 10칸 표기로
+    줄인다 — 넘친 칸은 뒤 칸을 밀어 LS-DYNA 가 다른 칸으로 읽는다(v131 말뭉치 W7). 줄일 수 없는 칸(긴 정수·글)은 strict 면
+    🔴 로 멈추고, 덤프처럼 해석에 쓰지 않는 출력은 그대로 둔다."""
+    out = []
+    for f in fields:
+        s = str(f).replace("\n", "").replace("\r", "")
+        t = s.strip()
+        if len(s) > w and len(t) > w:
+            try:
+                if w != 10 or re.fullmatch(r"[+-]?\d+", t):
+                    raise ValueError(t)
+                from KooCAEManager.KooDefine import _real10
+                s = _real10(float(t.replace("D", "E").replace("d", "E")))
+            except ValueError:
+                if strict:
+                    msg = f"🔴 콤마 카드의 값 '{t}' 이 칸 폭 {w} 를 넘어 고정폭 원문 카드로 옮길 수 없다 — 그 카드를 고정폭으로 고칠 것"
+                    print(msg)
+                    raise ValueError(msg)
+        elif len(s) > w:
+            s = t.rjust(w)
+        out.append(s)
+    return "".join(out).rstrip("\n")
 
 
 class BoundaryPrescribedMotionNode(DynaKeyword):
@@ -10688,7 +10716,7 @@ class SectionBeam(DynaKeyword):
             stream.write(formatted_elements)
             # card2 이후: 원본 슬라이스 그대로 재출력 (표준단면 라벨 등 byte 보존)
             for j in range(1, len(parameter)):
-                stream.write("".join(str(v) for v in parameter[j]).rstrip("\n"))
+                stream.write(_join_card(parameter[j], strict=False))   # 콤마 줄의 빈 칸·긴 값도 칸을 지킨다(v131 말뭉치 W7)
                 stream.write("\n")
 
 class SectionBeamTitle(DynaKeyword):
@@ -10743,7 +10771,7 @@ class SectionBeamTitle(DynaKeyword):
             stream.write(formatted_elements)
             # card2 이후: 원본 슬라이스 그대로 재출력 (표준단면 라벨 등 byte 보존)
             for j in range(2, len(parameter)):
-                stream.write("".join(str(v) for v in parameter[j]).rstrip("\n"))
+                stream.write(_join_card(parameter[j], strict=False))   # 콤마 줄의 빈 칸·긴 값도 칸을 지킨다(v131 말뭉치 W7)
                 stream.write("\n")
 
 def _contact_cards(kw, parameter, need):

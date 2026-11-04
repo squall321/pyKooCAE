@@ -20,6 +20,7 @@
   좌표계를 출력에 쓰기 시작하며 TRANSFORM(회전·이동·대칭·확대)이 좌표계 점을 옮기지 않던 것도 이 시험을 쓰다 막았다.
   같은 번호 같은 내용의 재질을 IMPORT_MERGE_K 가 충돌로 본 것(재질 비교 글이 늘 비었다)과, 첫 요소가 삼각형인 두께 블록에서 뒤
   사각형의 N4 가 잘리던 것은 이 시험을 쓰다 찾았다.
+  콤마 원문 카드(*MAT_ADD_EROSION·SECTION_BEAM)의 빈 칸이 사라져 값이 앞 칸으로 당겨지던 것은 말뭉치 W7 이 찾았다.
 """
 import contextlib
 import io
@@ -221,6 +222,15 @@ def r1():
     e = elements(read(d, "model_trans.k"))
     check("R1 *KEYWORD I10=Y 덱 *ELEMENT_SOLID 의 콤마 줄: 버려지지 않는다(요소 2 = 절점 9~16)",
           rc == 0 and e.get(1) == [(1, list(range(1, 9)))] and e.get(2) == [(1, list(range(9, 17)))], f"rc={rc} {e} " + log[-300:])
+
+    # ── 콤마 원문 카드의 빈 칸·긴 값(말뭉치 W7 에서 찾음): 원문 카드를 칸 이어 다시 만들 때 빈 칸이 사라져 값이 당겨졌다 ──
+    d, rc, log = run("comma_raw", {"model.k": cube_deck("*MAT_ADD_EROSION\n1,,,,,0.000123456789,1.0,1.0\n,,,0.3\n")})
+    rows = [r for _, rr in kw_blocks(read(d, "model_trans.k"), "*MAT_ADD_EROSION") for r in rr]
+    v1 = try_(lambda: floats(rows[0], 10), [])
+    v2 = try_(lambda: floats(rows[1], 10), [])
+    check("R1 콤마 *MAT_ADD_EROSION '1,,,,,0.000123456789,1.0,1.0 / ,,,0.3': VOLEPS·NUMFIP·NCS·MXEPS 가 제 칸(빈 칸이 사라지지 않는다)",
+          rc == 0 and len(v1) >= 8 and v1[0] == 1 and v1[1:5] == [0, 0, 0, 0] and near(v1[5], 1.23457e-4, 1e-5)
+          and v1[6:8] == [1.0, 1.0] and len(v2) >= 4 and v2[:4] == [0, 0, 0, 0.3], f"rc={rc} {rows}")
 
     # ── long('+') 사용자 단면 카드: 20칸 그대로 나가지 않는다(R1-2) ───────────────────────────────────────
     def l20(*v):

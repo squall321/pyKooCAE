@@ -1272,7 +1272,8 @@ class KooMaterialManager():
             if forcedid != 0:
                 mid = forcedid
             mat = self.CreateAddErosionMaterial(mid, EXCL, MXPRES, MNEPS, EFFEPS, VOLEPS, NUMFIP, NCS,MNPRES, SIGP1, SIGVM, MXEPS, EPSSH, SIGTH, IMPULSE, FAILTM, IDAM, LCREGD, LCFLD, NSFF, EPSTHIN, ENGCRT, RADCRT, LCEPS12, LCEPS13, LCEPSMX, DTEFLT, VOLFRAC, MXTMP, DTMIN)                    
-            mat.raw_cards = ["".join(str(v) for v in line).rstrip("\n") for line in curDynaMaterial]
+            from KooCAEManager.KooDynaKeyword import _join_card   # 콤마 줄의 빈 칸이 사라져 값이 당겨지지 않게(v131 말뭉치 W7)
+            mat.raw_cards = [_join_card(line) for line in curDynaMaterial]
         elif dynaMaterial[0] == "*MAT_ADD_PZELECTRIC":
             curDynaMaterial = dynaMaterial[1]
             firstLine = curDynaMaterial[0]
