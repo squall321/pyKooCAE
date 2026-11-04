@@ -61,7 +61,8 @@ def import_merge_k(simGenerator, option):
     _apply_offsets(new_importer, offsets)
 
     # 4. MAT/EOS/HG: 기존에 없는 ID만 추가 (병합)
-    n_added_mat = _merge_materials(dynaImporter.matManager, new_importer.matManager, _raw_mids(dynaImporter))
+    n_added_mat = _merge_materials(dynaImporter.matManager, new_importer.matManager,
+                                   _raw_ids(dynaImporter, "MAT_", ("MAT_ADD_", "MAT_THERMAL_")), _raw_ids(dynaImporter, "EOS_"))
     print(f"[IMPORT_MERGE_K] MAT/EOS 병합: 신규 추가 {n_added_mat}개 (기존 ID는 보존)")
 
     # 5. 나머지 매니저 병합(번호를 민 것만 — _merge_managers)
@@ -269,7 +270,7 @@ def _rekey_all_managers(new_importer):
     # MaterialManager는 OffsetID 안 했으므로 (MID 보존) 재구성 불필요
 
 
-def _merge_materials(target_mat_mgr, new_mat_mgr, base_raw_mids=frozenset()):
+def _merge_materials(target_mat_mgr, new_mat_mgr, base_raw_mids=frozenset(), base_raw_eos=frozenset()):
     """재질은 공통 DB(MID 보존) — 기준 덱에 없는 MID 만 더한다. 같은 MID 인데 내용이 다르거나 기준 덱 원문 재질의 MID 와
     겹치면 기준 덱 것을 남기고 번호 충돌(🔴)로 모은다 — 예전엔 알림 없이 가져온 재질을 버려 가져온 파트가 기준 덱 재질을
     썼다. *MAT_ADD_EROSION·*MAT_ADD_PZELECTRIC 은 MID 에 붙으므로 가져와 더한 재질의 것만 더한다 — 예전엔 기준 덱의 같은
@@ -285,11 +286,11 @@ def _merge_materials(target_mat_mgr, new_mat_mgr, base_raw_mids=frozenset()):
             _CONFLICTS.append(f"재질 MID {mid}" + ("(기준 덱 원문 재질)" if cur is None else ""))
     for eid, eos in getattr(new_mat_mgr, 'eos', {}).items():
         cur = getattr(target_mat_mgr, 'eos', {}).get(eid)
-        if cur is None:
+        if cur is None and eid not in base_raw_eos:
             target_mat_mgr.eos[eid] = eos
             n_added += 1
-        elif not _same_card(cur, eos):
-            _CONFLICTS.append(f"EOS {eid}")
+        elif cur is None or not _same_card(cur, eos):
+            _CONFLICTS.append(f"EOS {eid}" + ("(기준 덱 원문 EOS)" if cur is None else ""))
     for attr, label in (('addErosions', 'MAT_ADD_EROSION'), ('addPZElectric', 'MAT_ADD_PZELECTRIC')):
         tgt = getattr(target_mat_mgr, attr, None)
         if tgt is None:
@@ -311,7 +312,7 @@ def _merge_managers(target_importer, new_importer, off=None):
     Overwrite 로 합쳐 같은 번호의 기준 덱 정의·설정을 덮었고, 구속·감쇠·강체벽은 기준 덱 파트·셋을 가리켰다(v131 M2).
     옮기지 않은 것은 _report_unmerged 가 알린다."""
     off = off or {}
-    _merge_defines(target_importer.defineManager, new_importer.defineManager)
+    _merge_defines(target_importer.defineManager, new_importer.defineManager, _raw_ids(target_importer, "DEFINE_COORDINATE_"))
     _merge_boundaries(target_importer.boundaryNodeManager, new_importer.boundaryNodeManager, off)
     _merge_hourglasses(target_importer.additionalManager, new_importer.additionalManager)
     pairs = [
@@ -405,8 +406,9 @@ def _same_card(a, b):
     return ta is not None and ta == tb
 
 
-def _merge_defines(target, new):
-    """곡선·좌표계 — 번호를 보존해 없는 번호만 더한다. 같은 번호·같은 내용은 하나로, 다르면 기준 덱 것을 남기고 알린다."""
+def _merge_defines(target, new, base_raw_cids=frozenset()):
+    """곡선·좌표계 — 번호를 보존해 없는 번호만 더한다. 같은 번호·같은 내용은 하나로, 다르면 기준 덱 것을 남기고 알린다.
+    좌표계는 기준 덱 원문 좌표계(*DEFINE_COORDINATE_NODES 등)의 번호와 겹쳐도 알린다 — 예전엔 같은 CID 가 두 번 나갔다(리뷰 R4)."""
     for key, d in new.defines.items():
         cur = target.defines.get(key)
         if cur is None:
@@ -417,11 +419,11 @@ def _merge_defines(target, new):
             _CONFLICTS.append(f"곡선 LCID {key}")
     for key, c in new.defineCoordinateSystems.items():
         cur = target.defineCoordinateSystems.get(key)
-        if cur is None:
+        if cur is None and key not in base_raw_cids:
             target.defineCoordinateSystems[key] = c
             target.maxcid = max(target.maxcid, getattr(c, 'cid', 0) or 0)
-        elif not _same_card(cur, c):
-            _CONFLICTS.append(f"좌표계 CID {key}")
+        elif cur is None or not _same_card(cur, c):
+            _CONFLICTS.append(f"좌표계 CID {key}" + ("(기준 덱 원문 좌표계)" if cur is None else ""))
 
 
 def _merge_hourglasses(target, new):
@@ -481,37 +483,46 @@ def _report_unmerged(new_importer):
 
 
 def _raw_blocks(importer, prefix):
+    """원문(해석하지 않는) 블록 — (키워드, 데이터 줄, 칸 폭). long('+') 블록은 20칸이다(리뷰 R4: 10칸으로 읽어 번호를 놓쳤다)."""
     raw = getattr(importer.dynaManager, "_raw_keyword_dict", None) or {}
+    fmts_all = getattr(importer.dynaManager, "_block_formats", None) or {}
     interp = getattr(importer, "keywordInterpreted", {}) or {}
     for kw, blocks in raw.items():
         if kw.startswith(prefix) and not interp.get(kw, False):
-            for b in blocks:
-                yield kw, [str(l) for l in b if str(l).strip() and not str(l).lstrip().startswith("$")]
+            fmts = fmts_all.get(kw, [])
+            for bi, b in enumerate(blocks):
+                w = 20 if (bi < len(fmts) and fmts[bi] == "long") else 10
+                yield kw, [str(l) for l in b if str(l).strip() and not str(l).lstrip().startswith("$")], w
+
+
+def _first_field(line, w):
+    return (line.split(",")[0] if "," in line else line[:w]).strip()
 
 
 def _raw_first_field_max(importer, prefix):
     """원문(해석하지 않는) 블록 데이터 줄의 첫 칸 중 순수 정수의 최댓값 — 번호를 넘기 위한 값이라 넉넉해도 된다."""
     import re
     top = 0
-    for kw, lines in _raw_blocks(importer, prefix):
+    for kw, lines, w in _raw_blocks(importer, prefix):
         for ln in lines:
-            tok = (ln.split(",")[0] if "," in ln else ln[:10]).strip()
+            tok = _first_field(ln, w)
             if re.fullmatch(r"\+?\d+", tok) and int(tok) <= 2147483647:
                 top = max(top, int(tok))
     return top
 
 
-def _raw_mids(importer):
-    """기준 덱 원문 재질(*MAT_*, MAT_ADD_* 제외)의 MID — 카드 1 첫 칸(_TITLE 이면 제목 다음 줄)."""
-    mids = set()
-    for kw, lines in _raw_blocks(importer, "MAT_"):
-        if kw.startswith("MAT_ADD_"):
+def _raw_ids(importer, prefix, skip=()):
+    """기준 덱 원문 블록(prefix 로 시작, skip 으로 시작하는 것은 뺀다)의 번호 — 카드 1 첫 칸(_TITLE 이면 제목 다음 줄).
+    *MAT_THERMAL_* 의 TMID 는 재질 MID 와 따로 매기는 번호라(R16) 재질에서 뺀다 — 예전엔 같은 번호의 구조 재질을 충돌로 봐
+    가져온 재질을 버렸다(리뷰 R4)."""
+    ids = set()
+    for kw, lines, w in _raw_blocks(importer, prefix):
+        if skip and kw.startswith(tuple(skip)):
             continue
         idx = 1 if kw.endswith("_TITLE") else 0
         if len(lines) > idx:
-            tok = (lines[idx].split(",")[0] if "," in lines[idx] else lines[idx][:10]).strip()
             try:
-                mids.add(int(round(float(tok))))
+                ids.add(int(round(float(_first_field(lines[idx], w)))))
             except (ValueError, OverflowError):
                 pass
-    return mids
+    return ids
