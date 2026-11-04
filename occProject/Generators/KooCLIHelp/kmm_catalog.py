@@ -217,7 +217,7 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
          K("dt", "실수", "0 (필수로 줄 것)", "d3plot 출력 간격 (키 이름 정확히 dt)"),
          K("DTMIN", "실수", "없음", "CONTROL_TERMINATION DTMIN — dt 붕괴 시 자동 종료 비율"),
          K("DropSurface", "형식별", "Plane,0,0,0,10,10,10", "Plane,Lx,Ly,Lz,Nx,Ny,Nz | PlaneGraded,Lx,Ly,Lz,Nx,Ny,Nz[,외곽층수=5[,비율=1.5]] | RigidWall,0,0,0,0,0,0 | PlanewithRoughness,Lx,Ly,Lz,Nx,Ny,Nz,모드,Rmax,SF1[,SF2]"),
-         K("DeformableToRigid", "True/False", "False", "DEFORMABLE_TO_RIGID_AUTOMATIC 쌍 스위치(SWSET 20 code 2: 접촉력 0→강체 / SWSET 10 code 4: 접촉력 비0→변형체). 바닥판 접촉이 S2S 여야 켜진다(매뉴얼 Remark 1) — ConvertGeneralToSingleSurface=False 면 S2S 로 자동 선택"),
+         K("DeformableToRigid", "True/False", "False", "DEFORMABLE_TO_RIGID_AUTOMATIC 쌍 스위치(SWSET 20 code 2: 접촉력 0→강체 / SWSET 10 code 4: 접촉력 비0→변형체 — 덱 D2R 이 20·10 을 쓰면 비는 번호로 옮긴다). 바닥판 접촉이 S2S 여야 켜진다(매뉴얼 Remark 1) — ConvertGeneralToSingleSurface=False 면 S2S 로 자동 선택"),
          K("D2RTime1/D2RTime2/D2RTime3", "실수", "0 / 1e20 / 0", "전환 검사 시작·종료 시각, 전환 간 최소 간격(TIME3, 0 이면 채터)"),
          K("D2RNrbf/D2RNcsf/D2RRwf", "정수", "0", "카드2 NRBF/NCSF/RWF"),
          K("D2RDtmax/D2ROffset", "실수", "0", "강체 전환 시 최대 dt / OFFSET"),

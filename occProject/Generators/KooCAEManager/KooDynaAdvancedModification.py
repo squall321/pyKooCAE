@@ -3253,13 +3253,28 @@ class KooDynaAdvancedModification:
                 # 공식 예제도 D2R 세트가 code 2 / R2D 세트가 code 4 다. 3-31 커밋 6c41728 이 "접촉력
                 # 변화 감지" 라는 매뉴얼에 없는 해석으로 2↔4 를 바꿔 **충돌 중 강체·비행 중 변형체**가
                 # 됐었고 현장 관측(§9 #8)이 그것이었다. 비행 중 강체·충돌 중 변형체 = 아래가 맞다.
+                # 덱의 원문 D2R 이 SWSET 20·10 을 쓰면 짝 스위치가 그 번호와 겹친다 — 덱이 쓰지 않는 번호로 옮긴다(v131 리뷰 R4).
+                # 겹치지 않으면 예전처럼 20·10 이다
+                from KooCAEManager.KooDynaKeyword import _whole_int
+                _used_sw = set()
+                for _blk in (getattr(self.dynaImporter.dynaManager, "_raw_keyword_dict", None) or {}).get("DEFORMABLE_TO_RIGID_AUTOMATIC", []):
+                    _rows = [str(l) for l in _blk if str(l).strip() and not str(l).lstrip().startswith("$")]
+                    if _rows:
+                        _v = _whole_int((_rows[0].split(",")[0] if "," in _rows[0] else _rows[0][:10]).strip())
+                        if _v:
+                            _used_sw.add(_v)
+                sw_d2r, sw_r2d = 20, 10
+                if _used_sw & {sw_d2r, sw_r2d}:
+                    sw_r2d = max(_used_sw | {20}) + 10
+                    sw_d2r = sw_r2d + 10
+                    print(f"DROP_ATTITUDE: 덱 D2R 이 SWSET {sorted(_used_sw)} 를 써서 KMM 짝 스위치를 SWSET {sw_d2r}(D→R)·{sw_r2d}(R→D) 로 둔다")
                 # SWSET 20: 접촉력 0 (비행 중) → D→R
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
-                    swset=20, code=2, entno=dropContactCID, relsw=10, paired=1,
+                    swset=sw_d2r, code=2, entno=dropContactCID, relsw=sw_r2d, paired=1,
                     d2r_pids=d2r_pid_list, r2d_pids=[], **d2r_detail)
                 # SWSET 10: 접촉력 비0 (충돌) → R→D
                 self.dynaImporter.additionalManager.CreateDeformableToRigidAutomatic(
-                    swset=10, code=4, entno=dropContactCID, relsw=20, paired=-1,
+                    swset=sw_r2d, code=4, entno=dropContactCID, relsw=sw_d2r, paired=-1,
                     d2r_pids=[], r2d_pids=r2d_pid_list, **d2r_detail)
                 print("DROP_ATTITUDE: D2R paired switch configured for {0} model parts (CID={1}, LRB={2})".format(len(existingPartIDs), dropContactCID, _lrb))
             elif option.get("DeformableToRigid", False):
