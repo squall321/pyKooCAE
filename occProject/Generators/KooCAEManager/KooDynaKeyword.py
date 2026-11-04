@@ -10251,8 +10251,11 @@ class PartContact(DynaKeyword):
     def parse(self, partContactKeywords):
         for block in partContactKeywords:
             lines = [str(l).replace("\n", "").replace("\r", "") for l in block]
+            n0 = len(lines)
             while lines and not lines[-1].strip():
                 lines.pop()
+            if len(lines) % 3 == 2 and n0 > len(lines):
+                lines.append("")   # 마지막 파트의 접촉 카드가 빈 줄(R16 기본값 카드)이었다 — 떼어 낸 빈 줄 하나를 되돌린다(v131 리뷰 R1)
             if not lines or len(lines) % 3:
                 self.ok = False
                 print(f"  Warning: *PART_CONTACT 블록 {len(lines)}줄이 (제목·카드 2·접촉 카드) 3줄 묶음으로 나뉘지 않는다 — "
@@ -10748,7 +10751,12 @@ def _contact_cards(kw, parameter, need):
         msg = f"🔴 {kw} (CID {cid}): {what}. 덱을 확인하라"
         print(msg)
         raise ValueError(msg)
-    return [kw] + list(parameter)
+    rows = list(parameter)
+    # 블록 끝 빈 줄(키워드 사이 띄움)은 빈 선택 카드와 같은 뜻이라 버린다 — 옮기면 보통 덱도 빈 카드 A 가 새로 생겨 출력이
+    # 바뀌었다(v131 리뷰 R1). 필수 카드(need 장)와 가운데 빈 카드(뒤 카드의 자리)는 그대로다
+    while len(rows) > need and not any(str(x).strip() for x in rows[-1]):
+        rows.pop()
+    return [kw] + rows
 
 
 def _dyna_float(value, default=0.0):
