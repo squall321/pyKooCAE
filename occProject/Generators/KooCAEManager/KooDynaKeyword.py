@@ -82,13 +82,29 @@ class DynaKeyword():
         stream.write("\n")
         self.writeParameters(stream)
 
-def _id_card_pairs(block, keyword):
-    """_ID 처방 운동 블록 → [(ID 카드, 카드 1)] — 빈 줄은 건너뛴다(ID·카드 1 모두 기본값 없는 칸이 있다). 짝이 없는 마지막 줄은
-    알리고 버린다."""
+def _pm_card_groups(block, keyword, with_id):
+    """처방 운동 블록 → 조건마다 줄 묶음([ID 카드,] 카드 1). 빈 줄·주석은 건너뛴다(ID·카드 1 모두 기본값 없는 칸이 있다).
+    R16: 카드 1 의 |DOF| 가 9·10·11 이거나 VAD 가 4 면 카드 3(OFFSET1 OFFSET2 LRB NODE1 NODE2)이 뒤따른다 — KMM 기록기는 그
+    카드를 쓰지 못해 원인을 밝혀 멈춘다. 예전엔 카드 3 을 다음 조건으로 읽어 가짜 조건이 생기거나 _ID 쌍이 밀렸다(v131 리뷰 R4).
+    짝이 없는 마지막 줄은 알리고 버린다."""
     lines = [str(l) for l in block if str(l).strip() and not str(l).lstrip().startswith("$")]
-    if len(lines) % 2:
-        print(f"  Warning: *{keyword} 블록의 마지막 줄 '{lines[-1].strip()[:40]}' 은 짝(카드 1)이 없어 읽지 않는다(덱 확인)")
-    return [(lines[k], lines[k + 1]) for k in range(0, len(lines) - 1, 2)]
+    n = 2 if with_id else 1
+    groups, k = [], 0
+    while k + n <= len(lines):
+        card = lines[k + n - 1].replace("\n", "")
+        v = card.split(",") if "," in card else [card[i:i + 10] for i in range(0, 30, 10)]
+        v += [""] * 3
+        dof, vad = _dyna_int(v[1], 0), _dyna_int(v[2], 0)
+        if abs(dof) in (9, 10, 11) or vad == 4:
+            msg = (f"🔴 *{keyword}: DOF {dof}·VAD {vad} 조건 뒤에는 R16 카드 3(OFFSET1 OFFSET2 LRB NODE1 NODE2)이 오는데 "
+                   f"KMM 은 그 카드를 옮기지 못한다 — 이 조건을 덱에서 빼고 KMM 뒤에 직접 넣을 것: {card.strip()[:60]}")
+            print(msg)
+            raise ValueError(msg)
+        groups.append(lines[k:k + n])
+        k += n
+    if k < len(lines):
+        print(f"  Warning: *{keyword} 블록의 마지막 줄 '{lines[k].strip()[:40]}' 은 짝(카드 1)이 없어 읽지 않는다(덱 확인)")
+    return groups
 
 
 def _join_card(fields, w=10, strict=True):
@@ -122,13 +138,9 @@ class BoundaryPrescribedMotionNode(DynaKeyword):
         super(BoundaryPrescribedMotionNode,self).__init__("BOUNDARY_PRESCRIBED_MOTION_NODE")
     
     def parse(self, boundaryPrescribedMotionNodeKeywords):
-        for i in range(len(boundaryPrescribedMotionNodeKeywords)):
-            curParameter = boundaryPrescribedMotionNodeKeywords[i]
-            parameterList = [] 
-            for j in range(0,len(curParameter)):
-                parameters = self.parse_whole(curParameter[j], [10, 10, 10, 10, 10, 10, 10, 10])
-                parameterList.append(parameters)
-            self.parameters.append(parameterList)
+        for block in boundaryPrescribedMotionNodeKeywords:   # 카드 3 이 오는 조건은 멈춘다(_pm_card_groups — v131 리뷰 R4)
+            self.parameters.append([self.parse_whole(g[0], [10, 10, 10, 10, 10, 10, 10, 10])
+                                    for g in _pm_card_groups(block, "BOUNDARY_PRESCRIBED_MOTION_NODE", False)])
     
     def AddBoundaryPrescribedMotionNode(self, nid, dof, vad, lcid, sf, vid, death, birth):
         parameterList = []
@@ -164,7 +176,7 @@ class BoundaryPrescribedMotionNodeID(DynaKeyword):
     def parse(self, boundaryPrescribedMotionNodeKeywords):
         # R16: 운동마다 ID 카드 + 카드 1 — 한 블록에 쌍을 되풀이할 수 있다. 예전엔 첫 쌍만 읽어 뒤 조건이 사라졌다(v131 리뷰 R1)
         for block in boundaryPrescribedMotionNodeKeywords:
-            for idc, card in _id_card_pairs(block, "BOUNDARY_PRESCRIBED_MOTION_NODE_ID"):
+            for idc, card in _pm_card_groups(block, "BOUNDARY_PRESCRIBED_MOTION_NODE_ID", True):
                 self.parameters.append([self.parse_whole(idc, [10, 70]),
                                         self.parse_whole(card, [10, 10, 10, 10, 10, 10, 10, 10])])
     
@@ -203,13 +215,9 @@ class BoundaryPrescribedMotionRigid(DynaKeyword):
         super(BoundaryPrescribedMotionRigid,self).__init__("BOUNDARY_PRESCRIBED_MOTION_RIGID")
 
     def parse(self, boundaryPrescribedMotionRigidKeywords):
-        for i in range(len(boundaryPrescribedMotionRigidKeywords)):
-            curParameter = boundaryPrescribedMotionRigidKeywords[i]
-            parameterList = [] 
-            for j in range(0,len(curParameter)):
-                parameters = self.parse_whole(curParameter[j], [10, 10, 10, 10, 10, 10, 10, 10])
-                parameterList.append(parameters)
-            self.parameters.append(parameterList)
+        for block in boundaryPrescribedMotionRigidKeywords:   # 카드 3 이 오는 조건은 멈춘다(_pm_card_groups — v131 리뷰 R4)
+            self.parameters.append([self.parse_whole(g[0], [10, 10, 10, 10, 10, 10, 10, 10])
+                                    for g in _pm_card_groups(block, "BOUNDARY_PRESCRIBED_MOTION_RIGID", False)])
             
     def AddBoundaryPrescribedMotionRigid(self, typeid, dof, vad, lcid, sf, vid, death, birth):
         parameterList = []
@@ -243,7 +251,7 @@ class BoundaryPrescribedMotionRigidID(DynaKeyword):
     def parse(self, boundaryPrescribedMotionRigidKeywords):
         # R16: 운동마다 ID 카드 + 카드 1 — 한 블록에 쌍을 되풀이할 수 있다. 예전엔 첫 쌍만 읽었다(v131 리뷰 R1)
         for block in boundaryPrescribedMotionRigidKeywords:
-            for idc, card in _id_card_pairs(block, "BOUNDARY_PRESCRIBED_MOTION_RIGID_ID"):
+            for idc, card in _pm_card_groups(block, "BOUNDARY_PRESCRIBED_MOTION_RIGID_ID", True):
                 self.parameters.append([self.parse_whole(idc, [10, 70]),
                                         self.parse_whole(card, [10, 10, 10, 10, 10, 10, 10, 10])])
         
