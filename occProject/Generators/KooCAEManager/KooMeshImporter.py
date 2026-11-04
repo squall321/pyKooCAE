@@ -627,16 +627,19 @@ class KooDynaImporter():
         dynaKeywords = self.dynaManager.dynaKeywordMan.keywords
         if "NODE" in dynaKeywords:
             self.keywordInterpreted["NODE"] = True
-        nodeKeyword : DynaNode = dynaKeywords["NODE"]
-        
+        else:
+            # *NODE 가 없는 덱(설정만 든 덱 등)은 절점 0개다 — 예전엔 KeyError 로 죽어 IMPORT_MERGE_K 가 설정 알림도 못 냈다(v131 리뷰 R3)
+            print("  Warning: 덱에 *NODE 가 없다 — 절점 0개로 읽는다")
+        nodeKeyword = dynaKeywords.get("NODE")
+
         #import time
         '''start = time.time()
         nodes = nodeKeyword.getNodeListAdvanced()
         end = time.time()
         print("Node List Time Advanced: ", end - start)
         '''
-        #start = time.time()        
-        nodes = nodeKeyword.getNodeList()
+        #start = time.time()
+        nodes = nodeKeyword.getNodeList() if nodeKeyword is not None else []
         #end = time.time()
         #print("Node List Time Fast: ", end - start)
         
