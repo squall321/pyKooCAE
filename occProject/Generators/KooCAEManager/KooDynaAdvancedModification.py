@@ -2277,6 +2277,24 @@ class KooDynaAdvancedModification:
             outPathListFile = open(outputPathListFileName, 'w')
 
 
+        # 비정상 요소 강체화: dt/aspect ratio/수동 지정 기준 — 기준은 각도와 상관없어 각도 루프 앞에서 한 번 한다. 예전엔 루프 안에서
+        # 돌아 Fast(여러 각도) 모드의 베이스 캐시(강체화 전)와 어긋났다 — 첫 각도는 같은 EID 가 두 번, 둘째 각도부터는 강체화가
+        # 빠지고 바닥판 PID 가 달랐다(v131 리뷰 R4, 기존 결함)
+        rigidify_dt = option.get("RigidifySmallDtThreshold", 0.0)
+        rigidify_ar = option.get("RigidifyMaxAspectRatio", 0.0)
+        rigidify_eids = option.get("RigidifyElementIDs", None)
+        rigidified_pids = []
+        if rigidify_dt > 0 or rigidify_ar > 0 or rigidify_eids:
+            rigidified_pids = self.dynaImporter.partManager.RigidifySmallDtElements(
+                self.dynaImporter.matManager,
+                self.dynaImporter.sectionManager,
+                dt_threshold=rigidify_dt,
+                exceptPIDs=set(),
+                max_aspect_ratio=rigidify_ar,
+                element_ids=rigidify_eids
+            )
+
+
         # === FastDOE: 베이스 캐시 초기화 ===
         use_fast_mode = len(RxList) > 1
         cached_base = None
@@ -2371,21 +2389,6 @@ class KooDynaAdvancedModification:
             impactPoint = [impactPoint[0]+z_direction[0]*offset_distance, impactPoint[1]+z_direction[1]*offset_distance, impactPoint[2]+z_direction[2]*offset_distance]
             print("Impact Point [", impactPoint[0],",", impactPoint[1],"," ,  impactPoint[2], "]")
             initV = self.dynaImporter.initialManager.CreateInitialVelocity(nsid,0,0,0,0, velocity[0],velocity[1],velocity[2],angular_velocity[0],angular_velocity[1],angular_velocity[2],0.0,0.0,0.0,0.0,0.0,0.0)
-
-            # 비정상 요소 강체화: dt/aspect ratio/수동 지정 기준
-            rigidify_dt = option.get("RigidifySmallDtThreshold", 0.0)
-            rigidify_ar = option.get("RigidifyMaxAspectRatio", 0.0)
-            rigidify_eids = option.get("RigidifyElementIDs", None)
-            rigidified_pids = []
-            if rigidify_dt > 0 or rigidify_ar > 0 or rigidify_eids:
-                rigidified_pids = self.dynaImporter.partManager.RigidifySmallDtElements(
-                    self.dynaImporter.matManager,
-                    self.dynaImporter.sectionManager,
-                    dt_threshold=rigidify_dt,
-                    exceptPIDs=set(),
-                    max_aspect_ratio=rigidify_ar,
-                    element_ids=rigidify_eids
-                )
 
             # 접촉 처리 (바닥판 생성 전)
             convertToSS = option.get("ConvertGeneralToSingleSurface", True)
