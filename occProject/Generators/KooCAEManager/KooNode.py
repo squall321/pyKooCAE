@@ -2299,7 +2299,13 @@ class NodeSetManager:
                         
                 # 범위(BiBEG~BiEND) 안에 정의된 절점을 펼쳐 같은 NSID 의 *SET_NODE_LIST 로 둔다(R16: 범위 안의 정의된 ID 를 모두
                 # 더한다 — 뜻이 같다). 예전엔 NSID 를 maxID+1 로 바꾸고, 셋 객체에 쓰기 메서드가 없어 모든 모드가 쓰기에서 죽었다(v131 리뷰 R3)
-                ids = sorted(i for i in nodeManager.nodes if any(a <= i <= b for a, b in nodeidPairs))
+                ids = set()
+                for a, b in nodeidPairs:   # 범위가 절점 수보다 작으면 범위를, 크면 절점을 돈다(큰 모델에서 범위×절점으로 느려지지 않게)
+                    if b - a + 1 <= len(nodeManager.nodes):
+                        ids.update(i for i in range(a, b + 1) if i in nodeManager.nodes)
+                    else:
+                        ids.update(i for i in nodeManager.nodes if a <= i <= b)
+                ids = sorted(ids)
                 print(f"  SET_NODE_LIST_GENERATE {nsid}: 범위 {len(nodeidPairs)}개 안의 절점 {len(ids)}개를 *SET_NODE_LIST 로 쓴다")
                 self.CreateNodeSetwithNodesNodeSetID(nsid, name, da1, da2, da3, da4, solver, its, nodeManager.FindNodesfromIDs(ids))
            
