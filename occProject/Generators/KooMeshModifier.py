@@ -2989,6 +2989,34 @@ class KooMeshModifier(KooSimulationGenerator):
         subOption["GenerateMesh"] = generateMesh
         self.advancedModification.PartMorphing(curOption, subOption)
     
+    def _WarnSectionElementMismatch(self, part, section, convertHexaToOption):
+        """PART_EXCHANGE 로 붙인 단면이 파트 요소 종류와 맞지 않으면 알린다 — 예전엔 HEXA8 파트에 *SECTION_TSHELL 만 줘도 경고
+        없이 붙어 LS-DYNA 가 솔리드 요소를 TSHELL 단면으로 읽었다(v131 M8). 같이 준 ConvertHexato 가 요소를 그 종류로 바꾸면 맞다."""
+        from KooCAEManager.KooElement import FaceElement, LineElement, is_tshell
+        elems = part.elementManager.elements
+        if not elems:
+            return
+        e0 = next(iter(elems.values()))
+        if isinstance(e0, FaceElement):
+            ek = "shell"
+        elif isinstance(e0, LineElement):
+            ek = "beam"
+        elif is_tshell(e0, part.elementManager):
+            ek = "tshell"
+        else:
+            ek = "solid"
+        sk = {"KooSectionShell": "shell", "KooSectionTShell": "tshell", "KooSectionSolid": "solid", "KooSectionSolidPeri": "solid",
+              "KooSectionBeam": "beam"}.get(type(section).__name__)
+        conv = str((convertHexaToOption or {}).get("Type", "")).lower()
+        if sk is None or sk == ek or (ek == "solid" and conv == sk):
+            return
+        name = {"shell": "셸", "tshell": "TSHELL", "solid": "솔리드", "beam": "빔"}
+        hint = ""
+        if ek == "solid" and sk in ("shell", "tshell"):
+            hint = f" — 요소를 바꾸려면 *ConvertHexato,{'TShell' if sk == 'tshell' else 'Shell'},(방향 벡터),각도 를 함께 줄 것"
+        print(f"  ⚠️  PART_EXCHANGE PID {part.id}: 요소는 {name[ek]}인데 붙인 단면은 {name[sk]} 단면이다 — LS-DYNA 가 요소와 맞지 않는 "
+              f"단면으로 읽는다{hint}")
+
     def GeneratePartExchange(self, modeid):
         curOption = self.modeIDOption[modeid]
         curPID = 0 
@@ -3053,6 +3081,7 @@ class KooMeshModifier(KooSimulationGenerator):
                 # TSHELL·SOLID_PERI 는 AddSectionfromDyna 가 None 이라 아예 'Invalid section ID' 였다(2026-11-03)
                 part.SetSection(section)
                 print("Section is added")
+                self._WarnSectionElementMismatch(part, section, convertHexaToOption)
             else:
                 print("Invalid section ID")
             if mat is not None:
