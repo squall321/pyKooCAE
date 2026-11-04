@@ -3811,6 +3811,7 @@ class KooDynaAdvancedModification:
         # 3단 실린더 여부 — dimension 7값이면 mid 단 활성 (5값=2단 하위호환)
         use_mid_cyl = (impactorType.lower() == "cylinder" and len(dimension) >= 7)
         impactMidPart = None
+        impactFrontPart = None   # 구 임팩터는 앞 단이 없다 — 다음 단계 DTI 가 지울 DWI 접촉을 고를 때 쓴다(v131 리뷰 R7)
         if impactorType.lower() == "cylinder":
             if matIDImpactorFront != 0:
                 materialImpactorFront = matMan.materials[matIDImpactorFront]
@@ -4026,7 +4027,8 @@ class KooDynaAdvancedModification:
             
             
             if self.runDirectoryMode:   # DampingSpring 과 같은 Run_<id>/ 자리 — 예전엔 무시하고 Run_* 밖에 썼다(v131 M5)
-                self._WriteDwiRunDirectory(option, filePath, i, len(locX), False, None, None, impactorPart)
+                self._WriteDwiRunDirectory(option, filePath, i, len(locX), False, None, None, impactorPart,
+                                           (wallPart, impactFrontPart, impactMidPart))
             elif len(locX) > 1: 
                 modifiedKeyword = "_MODE_"
                 if mode == "OutsideRigidElement":
@@ -4049,12 +4051,18 @@ class KooDynaAdvancedModification:
                 self.WriteModifiedFile(filePath, modifiedKeyword)                
     
             
-    def _WriteDwiRunDirectory(self, option, filePath, k, n_total, use_fast_mode, cached_base, base_state, impactorPart):
+    def _WriteDwiRunDirectory(self, option, filePath, k, n_total, use_fast_mode, cached_base, base_state, impactorPart, dwiParts=()):
         """DWI 산출 덱을 *RunDirectoryMode 자리(Run_<id>/DropWeightImpactTestSet.k·Output/·DynamicRelaxation/dynaintoinitial.txt·.done)
         에 쓴다. k 는 이 실행의 출력 순번(runid 차례), n_total 은 출력 수(모르면 None). DampingSpring 경로의 블록을 그대로 옮겨
         OutsideRigid*·Part 도 같이 쓴다 — 예전엔 그 둘이 *RunDirectoryMode 를 무시해 Run_* 밖에 써 워크플로가 덱을 찾지
-        못했다(v131 M5)."""
+        못했다(v131 M5). dwiParts 는 DWI 가 만든 다른 파트(벽·임팩터 앞·가운데 단, 없으면 None)다."""
         fileName = os.path.basename(filePath)
+        # 다음 단계 DTI 가 지울 DWI 접촉 — DWI 파트(임팩터·벽·앞·가운데 단)를 가리키는 접촉. 예전엔 RemoveContactbyPartID 의 'or'
+        # 결함이 MSTYP 3 접촉을 모두 지워 우연히 사라졌다. 그 결함을 고친 뒤 벽 접촉이 다음 낙하에 남았다(v131 리뷰 R7)
+        dwi_pids = {p.id for p in (impactorPart, *dwiParts) if p is not None}
+        dwi_cids = sorted(cid for cid, c in self.dynaImporter.contactManager.contacts.items()
+                          if (getattr(c, "SSTYP", None) == 3 and getattr(c, "SSID", None) in dwi_pids)
+                          or (getattr(c, "MSTYP", None) == 3 and getattr(c, "MSID", None) in dwi_pids))
         # runDirectoryMode: Run_{run_id}/ 폴더 + Output/ + DynamicRelaxation/
         if "runid" in option and len(option["runid"]) > k:
             run_id = str(option["runid"][k])
@@ -4124,6 +4132,8 @@ class KooDynaAdvancedModification:
             f.write("*RemovePartbyID,")
             f.write(str(impactorPart.id))
             f.write("\n")
+            if dwi_cids:
+                f.write("*RemoveContactbyID," + ",".join(str(c) for c in dwi_cids) + "\n")
             f.write("**EndDynainToInitial\n")
             f.write("*End\n")
 
@@ -4365,6 +4375,7 @@ class KooDynaAdvancedModification:
         # 3단 실린더 여부 — dimension 7값이면 mid 단 활성 (5값=2단 하위호환)
         use_mid_cyl = (impactorType.lower() == "cylinder" and len(dimension) >= 7)
         impactMidPart = None
+        impactFrontPart = None   # 구 임팩터는 앞 단이 없다 — 다음 단계 DTI 가 지울 DWI 접촉을 고를 때 쓴다(v131 리뷰 R7)
         if impactorType.lower() == "cylinder":
             if matIDImpactorFront != 0:
                 materialImpactorFront = matMan.materials[matIDImpactorFront]
@@ -4887,7 +4898,8 @@ class KooDynaAdvancedModification:
 
             # ── 출력: DropAttitude와 동일한 Run 폴더 구조 ──
             if self.runDirectoryMode:
-                self._WriteDwiRunDirectory(option, filePath, i, len(locX), use_fast_mode, cached_base, base_state, impactorPart)
+                self._WriteDwiRunDirectory(option, filePath, i, len(locX), use_fast_mode, cached_base, base_state, impactorPart,
+                                           (wallPart, impactFrontPart, impactMidPart))
             else:
                 # 기존 방식: suffix 붙여서 단일 파일 출력
                 if len(locX) > 1:
@@ -5042,6 +5054,7 @@ class KooDynaAdvancedModification:
         matMan = self.dynaImporter.matManager
         secMan = self.dynaImporter.sectionManager
         
+        impactFrontPart = None   # 구 임팩터는 앞 단이 없다 — 다음 단계 DTI 가 지울 DWI 접촉을 고를 때 쓴다(v131 리뷰 R7)
         if impactorType.lower() == "cylinder":
             impactorPart, materialImpactor, sectionImpactor, impactElemMan, impactFrontPart, materialImpactorFront, sectionImpactorFront, impactFrontElemMan = self.CreateCylinderImpactorPart(option)
         else:
@@ -5213,7 +5226,8 @@ class KooDynaAdvancedModification:
                     tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
                 
                 if self.runDirectoryMode:   # DampingSpring 과 같은 Run_<id>/ 자리 — 예전엔 무시하고 Run_* 밖에 썼다(v131 M5)
-                    self._WriteDwiRunDirectory(option, filePath, n_out, None, use_fast_mode, cached_base, base_state, impactorPart)
+                    self._WriteDwiRunDirectory(option, filePath, n_out, None, use_fast_mode, cached_base, base_state, impactorPart,
+                                               (wallPart, impactFrontPart))
                     n_out += 1
                 elif len(locX) > 1:
                     modifiedKeyword = "_MODE_DWIP"
