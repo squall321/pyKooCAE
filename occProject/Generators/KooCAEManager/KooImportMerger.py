@@ -102,12 +102,13 @@ def _compute_offsets(dynaImporter):
     contactMan = dynaImporter.contactManager
     defineMan = dynaImporter.defineManager
 
-    # PartManager.parts의 max EID는 모든 파트의 elementManager 통과해서 계산
-    max_eid = 0
-    for part in list(partMan.parts.values()) + list(getattr(partMan, 'partsRigid', {}).values()):
-        em = getattr(part, 'elementManager', None)
-        if em is not None:
-            max_eid = max(max_eid, getattr(em, 'maxID', 0))
+    # max EID — 파트 매니저들 + 뿌리 요소 매니저(PID 없는 *ELEMENT_MASS 등) + 전역 maxEID(원문 요소 EID 예약 포함).
+    # 예전엔 뿌리 매니저를 빼 가져온 같은 번호 질량이 기준 덱 질량을 덮었다(v131 리뷰 R3)
+    root = getattr(partMan, 'elementManager', None)
+    max_eid = max([getattr(dynaImporter, 'maxEID', 0) or 0, getattr(root, 'maxID', 0) or 0]
+                  + [getattr(p.elementManager, 'maxID', 0) or 0
+                     for p in list(partMan.parts.values()) + list(getattr(partMan, 'partsRigid', {}).values())
+                     if getattr(p, 'elementManager', None) is not None])
 
     return {
         'pid': getattr(partMan, 'maxID', 0),
@@ -123,8 +124,10 @@ def _compute_offsets(dynaImporter):
         # 곡선 LCID 는 보존한다 — 재질(LCSS 등)·경계가 번호로 참조해 곡선만 밀면 참조가 틀린다. 예전엔 .id(없는 속성)를 읽어
         # 늘 0 이었고, 병합이 같은 번호의 기준 덱 곡선을 덮어썼다(v131 M2 — _merge_defines 가 막는다)
         'lcid': 0,
-        'elem_set_sid': max((getattr(part.elementManager, 'maxSID', 0)
-                             for part in partMan.parts.values()), default=0),
+        # 요소 셋은 뿌리 요소 매니저에 있다 — 예전엔 파트 매니저만 봐 늘 0 이라 같은 번호 *SET_SOLID 가 덮였다(v131 리뷰 R3)
+        'elem_set_sid': max([getattr(root, 'maxSID', 0) or 0]
+                            + [s_.sid for s_ in (getattr(root, 'sets', None) or {}).values()]
+                            + [getattr(part.elementManager, 'maxSID', 0) or 0 for part in partMan.parts.values()]),
     }
 
 
@@ -218,6 +221,12 @@ def _rekey_all_managers(new_importer):
         pm.constrainedParts = {p.id: p for p in pm.constrainedParts.values()}
     if hasattr(pm, 'partSets'):
         pm.partSets = {ps.psid: ps for ps in pm.partSets.values()}
+    # 뿌리 요소 매니저(PID 없는 질량·요소 셋)도 — 예전엔 키를 다시 매기지 않아 병합에서 기준 덱의 같은 키를 덮었다(v131 리뷰 R3)
+    root = getattr(pm, 'elementManager', None)
+    if root is not None:
+        from KooCAEManager.KooElement import element_set_key
+        root.elements = {e.id: e for e in root.elements.values()}
+        root.sets = {element_set_key(s_): s_ for s_ in root.sets.values()}
     # 각 part의 elementManager
     for part in list(pm.parts.values()) + list(getattr(pm, 'partsRigid', {}).values()):
         em = getattr(part, 'elementManager', None)
