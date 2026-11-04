@@ -1631,7 +1631,7 @@ class KooPartComposite(KooPart):
         sumE = 0.0
         for i in range(len(self.midi)):
             mid = self.midi[i]
-            mat = materialManager.GetMaterialbyID(mid)
+            mat = materialManager.materials[mid]   # GetMaterialbyID 는 없는 메서드였다(v131 리뷰 R3)
             thickness = self.thicki[i]
             totalThickness += thickness
             sumE += mat.GetE() * thickness            
@@ -1646,7 +1646,7 @@ class KooPartComposite(KooPart):
         sumPR = 0.0
         for i in range(len(self.midi)):
             mid = self.midi[i]
-            mat = materialManager.GetMaterialbyID(mid)
+            mat = materialManager.materials[mid]   # GetMaterialbyID 는 없는 메서드였다(v131 리뷰 R3)
             thickness = self.thicki[i]
             totalThickness += thickness
             sumPR += mat.GetNu() * thickness
@@ -1661,10 +1661,10 @@ class KooPartComposite(KooPart):
         sumDensity = 0.0
         for i in range(len(self.midi)):
             mid = self.midi[i]
-            mat = materialManager.GetMaterialbyID(mid)
+            mat = materialManager.materials[mid]   # GetMaterialbyID 는 없는 메서드였다(v131 리뷰 R3)
             thickness = self.thicki[i]
             totalThickness += thickness
-            sumDensity += mat.GetDensity() * thickness
+            sumDensity += mat.GetRho() * thickness   # 재질 밀도 메서드는 GetRho(GenerateRigidMaterials 와 같다)
         if totalThickness > 0:
             density = sumDensity / totalThickness
         else:
@@ -3234,11 +3234,16 @@ class KooPartManager():
                 part : KooPartComposite = part
                 if part.id in self.partsRigid:
                     continue
+                elif any(m not in materialMan.materials for m in part.midi):
+                    # 층 재질 중 KMM 이 해석하지 않는 것이 있으면 평균 물성을 잴 수 없다 — 예전엔 없는 메서드로 죽었다(v131 리뷰 R3)
+                    print(f"  ⚠️  PID {part.id}: 복합재 층 재질(MID {[m for m in part.midi if m not in materialMan.materials]})을 "
+                          f"KMM 이 해석하지 않아 강체로 바꾸지 않는다 — 원래 재질 그대로 계산된다")
+                    continue
                 else:
                     rho = part.GetAverageDensity(materialMan)
                     nu = part.GetAveragePoissionRatio(materialMan)
                     E = part.GetTensileModulus(materialMan)
-                    newRigidMat = materialMan.CreateRigidMaterial("RIGID_" + str(part.id), rho, nu, E)
+                    newRigidMat = materialMan.CreateRigidMaterial("RIGID_" + str(part.id), rho, E, nu)   # 순서 (rho, E, nu) — 예전엔 E·PR 이 뒤바뀌었다
                     
                     if part.tshell:
                         section = sectionMan.CreateSolidSection("RIGID_" + str(part.id))
