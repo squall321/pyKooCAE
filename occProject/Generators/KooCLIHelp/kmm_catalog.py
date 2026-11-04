@@ -1085,8 +1085,9 @@ mode("DYNAIN_TO_INITIAL", "이전 해석 dynain(변형 형상+응력)을 다음 
            K("*DynamicRelaxation", "True/False", "False", "새 DR 추가 (Nrcyck/Tol/Fctr/Term 접미 키)"),
            K("*MovetoOriginAutomatic", "True/False", "False", "모델을 원점으로"),
            K("*MovetoOriginbyNode", "정수", "[]", "지정 절점 기준 원점 이동"),
-           K("*RemovePartbyID / *RemovePartbyName", "리스트", "[]", "파트 제거 (바닥판 등)"),
-           K("*RemoveContactbyID", "정수 리스트", "[]", "접촉 제거")],
+           K("*RemovePartbyID / *RemovePartbyName", "리스트", "[]", "파트 제거 (바닥판 등) — 그 파트를 종·주 면 파트(SSTYP·MSTYP 3)로 쓰는 접촉도 지운다"),
+           K("*RemoveContactbyID", "정수 리스트", "[]", "접촉 제거 — 없어진 접촉을 ENTNO 로 가리키는 덱 *DEFORMABLE_TO_RIGID_AUTOMATIC"
+             "(CODE 2·4)도 짝 스위치와 함께 지운다. KMM 이 해석하지 않는 원문 접촉은 지우지 못하고 ⚠ 로 알린다(그 D2R 도 남는다)")],
      examples=[Example("dynain 응력 이어받고 바닥판(파트 23) 제거", _opt("drop_step1.k", "DYNAIN_TO_INITIAL,1", """**DynainToInitial,1
 *DynainPath,dynain
 *IncludeStress,True
