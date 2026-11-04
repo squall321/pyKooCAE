@@ -2454,6 +2454,15 @@ class KooDynaImporter():
                     stream.write(f" {os.path.basename(inc_file)}\n")
             # IGA passthrough는 WriteModifiedFile에서 처리 → 여기서 인라인하지 않음
 
+        self.WriteStreamRawTail(stream)
+
+        return stream.getvalue()
+
+    def WriteStreamRawTail(self, stream, written_before=""):
+        """원문 꼬리 — 해석하지 않는 키워드의 원문 블록과 데이터 카드 없는 키워드. 공용 기록기 끝에 쓰고, Fast 기록기(여러 각도
+        DROP·DWI 의 캐시 판, TRANSLATION_DOE·PART_LOCATION_DOE 의 노드 뒤 캐시)도 같이 쓴다 — 예전엔 Fast 출력에서 원문 블록이
+        모두 빠졌다(v131 M3). 매니저가 같은 내용으로 이미 쓴 블록은 written_before + 이 stream 에 쓴 글로 판단한다."""
+        written = lambda: written_before + stream.getvalue()
         # 미인터프리트 키워드 raw 보존 — 매니저에 없는 키워드(SET_BEAM,
         # MAT_GENERAL_VISCOELASTIC 등)가 DropSet.k/ThermalSet.k 출력에서 유실되는 것 방지.
         # (WriteModifiedFile._write_uninterpreted_raw_blocks 와 동일 규약을 공유 writer 에도 적용)
@@ -2468,7 +2477,7 @@ class KooDynaImporter():
                 # 일반 경로 키워드(DATABASE_NCFORC·LOAD_THERMAL_VARIABLE·MAT_ADD_THERMAL_EXPANSION 등)가
                 # 왕복마다 배로 늘어나던 것을 막는다. 내용이 다르면 그대로 보존(유실 방지 유지).
                 from KooCAEManager.KooRawKeywordDedup import filter_duplicate_raw_blocks, index_written_blocks, is_case_marker, raw_keyword_line
-                pending = filter_duplicate_raw_blocks(raw_dict or {}, interpreted, stream.getvalue(), SKIP)
+                pending = filter_duplicate_raw_blocks(raw_dict or {}, interpreted, written(), SKIP)
                 wrote_header = False
                 # *CASE_BEGIN_n·*CASE_END_n 은 위치가 뜻이라(그 사이 카드만 그 케이스) 끝에 모아 쓰면 뜻이 바뀐다. KMM 은
                 # *CASE 를 지원하지 않으므로 데이터가 있든 없든 표지를 쓰지 않고 알린다(데이터 있는 BEGIN 만 끝으로 옮겨져 짝이
@@ -2491,10 +2500,10 @@ class KooDynaImporter():
                 # 옛 판처럼 되살리지 않는다(리뷰 D)
                 empties = [k for k in empties if k not in SKIP and not is_case_marker(k)]
                 if empties:
-                    written = index_written_blocks(stream.getvalue(), empties)
+                    written_idx = index_written_blocks(written(), empties)
                     kept = []
                     for kw_name in empties:
-                        if written.get(kw_name):
+                        if written_idx.get(kw_name):
                             continue
                         if not wrote_header:
                             stream.write("$\n$--- Uninterpreted keywords (raw, preserved) ---\n$\n")
@@ -2506,8 +2515,6 @@ class KooDynaImporter():
                               f"{', '.join('*' + k for k in kept)} (LS-DYNA 는 빈 카드를 기본값으로 읽는다)")
         except Exception as e:
             print(f"  Warning: uninterpreted raw 보존 실패 (skip): {e}")
-
-        return stream.getvalue()
 
     def WriteStreamBaseKeyword(self, exclude_nodeset_sids=None, exclude_d2r=True):
         """베이스 모델 직렬화 (FastDOE용). nodeSetFixed와 D2R을 제외."""
@@ -2549,6 +2556,7 @@ class KooDynaImporter():
                 self.additionalManager.interfaces[key].WriteStreamDynaKeyword(stream)
         else:
             self.additionalManager.WriteStreamDynaKeyword(stream)
+        self.WriteStreamRawTail(stream)   # 원문 블록 — 각도마다 같다(v131 M3)
         return stream.getvalue()
 
     def WriteStreamDeltaKeyword(self, base_state):
@@ -2584,6 +2592,10 @@ class KooDynaImporter():
         # 6. D2R automatics
         for key in self.additionalManager.d2r_automatics:
             self.additionalManager.d2r_automatics[key].WriteStreamDynaKeyword(stream)
+        # 7. 새 파트 셋 — 각도마다 만드는 접촉(SSTYP 2)이 가리킨다. 예전엔 빠져 접촉이 없는 셋을 가리켰다(v131 M3)
+        for psid, ps in self.partManager.partSets.items():
+            if psid not in base_state.get("part_set_keys", set()):
+                ps.WriteStreamDynaKeyword(stream)
         return stream.getvalue()
 
     def WriteStreamPreNodesKeyword(self):
@@ -2602,8 +2614,9 @@ class KooDynaImporter():
         self.partManager.WriteStreamDynaKeyword(stream, 0, 0, 0)
         return stream.getvalue()
 
-    def WriteStreamPostNodesKeyword(self):
-        """노드 섹션 이후 직렬화 (섹션 9-17): elementManager~additional (Group C FastDOE용)"""
+    def WriteStreamPostNodesKeyword(self, written_before=""):
+        """노드 섹션 이후 직렬화 (섹션 9-17): elementManager~additional (Group C FastDOE용). 끝에 원문 꼬리 — written_before 는
+        노드 앞 캐시(매니저가 쓴 블록을 원문에서 거르는 데 쓴다)."""
         stream = StringIO()
         if len(self.partManager.elementManager.elements) > 0 or len(self.partManager.elementManager.sets) > 0:
             self.partManager.elementManager.WriteStreamDynaKeyword(stream, 0, 0, 0)
@@ -2615,6 +2628,7 @@ class KooDynaImporter():
         self.initialManager.WriteStreamDynaKeyword(stream, 0)
         self.constrainedManager.WriteStreamDynaKeyword(stream, 0)
         self.additionalManager.WriteStreamDynaKeyword(stream)
+        self.WriteStreamRawTail(stream, written_before)   # 원문 블록(v131 M3)
         return stream.getvalue()
 
     def ExportDynaString(self):

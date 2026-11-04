@@ -1980,6 +1980,8 @@ class KooDynaAdvancedModification:
             "initial_keys": set(self.dynaImporter.initialManager.inits.keys()),
             "excluded_nodeset_sids": exclude_nodeset_sids or set(),
             "reusable_part_ids": reusable_part_ids or set(),
+            "part_set_keys": set(self.dynaImporter.partManager.partSets.keys()),   # 각도마다 만드는 파트 셋은 차분에 쓴다(v131 M3)
+            "max_psid": self.dynaImporter.partManager.maxSID,
         }
         return cached_base, base_state
 
@@ -2013,6 +2015,11 @@ class KooDynaAdvancedModification:
                 self.dynaImporter.nodeSetManager.nodeSets[nsid].Clear()
         # 6. D2R 클리어
         self.dynaImporter.additionalManager.d2r_automatics.clear()
+        # 6b. 각도마다 만든 파트 셋 제거 — 다음 각도가 같은 번호로 다시 만든다(v131 M3)
+        if "part_set_keys" in base_state:
+            for psid in [k for k in self.dynaImporter.partManager.partSets if k not in base_state["part_set_keys"]]:
+                del self.dynaImporter.partManager.partSets[psid]
+            self.dynaImporter.partManager.maxSID = base_state["max_psid"]
         # 7. Max ID 복원 (SyncronizeMaxID 불필요)
         self.dynaImporter.maxEID = base_state["max_eid"]
         for pid in self.dynaImporter.partManager.parts:
@@ -5384,7 +5391,7 @@ class KooDynaAdvancedModification:
         if use_fast_mode:
             try:
                 cached_pre = self.dynaImporter.WriteStreamPreNodesKeyword()
-                cached_post = self.dynaImporter.WriteStreamPostNodesKeyword()
+                cached_post = self.dynaImporter.WriteStreamPostNodesKeyword(written_before=cached_pre)
                 print(f"Fast DOE mode 활성화 (PartLocationDOE): 노드 제외 캐시 완료 ({(len(cached_pre)+len(cached_post))//1024//1024}MB)")
             except Exception as e:
                 print(f"Fast DOE mode 초기화 실패, 기존 방식 사용: {e}")
@@ -6977,7 +6984,7 @@ class KooDynaAdvancedModification:
         if use_fast_mode:
             try:
                 cached_pre = self.dynaImporter.WriteStreamPreNodesKeyword()
-                cached_post = self.dynaImporter.WriteStreamPostNodesKeyword()
+                cached_post = self.dynaImporter.WriteStreamPostNodesKeyword(written_before=cached_pre)
                 print(f"Fast DOE mode 활성화 (TranslationDOE): 노드 제외 캐시 완료 ({(len(cached_pre)+len(cached_post))//1024//1024}MB)")
             except Exception as e:
                 print(f"Fast DOE mode 초기화 실패, 기존 방식 사용: {e}")
