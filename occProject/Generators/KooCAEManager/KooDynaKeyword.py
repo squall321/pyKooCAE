@@ -81,6 +81,15 @@ class DynaKeyword():
         stream.write("\n")
         self.writeParameters(stream)
 
+def _id_card_pairs(block, keyword):
+    """_ID 처방 운동 블록 → [(ID 카드, 카드 1)] — 빈 줄은 건너뛴다(ID·카드 1 모두 기본값 없는 칸이 있다). 짝이 없는 마지막 줄은
+    알리고 버린다."""
+    lines = [str(l) for l in block if str(l).strip() and not str(l).lstrip().startswith("$")]
+    if len(lines) % 2:
+        print(f"  Warning: *{keyword} 블록의 마지막 줄 '{lines[-1].strip()[:40]}' 은 짝(카드 1)이 없어 읽지 않는다(덱 확인)")
+    return [(lines[k], lines[k + 1]) for k in range(0, len(lines) - 1, 2)]
+
+
 class BoundaryPrescribedMotionNode(DynaKeyword):
     def __init__(self):
         super(BoundaryPrescribedMotionNode,self).__init__("BOUNDARY_PRESCRIBED_MOTION_NODE")
@@ -126,14 +135,11 @@ class BoundaryPrescribedMotionNodeID(DynaKeyword):
         super(BoundaryPrescribedMotionNodeID,self).__init__("BOUNDARY_PRESCRIBED_MOTION_NODE_ID")
     
     def parse(self, boundaryPrescribedMotionNodeKeywords):
-        for i in range(len(boundaryPrescribedMotionNodeKeywords)):
-            curParameter = boundaryPrescribedMotionNodeKeywords[i]
-            parameterList = []
-            parameters = self.parse_whole(curParameter[0], [10, 70])
-            parameterList.append(parameters)            
-            parameters = self.parse_whole(curParameter[1], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)    
-            self.parameters.append(parameterList)
+        # R16: 운동마다 ID 카드 + 카드 1 — 한 블록에 쌍을 되풀이할 수 있다. 예전엔 첫 쌍만 읽어 뒤 조건이 사라졌다(v131 리뷰 R1)
+        for block in boundaryPrescribedMotionNodeKeywords:
+            for idc, card in _id_card_pairs(block, "BOUNDARY_PRESCRIBED_MOTION_NODE_ID"):
+                self.parameters.append([self.parse_whole(idc, [10, 70]),
+                                        self.parse_whole(card, [10, 10, 10, 10, 10, 10, 10, 10])])
     
     def AddBoundaryPrescribedMotionNodeID(self, bid, title, nid, dof, vad, lcid, sf, vid, death, birth):
         parameterList = []
@@ -186,10 +192,10 @@ class BoundaryPrescribedMotionRigid(DynaKeyword):
     def getBoundaryPrescribedMotionRigidList(self):
         boundaryPrescribedMotionRigidList = [] 
         for i in range(len(self.parameters)):
-            curBDPrescribedMotionRigid = []
-            curBDPrescribedMotionRigid.append("*BOUNDARY_PRESCRIBED_MOTION_RIGID")
-            curBDPrescribedMotionRigid.append(self.parameters[i][0])
-            boundaryPrescribedMotionRigidList.append(curBDPrescribedMotionRigid)
+            # 카드마다 강체 하나 — 예전엔 블록의 첫 카드만 넘겨 둘째 카드부터 조용히 사라졌다(v131 리뷰 R1)
+            for card in self.parameters[i]:
+                if any(str(x).strip() for x in card):
+                    boundaryPrescribedMotionRigidList.append(["*BOUNDARY_PRESCRIBED_MOTION_RIGID", card])
         return boundaryPrescribedMotionRigidList               
             
     def write(self, stream):
@@ -208,14 +214,11 @@ class BoundaryPrescribedMotionRigidID(DynaKeyword):
         super(BoundaryPrescribedMotionRigidID,self).__init__("BOUNDARY_PRESCRIBED_MOTION_RIGID_ID")
     
     def parse(self, boundaryPrescribedMotionRigidKeywords):
-        for i in range(len(boundaryPrescribedMotionRigidKeywords)):
-            curParameter = boundaryPrescribedMotionRigidKeywords[i]
-            parameterList = [] 
-            parameters = self.parse_whole(curParameter[0], [10, 70])
-            parameterList.append(parameters)
-            parameters = self.parse_whole(curParameter[1], [10, 10, 10, 10, 10, 10, 10, 10])
-            parameterList.append(parameters)
-            self.parameters.append(parameterList)
+        # R16: 운동마다 ID 카드 + 카드 1 — 한 블록에 쌍을 되풀이할 수 있다. 예전엔 첫 쌍만 읽었다(v131 리뷰 R1)
+        for block in boundaryPrescribedMotionRigidKeywords:
+            for idc, card in _id_card_pairs(block, "BOUNDARY_PRESCRIBED_MOTION_RIGID_ID"):
+                self.parameters.append([self.parse_whole(idc, [10, 70]),
+                                        self.parse_whole(card, [10, 10, 10, 10, 10, 10, 10, 10])])
         
     def AddBoundaryPrescribedMotionRigidID(self, id, title, typeid, dof, vad, lcid, sf, vid, death, birth):
         parameterList = []
