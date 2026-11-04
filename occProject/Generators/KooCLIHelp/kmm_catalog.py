@@ -374,7 +374,9 @@ mode("DROP_WEIGHT_IMPACT_TEST", "낙추(충격추) 시험 덱 — 구·다단 �
          K("dt", "실수", "1e-6", "d3plot 출력 간격"),
          K("DTMIN", "실수", "없음", "CONTROL_TERMINATION DTMIN"),
          K("OffsetDistance", "실수", "1e-9", "충격추와 표면 초기 간격"),
-         K("GenerationMode", "DampingSpring|Part", "DampingSpring", "Part = PartIDs 파트 표면 격자에 자동 배치"),
+         K("GenerationMode", "DampingSpring|OutsideRigidElement|OutsideRigidPart|Part", "DampingSpring",
+           "OutsideRigidElement·OutsideRigidPart = 충격 지점에서 BoundaryDistance 밖의 요소·파트를 강체로(댐퍼 대신, KMM 이 해석하지 "
+           "않는 재질의 파트는 강체로 바꾸지 않는다), Part = PartIDs 파트 표면 격자에 자동 배치. 넷 다 *RunDirectoryMode 를 따른다"),
          K("PartIDs", "정수 리스트", "[]", "GenerationMode,Part 대상 파트"),
          K("LocationMode", "NXM 문자열", "1X1", "파트 표면 격자 배치 (예: 3X3 → 9 케이스)"),
          K("BoundaryDistance / DistanceMargin / StressWaveVelocity", "실수", "0", "부분 강체화 경계 거리 계산용"),

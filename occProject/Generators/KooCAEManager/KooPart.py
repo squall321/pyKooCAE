@@ -3250,6 +3250,10 @@ class KooPartManager():
                 part : KooPart = part
                 if part.id in self.partsRigid:
                     continue
+                elif part.material is None or part.material.id not in rigidMat:
+                    # 원문 재질(*MAT_SPRING_ELASTIC 등 KMM 이 해석하지 않는 재질) 파트는 강체 재질을 만들 수 없다 — 예전엔 AttributeError(v131 M5)
+                    print(f"  ⚠️  PID {part.id}: 재질(MID {part.mid})을 KMM 이 해석하지 않아 강체로 바꾸지 않는다 — 원래 재질 그대로 계산된다")
+                    continue
                 else:
                     curRigidMat = rigidMat[part.material.id]
                     newPart = KooPart(part.nodeManager, None, curRigidMat, part.section, part.nodeSetManager)

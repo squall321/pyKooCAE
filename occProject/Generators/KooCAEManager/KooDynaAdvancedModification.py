@@ -3980,7 +3980,9 @@ class KooDynaAdvancedModification:
                     tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
             
             
-            if len(locX) > 1: 
+            if self.runDirectoryMode:   # DampingSpring 과 같은 Run_<id>/ 자리 — 예전엔 무시하고 Run_* 밖에 썼다(v131 M5)
+                self._WriteDwiRunDirectory(option, filePath, i, len(locX), False, None, None, impactorPart)
+            elif len(locX) > 1: 
                 modifiedKeyword = "_MODE_"
                 if mode == "OutsideRigidElement":
                     modifiedKeyword += "ORE"
@@ -4002,6 +4004,90 @@ class KooDynaAdvancedModification:
                 self.WriteModifiedFile(filePath, modifiedKeyword)                
     
             
+    def _WriteDwiRunDirectory(self, option, filePath, k, n_total, use_fast_mode, cached_base, base_state, impactorPart):
+        """DWI 산출 덱을 *RunDirectoryMode 자리(Run_<id>/DropWeightImpactTestSet.k·Output/·DynamicRelaxation/dynaintoinitial.txt·.done)
+        에 쓴다. k 는 이 실행의 출력 순번(runid 차례), n_total 은 출력 수(모르면 None). DampingSpring 경로의 블록을 그대로 옮겨
+        OutsideRigid*·Part 도 같이 쓴다 — 예전엔 그 둘이 *RunDirectoryMode 를 무시해 Run_* 밖에 써 워크플로가 덱을 찾지
+        못했다(v131 M5)."""
+        fileName = os.path.basename(filePath)
+        # runDirectoryMode: Run_{run_id}/ 폴더 + Output/ + DynamicRelaxation/
+        if "runid" in option and len(option["runid"]) > k:
+            run_id = str(option["runid"][k])
+        else:
+            run_id = self.dynaImporter.GenerateRunID()
+
+        if len(self.runDirectoryPath) == 0:
+            modifiedKeyword = os.path.join(filePath.replace(".k", ""), "Run_" + run_id)
+        elif self.runDirectoryPath[0] == "/":
+            modifiedKeyword = os.path.join(self.runDirectoryPath, "Run_" + run_id)
+        else:
+            path = os.getcwd()
+            modifiedKeyword = os.path.join(path, self.runDirectoryPath, "Run_" + run_id)
+
+        folderPath = modifiedKeyword
+        if not os.path.exists(folderPath):
+            os.makedirs(folderPath)
+        outputFolderPath = os.path.join(folderPath, "Output")
+        if not os.path.exists(outputFolderPath):
+            os.makedirs(outputFolderPath)
+        dynamicRelaxPath = os.path.join(folderPath, "DynamicRelaxation")
+        if not os.path.exists(dynamicRelaxPath):
+            os.makedirs(dynamicRelaxPath)
+
+        if len(self.runDirectoryPath) == 0:
+            modifiedKeyword = os.path.join(modifiedKeyword, fileName)
+        else:
+            modifiedKeyword = os.path.join(modifiedKeyword, "DropWeightImpactTestSet")
+        modifiedKeyword = modifiedKeyword.strip()
+
+        if use_fast_mode:
+            self._WriteFastModifiedFile(modifiedKeyword, "", cached_base, base_state, True)
+        else:
+            self.WriteModifiedFile(modifiedKeyword, "", True)
+
+        # dynaintoinitial.txt 생성 (누적 해석용)
+        dynainPath = os.path.join(outputFolderPath, "dynain")
+        dynaintoinitialPath = os.path.join(dynamicRelaxPath, "dynaintoinitial.txt")
+        with open(dynaintoinitialPath, "w") as f:
+            f.write("*Inputfile\n")
+            f.write("DropWeightImpactTestSet.k\n")
+            f.write("*Mode\n")
+            f.write("DYNAIN_TO_INITIAL,1\n")
+            f.write("**DynainToInitial,1\n")
+            f.write("**DynainPath,")
+            f.write(dynainPath)
+            f.write("\n")
+            f.write("*IncludeStress,True\n")
+            f.write("*RemoveDynamicRelaxation,True\n")
+            if option.get("DynainDynamicRelaxation", False):
+                # DROP 경로(DropAttitude)와 동일 — _dti.k 에 DR 카드 주입해
+                # 다음 deck 이 본 해석 전 DR 안정화 phase 수행 (bounded DR)
+                f.write("*DynamicRelaxation,True\n")
+                drNrcyck = option.get("DynainDynamicRelaxationNrcyck", 0)
+                if drNrcyck:
+                    f.write("*DynamicRelaxationNrcyck," + str(drNrcyck) + "\n")
+                drTol = option.get("DynainDynamicRelaxationTol", 0.0)
+                if drTol and drTol > 0.0:
+                    f.write("*DynamicRelaxationTol," + str(drTol) + "\n")
+                drFctr = option.get("DynainDynamicRelaxationFctr", 0.0)
+                if drFctr and drFctr > 0.0:
+                    f.write("*DynamicRelaxationFctr," + str(drFctr) + "\n")
+                drTerm = option.get("DynainDynamicRelaxationTerm", 0.0) or option.get("TFinal", 0.0)
+                if drTerm and drTerm > 0.0:
+                    f.write("*DynamicRelaxationTerm," + str(drTerm) + "\n")
+            f.write("*MovetoOriginAutomatic,True\n")
+            f.write("*RemovePartbyID,")
+            f.write(str(impactorPart.id))
+            f.write("\n")
+            f.write("**EndDynainToInitial\n")
+            f.write("*End\n")
+
+        print(f"DropWeightImpactTest {k+1}{'/' + str(n_total) if n_total else ''} Created (Run_{run_id})")
+        # DOE 완료 표시 파일 생성 (polling용)
+        done_file = os.path.join(folderPath, ".done")
+        with open(done_file, "w") as df:
+            df.write("done")
+
     def DropWeightImpactTest(self, option, filePath):
         # 이전 열 스텝에서 이월된 열하중 처리 (THERM→DROP 방향). 열하중이 없으면 무동작
         self._ApplyThermalCarryPolicy(option, "DROP_WEIGHT_IMPACT_TEST")
@@ -4755,86 +4841,8 @@ class KooDynaAdvancedModification:
             }
 
             # ── 출력: DropAttitude와 동일한 Run 폴더 구조 ──
-            fileName = os.path.basename(filePath)
-
             if self.runDirectoryMode:
-                # runDirectoryMode: Run_{run_id}/ 폴더 + Output/ + DynamicRelaxation/
-                if "runid" in option and len(option["runid"]) > i:
-                    run_id = str(option["runid"][i])
-                else:
-                    run_id = self.dynaImporter.GenerateRunID()
-
-                if len(self.runDirectoryPath) == 0:
-                    modifiedKeyword = os.path.join(filePath.replace(".k", ""), "Run_" + run_id)
-                elif self.runDirectoryPath[0] == "/":
-                    modifiedKeyword = os.path.join(self.runDirectoryPath, "Run_" + run_id)
-                else:
-                    path = os.getcwd()
-                    modifiedKeyword = os.path.join(path, self.runDirectoryPath, "Run_" + run_id)
-
-                folderPath = modifiedKeyword
-                if not os.path.exists(folderPath):
-                    os.makedirs(folderPath)
-                outputFolderPath = os.path.join(folderPath, "Output")
-                if not os.path.exists(outputFolderPath):
-                    os.makedirs(outputFolderPath)
-                dynamicRelaxPath = os.path.join(folderPath, "DynamicRelaxation")
-                if not os.path.exists(dynamicRelaxPath):
-                    os.makedirs(dynamicRelaxPath)
-
-                if len(self.runDirectoryPath) == 0:
-                    modifiedKeyword = os.path.join(modifiedKeyword, fileName)
-                else:
-                    modifiedKeyword = os.path.join(modifiedKeyword, "DropWeightImpactTestSet")
-                modifiedKeyword = modifiedKeyword.strip()
-
-                if use_fast_mode:
-                    self._WriteFastModifiedFile(modifiedKeyword, "", cached_base, base_state, True)
-                else:
-                    self.WriteModifiedFile(modifiedKeyword, "", True)
-
-                # dynaintoinitial.txt 생성 (누적 해석용)
-                dynainPath = os.path.join(outputFolderPath, "dynain")
-                dynaintoinitialPath = os.path.join(dynamicRelaxPath, "dynaintoinitial.txt")
-                with open(dynaintoinitialPath, "w") as f:
-                    f.write("*Inputfile\n")
-                    f.write("DropWeightImpactTestSet.k\n")
-                    f.write("*Mode\n")
-                    f.write("DYNAIN_TO_INITIAL,1\n")
-                    f.write("**DynainToInitial,1\n")
-                    f.write("**DynainPath,")
-                    f.write(dynainPath)
-                    f.write("\n")
-                    f.write("*IncludeStress,True\n")
-                    f.write("*RemoveDynamicRelaxation,True\n")
-                    if option.get("DynainDynamicRelaxation", False):
-                        # DROP 경로(DropAttitude)와 동일 — _dti.k 에 DR 카드 주입해
-                        # 다음 deck 이 본 해석 전 DR 안정화 phase 수행 (bounded DR)
-                        f.write("*DynamicRelaxation,True\n")
-                        drNrcyck = option.get("DynainDynamicRelaxationNrcyck", 0)
-                        if drNrcyck:
-                            f.write("*DynamicRelaxationNrcyck," + str(drNrcyck) + "\n")
-                        drTol = option.get("DynainDynamicRelaxationTol", 0.0)
-                        if drTol and drTol > 0.0:
-                            f.write("*DynamicRelaxationTol," + str(drTol) + "\n")
-                        drFctr = option.get("DynainDynamicRelaxationFctr", 0.0)
-                        if drFctr and drFctr > 0.0:
-                            f.write("*DynamicRelaxationFctr," + str(drFctr) + "\n")
-                        drTerm = option.get("DynainDynamicRelaxationTerm", 0.0) or option.get("TFinal", 0.0)
-                        if drTerm and drTerm > 0.0:
-                            f.write("*DynamicRelaxationTerm," + str(drTerm) + "\n")
-                    f.write("*MovetoOriginAutomatic,True\n")
-                    f.write("*RemovePartbyID,")
-                    f.write(str(impactorPart.id))
-                    f.write("\n")
-                    f.write("**EndDynainToInitial\n")
-                    f.write("*End\n")
-
-                print(f"DropWeightImpactTest {i+1}/{len(locX)} Created (Run_{run_id})")
-                # DOE 완료 표시 파일 생성 (polling용)
-                done_file = os.path.join(folderPath, ".done")
-                with open(done_file, "w") as df:
-                    df.write("done")
+                self._WriteDwiRunDirectory(option, filePath, i, len(locX), use_fast_mode, cached_base, base_state, impactorPart)
             else:
                 # 기존 방식: suffix 붙여서 단일 파일 출력
                 if len(locX) > 1:
@@ -5026,6 +5034,7 @@ class KooDynaAdvancedModification:
                 use_fast_mode = False
 
         i = 0
+        n_out = 0   # *RunDirectoryMode 출력 순번(runid 차례) — 파트·위치를 건너 센다
         for partID in partIDs:
             if partID not in self.dynaImporter.partManager.parts:
                 continue
@@ -5158,7 +5167,10 @@ class KooDynaAdvancedModification:
                     SSID = impactFrontPart.id            
                     tiedContactImpactortoFront = self.dynaImporter.contactManager.CreateContactTiedSurfacetoSurfaceOffset(SSID, MSID, 3, 3, SBOXID, MBOXID, SPR, MPR, FS, FD, DC, VC, VDC, PENCHK, BT, DT, SFS, SFM, SST, MST, SFST, SFMT, FSF, VSF)
                 
-                if len(locX) > 1:
+                if self.runDirectoryMode:   # DampingSpring 과 같은 Run_<id>/ 자리 — 예전엔 무시하고 Run_* 밖에 썼다(v131 M5)
+                    self._WriteDwiRunDirectory(option, filePath, n_out, None, use_fast_mode, cached_base, base_state, impactorPart)
+                    n_out += 1
+                elif len(locX) > 1:
                     modifiedKeyword = "_MODE_DWIP"
                     if impactorType.lower() == "cylinder":
                         modifiedKeyword += "_CYL_"
