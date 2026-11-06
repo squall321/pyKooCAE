@@ -18,7 +18,7 @@
   - tar v43 은 551,323,350 B 이고, Drive(ApptainerImages:SmartTwinPreprocessor/ — v42 와 같은 폴더)·메일 sent OK 다.
   - 헤드 /opt 는 v42 를 하드 링크 `SmartTwinPostprocessor(GUI)_backup_20261104_090503.sif`(1a6e0933·4536ea72)로 남기고 바꿨다. 노드는 down 이다.
 - **판정(verify_post.sh).** 헤드리스 v43 은 s1_extract·koo_ontology rc 0, --parallel-runs·--yield-map·--section-view-state-step·--s1 이 보인다. v42 는 모두 0/rc 255 였다. unified_analyzer rc 3 설명은 유지된다. SIF 안 리포트 패키지 132 파일이 커밋 eccde7f 와 같다(헤드리스·GUI).
-  - GUI 에는 s1_extract 가 없다(GUI def 에 libhdf5-dev 가 없어 build_module.sh 가 건너뜀). S1 은 헤드리스 파이프라인용이라 의도로 보이고, bf 에 확인을 청했다.
+  - GUI 에는 s1_extract 가 없다(GUI def 에 libhdf5-dev 가 없어 build_module.sh 가 건너뜀). S1 은 헤드리스 파이프라인용이라 의도로 보이고, bf 에 확인을 청했다. bf 확인(11-06): 의도대로다(S1 은 post_analyze --s1 헤드리스 전용). bf 가 헤드 /opt 헤드리스 SIF 안 koo_ontology·도구 꾸러미와 DynaForge 검사기 통과도 확인했다. 노드가 켜지면 Post v43 도 보낸다.
 - **알림.** kood3plotreader-bf·a9 에 VERSION·sha256 을 보냈고 a9 에 verify_v43.sh(18종, 실덱 100런 읽기만)를 청했다. smarttwinmcp-c8·4c 에는 CLI 변화(s1_extract·koo_ontology·--parallel-runs·--yield-map·--section-view-state-step·post_analyze --s1·ontology.json 산출, SI 덱 CRITICAL 감소)를 알렸다.
 - **틈.** v43 부터 sphere_report.sh 가 --parallel-runs 를 보고 새 사이징 공식으로 바뀐다. 워커 메모리 0.5 GB(K1)는 v131 Pre 에 들어가므로 그때까지는 워커당 2 GB 로 과다 할당이다(위험하지 않음, 대기만 길어짐).
 - **a9 검증(11-04).** verify_v43.sh 16/16 ✓(v42 는 13 ✗). 네 곳 sha 를 직접 대조했고, 실덱 Test_005_Fibonacci_100(100런)에서 병렬 1패스(워커 4)·2패스 축약(시계열 60/100)·사이드카 test_dir·energy_flows_reduced·내부 키 누출 0·CWD 무오염을 확인했다. Post v43 을 닫는다.
