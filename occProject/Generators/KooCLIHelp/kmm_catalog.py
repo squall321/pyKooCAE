@@ -195,6 +195,28 @@ ControlTimestep.DT2MS,-1e-07
 DTMIN,0.01
 **EndDropAttitude""", header="*RunDirectoryMode,True,Data/Results\n")
 
+DROP_ENDTIME = _opt("model.k", "DROP_ATTITUDE,1", """**DropAttitude,1
+EulerRolling,0,35.264,90
+EulerPitching,0,45,0
+EulerYawing,0,0,0
+Gravity,9810
+Height,1500,1500,1500
+InitialVelocityX,0,0,0
+InitialVelocityY,0,0,0
+InitialVelocityZ,0,0,0
+InitialAngularVelocityX,0,0,0
+InitialAngularVelocityY,0,0,0
+InitialAngularVelocityZ,0,0,0
+OffsetDistance,0.05
+Density,7.85e-09
+YoungsModulus,200000.0
+PoissonRatio,0.3
+tFinal,0.005
+dt,1e-05
+EndTimeTable,/data/DropCampaign/endtime_presim/0/model_endtime.csv
+DropSurface,RigidWall,0,0,0,0,0,0
+**EndDropAttitude""")
+
 mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)·높이·바닥판·접촉 자동 구성",
      category="낙하·충격", aliases=["drop", "낙하", "자유낙하", "dropset", "오일러", "바닥판"],
      when=["모델을 지정 자세로 돌려 바닥판 위 높이에 두고 낙하 속도·중력·접촉·CONTROL 을 붙인 해석 덱이 필요할 때",
@@ -213,9 +235,10 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
          K("Density", "실수", "-", "바닥판 밀도 (RigidWall 이면 쓰지 않지만 키는 필요)", True),
          K("YoungsModulus", "실수", "-", "바닥판 탄성계수", True),
          K("PoissonRatio", "실수", "-", "바닥판 포아송비", True),
-         K("tFinal", "실수", "0 (필수로 줄 것)", "종료 시간. tFinal 과 dt 가 둘 다 0 이 아니어야 CONTROL/DATABASE 카드를 쓴다"),
+         K("tFinal", "실수", "0 (필수로 줄 것)", "종료 시간. tFinal 과 dt 가 둘 다 0 이 아니어야 CONTROL/DATABASE 카드를 쓴다 (EndTimeTable 이 있으면 각도마다 표 값)"),
          K("dt", "실수", "0 (필수로 줄 것)", "d3plot 출력 간격 (키 이름 정확히 dt)"),
          K("DTMIN", "실수", "없음", "CONTROL_TERMINATION DTMIN — dt 붕괴 시 자동 종료 비율"),
+         K("EndTimeTable", "경로", "없음 (모든 각도가 tFinal 하나)", "각도별 종료 시간 표 csv (RIGID_DROP_ENDTIME 의 <base>_endtime.csv). 각도마다 낙하 방향이 0.01° 안으로 같은 줄의 endtim(덱 시간 단위)을 그 각도 덱의 ENDTIM 으로 쓰고 d3plot·INTFOR NPLTC = int(ENDTIM/dt) 를 다시 매긴다 — 한 각도·여러 각도 모두, 맞는 줄이 여럿이면 최대. 표에 없는 각도·잘못된 표·dt 없음은 덱을 쓰지 않고 종료 코드 1. 키 이름 전체가 같아야 한다(대소문자 무관). 상대 경로는 작업폴더 기준"),
          K("DropSurface", "형식별", "Plane,0,0,0,10,10,10", "Plane,Lx,Ly,Lz,Nx,Ny,Nz | PlaneGraded,Lx,Ly,Lz,Nx,Ny,Nz[,외곽층수=5[,비율=1.5]] | RigidWall,0,0,0,0,0,0 | PlanewithRoughness,Lx,Ly,Lz,Nx,Ny,Nz,모드,Rmax,SF1[,SF2]"),
          K("DeformableToRigid", "True/False", "False", "DEFORMABLE_TO_RIGID_AUTOMATIC 쌍 스위치(SWSET 20 code 2: 접촉력 0→강체 / SWSET 10 code 4: 접촉력 비0→변형체 — 덱 D2R 이 20·10 을 쓰면 비는 번호로 옮긴다). 바닥판 접촉이 S2S 여야 켜진다(매뉴얼 Remark 1) — ConvertGeneralToSingleSurface=False 면 S2S 로 자동 선택"),
          K("D2RTime1/D2RTime2/D2RTime3", "실수", "0 / 1e20 / 0", "전환 검사 시작·종료 시각, 전환 간 최소 간격(TIME3, 0 이면 채터)"),
@@ -268,6 +291,15 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
                      "DropContact.SOFT": 2.0, "RobustContact": True, "RobustContactTolerance": 0.1,
                      "TiedOptions.ConvertToSegment": True, "ControlTimestep.DT2MS": -1e-07, "DTMIN": 0.01,
                      "DropSurface": ["PlaneGraded", 200.0, 200.0, 20.0, 10, 10, 2, 5, 1.5]}}),
+         Example("각도별 종료 시간 표(EndTimeTable)로 세 자세 — 각도마다 ENDTIM 이 다르다", DROP_ENDTIME,
+                 explain=["표는 RIGID_DROP_ENDTIME(강체 낙하 사전 해석)이 만든 <base>_endtime.csv 다. 각도마다 낙하 방향이 0.01° 안으로 같은 줄의 endtim 이 그 각도 덱의 ENDTIM 이 된다.",
+                          "d3plot·INTFOR 출력 수 NPLTC = int(ENDTIM/dt) 도 각도마다 다시 매긴다. dt 는 출력 간격 그대로다(dt 가 없으면 종료 코드 1).",
+                          "표에 없는 각도나 잘못된 표면 덱을 하나도 쓰지 않고 종료 코드 1 로 멈춘다(조용한 기본값 없음). 로그에 각도마다 '[EndTimeTable] roll=… pitch=… yaw=… ENDTIM=…' 한 줄.",
+                          "키가 있으면 tFinal 은 각도마다 표 값으로 바뀐다. DynainDynamicRelaxationTerm 의 기본값(tFinal)은 옵션의 tFinal 그대로다."],
+                 verify={"mode": "DROP_ATTITUDE", "id": 1, "expect": {
+                     "EndTimeTable": "/data/DropCampaign/endtime_presim/0/model_endtime.csv",
+                     "EulerRolling": [0.0, 35.264, 90.0], "EulerPitching": [0.0, 45.0, 0.0],
+                     "Height": [1500.0, 1500.0, 1500.0], "TFinal": 0.005, "DT": 1e-05, "DropSurface": ["RigidWall"]}}),
      ],
      notes=["Euler/Height/InitialVelocity/InitialAngularVelocity 10 개 리스트 키와 OffsetDistance·Density·YoungsModulus·PoissonRatio 는 빠지면 KeyError 로 멈춘다.",
             "블록 안 빈 줄에서 블록이 끝난다 — 뒤 키는 무시된다.",

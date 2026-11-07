@@ -1508,6 +1508,17 @@ class KooMeshModifier(KooSimulationGenerator):
                             break
                         if "**end" in line.lower():
                             break
+                        # EndTimeTable,<표.csv> — 각도별 ENDTIM 표(RIGID_DROP_ENDTIME 의 <base>_endtime.csv). 키 이름 전체가 같을 때만
+                        # 받고 아래 검사로 넘기지 않는다 — 아래는 줄 전체를 부분 문자열로 보므로 경로에 runid·tfinal·height 같은 글자가
+                        # 있으면 다른 키로 읽힌다. 경로는 지금 절대 경로로 바꾼다 — 상대 경로는 작업폴더 기준(*Inputfile 과 같다)이고,
+                        # KMM 은 덱을 읽으며 모델 폴더로 chdir 한다
+                        if line.split(",")[0].strip().lower() == "endtimetable":
+                            tablePath = line.split(",", 1)[1].strip() if "," in line else ""
+                            if not tablePath:
+                                print("🔴 DROP_ATTITUDE: EndTimeTable 에 표 경로가 없다 — EndTimeTable,<표.csv> (종료 코드 1)")
+                                sys.exit(1)
+                            curOptions["EndTimeTable"] = os.path.abspath(os.path.join(self.curDir, tablePath))
+                            continue
                         if "runid" in line.lower():
                             svector = line.split(",")
                             for i in range(1, len(svector)):

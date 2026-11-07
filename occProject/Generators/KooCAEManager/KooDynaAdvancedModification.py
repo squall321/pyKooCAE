@@ -2161,6 +2161,59 @@ class KooDynaAdvancedModification:
             meshSize = newMeshSize
         return meshSize
 
+    def _ResolveDropEndTimes(self, option, RxList, RyList, RzList):
+        """EndTimeTable 키(각도별 종료 시간 표)가 있으면 각도마다 표의 endtim 을 찾아 목록으로 돌려준다. 키가 없으면 None(기존 동작).
+        덱을 하나도 쓰기 전에 모든 각도를 찾아 본다 — dt 가 없거나, 표를 읽지 못하거나, 표에 없는 각도가 있으면 rc 1 로 멈춘다
+        (조용한 기본값 없음)."""
+        path = option.get("EndTimeTable")
+        if path is None:
+            return None
+        from KooCAEManager.KooEndTimeTable import MATCH_TOL_DEG, load_lookup
+        if not option.get("DT"):
+            print("🔴 [EndTimeTable] dt 가 없다(0) — 각도별 ENDTIM 으로 d3plot·INTFOR 출력 수(NPLTC = ENDTIM/dt)를 정하려면 "
+                  "dt(출력 간격)가 있어야 한다 (종료 코드 1)")
+            sys.exit(1)
+        try:
+            lookup = load_lookup(path)
+        except (OSError, ValueError, csv.Error) as e:
+            print(f"🔴 [EndTimeTable] 표를 읽지 못했다 — {e} (종료 코드 1)")
+            sys.exit(1)
+        endtims = [lookup.find(RxList[i], RyList[i], RzList[i]) for i in range(len(RxList))]
+        missing = [i for i, e in enumerate(endtims) if e is None]
+        if missing:
+            for i in missing:
+                print(f"🔴 [EndTimeTable] roll={RxList[i]:g} pitch={RyList[i]:g} yaw={RzList[i]:g} (각도 {i + 1}/{len(RxList)}) 가 "
+                      f"표에 없다 — {path} 에 낙하 방향이 {MATCH_TOL_DEG}° 안으로 같은 줄이 없다")
+            print(f"🔴 [EndTimeTable] 표에 없는 각도 {len(missing)}개 — 표를 다시 만들거나 각도를 맞출 것 (종료 코드 1)")
+            sys.exit(1)
+        print(f"[EndTimeTable] {path}: 표 {len(lookup.rows)}줄에서 각도 {len(endtims)}개를 모두 찾았다 — "
+              f"ENDTIM {min(endtims):g}~{max(endtims):g} 를 각도마다 쓴다(옵션 tFinal {option.get('TFinal', 0.0):g} 대신)")
+        return endtims
+
+    def _ApplyDropEndTime(self, option, endtim, dt, cached_base=None):
+        """EndTimeTable 의 한 각도 ENDTIM 을 넣는다. SetControlandDatabaseExplicit 를 그 값으로 다시 불러 tFinal 에서 나오는 값
+        (CONTROL_TERMINATION ENDTIM, DATABASE_BINARY_D3PLOT·INTFOR 의 NPLTC = int(ENDTIM/dt))을 모두 새로 매긴다 — 나머지 카드에는
+        같은 값이 다시 들어갈 뿐이다. cached_base(Fast DOE 의 캐시 판)를 주면 베이스 기록기가 맨 앞에 쓰는 CONTROL·DATABASE 글을
+        새 글로 바꾼 판을 돌려준다(되돌리기·차분 기록기는 이 두 매니저를 건드리지 않는다)."""
+        def head():
+            s = StringIO()
+            self.dynaImporter.controlManager.WriteStreamDynaKeyword(s)
+            self.dynaImporter.databaseManager.WriteStreamDynaKeyword(s)
+            return s.getvalue()
+        old = head() if cached_base is not None else None
+        self.SetControlandDatabaseExplicit(
+            endtim, dt,
+            control_timestep=option.get("ControlTimestep"),
+            control_hourglass=option.get("ControlHourglass"),
+            dtmin=option.get("DTMIN"))
+        if cached_base is None:
+            return None
+        if cached_base.count(old) != 1:
+            print("🔴 [EndTimeTable] Fast DOE 캐시 판에서 CONTROL·DATABASE 글을 한 곳으로 찾지 못했다 — 각도별 ENDTIM 을 넣을 수 없다 "
+                  "(종료 코드 1)")
+            sys.exit(1)
+        return cached_base.replace(old, head(), 1)
+
     def DropAttitude(self, option, filePath):
         # 이전 열 스텝에서 이월된 열하중 처리 (THERM→DROP 방향). 열하중이 없으면 무동작
         self._ApplyThermalCarryPolicy(option, "DROP_ATTITUDE")
@@ -2186,6 +2239,13 @@ class KooDynaAdvancedModification:
         tFinal = option["TFinal"]
 
         dropSurface = option["DropSurface"]
+
+        # EndTimeTable — 각도별 ENDTIM. 키가 없으면 None 이고 아래는 모두 예전 그대로다. 있으면 첫 각도 값으로 CONTROL·DATABASE 를
+        # 쓰고(Fast DOE 캐시 판에도 그 값이 들어간다) 각도 루프에서 값이 바뀔 때마다 그 값으로 다시 쓴다
+        endtims = self._ResolveDropEndTimes(option, RxList, RyList, RzList)
+        if endtims is not None:
+            tFinal = endtims[0]
+            appliedEndtim = tFinal
 
         if dt != 0.0 and tFinal != 0.0:
             self.SetControlandDatabaseExplicit(
@@ -2346,6 +2406,17 @@ class KooDynaAdvancedModification:
             wx = wxList[i]
             wy = wyList[i]
             wz = wzList[i]
+
+            if endtims is not None:
+                # 이 각도의 표 ENDTIM — 앞 각도와 다르면 CONTROL·DATABASE 를 그 값으로 다시 쓴다(Fast 는 캐시 판의 그 글도 바꾼다)
+                if endtims[i] != appliedEndtim:
+                    newBase = self._ApplyDropEndTime(option, endtims[i], dt, cached_base if use_fast_mode else None)
+                    if use_fast_mode:
+                        cached_base = newBase
+                    appliedEndtim = endtims[i]
+                d3plot = self.dynaImporter.databaseManager.database.get("BINARY_D3PLOT")
+                print(f"[EndTimeTable] roll={RxOrigin:g} pitch={RyOrigin:g} yaw={RzOrigin:g} ENDTIM={endtims[i]:g} "
+                      f"NPLTC={getattr(d3plot, 'NPLTC', '-')} (각도 {i + 1}/{len(RxList)}) — 표에서 찾은 이 각도의 종료 시간")
 
             default_x_direction = [1.0, 0.0 ,0.0]
             default_y_direction = [0.0, 1.0, 0.0]
