@@ -13,6 +13,9 @@
   [4] table 지름길 — KMM 없이 같은 고르기
   [5] 실패 — 다중 스텝·THERM·tolerance·part_doe·endtime_presim 함께·칸 빠짐·rigidbody 없음·KMM rc≠0·옵션 값 → 표식
   [6] harvest --impact-map — 가짜 result.json·simulation_index.json 으로 per_angle_risk.csv·요약·빠진 DOE 수, 기존 harvest 그대로
+  [7] 수정 묶음 — σ/항복 비 지배(R3 e3)·다시 prepare 한 뒤 남은 Run 빼기·completed 먼저·sphere 건너뛰기(postprocess·prepare)
+  ([4] 에 BOM 표, [5] 에 exclude_parts·RigidAngularVelocity 모르는 KMM·rc 3·v0·gravity 메타·mm-kg-ms g·presim_timeout_seconds·
+   table 의 rigidbody 사전 해석 기록 없음/ExcludePart, [2] 에 endtime.csv 에 v0 없음)
 """
 import contextlib
 import copy
@@ -43,6 +46,11 @@ import csv, json, math, os, sys
 sys.path.insert(0, {gen!r})
 from KooCAEManager.KooEndTimeTable import fibonacci_angles, rotation_from_euler
 MODE = {mode!r}
+if sys.argv[1:2] == ["--help"]:   # prepare 의 KMM 버전 확인 — oldhelp 은 EndTimeTable 만 아는 KMM(RigidAngularVelocity 모름)
+    print("DROP_ATTITUDE — 가짜 도움말\n  EndTimeTable  [경로]")
+    if MODE != "oldhelp":
+        print("  RigidAngularVelocityX/Y/Z  [실수 리스트]")
+    sys.exit(0)
 start_cwd = os.getcwd()
 opt, work = sys.argv[1], sys.argv[2]
 lines = [l.rstrip("\n") for l in open(os.path.join(work, opt), encoding="utf-8")]
@@ -52,8 +60,12 @@ os.chdir(os.path.dirname(template))   # 진짜 KMM 처럼 덱 폴더로 chdir
 json.dump({{"argv": sys.argv, "cwd": start_cwd, "kv": kv}}, open(os.path.join(work, "fake_kmm_call.json"), "w"))
 if MODE == "rc1":
     print("가짜 실패"); sys.exit(1)
+if MODE == "rc3":
+    print("🔴 요소 소실 (가짜)"); sys.exit(3)
 base = os.path.splitext(os.path.basename(template))[0]
-H = float(kv["Height"]); v0 = math.sqrt(2 * 9810.0 * H)
+H = float(kv["Height"])
+units, g = ("mm-kg-ms", 9.81e-3) if MODE == "mmkgms" else ("mm-t-s", 9810.0)
+v0 = math.sqrt(2 * g * H)
 es = [float(x) for x in kv["Restitution"].split(",")]
 cols = ["name", "roll", "pitch", "yaw", "e", "k", "class", "t_start_ms", "t_end_ms", "J_over_mv0", "contact_x", "contact_y",
         "contact_z", "contact_type", "nx", "ny", "nz", "att_roll", "att_pitch", "att_yaw", "vx", "vy", "vz", "wx", "wy", "wz",
@@ -87,18 +99,23 @@ for i, (name, r, p, y) in enumerate(fibonacci_angles(int(kv["Fibonacci"]))):
                          "vx": v[0], "vy": v[1], "vz": v[2], "wx": w[0], "wy": w[1], "wz": w[2],
                          "vn_contact": vn, "v0": v0, "tfinal_k_ms": tf,
                          "endtim_k": math.ceil(round(tf * 10.0, 6)) / 10.0 * 1e-3}})
-with open(os.path.join(work, base + "_impacts.csv"), "w", newline="", encoding="utf-8") as f:
-    f.write("# format=rigid_drop_endtime/impacts v1\n# deck=" + template + "\n# units=mm-t-s\n# time_unit=s\n"
-            "# height=" + kv["Height"] + "\n# restitution=" + kv["Restitution"] + "\n# friction=" + kv["Friction"]
-            + "\n# gravity=" + kv["PresimGravity"] + "\n# margin_ms=" + kv["MarginMs"] + "\n")
+with open(os.path.join(work, base + "_impacts.csv"), "w", newline="", encoding="utf-8-sig" if MODE == "bom" else "utf-8") as f:
+    f.write("# format=rigid_drop_endtime/impacts v1\n# deck=" + template + "\n# units=" + units + "\n# time_unit="
+            + ("ms" if MODE == "mmkgms" else "s") + "\n# height=" + kv["Height"]
+            + "\n# v0=" + format(v0 * (1.01 if MODE == "badv0" else 1.0), ".10g")
+            + "\n# restitution=" + kv["Restitution"] + "\n# friction=" + kv["Friction"]
+            + "\n# gravity=" + ("0" if MODE == "grav0" else kv["PresimGravity"]) + "\n# margin_ms=" + kv["MarginMs"]
+            + "\n# t_sep_ms=1\n")
     wr = csv.writer(f)
     wr.writerow(cols)
     for row in rows:
         wr.writerow([format(row[c], ".10g") if isinstance(row[c], float) else row[c] for c in cols])
 if MODE != "norigid":
-    json.dump({{"units": {{"length": "mm"}}, "mass": 2e-4, "com": [75.0, 37.5, 3.75],
-               "bbox": {{"min": [0.0, 0.0, 0.0], "max": [150.0, 75.0, 7.5]}}}},
-              open(os.path.join(work, base + "_rigidbody.json"), "w"))
+    rb = {{"units": {{"length": "mm"}}, "mass": 2e-4, "com": [75.0, 37.5, 3.75],
+          "bbox": {{"min": [0.0, 0.0, 0.0], "max": [150.0, 75.0, 7.5]}}}}
+    if MODE != "norecord":   # 진짜 KMM 처럼 사전 해석 기록(presim.params.exclude_parts)을 남긴다
+        rb["presim"] = {{"params": {{"exclude_parts": [7] if MODE == "exclrb" else []}}}}
+    json.dump(rb, open(os.path.join(work, base + "_rigidbody.json"), "w"))
 print("fake KMM", MODE, len(rows), "rows")
 '''
 L_BOX = 0.5 * math.sqrt(150.0 ** 2 + 75.0 ** 2 + 7.5 ** 2)
@@ -340,14 +357,17 @@ def test_enabled(kcr):
     import Runner.ImpactConditions as IC
     tmp = EPT.new_tmp("ic_on_")
     fake = write_fake(tmp, "ok")
-    rc, out = EPT.designer_prepare(tmp, scen_ic(tmp, {"exclude_parts": [7]}, koomeshmodifier_path=fake))
+    rc, out = EPT.designer_prepare(tmp, scen_ic(tmp, koomeshmodifier_path=fake))
     root = os.path.join(tmp, "output", "impact_conditions")
     work = os.path.join(root, "presim")
     opt = Path(work, "rigid_drop_endtime.txt").read_text(encoding="utf-8")
     want = (f"*Inputfile\n{tmp}/model.k\n*Mode\nRIGID_DROP_ENDTIME,1\n**RigidDropEndtime,1\nHeight,1000\nFibonacci,12\n"
-            "Restitution,0.1,0.3,0.5\nFriction,0.5\nPresimGravity,1\nMarginMs,1.0\nExcludePart,7\nWorkers,8\n"
+            "Restitution,0.1,0.3,0.5\nFriction,0.5\nPresimGravity,1\nMarginMs,1.0\nWorkers,8\n"
             "**EndRigidDropEndtime\n*End\n")
-    check("옵션 파일: Fibonacci,12 · 중력 켬(기본) · ExcludePart · 템플릿 절대 경로", opt == want, repr(opt))
+    check("옵션 파일: Fibonacci,12 · 중력 켬(기본) · ExcludePart 없음 · 템플릿 절대 경로", opt == want, repr(opt))
+    et = Path(root, "endtime.csv").read_text(encoding="utf-8")
+    check("endtime.csv 메타에 v0 없음 (KMM NOT_PURE_DROP — 충격 조건 DOE 는 초기 속도가 있다), time_unit 은 있음",
+          "# v0=" not in et and "# time_unit=s" in et, et[:300])
     call = json.load(open(os.path.join(work, "fake_kmm_call.json"), encoding="utf-8"))
     check("호출: [KMM, 옵션 이름, 작업 폴더] · cwd 작업 폴더", call["argv"] == [fake, "rigid_drop_endtime.txt", work]
           and os.path.realpath(call["cwd"]) == os.path.realpath(work), str(call))
@@ -500,6 +520,16 @@ def test_table(kcr, on):
     idx = json.load(open(os.path.join(t2, "output", "impact_conditions", "index.json"), encoding="utf-8"))
     check("index source.presim = {table}, KMM 안 부름", idx["source"]["presim"] == {"table": os.path.join(t2, "pre", "model_impacts.csv")}
           and not os.path.exists(os.path.join(t2, "output", "impact_conditions", "presim")))
+    t3 = EPT.new_tmp("ic_tbl_bom_")
+    os.makedirs(os.path.join(t3, "pre"))
+    Path(t3, "pre", "model_impacts.csv").write_bytes("\ufeff".encode("utf-8") + Path(src, "model_impacts.csv").read_bytes())
+    Path(t3, "pre", "model_rigidbody.json").write_bytes("\ufeff".encode("utf-8") + Path(src, "model_rigidbody.json").read_bytes())
+    try:
+        rc3, _ = EPT.designer_prepare(t3, scen_ic(t3, {"table": "pre/model_impacts.csv"}, koomeshmodifier_path=fake))
+        same = rc3["scenario"]["doe_impact_state"] == a["doe_impact_state"]
+    except Exception as e:
+        same = repr(e)
+    check("BOM(엑셀 저장) 붙은 impacts.csv·rigidbody.json 도 같은 대표", same is True, str(same))
 
 
 # ── [5] 실패 ────────────────────────────────────────────────────
@@ -569,6 +599,39 @@ def test_errors(kcr):
     def impacts_k(t, f):
         return scen_ic(t, {"impacts": [5]}, koomeshmodifier_path=f)
     expect("후보 없음 (impacts [5])", impacts_k, ["no candidates"])
+    # 이번 수정 — 사용자 결정(버전 확인·rc 3·표 메타·exclude_parts)과 R3(시간 제한 키·table 사전 해석 기록·중력 메타)
+    expect("exclude_parts [7] → 쓸 수 없다 (10% SPC 규칙 안내)",
+           lambda t, f: scen_ic(t, {"exclude_parts": [7]}, koomeshmodifier_path=f),
+           ["exclude_parts unsupported", "10%", "SPC_ON_DEVICE_PART"])
+    expect("러너 KMM 이 RigidAngularVelocityX 를 모름 (EndTimeTable 만 아는 도움말)",
+           lambda t, f: scen_ic(t, koomeshmodifier_path=f), ["KMM version skew", "RigidAngularVelocityX"], mode="oldhelp",
+           cli=True)
+    expect("KMM 종료 코드 3 (덱 요소 소실)", lambda t, f: scen_ic(t, koomeshmodifier_path=f),
+           ["요소를 버렸다", "model_rigidbody.json", "KMM rc=3 element loss"], mode="rc3", cli=True)
+    expect("표 메타 v0 가 이 낙하 √(2gh) 와 다름", lambda t, f: scen_ic(t, koomeshmodifier_path=f),
+           ["v0", "table drop mismatch"], mode="badv0")
+    expect("표 메타 gravity 0 ≠ 옵션 gravity true", lambda t, f: scen_ic(t, koomeshmodifier_path=f),
+           ["사전 해석 중력", "table drop mismatch"], mode="grav0")
+    expect("mm-kg-ms 덱인데 simulation_params.gravity 없음", lambda t, f: scen_ic(t, koomeshmodifier_path=f),
+           ["mm-kg-ms", "0.00981", "gravity required for mm-kg-ms"], mode="mmkgms")
+    expect("presim_timeout_seconds 0 → 값 오류", lambda t, f: scen_ic(t, {"presim_timeout_seconds": 0}, koomeshmodifier_path=f),
+           ["presim_timeout_seconds", "bad value"])
+
+    def table_from(mode):
+        def build(t, f):
+            src = EPT.new_tmp("ic_src_")
+            pre = scen_ic(src, koomeshmodifier_path=write_fake(src, mode))
+            with contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    EPT.designer_prepare(src, pre)
+                except IC.ImpactConditionsError:
+                    pass
+            for n in ("model_impacts.csv", "model_rigidbody.json"):
+                Path(t, n).write_bytes(Path(src, "output", "impact_conditions", "presim", n).read_bytes())
+            return scen_ic(t, {"table": "model_impacts.csv"}, koomeshmodifier_path=f)
+        return build
+    expect("table 옆 rigidbody.json 에 사전 해석 기록 없음", table_from("norecord"), ["rigidbody presim record missing"])
+    expect("table 의 사전 해석이 ExcludePart 로 돌았음", table_from("exclrb"), ["ExcludePart [7]", "exclude_parts unsupported"])
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         IC.impact_options({"count": 3, "bogus": 1})
@@ -645,6 +708,89 @@ def test_harvest(kcr, on):
           and not os.path.exists(os.path.join(plain_dir, "per_angle_risk.csv")), r3.stdout[-400:])
 
 
+# ── [7] harvest·sphere 수정 (R3) ─────────────────────────────────
+def test_harvest_r3(on):
+    print("[7] harvest --impact-map 수정 — σ/항복 비 지배·지난 prepare 의 Run 빼기·completed 먼저 / sphere 건너뛰기")
+    import Runner.ImpactConditions as IC
+    tmp = EPT.new_tmp("ic_hv3_")
+    out = os.path.join(tmp, "output")
+    os.makedirs(os.path.join(out, "impact_conditions"))
+    json.dump({"project": {"output_dir": out}}, open(os.path.join(tmp, "runner_config.json"), "w"))
+    conds = [{"doe": d, "name": f"IC{d:03d}", "source": {"att": [10.0 * d, 0.0, 0.0], "v": [0.0, 0.0, -100.0],
+                                                           "w": [0.0, 1.5, 0.0]}} for d in (1, 2, 3)]
+    asg = [{"angle": n, "roll": 0, "pitch": 0, "yaw": 0, "dx": 0, "dy": 0, "dz": -1, "e": 0.3, "k": k, "doe": d,
+            "distance": 0.0} for n, k, d in (("P1", 1, 1), ("P1", 2, 2), ("P2", 1, 3))]
+    json.dump({"format": IC.INDEX_FORMAT, "conditions": conds, "assignments": asg},
+              open(os.path.join(out, "impact_conditions", "index.json"), "w"))
+    runs = {}
+
+    def run(d, n, stamp, parts, status="completed", att=None):
+        folder = f"Run_{stamp}_d{d}{n}"
+        os.makedirs(os.path.join(out, folder, "Output", "report"))
+        json.dump({"parts": parts}, open(os.path.join(out, folder, "Output", "report", "result.json"), "w"))
+        a = 10.0 * d if att is None else att
+        Path(out, folder, "step_config.txt").write_text(
+            f"*Mode\nDROP_ATTITUDE,1\n**DropAttitude,1\nEulerRolling,{a}\nEulerPitching,0.0\nEulerYawing,0.0\nHeight,0.0\n"
+            "InitialVelocityX,0.0\nInitialVelocityY,0.0\nInitialVelocityZ,-100.0\nRigidAngularVelocityX,0.0\n"
+            "RigidAngularVelocityY,1.5\nRigidAngularVelocityZ,0.0\n**EndDropAttitude\n*End\n", encoding="utf-8")
+        runs[f"Hv_CUM001_DOE{d:03d}_S001_DROP_IC{d:03d}_{n}"] = {"run_id": folder[4:], "status": status, "folder": folder}
+    case, chip = lambda v: {"name": "Case", "peak_stress": v}, lambda v: {"name": "Chip", "peak_stress": v}
+    run(1, 0, "20261107_100001", {"1": case(300.0), "2": chip(150.0)})   # R3 e3: Case 300/350, Chip 150/120 = 1.25
+    run(2, 0, "20261107_100002", {"1": case(320.0), "2": chip(60.0)})    # Case 320/350 = 0.914
+    run(2, 1, "20261107_200002", {"1": case(9999.0)}, att=55.0)          # 다시 prepare 하기 전 Run — 늦고 커도 뺀다
+    run(3, 0, "20261107_100003", {"1": case(100.0)})
+    run(3, 1, "20261107_200003", {"1": case(7777.0)}, status="failed")    # 뒤에 실패한 재실행이 결과를 남겼다
+    json.dump({"scenarios": [{"runs": runs}]}, open(os.path.join(out, "simulation_index.json"), "w"))
+
+    def harvest(*extra):
+        r = subprocess.run([sys.executable, str(ROOT / "KooChainRun"), "harvest", "--impact-map", tmp, *extra],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+        return (r.returncode, r.stdout + r.stderr, {x["doe"]: x for x in read_csv(os.path.join(tmp, "per_angle_risk.csv"))},
+                {x["angle"]: x for x in read_csv(os.path.join(tmp, "per_angle_risk_summary.csv"))})
+    code, txt, rows, summ = harvest("--yield-by-part", "1:350,2:120")
+    check("종료 코드 0", code == 0, txt[-400:])
+    check("DOE 1: σ/항복 비가 큰 Chip(150/120 = 1.25) 지배 — 최대 응력 Case(300) 아님, peak_stress 는 그 파트 응력",
+          rows["1"]["worst_part"] == "Chip" and abs(float(rows["1"]["ratio"]) - 1.25) < 1e-12
+          and float(rows["1"]["peak_stress"]) == 150.0, str(rows.get("1")))
+    check("DOE 2: 다시 prepare 하기 전 Run(자세 55°, 9999)은 빼고 수를 찍는다 → Case 320",
+          rows["2"]["worst_part"] == "Case" and float(rows["2"]["peak_stress"]) == 320.0
+          and "Run 1개는 뺐다" in txt and "stale runs skipped" in txt, txt[-600:])
+    check("DOE 3: 늦게 실패한 재실행(7777)이 completed(100)를 덮지 않는다", float(rows["3"]["peak_stress"]) == 100.0)
+    p1 = summ["P1"]
+    check("요약 P1: 비 1.25(DOE 1)가 지배 — 응력이 더 큰 DOE 2(320, 비 0.914) 아님",
+          p1["governing_doe"] == "1" and p1["worst_part"] == "Chip" and abs(float(p1["ratio"]) - 1.25) < 1e-12, str(p1))
+    code, txt, rows, summ = harvest()
+    check("항복강도가 없으면 예전처럼 최대 응력: DOE 1 Case 300 · 요약 P1 은 DOE 2(320)",
+          code == 0 and rows["1"]["worst_part"] == "Case" and float(rows["1"]["peak_stress"]) == 300.0
+          and summ["P1"]["governing_doe"] == "2" and rows["1"]["ratio"] == "", str(rows.get("1")))
+
+    # sphere — 충격 조건 runner_config 는 전각도 sphere 를 돌리지 않는다. 보통 시나리오는 그대로
+    rc_ic, ic_tmp = on[0], on[1]
+    r = subprocess.run([sys.executable, str(ROOT / "KooChainRun"), "postprocess", os.path.join(ic_tmp, "runner_config.json"),
+                        "--sphere"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+    check("postprocess --sphere: 충격 조건이면 종료 코드 1 + harvest --impact-map 안내",
+          r.returncode == 1 and "sphere report skipped for impact_conditions" in r.stdout and "--impact-map" in r.stdout,
+          r.stdout[-400:])
+    t_plain = EPT.new_tmp("ic_sph_plain_")
+    EPT.designer_prepare(t_plain, EPT.scen_faces2(t_plain))
+    r2 = subprocess.run([sys.executable, str(ROOT / "KooChainRun"), "postprocess", os.path.join(t_plain, "runner_config.json"),
+                         "--sphere"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+    check("보통 DROP 시나리오는 sphere 그대로 (안내 없음)", "impact_conditions" not in r2.stdout, r2.stdout[-300:])
+    pp = {"enabled": True, "sif_path": "/opt/apptainers/KooD3plotReader.sif", "auto_sphere": True}
+    t_ic = EPT.new_tmp("ic_sph_pp_")
+    u = scen_ic(t_ic, koomeshmodifier_path=write_fake(t_ic, "ok"))
+    u["postprocess"] = pp
+    rc_pp, out_pp = EPT.designer_prepare(t_ic, u)
+    t_n = EPT.new_tmp("ic_sph_pp_plain_")
+    u2 = EPT.scen_faces2(t_n)
+    u2["postprocess"] = pp
+    EPT.designer_prepare(t_n, u2)
+    check("prepare: 충격 조건이면 sphere_report.sh 를 쓰지 않고 알린다 · 보통 시나리오는 쓴다",
+          not os.path.exists(os.path.join(t_ic, "output", "sphere_report.sh")) and "sphere report skipped" in out_pp
+          and os.path.exists(os.path.join(t_n, "output", "sphere_report.sh")) and IC.is_impact_conditions(rc_pp)
+          and not IC.is_impact_conditions(json.load(open(os.path.join(t_n, "runner_config.json"), encoding="utf-8"))))
+
+
 def main():
     with contextlib.redirect_stdout(io.StringIO()):
         kcr = EPT.load_kcr()
@@ -655,6 +801,7 @@ def main():
     test_table(kcr, on)
     test_errors(kcr)
     test_harvest(kcr, on)
+    test_harvest_r3(on)
     print()
     if FAILS:
         print("FAIL %d:" % len(FAILS))

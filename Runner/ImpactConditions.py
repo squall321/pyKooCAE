@@ -30,15 +30,16 @@ import math
 import os
 import subprocess
 
-from Runner.EndTimePresim import (OPTION_FILE, STDOUT_FILE, _same_direction, _tail, build_option_text, drop_direction,
-                                  run_kmm)
+from Runner.EndTimePresim import (OPTION_FILE, PRESIM_TIMEOUT, STDOUT_FILE, _same_direction, _tail, build_option_text,
+                                  check_kmm_supports, check_table_drop, drop_direction, report_time_factor, run_kmm)
 
 MARKER = "[IMPACT_CONDITIONS_FAILED]"
 INDEX_FORMAT = "impact_conditions/index v1"
 ENDTIME_FORMAT = "rigid_drop_endtime/endtime v1"
 DEFAULTS = {"num_directions": 20000, "restitution": [0.1, 0.3, 0.5], "friction": 0.5, "gravity": True,
             "margin_ms": 1.0, "exclude_parts": [], "workers": 8, "count": 100, "impacts": [1, 2],
-            "severity_fraction": 0.5, "severity_min_distance": 0.2, "table": None}
+            "severity_fraction": 0.5, "severity_min_distance": 0.2, "table": None,
+            "presim_timeout_seconds": PRESIM_TIMEOUT}
 TEXT_COLUMNS = ("name", "class", "contact_type")
 FLOAT_COLUMNS = ("roll", "pitch", "yaw", "e", "nx", "ny", "nz", "att_roll", "att_pitch", "att_yaw",
                  "vx", "vy", "vz", "wx", "wy", "wz", "vn_contact", "v0", "J_over_mv0", "endtim_k")
@@ -81,6 +82,8 @@ def impact_options(raw):
     for key, hi in (("friction", None), ("margin_ms", None), ("severity_fraction", 1.0), ("severity_min_distance", None)):
         if not (real(o[key]) and o[key] >= 0 and (hi is None or o[key] <= hi)):
             bad(key)
+    if not (real(o["presim_timeout_seconds"]) and o["presim_timeout_seconds"] >= 1):
+        bad("presim_timeout_seconds")
     for key, ok in (("restitution", lambda x: real(x) and 0.0 <= x <= 1.0), ("impacts", lambda x: whole(x) and x >= 1),
                     ("exclude_parts", whole)):
         o[key] = list(o[key]) if isinstance(o[key], list) else [o[key]]
@@ -90,6 +93,14 @@ def impact_options(raw):
         bad("gravity")
     if o["table"] is not None and not (isinstance(o["table"], str) and o["table"].strip()):
         bad("table")
+    if o["exclude_parts"]:
+        raise ImpactConditionsError(
+            f"angle_source.impact_conditions.exclude_parts({o['exclude_parts']})는 쓸 수 없다 — FEM 의 KMM DROP_ATTITUDE 는 "
+            f"강체 회전 중심(기기 무게중심)을 잡을 때 그 파트를 빼지 못해 사전 해석의 무게중심·회전과 어긋난다. 템플릿에서 그 "
+            f"파트(받침·고정구 등)를 지우고 돌릴 것 — 병진 SPC 가 파트 절점의 10% 이상인 파트(바닥판 등)와 병진이 묶인 *MAT_RIGID "
+            f"파트는 양쪽(사전 해석·FEM 회전 중심) 모두 같은 규칙으로 자동으로 빠진다. 10% 미만이면 기기 파트로 넣고 "
+            f"SPC_ON_DEVICE_PART 경고를 남기며, 뺄 파트가 넣을 파트와 절점을 나누면 KMM 이 종료 코드 1 로 멈춘다 "
+            f"(exclude_parts unsupported)")
     return o
 
 
@@ -213,7 +224,7 @@ def select_conditions(cands, L, count, severity_fraction, min_distance=None):
 def read_impacts_csv(path):
     """<base>_impacts.csv → (meta, rows). '#' 줄은 meta. 필요한 칸이 없거나 값이 틀리면 멈춘다."""
     meta, body = {}, []
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:   # 엑셀이 붙이는 BOM 은 뗀다 — 남으면 첫 메타 줄을 칸으로 읽는다
         for line in f:
             if line.startswith("#"):
                 k, _, v = line[1:].strip().partition("=")
@@ -246,7 +257,7 @@ def read_impacts_csv(path):
 def half_diagonal(path):
     """<base>_rigidbody.json 의 bbox min/max → L = 대각선의 절반 (덱 길이 단위)."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8-sig") as f:
             bb = json.load(f)["bbox"]
         lo, hi = [float(x) for x in bb["min"]], [float(x) for x in bb["max"]]
         L = 0.5 * math.sqrt(sum((b - a) ** 2 for a, b in zip(lo, hi)))
@@ -258,7 +269,7 @@ def half_diagonal(path):
     return L
 
 
-def _run_presim(opts, sim_params, environment, template, work):
+def _run_presim(opts, sim_params, environment, template, work, batch=False):
     """옵션 파일을 쓰고 KMM 을 돌려 (impacts.csv, rigidbody.json) 경로를 돌려준다. 실패하면 멈춘다."""
     if not os.path.isfile(template):
         raise ImpactConditionsError(f"사전 해석할 템플릿(project.model_file)이 없다: {template} (template not found)")
@@ -270,18 +281,25 @@ def _run_presim(opts, sim_params, environment, template, work):
             os.remove(p)   # 지난 prepare 의 산출을 이번 결과로 잘못 읽지 않게
     with open(os.path.join(work, OPTION_FILE), "w", encoding="utf-8") as f:
         f.write(build_option_text(template, None, sim_params.get("height", 1500), opts, fibonacci=opts["num_directions"]))
-    timeout = environment.get("timeout_koomeshmodifier_seconds", 604800)
+    timeout = opts["presim_timeout_seconds"]
     print(f"  [impact_conditions] KMM RIGID_DROP_ENDTIME 실행 — 방향 {opts['num_directions']}개 × e {len(opts['restitution'])}개, "
           f"중력 {'켬' if opts['gravity'] else '끔'}, 작업 폴더 {work}")
     log_path = os.path.join(work, STDOUT_FILE)
     try:
-        rc, _cmd, log_path = run_kmm(environment, work, timeout)
+        rc, _cmd, log_path = run_kmm(environment, work, timeout, batch)
     except subprocess.TimeoutExpired:
         _tail(log_path)
-        raise ImpactConditionsError(f"KMM 사전 해석이 {timeout}초 안에 끝나지 않았다 — 로그 {log_path} (timeout)") from None
+        raise ImpactConditionsError(f"KMM 사전 해석이 {timeout}초 안에 끝나지 않았다 — KMM 프로세스 묶음을 멈췄다. 방향·작업자가 "
+                                    f"많으면 angle_source.impact_conditions.presim_timeout_seconds 를 늘릴 것(기본 "
+                                    f"{PRESIM_TIMEOUT}). 로그 {log_path} (timeout)") from None
     except OSError as e:
         raise ImpactConditionsError(f"KMM 을 실행하지 못했다: {e} — environment.koomeshmodifier_path·apptainer_sif·"
                                     f"apptainer_tmpdir 를 확인할 것 (cannot run KMM)") from None
+    if rc == 3:
+        _tail(log_path)
+        raise ImpactConditionsError(f"KMM 이 덱을 읽으며 요소를 버렸다(종료 코드 3 — 예: *PART_INERTIA 파트, 정의 안 된 절점). "
+                                    f"질량특성·볼록 껍질이 모자랄 수 있다 — {outs[1]} 의 warnings·excluded_parts 를 볼 것. "
+                                    f"받아들일 수 있으면 검토한 표를 table 로 줄 것. 로그 {log_path} (KMM rc=3 element loss)")
     if rc != 0:
         _tail(log_path)
         raise ImpactConditionsError(f"KMM 사전 해석이 실패했다(종료 코드 {rc}) — 로그 {log_path} (KMM rc={rc})")
@@ -291,6 +309,22 @@ def _run_presim(opts, sim_params, environment, template, work):
             raise ImpactConditionsError(f"KMM 이 끝났는데 {os.path.basename(p)} 가 없다: {p} — 로그 {log_path} "
                                         f"(output not written)")
     return outs
+
+
+def _check_table_exclude(rigid):
+    """table 지름길: 그 표를 만든 사전 해석이 ExcludePart 없이 돌았는지 <base>_rigidbody.json presim.params.exclude_parts 로
+    본다 — 손으로 뺀 파트가 있으면 사전 해석의 무게중심·회전이 FEM(그 파트를 못 뺀다)과 어긋난다. 기록이 없으면 멈춘다."""
+    try:
+        with open(rigid, encoding="utf-8-sig") as f:
+            excl = json.load(f)["presim"]["params"]["exclude_parts"]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        raise ImpactConditionsError(f"질량특성 {rigid} 에 사전 해석 기록 presim.params.exclude_parts 가 없다({e!r}) — 그 표가 "
+                                    f"ExcludePart 없이 만들어졌는지 확인할 수 없다. KMM v132 이상 RIGID_DROP_ENDTIME 이 함께 쓴 "
+                                    f"rigidbody.json 을 둘 것 (rigidbody presim record missing)") from None
+    if excl:
+        raise ImpactConditionsError(f"table 의 사전 해석이 ExcludePart {excl} 로 돌았다({rigid}) — FEM 의 KMM DROP_ATTITUDE 는 "
+                                    f"회전 중심을 잡을 때 그 파트를 빼지 못한다. 그 파트를 템플릿에서 지우고 사전 해석을 다시 "
+                                    f"돌릴 것 (exclude_parts unsupported)")
 
 
 def _source_row(r):
@@ -310,8 +344,9 @@ def _write_index(path, index):
         f.write(head[:-2] + ',\n "assignments": [\n  ' + rows + "\n ]\n}\n")
 
 
-def prepare_impact_conditions(opts, sim_params, environment, model_file, output_dir, scenario_dir):
+def prepare_impact_conditions(opts, sim_params, environment, model_file, output_dir, scenario_dir, batch=False):
     """사전 해석(또는 table) → 대표 고르기 → endtime.csv·index.json.
+    batch: batch_koomeshmodifier 로 돌 시나리오인가 — 그러면 표 줄을 읽을 KMM(버전 확인·사전 해석)이 헤드 노드 일괄 KMM 이다.
 
     → {"conditions": [{doe, name, roll, pitch, yaw, ...}], "index", "endtime_tables", "doe_endtim", "doe_impact_meta",
        "doe_impact_state"}. 실패는 ImpactConditionsError.
@@ -319,6 +354,8 @@ def prepare_impact_conditions(opts, sim_params, environment, model_file, output_
     template = os.path.abspath(model_file)
     root = os.path.abspath(os.path.join(output_dir, "impact_conditions"))
     os.makedirs(root, exist_ok=True)
+    # 러너가 쓸 KMM 이 EndTimeTable·RigidAngularVelocity 를 아는지 먼저 — 옛 KMM 은 그 줄을 다른 키로 잘못 읽는다(table 도 같다)
+    check_kmm_supports(environment, ("EndTimeTable", "RigidAngularVelocityX"), root, ImpactConditionsError, batch)
     if opts["table"]:
         impacts = opts["table"].strip()
         impacts = os.path.abspath(impacts if os.path.isabs(impacts) else os.path.join(scenario_dir, impacts))
@@ -329,14 +366,17 @@ def prepare_impact_conditions(opts, sim_params, environment, model_file, output_
         if not os.path.isfile(rigid):
             raise ImpactConditionsError(f"table 옆에 질량특성 {rigid} 가 없다 — KMM RIGID_DROP_ENDTIME 이 함께 쓴 파일을 "
                                         f"같은 폴더에 둘 것 (rigidbody json not found)")
+        _check_table_exclude(rigid)
         presim = {"table": impacts}
         print(f"  [impact_conditions] 사전 해석을 건너뛰고 주어진 충격 상태 표를 쓴다: {impacts}")
     else:
-        impacts, rigid = _run_presim(opts, sim_params, environment, template, os.path.join(root, "presim"))
+        impacts, rigid = _run_presim(opts, sim_params, environment, template, os.path.join(root, "presim"), batch)
         presim = {k: opts[k] for k in ("num_directions", "restitution", "friction", "gravity", "margin_ms",
                                        "exclude_parts", "workers")}
         presim["height"] = sim_params.get("height", 1500)
     meta, rows = read_impacts_csv(impacts)
+    check_table_drop(meta, sim_params, impacts, ImpactConditionsError, "impact_conditions", gravity=opts["gravity"],
+                     template=template)
     L = half_diagonal(rigid)
     wanted = set(opts["impacts"])
     cands = [r for r in rows if r["k"] in wanted]
@@ -418,6 +458,7 @@ def prepare_impact_conditions(opts, sim_params, environment, model_file, output_
     _write_index(index_path, index)
     print(f"✅ 충격 조건 DOE {len(conditions)}개 (심각도 상위 {n_sev} + 고르게 {len(conditions) - n_sev}) — 후보 "
           f"{len(cands)}줄, 상태 {index['features']['selection']['n_states']}개, L={L:.6g}. 기록 {index_path}")
+    report_time_factor(doe_endtim, sim_params, "impact_conditions")
     return {
         "conditions": conditions, "index": index_path,
         "endtime_tables": [{"template": template, "table": table, "source": "impact_conditions",
@@ -432,6 +473,16 @@ def prepare_impact_conditions(opts, sim_params, environment, model_file, output_
                                                    "rigid_angular_velocity": c["rigid_angular_velocity"],
                                                    "height": c["height"]}} for c in conditions},
     }
+
+
+SPHERE_SKIP_MESSAGE = ("충격 조건 DOE(angle_source impact_conditions)는 전각도 sphere 리포트를 돌리지 않는다 — DOE 가 낙하 각도가 "
+                       "아니라 대표 충돌 상태다. 결과는 `KooChainRun harvest --impact-map <테스트 폴더>` 로 원래 각도·e·충돌 차수마다 "
+                       "모은다(per_angle_risk.csv). DOE 별 deep report 는 그대로 쓴다 (sphere report skipped for impact_conditions)")
+
+
+def is_impact_conditions(runner_config):
+    """runner_config 가 angle_source impact_conditions 로 만든 것인가 (scenario.doe_impact_meta 가 있다)."""
+    return bool(((runner_config or {}).get("scenario") or {}).get("doe_impact_meta"))
 
 
 def impact_state_for_step(config, doe, step):
@@ -455,14 +506,74 @@ def _pid_order(pid):
 
 
 def _doe_peak(parts, parts_filter):
-    """{pid: {name, peak_stress, stress_limit}} → 최대 응력 파트(같으면 작은 PID)와 그 파트의 peak/limit."""
+    """{pid: {name, peak_stress, stress_limit}} → 지배 파트와 그 파트의 peak/limit.
+    항복강도(stress_limit > 0, --yield·--yield-by-part 또는 result.json)가 있는 파트가 있으면 σ/항복 비가 가장 큰 파트
+    (일반 harvest 위험도와 같은 기준 — 응력은 낮아도 항복이 낮은 파트가 먼저 깨진다), 없으면 최대 응력 파트. 같으면 작은 PID."""
     items = sorted(((p, i) for p, i in parts.items() if not parts_filter or p in parts_filter), key=lambda x: _pid_order(x[0]))
     if not items:
         return None
-    pid, info = max(items, key=lambda x: x[1]["peak_stress"])
+    limited = [(p, i) for p, i in items if (i.get("stress_limit") or 0.0) > 0]
+    if limited:
+        pid, info = max(limited, key=lambda x: x[1]["peak_stress"] / x[1]["stress_limit"])
+    else:
+        pid, info = max(items, key=lambda x: x[1]["peak_stress"])
     lim = info.get("stress_limit") or 0.0
     return {"peak_stress": info["peak_stress"], "worst_pid": pid, "worst_part": info.get("name", ""),
-            "ratio": info["peak_stress"] / lim if lim > 0 else None}
+            "ratio": info["peak_stress"] / lim if lim > 0 else None,
+            "unlimited": [p for p, i in items if not (i.get("stress_limit") or 0.0) > 0] if limited else []}
+
+
+def _governs(r):
+    """요약에서 원래 각도의 지배 줄을 고르는 열쇠 — σ/항복 비가 있는 줄이 먼저, 그다음 비, 그다음 응력."""
+    return (r["ratio"] is not None, r["ratio"] or 0.0, r["peak_stress"])
+
+
+_CFG_KEYS = (("EulerRolling", "att", 0), ("EulerPitching", "att", 1), ("EulerYawing", "att", 2),
+             ("InitialVelocityX", "v", 0), ("InitialVelocityY", "v", 1), ("InitialVelocityZ", "v", 2),
+             ("RigidAngularVelocityX", "w", 0), ("RigidAngularVelocityY", "w", 1), ("RigidAngularVelocityZ", "w", 2))
+
+
+def _run_matches(run_dir, cond):
+    """Run 폴더 step_config.txt 의 자세·속도·각속도 줄이 index.json 대표(cond.source 의 att·v·w)와 같은가.
+    → True / False(다른 prepare 의 상태) / None(step_config.txt 가 없어 확인 못 함)."""
+    try:
+        with open(os.path.join(run_dir, "step_config.txt"), encoding="utf-8-sig") as f:
+            kv = dict(line.strip().split(",", 1) for line in f if "," in line and not line.startswith("*"))
+    except OSError:
+        return None
+    src = cond.get("source") or {}
+    for key, field, i in _CFG_KEYS:
+        try:
+            got, want = float(kv[key]), float(src[field][i])
+        except (KeyError, ValueError, TypeError, IndexError):
+            return False
+        if abs(got - want) > 1e-9 * max(1.0, abs(want)):
+            return False
+    return True
+
+
+def _index_runs(output_dir):
+    """simulation_index.json → {Run 폴더 이름: (DOE 1-based, status)} — alias 의 DOExxx 로 DOE 를 잇는다."""
+    import re
+    try:
+        with open(os.path.join(output_dir, "simulation_index.json"), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for sc in d.get("scenarios") or []:
+        for alias, info in (sc.get("runs") or {}).items():
+            m = re.search(r"DOE0*(\d+)", alias)
+            folder = info.get("folder") or (f"Run_{info['run_id']}" if info.get("run_id") else None)
+            if m and folder:
+                out[folder] = (int(m.group(1)), info.get("status"))
+    return out
+
+
+def _run_dir(result_path, rid):
+    p = result_path.replace("\\", "/")
+    k = p.find("/" + rid + "/")
+    return p[:k + len(rid) + 1] if k >= 0 else os.path.dirname(result_path)
 
 
 def _cell(v):
@@ -474,10 +585,12 @@ def _cell(v):
 def harvest_impact_map(test_dir, out_csv=None, parts_filter=None, yields=None):
     """완료 DOE 의 파트별 최대 응력을 index.json assignments 의 (원래 각도, e, k) 마다 붙여 CSV 두 개를 쓴다.
 
-    per_angle_risk.csv(배정마다 한 줄)와 per_angle_risk_summary.csv(원래 각도마다 e·충격 차수 가운데 최대). → 통계 dict.
-    같은 DOE 를 여러 번 돌렸으면 폴더 이름이 가장 늦은 Run 의 결과를 쓴다.
+    per_angle_risk.csv(배정마다 한 줄)와 per_angle_risk_summary.csv(원래 각도마다 e·충격 차수 가운데 지배 줄). → 통계 dict.
+    지배 = 항복강도가 있으면 σ/항복 비가 가장 큰 파트·줄, 없으면 최대 응력(_doe_peak·_governs). peak_stress 칸은 그 파트의 응력.
+    Run 고르기: step_config.txt 의 자세·속도·각속도가 index.json 대표와 다르면(다시 prepare 하기 전 Run) 뺀다. 남은 것 가운데
+    status completed 가 먼저, 그다음 폴더 이름이 늦은 Run 이다.
     """
-    from Runner.AdaptiveOrientation import harvest, run_folder_to_doe
+    from Runner.AdaptiveOrientation import harvest
     from Runner.RiskHarvester import _apply_yield
     test_dir = os.path.abspath(test_dir)
     rc = {}
@@ -495,17 +608,31 @@ def harvest_impact_map(test_dir, out_csv=None, parts_filter=None, yields=None):
     if idx.get("format") != INDEX_FORMAT:
         raise ImpactConditionsError(f"{index_path} 형식이 {INDEX_FORMAT!r} 가 아니다: {idx.get('format')!r} (bad index)")
 
-    f2d, _completed = run_folder_to_doe(output_dir)
+    runs = _index_runs(output_dir)
     samples = {s["run_id"]: s for s in harvest(test_dir)}
     if not os.path.abspath(output_dir).startswith(test_dir + os.sep):
         samples.update({s["run_id"]: s for s in harvest(output_dir)})
-    per_doe = {}
-    for rid in sorted(samples):   # 같은 DOE 가 여럿이면 늦은 Run 이 뒤에 와서 덮는다
-        doe = f2d.get(rid)
+    conds = {c["doe"]: c for c in idx.get("conditions", [])}
+    # DOE 마다 쓸 Run: 이 index 의 대표와 같은 상태로 돈 것(step_config.txt 대조 — 다시 prepare 한 뒤 남은 지난 Run 은 뺀다)
+    # 가운데 status completed 가 먼저, 그다음 폴더 이름이 늦은 것 — 뒤에 실패한 재실행이 결과를 남겨도 완료 결과를 덮지 않는다
+    best, stale, unverified = {}, [], []
+    for rid in sorted(samples):
+        doe, status = runs.get(rid, (None, None))
         if doe is None and rid.split("Run_")[-1].isdigit():
             doe = int(rid.split("Run_")[-1])
-        if doe is not None:
-            per_doe[doe] = samples[rid]["parts"]
+        if doe not in conds:
+            continue
+        ok = _run_matches(_run_dir(samples[rid]["result_path"], rid), conds[doe])
+        if ok is False:
+            stale.append(rid)
+            continue
+        if ok is None:
+            unverified.append(rid)
+        rank = (status == "completed", rid)
+        if doe not in best or rank > best[doe][0]:
+            best[doe] = (rank, samples[rid]["parts"])
+    per_doe = {d: v[1] for d, v in best.items()}
+    not_completed = sorted(d for d, v in best.items() if not v[0][0])
     _apply_yield(per_doe, yields or {})
     if parts_filter and not any(p in parts_filter for parts in per_doe.values() for p in parts):
         raise ImpactConditionsError(f"지정한 파트 {sorted(parts_filter)} 가 어느 결과에도 없다 (parts not found)")
@@ -514,7 +641,9 @@ def harvest_impact_map(test_dir, out_csv=None, parts_filter=None, yields=None):
     missing_does = [d for d in does if not peaks.get(d)]
     if len(missing_does) == len(does):
         raise ImpactConditionsError(f"충격 조건 DOE {len(does)}개 가운데 결과(result.json)가 있는 것이 없다 — "
-                                    f"{test_dir} 아래에서 찾았다 (no results)")
+                                    f"{test_dir} 아래에서 찾았다"
+                                    + (f". 지난 prepare 의 다른 상태로 돈 Run {len(stale)}개는 뺐다" if stale else "")
+                                    + " (no results)")
 
     rows = []
     for a in idx["assignments"]:
@@ -527,12 +656,12 @@ def harvest_impact_map(test_dir, out_csv=None, parts_filter=None, yields=None):
         if key not in summary:
             order.append(key)
             summary[key] = {**{k: r[k] for k in ("angle", "roll", "pitch", "yaw", "dx", "dy", "dz")},
-                            "peak_stress": None, "n_impacts": 0, "n_missing": 0}
+                            "peak_stress": None, "ratio": None, "n_impacts": 0, "n_missing": 0}
         s = summary[key]
         s["n_impacts"] += 1
         if r["peak_stress"] is None:
             s["n_missing"] += 1
-        elif s["peak_stress"] is None or r["peak_stress"] > s["peak_stress"]:
+        elif s["peak_stress"] is None or _governs(r) > _governs(s):
             s.update({k: r[k] for k in ("peak_stress", "worst_pid", "worst_part", "ratio")},
                      governing_e=r["e"], governing_k=r["k"], governing_doe=r["doe"])
 
@@ -546,11 +675,27 @@ def harvest_impact_map(test_dir, out_csv=None, parts_filter=None, yields=None):
     stats = {"per_angle_risk": out_csv, "summary": out_sum, "n_does": len(does),
              "n_does_with_result": len(does) - len(missing_does), "missing_does": missing_does,
              "n_assignments": len(rows), "n_assignments_missing": sum(1 for r in rows if r["peak_stress"] is None),
-             "n_angles": len(order), "n_angles_missing": sum(1 for k in order if summary[k]["peak_stress"] is None)}
+             "n_angles": len(order), "n_angles_missing": sum(1 for k in order if summary[k]["peak_stress"] is None),
+             "stale_runs": stale, "unverified_runs": unverified, "not_completed_does": not_completed,
+             "governed_by": "ratio" if any(p and p["ratio"] is not None for p in peaks.values()) else "peak_stress"}
     print(f"  index     : {index_path}")
     print(f"  DOE       : {stats['n_does_with_result']}/{stats['n_does']} 결과 있음"
           + (f" — 없음 {len(missing_does)}개: {', '.join(map(str, missing_does[:15]))}{' …' if len(missing_does) > 15 else ''}"
              if missing_does else ""))
+    if stale:
+        print(f"  ⚠️  지난 prepare 의 다른 상태로 돈 Run {len(stale)}개는 뺐다(step_config.txt 자세·속도·각속도 ≠ index.json): "
+              f"{', '.join(stale[:5])}{' …' if len(stale) > 5 else ''} (stale runs skipped)")
+    if unverified:
+        print(f"  ⚠️  step_config.txt 가 없어 상태를 대조하지 못한 Run {len(unverified)}개는 그대로 썼다: "
+              f"{', '.join(unverified[:5])}{' …' if len(unverified) > 5 else ''}")
+    if not_completed:
+        print(f"  ⚠️  status completed 가 아닌 Run 의 결과를 쓴 DOE {len(not_completed)}개: "
+              f"{', '.join(map(str, not_completed[:15]))}{' …' if len(not_completed) > 15 else ''}")
+    unlimited = sorted({p for v in peaks.values() if v for p in v["unlimited"]}, key=_pid_order)
+    if stats["governed_by"] == "ratio":
+        print("  지배 파트: σ/항복 비가 가장 큰 파트 (항복강도가 있는 파트끼리 — peak_stress 는 그 파트의 응력)"
+              + (f". 항복강도 없는 파트 {', '.join(unlimited[:10])}{' …' if len(unlimited) > 10 else ''} 는 고르기에서 빠졌다"
+                 if unlimited else ""))
     print(f"  (각도, e, k): {stats['n_assignments']}줄 (결과 없음 {stats['n_assignments_missing']})")
     print(f"  원래 각도 : {stats['n_angles']}개 (결과 없음 {stats['n_angles_missing']})")
     print(f"✅ 방출: {out_csv}")

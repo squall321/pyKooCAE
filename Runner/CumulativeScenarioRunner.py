@@ -813,7 +813,8 @@ class CumulativeScenarioRunner:
 
         return self._generate_alias(doe_index, step - 1, prev_mode, prev_condition)
 
-    def _generate_and_maybe_run_deep_report(self, run_dir: str, output_run_dir: str):
+    def _generate_and_maybe_run_deep_report(self, run_dir: str, output_run_dir: str,
+                                            doe_index: Optional[int] = None, step_num: Optional[int] = None):
         """deep_report.sh를 run_dir에 항상 생성, postprocess.enabled && auto_deep이면 자동 실행.
 
         auto_deep_mode (default 'inline'):
@@ -825,6 +826,12 @@ class CumulativeScenarioRunner:
         pp = self.config.get("postprocess")
         if not pp:
             return  # 옵션 없으면 아무것도 안 함
+        # 종료 시간 표로 이 스텝이 tFinal 의 f 배로 길면 deep report 시간 제한도 f 배(상태 수가 endtim 에 비례). 표가 없으면 1
+        if doe_index is not None:
+            from Runner.EndTimePresim import endtime_time_factor
+            f = endtime_time_factor(self.config, doe_index, step_num)
+            if f > 1:
+                pp = self._scaled_deep_options(pp, f)
 
         try:
             from Runner.PostprocessShellGenerator import build_deep_report_sh
@@ -864,6 +871,21 @@ class CumulativeScenarioRunner:
                     logging.warning(f"deep_report 실행 실패 (rc={result.returncode}, log={log_path})")
             except Exception as e:
                 logging.warning(f"deep_report 자동 실행 실패 (skip): {e}")
+
+    @staticmethod
+    def _scaled_deep_options(pp: dict, f: int) -> dict:
+        """postprocess 옵션 사본 — deep_timeout_seconds(기본 7200)·deep_time_limit(있으면) 를 f 배로."""
+        out = dict(pp)
+        out["deep_timeout_seconds"] = pp.get("deep_timeout_seconds", 7200) * f
+        if pp.get("deep_time_limit"):
+            from Runner.EndTimePresim import slurm_hms, slurm_seconds
+            try:
+                out["deep_time_limit"] = slurm_hms(slurm_seconds(pp["deep_time_limit"]) * f)
+            except ValueError:
+                logging.warning(f"postprocess.deep_time_limit {pp['deep_time_limit']!r} 를 읽지 못해 늘리지 않는다")
+        logging.info(f"종료 시간 표: deep report 시간 제한 × {f} — deep_timeout_seconds {out['deep_timeout_seconds']}"
+                     + (f", deep_time_limit {out['deep_time_limit']}" if out.get("deep_time_limit") else ""))
+        return out
 
     def _submit_deep_report_sbatch(self, run_dir: str, sh_path: str, pp: dict):
         """auto_deep_mode=separate_job: dependent sbatch 잡으로 deep_report 제출.
@@ -1243,7 +1265,7 @@ class CumulativeScenarioRunner:
 
         # 5. LS-DYNA 실행 (로컬 디스크 stage-in/out으로 NFS 부하 방지)
         input_file = self._find_input_file(run_dir, mode)
-        timeout = self.config["execution"].get("timeout_per_step_seconds", 604800)
+        timeout = self._step_timeout(doe_index, step_num)
         output_run_dir = os.path.join(run_dir, "Output")
         os.makedirs(output_run_dir, exist_ok=True)
 
@@ -1351,7 +1373,7 @@ class CumulativeScenarioRunner:
 
         # 6.5 KooD3plotReader deep_report sh 생성 + (옵션 시) 자동 실행
         # postprocess 옵션 없으면 전체 skip → 회귀 무영향
-        self._generate_and_maybe_run_deep_report(run_dir, output_run_dir)
+        self._generate_and_maybe_run_deep_report(run_dir, output_run_dir, doe_index, step_num)
 
         # 7. DYNAIN_TO_INITIAL 실행 (마지막 step 제외)
         # 누적 무결성: 실패/산출물 부재 시 기본은 warning+degraded 태깅(기존 동작 유지),
@@ -1522,6 +1544,20 @@ class CumulativeScenarioRunner:
         self.checkpoint["completed_runs"].append(alias)
         logging.info(f"[THERM 2-pass] 완료: {alias} (pass1=Run_{rid1}, pass2=Run_{rid2})")
         return True
+
+    def _step_timeout(self, doe_index: int, step_num: int) -> int:
+        """스텝 LS-DYNA wall-clock 제한 = timeout_per_step_seconds × 종료 시간 배율.
+
+        배율은 이 DOE·스텝의 endtim(scenario.doe_endtim, endtime_presim·impact_conditions)이 tFinal 보다 길 때
+        ceil(endtim ÷ tFinal) 이다. 표가 없거나 짧으면 1 이라 예전 값 그대로다.
+        """
+        from Runner.EndTimePresim import endtime_time_factor
+        base = self.config["execution"].get("timeout_per_step_seconds", 604800)
+        f = endtime_time_factor(self.config, doe_index, step_num)
+        if f > 1:
+            logging.info(f"종료 시간 표: DOE {doe_index} 스텝 {step_num} endtim 이 tFinal 의 {f}배 이하 — "
+                         f"스텝 시간 제한 {base} s × {f} = {base * f} s")
+        return base * f
 
     def _build_preserve_block(self) -> str:
         """scenario.json의 preserve_includes를 *PreserveIncludes 블록으로 변환.
@@ -2122,6 +2158,17 @@ DefaultCTE,{default_cte}{dtmin_block}{profile_block}{ambient_block}
             logging.warning(f"Unknown condition: {condition}, using default angles")
             return {"roll": 0, "pitch": 0, "yaw": 0}
 
+    @staticmethod
+    def _unread_table_keys(config_file: str, stdout: str) -> list:
+        """스텝 설정에 EndTimeTable·RigidAngularVelocity 줄이 있는데 KMM 출력에 그 [표식](읽고 적용했다는 줄)이 없으면 그 키들."""
+        try:
+            with open(config_file, encoding="utf-8") as f:
+                lines = [line.strip() for line in f]
+        except OSError:
+            return []
+        return [mark for key, mark in (("EndTimeTable,", "EndTimeTable"), ("RigidAngularVelocity", "RigidAngularVelocity"))
+                if any(line.startswith(key) for line in lines) and f"[{mark}]" not in (stdout or "")]
+
     def _run_koomeshmodifier(self, config_file: str, working_dir: str) -> Optional[str]:
         """KooMeshModifier 실행
 
@@ -2162,6 +2209,16 @@ DefaultCTE,{default_cte}{dtmin_block}{profile_block}{ambient_block}
 
             if result.returncode != 0:
                 logging.error(f"KooMeshModifier failed (returncode={result.returncode})")
+                return None
+
+            # 종료 시간 표·강체 각속도 줄을 이 KMM 이 실제로 읽었나 — 옛 KMM(v131 이하)은 그 줄을 다른 키로 잘못 읽고도 0 으로
+            # 끝난다(prepare 의 --help 확인은 헤드 노드에서 본 것이다). 그런 줄이 없는 스텝 설정은 검사도 없다
+            unread = self._unread_table_keys(config_file, result.stdout)
+            if unread:
+                logging.error(f"🔴 [KMM version skew] 스텝 설정 {config_file} 의 {', '.join(unread)} 줄을 KMM 이 읽지 않았다"
+                              f"(출력에 {', '.join('[' + k + ']' for k in unread)} 표식이 없다) — 이 노드의 KMM({' '.join(cmd[:-1])})"
+                              f"이 v131 이하일 수 있다. 옛 KMM 은 그 줄을 다른 키로 잘못 읽으므로(Height=0·tFinal 덮기 등) 이 스텝을 "
+                              f"실패로 둔다. environment.apptainer_sif·koomeshmodifier_path 를 v132 이상으로 할 것")
                 return None
 
             # stdout에서 run_id 파싱 — 마지막 매치 사용 (KooMeshModifier가 run_id를 여러 번 생성할 수 있음)

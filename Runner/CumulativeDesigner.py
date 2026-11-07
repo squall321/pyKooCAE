@@ -254,15 +254,16 @@ class CumulativeDesigner:
         return ScenarioConfig(scenario_id=f"{scenario_name}_S{num_steps:03d}", scenario_name=scenario_name,
                               total_steps=num_steps, steps=[])
 
-    def _resolve_impact_conditions(self, runner_config: RunnerConfig, model_file: str, output_dir: str):
+    def _resolve_impact_conditions(self, runner_config: RunnerConfig, model_file: str, output_dir: str,
+                                   batch: bool = False):
         """impact_conditions 요청이 있으면 사전 해석·대표 고르기를 하고 첫 시나리오에 대표마다 1 스텝 DROP 을 채운다.
-        없으면 None (기존 경로 그대로)."""
+        없으면 None (기존 경로 그대로). batch: batch_koomeshmodifier 로 돌면 그 KMM 으로 버전 확인·사전 해석."""
         req = getattr(self, "_impact_request", None)
         if not req or not runner_config.scenarios:
             return None
         from Runner.ImpactConditions import prepare_impact_conditions
         impact = prepare_impact_conditions(req["opts"], runner_config.simulation_params or {}, runner_config.environment,
-                                           model_file, output_dir, self.scenario_dir)
+                                           model_file, output_dir, self.scenario_dir, batch=batch)
         runner_config.scenarios[0].steps = [
             StepConfig(step_number=1, template=req["template"], mode="DROP", angle_name=c["name"],
                        angle_roll=c["roll"], angle_pitch=c["pitch"], angle_yaw=c["yaw"],
@@ -869,7 +870,9 @@ class CumulativeDesigner:
 
         # 충격 조건 DOE(angle_source impact_conditions) — 여기서야 output_dir 를 안다. 사전 해석·대표 고르기 뒤
         # 첫 시나리오의 스텝을 채운다. 요청이 없으면 None 이라 아래는 모두 예전 그대로다
-        impact = self._resolve_impact_conditions(runner_config, model_file, output_dir_path)
+        # batch_koomeshmodifier 여부는 한 번만 정한다(경고도 한 번) — 표 줄을 읽을 KMM(버전 확인·사전 해석)이 그것에 따라 다르다
+        batch_flag = self._get_batch_koomeshmodifier_flag()
+        impact = self._resolve_impact_conditions(runner_config, model_file, output_dir_path, batch_flag)
 
         # 첫 번째 시나리오를 기준으로 Runner 호환 구조 생성
         first_scenario = runner_config.scenarios[0] if runner_config.scenarios else None
@@ -932,7 +935,7 @@ class CumulativeDesigner:
             from Runner.EndTimePresim import prepare_endtime_tables
             endtime_tables, doe_endtim = prepare_endtime_tables(
                 runner_config.simulation_params, runner_config.environment, model_file, output_dir_path,
-                self.scenario_dir, doe_angles, runner_steps)
+                self.scenario_dir, doe_angles, runner_steps, batch=batch_flag)
 
         # IMPACT 모드: doe_positions 생성
         doe_positions = {}
@@ -1049,7 +1052,7 @@ class CumulativeDesigner:
                 **({"doe_impact_meta": impact["doe_impact_meta"]} if impact else {}),
                 **({"doe_impact_state": impact["doe_impact_state"]} if impact else {}),
                 # batch_koomeshmodifier: 1-step 시나리오에서 헤드노드 일괄 생성 옵션
-                "batch_koomeshmodifier": self._get_batch_koomeshmodifier_flag()
+                "batch_koomeshmodifier": batch_flag
             },
             "execution": {
                 "checkpoint_file": str(Path(output_dir_path) / "checkpoint.json"),
@@ -1112,7 +1115,11 @@ class CumulativeDesigner:
         # (수동 trigger 보장). enabled 무관 — sh는 항상 만들어 두고 사용자가 언제든
         # bash로 실행 가능. 실제 어느 것이 자동 실행될지는 scenario mode 로 routing
         # (DROP→sphere, IMPACT→impact) — report_mode_from_runner_config 참조.
-        if runner_config.postprocess:
+        if runner_config.postprocess and impact:
+            # 충격 조건 DOE 는 전각도 sphere 리포트 대상이 아니다 — sphere_report.sh 를 쓰지 않는다
+            from Runner.ImpactConditions import SPHERE_SKIP_MESSAGE
+            print(f"  {SPHERE_SKIP_MESSAGE}")
+        if runner_config.postprocess and not impact:
             output_dir = data["project"].get("output_dir", str(Path(output_path).parent / "output"))
             try:
                 from Runner.PostprocessShellGenerator import build_sphere_report_sh

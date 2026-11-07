@@ -548,11 +548,9 @@ def cmd_reprioritize(args):
 
 
 def _hms_scale(tl_str: str, mult: int) -> str:
-    """HH:MM:SS time limit 문자열을 mult 배로 확장."""
-    parts = tl_str.split(":")
-    total = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-    total *= mult
-    return f"{int(total // 3600)}:{int((total % 3600) // 60):02d}:{int(total % 60):02d}"
+    """Slurm time limit 문자열(HH:MM:SS·D-HH:MM:SS·D-HH·MM·MM:SS …)을 mult 배로 확장 → H:MM:SS."""
+    from Runner.EndTimePresim import slurm_hms, slurm_seconds
+    return slurm_hms(slurm_seconds(tl_str) * mult)
 
 
 def _step_dr_time_factor(runner_config: dict) -> int:
@@ -1436,6 +1434,11 @@ def _maybe_submit_sphere_after(runner_config, config_path):
     else:
         if not pp.get("auto_sphere", True):
             return
+        # 충격 조건 DOE 는 전각도 sphere 리포트 대상이 아니다 — harvest --impact-map 으로 원래 각도마다 모은다
+        from Runner.ImpactConditions import is_impact_conditions, SPHERE_SKIP_MESSAGE
+        if is_impact_conditions(runner_config):
+            print(f"[Postprocess] {SPHERE_SKIP_MESSAGE}")
+            return
         report_label = "Sphere"
         sbatch_builder = build_sphere_sbatch
         sbatch_name = "sphere_report.sbatch"
@@ -1736,15 +1739,12 @@ dt,{dt}
         cmd.extend([koomesh_path, batch_config_path])
         print(f"  Apptainer 래핑 사용: {apptainer_sif}")
     else:
-        # Apptainer 미설정 시: 호스트 경로로 직접 실행
-        if koomesh_path.startswith("/opt/"):
-            kcr_host = env.get("koochainrun_path", "")
-            if kcr_host:
-                host_bin_dir = str(Path(kcr_host).parent)
-                host_koomesh = os.path.join(host_bin_dir, "KooMeshModifier")
-                if os.path.isfile(host_koomesh):
-                    print(f"  KooMeshModifier 호스트 경로 사용: {host_koomesh}")
-                    koomesh_path = host_koomesh
+        # Apptainer 미설정 시: 호스트 경로로 직접 실행 (/opt/ 경로면 koochainrun_path 옆 호스트 KMM — prepare 의 KMM 버전
+        # 확인·사전 해석도 같은 규칙 batch_kmm_path 로 이 실행 파일을 묻는다)
+        from Runner.EndTimePresim import batch_kmm_path
+        koomesh_path, _host = batch_kmm_path(env)
+        if _host:
+            print(f"  KooMeshModifier 호스트 경로 사용: {koomesh_path}")
         cmd = [koomesh_path, batch_config_path]
 
     return pregenerated_dir, cmd
@@ -1842,11 +1842,20 @@ def _submit_cumulative(args, config_path):
     time_limit = args.time_limit if args.time_limit is not None else env.get("time_limit", "24:00:00")
 
     # DOE 당 예산에 step 수·DR 배율 반영 (step1=1x, step2+ = DR시 2x) — 이후 파티션 cap 적용됨
-    _sdf = _step_dr_time_factor(runner_config)
+    # 종료 시간 표(endtime_presim·impact_conditions)가 있으면 DOE 마다 F_d = Σ 스텝 (ceil(endtim ÷ tFinal) + DR) 의 최대 —
+    # 표가 짧으면(모두 1배) _step_dr_time_factor 와 같다. 표가 없으면 None 이라 예전 그대로다
+    from Runner.EndTimePresim import doe_time_factors, slurm_seconds
+    _tl_base0 = time_limit
+    _dtf = doe_time_factors(runner_config)
+    _sdf = _step_dr_time_factor(runner_config) if _dtf is None else max(_dtf.values())
     if _sdf > 1:
         _tl_base = time_limit
         time_limit = _hms_scale(time_limit, _sdf)
-        print(f"  Time limit: {_tl_base} × step/DR factor {_sdf} = {time_limit} (per DOE)")
+        if _dtf is None:
+            print(f"  Time limit: {_tl_base} × step/DR factor {_sdf} = {time_limit} (per DOE)")
+        else:
+            print(f"  Time limit: {_tl_base} × step/DR/endtime factor {_sdf} (max over DOEs of Σ steps "
+                  f"ceil(endtim / tFinal) + DR) = {time_limit} (per DOE)")
 
     # 파티션 최대 시간 확인 → time_limit 자동 cap
     try:
@@ -1857,16 +1866,15 @@ def _submit_cumulative(args, config_path):
         if _part_info.returncode == 0 and _part_info.stdout.strip():
             _pmax = _part_info.stdout.strip().split("\n")[0].strip()
             if _pmax.upper() != "UNLIMITED":
-                # time_limit → 초
-                _tl = time_limit.split(":")
-                _tl_sec = int(_tl[0]) * 3600 + int(_tl[1]) * 60 + int(_tl[2])
-                # partition max → 초 (D-HH:MM:SS 또는 HH:MM:SS)
-                _pm = _pmax.split("-")
-                _pm_sec = int(_pm[0]) * 86400 if len(_pm) == 2 else 0
-                _hms = (_pm[1] if len(_pm) == 2 else _pm[0]).split(":")
-                _pm_sec += int(_hms[0]) * 3600 + int(_hms[1]) * 60 + int(_hms[2])
+                # time_limit·partition max → 초 (Slurm 형식 HH:MM:SS·D-HH:MM:SS·D-HH·MM …)
+                _tl_sec = slurm_seconds(time_limit)
+                _pm_sec = slurm_seconds(_pmax)
                 if _tl_sec > _pm_sec:
                     print(f"  time_limit {time_limit} > partition max {_pmax} → cap to {_pmax}")
+                    if _dtf is not None and _sdf > 1:
+                        print(f"  🔴 파티션 {partition} 최대 {_pmax} 가 종료 시간 표로 늘린 DOE 시간 {time_limit} 보다 짧다 — "
+                              f"endtim 이 긴 DOE 는 시간 제한에 걸려 끝나지 못할 수 있다. 더 긴 파티션을 쓰거나 "
+                              f"time_limit·endtim 을 줄일 것 (time limit capped below need)")
                     time_limit = _pmax
     except Exception:
         pass
@@ -2406,16 +2414,15 @@ exit $EXIT_CODE
         max_does_per_node = max(len(v) for v in node_doe_map.values())
 
         def _multiply_time_limit(tl_str, multiplier):
-            """HH:MM:SS 형식 time_limit을 multiplier배로 확장"""
-            parts = tl_str.split(":")
-            total_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-            total_sec *= multiplier
-            h = int(total_sec // 3600)
-            m = int((total_sec % 3600) // 60)
-            s = int(total_sec % 60)
-            return f"{h}:{m:02d}:{s:02d}"
+            """Slurm time_limit 을 multiplier배로 확장 (_hms_scale — 파티션 최대로 잘린 D-HH:MM:SS 도 읽는다)"""
+            return _hms_scale(tl_str, multiplier)
 
-        seq_time_limit = _multiply_time_limit(time_limit, max_does_per_node)
+        if _dtf is None:
+            seq_time_limit = _multiply_time_limit(time_limit, max_does_per_node)
+        else:   # 종료 시간 표 — 슬롯마다 DOE 배율 F_d 의 합, 그 최대 (긴 DOE 하나가 슬롯 전체를 늘리지 않게)
+            _slot_f = max(sum(_dtf.get(d, 1) for d in v) for v in node_doe_map.values())
+            seq_time_limit = _hms_scale(_tl_base0, _slot_f)
+            print(f"  Time limit (sequential): {_tl_base0} × max slot Σ DOE factor {_slot_f} = {seq_time_limit}")
 
         # 파티션 최대 시간 조회 → 초과 시 cap
         try:
@@ -2442,6 +2449,10 @@ exit $EXIT_CODE
                     stl_sec = int(stl_parts[0]) * 3600 + int(stl_parts[1]) * 60 + int(stl_parts[2])
 
                     if stl_sec > pm_sec:
+                        if _dtf is not None:
+                            print(f"  🔴 파티션 {partition} 최대 {partition_max} 가 종료 시간 표로 늘린 슬롯 시간 {seq_time_limit} "
+                                  f"보다 짧다 — 뒤 DOE 가 시간 제한에 걸릴 수 있다. 노드(슬롯)를 늘리거나 더 긴 파티션을 쓸 것 "
+                                  f"(time limit capped below need)")
                         seq_time_limit = partition_max
                         print(f"  Time limit: {time_limit} x {max_does_per_node} DOEs 초과 → 파티션 최대 {partition_max}로 cap")
                     else:
@@ -2796,10 +2807,16 @@ def _rerun_sequential(manager, target_does, exclude_list, args):
     ncpu = env.get("ncpu", 16)
     memory = env.get("memory", "64G")
     time_limit = env.get("time_limit", "24:00:00")
-    # rerun 도 submit 과 동일하게 step 수·DR 배율 반영
-    _sdf = _step_dr_time_factor(runner_config)
+    # rerun 도 submit 과 동일하게 step 수·DR 배율 반영 — 종료 시간 표가 있으면 DOE 마다 Σ 스텝(ceil(endtim ÷ tFinal) + DR)
+    from Runner.EndTimePresim import doe_time_factors
+    _tl_base0 = time_limit
+    _dtf = doe_time_factors(runner_config)
+    _sdf = _step_dr_time_factor(runner_config) if _dtf is None else max(_dtf.values())
     if _sdf > 1:
         time_limit = _hms_scale(time_limit, _sdf)
+        if _dtf is not None:
+            print(f"  Time limit × step/DR/endtime factor {_sdf} (max over DOEs of Σ steps ceil(endtim / tFinal) + DR) "
+                  f"= {time_limit} (per DOE)")
     exclusive = env.get("exclusive", True)
 
     # 노드 수 결정
@@ -2848,15 +2865,14 @@ def _rerun_sequential(manager, target_does, exclude_list, args):
     max_does_per_node = max(len(v) for v in node_doe_map.values())
 
     def _multiply_tl(tl_str, multiplier):
-        parts = tl_str.split(":")
-        total_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-        total_sec *= multiplier
-        h = int(total_sec // 3600)
-        m = int((total_sec % 3600) // 60)
-        s = int(total_sec % 60)
-        return f"{h}:{m:02d}:{s:02d}"
+        return _hms_scale(tl_str, multiplier)   # D-HH:MM:SS(파티션 최대로 잘린 값)도 읽는다
 
-    seq_time_limit = _multiply_tl(time_limit, max_does_per_node)
+    if _dtf is None:
+        seq_time_limit = _multiply_tl(time_limit, max_does_per_node)
+    else:   # 종료 시간 표 — 슬롯마다 다시 돌릴 DOE 배율의 합, 그 최대
+        _slot_f = max(sum(_dtf.get(d, 1) for d in v) for v in node_doe_map.values())
+        seq_time_limit = _hms_scale(_tl_base0, _slot_f)
+        print(f"  Time limit (sequential): {_tl_base0} × max slot Σ DOE factor {_slot_f} = {seq_time_limit}")
 
     # 파티션 최대 cap
     try:
@@ -2880,6 +2896,9 @@ def _rerun_sequential(manager, target_does, exclude_list, args):
                 stl_sec = int(stl_parts[0]) * 3600 + int(stl_parts[1]) * 60 + int(stl_parts[2])
 
                 if stl_sec > pm_sec:
+                    if _dtf is not None:
+                        print(f"  🔴 파티션 {partition} 최대 {partition_max} 가 종료 시간 표로 늘린 슬롯 시간 {seq_time_limit} "
+                              f"보다 짧다 — 뒤 DOE 가 시간 제한에 걸릴 수 있다 (time limit capped below need)")
                     seq_time_limit = partition_max
                     print(f"  Time limit cap: {partition_max}")
     except Exception:
@@ -3261,6 +3280,13 @@ def cmd_postprocess(args):
         do_deep = True
         do_impact = (report_mode == "IMPACT")
         do_sphere = not do_impact
+    # 충격 조건 DOE(angle_source impact_conditions)는 전각도 sphere 리포트 대상이 아니다 — 원래 각도로는 harvest --impact-map
+    from Runner.ImpactConditions import is_impact_conditions, SPHERE_SKIP_MESSAGE
+    if do_sphere and is_impact_conditions(runner_config):
+        print(f"[Postprocess] {SPHERE_SKIP_MESSAGE}")
+        if args.sphere:
+            sys.exit(1)
+        do_sphere = False
 
     print("=" * 80)
     print(f"KooChainRun - Postprocess (deep={do_deep}, sphere={do_sphere}, "

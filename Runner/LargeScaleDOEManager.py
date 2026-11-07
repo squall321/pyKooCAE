@@ -530,7 +530,7 @@ class LargeScaleDOEManager:
                 f.write(f"#SBATCH --ntasks={self.ncpu_per_job}\n")
                 f.write(f"#SBATCH --cpus-per-task=1\n")
             f.write(f"#SBATCH --mem={self.memory}\n")
-            f.write(f"#SBATCH --time={self._seconds_to_slurm_time(self.timeout)}\n")
+            f.write(f"#SBATCH --time={self._array_time_limit(step_number, doe_start, doe_end)}\n")
             f.write(f"#SBATCH --output={job_name}_%A_%a.out\n")
             f.write(f"#SBATCH --error={job_name}_%A_%a.err\n")
 
@@ -720,15 +720,31 @@ class LargeScaleDOEManager:
 
             f.write("# DROP_ATTITUDE 설정 파일 실행\n")
             km_cmd = self.wrap_with_apptainer(f'{self.koomeshmodifier_path} --input="$INPUT_TXT"')
-            f.write(f"{km_cmd}\n")
-            f.write("\n")
-
-            f.write("KM_EXIT=$?\n")
+            # 종료 시간 표·충격 조건 DOE 면 KMM 출력을 남겨 그 줄을 읽었는지([EndTimeTable]·[RigidAngularVelocity] 표식) 본다 —
+            # 옛 KMM 은 그 줄을 다른 키로 잘못 읽고도 0 으로 끝난다. 표가 없으면 예전 줄 그대로
+            check_tables = self._table_keys_in_use()
+            if check_tables:
+                f.write(f'{km_cmd} 2>&1 | tee "$STEP_DIR/kmm_drop_attitude.log"\n')
+                f.write("\n")
+                f.write("KM_EXIT=${PIPESTATUS[0]}\n")
+            else:
+                f.write(f"{km_cmd}\n")
+                f.write("\n")
+                f.write("KM_EXIT=$?\n")
             f.write('if [ $KM_EXIT -ne 0 ]; then\n')
             f.write('    echo "❌ KooMeshModifier (DROP_ATTITUDE) 실패"\n')
             f.write('    exit $KM_EXIT\n')
             f.write('fi\n')
             f.write("\n")
+            for key, mark in (("EndTimeTable,", "EndTimeTable"), ("RigidAngularVelocity", "RigidAngularVelocity")):
+                if mark in check_tables:
+                    f.write(f'if grep -q "^{key}" "$INPUT_TXT" && ! grep -qF "[{mark}]" "$STEP_DIR/kmm_drop_attitude.log"; then\n')
+                    f.write(f'    echo "❌ [KMM version skew] KMM 이 {mark} 줄을 읽지 않았다(출력에 [{mark}] 없음) — 이 노드의 KMM 이 '
+                            f'v131 이하일 수 있다. 옛 KMM 은 그 줄을 다른 키로 잘못 읽는다. apptainer_sif·koomeshmodifier_path 를 '
+                            f'v132 이상으로"\n')
+                    f.write('    exit 1\n')
+                    f.write('fi\n')
+                    f.write("\n")
 
             f.write('echo "✅ KooMeshModifier 완료 (회전된 .k 파일 생성)"\n')
             f.write("\n")
@@ -996,6 +1012,29 @@ class LargeScaleDOEManager:
     # ========================================================================
     # 유틸리티
     # ========================================================================
+
+    def _table_keys_in_use(self) -> List[str]:
+        """runner_config 에 종료 시간 표·충격 조건 상태가 있으면 그 줄 이름(KMM 표식) — 없으면 []."""
+        sc = (self.runner_config or {}).get("scenario") or {}
+        return ((["EndTimeTable"] if sc.get("endtime_tables") else [])
+                + (["RigidAngularVelocity"] if sc.get("doe_impact_state") else []))
+
+    def _array_time_limit(self, step_number: int, doe_start: int, doe_end: int) -> str:
+        """배열 작업 --time — 종료 시간 표가 tFinal 보다 길면 이 배열 DOE 들 가운데 최대 배율 ceil(endtim ÷ tFinal) 만큼
+        timeout 을 늘리고 파티션 최대에서 자른다(모자라면 🔴 경고). 표가 없거나 짧으면 예전 그대로 timeout."""
+        from Runner.EndTimePresim import endtime_time_factor, partition_max
+        # 배열 번호(scenarios[].steps[].doe_index)는 0-based, doe_endtim 은 1-based
+        f = max([endtime_time_factor(self.runner_config, d + 1, step_number) for d in range(doe_start, doe_end + 1)] or [1])
+        if f <= 1:
+            return self._seconds_to_slurm_time(self.timeout)
+        need = self.timeout * f
+        print(f"  종료 시간 표: Step {step_number} 배열 시간 제한 {self.timeout} s × {f} (최대 endtim ÷ tFinal) = {need} s")
+        cap = partition_max(self.partition)
+        if cap and need > cap[1]:
+            print(f"  🔴 파티션 {self.partition} 최대 {cap[0]} 가 필요한 시간 {self._seconds_to_slurm_time(need)} 보다 짧다 — "
+                  f"endtim 이 긴 DOE 는 시간 제한에 걸릴 수 있다 (time limit capped below need)")
+            need = cap[1]
+        return self._seconds_to_slurm_time(need)
 
     def _seconds_to_slurm_time(self, seconds: int) -> str:
         hours = seconds // 3600

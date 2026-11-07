@@ -13,7 +13,14 @@
   [4] table 지름길 — KMM 을 돌리지 않고, 다른 오일러 표기·같은 방향 줄 여럿(최대)을 낙하 방향으로 찾는다
   [5] 실패 — KMM rc≠0·각도 빠짐·표 없음(지난 표 재사용 금지)·endtim≤0·시간 초과·실행 파일 없음·table 없음·
       table 각도 빠짐·옵션 값 오류 → `KooChainRun prepare` 비정상 종료 + [ENDTIME_PRESIM_FAILED] + 한글 이유, runner_config 없음
-  [6] apptainer 감싸기 명령 형식 (실행하지 않고 subprocess.run 을 가로채 본다)
+  [6] apptainer 감싸기 명령 형식 (실행하지 않고 subprocess.run 을 가로채 본다) — 사전 해석과 러너 KMM 버전 확인(--help)
+  [7] 시간 제한 배율 — ceil(endtim ÷ tFinal): submit(누적·sequential) --time, 러너 스텝 timeout. 표가 없거나 짧으면 그대로
+  [8] reach(바닥판 반폭 비교, RigidWall 제외)·n_unresolved 알림, drop_v0 단위 환산
+  [9] 수정 묶음 — BOM 표, 표 메타 gravity·deck·mm-kg-ms g, numpy 찾기(옛 식과 같고 2만×2만 < 30 초), presim_timeout_seconds,
+      batch_koomeshmodifier 의 호스트 KMM 묻기, 러너 노드 표식 확인, 대규모 배열 --time·스크립트 grep, deep report 배율,
+      DOE 배율 F_d(짧은 표 = 예전 step/DR), _hms_scale Slurm 형식
+  ([5] 에 러너 KMM 버전(v131 도움말·도움말 없는 옛 바이너리·table 지름길), KMM rc 3, 표 v0 다름, 시간 초과면 묶음째 죽임,
+   [4] 에 표 높이 다름 → 멈춤)
 """
 import contextlib
 import copy
@@ -55,6 +62,14 @@ import csv, json, os, sys, time
 sys.path.insert(0, {gen!r})
 from KooCAEManager.KooEndTimeTable import write_endtime_table, drop_direction
 MODE = {mode!r}
+if sys.argv[1:2] == ["--help"]:   # 러너 KMM 버전 확인 — 부를 때마다 옆 파일에 한 줄 남긴다
+    open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_help_calls.txt"), "a").write(" ".join(sys.argv[1:]) + "\n")
+    if MODE == "nohelp":   # 도움말이 없는 옛 바이너리 — '--help' 를 옵션 파일로 읽다 죽는다
+        raise FileNotFoundError("DROP_ATTITUDE/--help")
+    print("DROP_ATTITUDE — 가짜 도움말\n  Height  [실수]\n  tFinal  [실수]")
+    if MODE != "oldhelp":
+        print("  EndTimeTable  [경로]\n  RigidAngularVelocityX/Y/Z  [실수 리스트]")
+    sys.exit(0)
 start_cwd = os.getcwd()
 opt, work = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else os.path.curdir)
 lines = [l.rstrip("\n") for l in open(os.path.join(work, opt), encoding="utf-8")]
@@ -66,7 +81,14 @@ with open(os.path.join(work, "fake_kmm_call.json"), "w", encoding="utf-8") as f:
 print("fake KMM", MODE)
 if MODE == "rc1":
     print("가짜 실패"); sys.exit(1)
+if MODE == "rc3":
+    print("🔴 요소 소실: 읽기에서 요소 12개를 버렸다 (가짜)"); sys.exit(3)
 if MODE == "sleep":
+    time.sleep(60)
+if MODE == "sleepchild":   # 작업자처럼 자식을 띄우고 기다린다 — 시간 초과면 묶음째 죽어야 한다
+    import subprocess as sp
+    child = sp.Popen(["sleep", "120"])
+    open(os.path.join(work, "child.pid"), "w").write(str(child.pid))
     time.sleep(60)
 if MODE == "nooutput":
     sys.exit(0)
@@ -80,12 +102,14 @@ for i, a in enumerate(angles):
     rows.append({{"name": a["name"], "roll": float(a["roll"]), "pitch": float(a["pitch"]), "yaw": float(a["yaw"]),
                  "dx": float(d[0]), "dy": float(d[1]), "dz": float(d[2]), "class": "slapdown", "t1_end_ms": 1.0,
                  "t2_start_ms": 2.0, "t2_end_ms": endtim * 1000 - 1.0, "tfinal_ms": endtim * 1000, "endtim": endtim,
-                 "governing_e": 0.3}})
+                 "governing_e": 0.3, "reach": (160.0 if MODE == "farreach" and i == 1 else 10.0 + i),
+                 "n_unresolved": (1 if MODE == "farreach" and i in (0, 2) else 0)}})
 base = os.path.splitext(os.path.basename(template))[0]
+v0 = (2 * 9810.0 * float(kv["Height"])) ** 0.5 * (1.01 if MODE == "badv0" else 1.0)   # E 와 같은 메타 — √(2gh), 덱 단위
 write_endtime_table(os.path.join(work, base + "_endtime.csv"), rows,
-                    {{"deck": template, "units": "mm-t-s", "time_unit": "s", "height": kv["Height"],
+                    {{"deck": template, "units": "mm-t-s", "time_unit": "s", "height": kv["Height"], "v0": v0,
                      "restitution": kv["Restitution"], "friction": kv["Friction"], "gravity": kv["PresimGravity"],
-                     "margin_ms": kv["MarginMs"]}})
+                     "margin_ms": kv["MarginMs"], "t_sep_ms": 1.0}})
 '''
 
 
@@ -500,8 +524,13 @@ def test_table_shortcut(kcr, rc_off):
     check("절대 경로 table 도 된다", rc3["scenario"]["endtime_tables"][0]["table"] == path)
     u = with_presim(scen_faces2(tmp), {"enabled": True, "table": path}, koomeshmodifier_path=fake)
     u["simulation_params"]["height"] = 1500
-    _, out4 = designer_prepare(tmp, u)
-    check("표 높이(1000) ≠ simulation_params.height(1500) → 경고", "height mismatch" in out4, out4[-300:])
+    try:
+        designer_prepare(tmp, u)
+        err = ""
+    except EP.EndTimePresimError as e:
+        err = str(e)
+    check("표 높이(1000) ≠ simulation_params.height(1500) → 멈춘다 (table drop mismatch)",
+          MARK in err and "table drop mismatch" in err and "높이 1000" in err, err)
 
 
 # ── [5] 실패 ────────────────────────────────────────────────────
@@ -524,10 +553,37 @@ def test_failures():
     run_case("KMM 종료 코드 1", "rc1", on, ["종료 코드 1", "KMM rc=1", "가짜 실패"])
     run_case("표에 각도 하나 빠짐", "missing", on, ["DROP 각도 1/6개가 없다", "angles missing"])
     run_case("endtim 0", "zero", on, ["endtim 이 양수가 아니다", "endtim must be positive"])
-    run_case("시간 초과", "sleep", on, ["초 안에 끝나지 않았다", "timeout"], env={"timeout_koomeshmodifier_seconds": 2})
+    t_to = run_case("시간 초과 (presim_timeout_seconds 2)", "sleepchild", {"enabled": True, "presim_timeout_seconds": 2},
+                    ["초 안에 끝나지 않았다", "presim_timeout_seconds", "timeout"])
+    pid_file = os.path.join(t_to, "output", "endtime_presim", "1", "child.pid")
+    alive = None
+    if os.path.exists(pid_file):
+        pid = int(Path(pid_file).read_text())
+        for _ in range(30):
+            try:
+                st = Path(f"/proc/{pid}/stat").read_text().split()[2]
+            except OSError:
+                st = None
+            alive = st not in (None, "Z")
+            if not alive:
+                break
+            import time
+            time.sleep(0.1)
+    check("시간 초과면 KMM 프로세스 묶음째 죽인다 (작업자 자식도 남지 않는다)", alive is False, f"pid file {pid_file} alive={alive}")
     run_case("KMM 실행 파일 없음", None, on, ["KMM 을 실행하지 못했다", "cannot run KMM"])
     run_case("table 파일 없음", "rc1", {"enabled": True, "table": "nope.csv"}, ["table 파일이 없다", "table not found"])
     run_case("옵션 값 오류 (restitution 1.5)", "ok", {"enabled": True, "restitution": [1.5]}, ["bad value"])
+    run_case("러너 KMM 이 EndTimeTable 을 모름 (v131 도움말)", "oldhelp", on,
+             ["KMM version skew", "EndTimeTable", "apptainer_sif", "v132"])
+    run_case("러너 KMM 에 도움말이 없음 (옛 바이너리 — '--help' 를 옵션 파일로 읽다 죽음)", "nohelp", on,
+             ["KMM version skew", "DROP_ATTITUDE/--help"])
+    ptmp = new_tmp("etp_tbl_old_")
+    Path(ptmp, "t.csv").write_text("name,roll,pitch,yaw,endtim\nA,0,0,0,0.004\n", encoding="utf-8")
+    run_case("table 지름길도 버전 확인 (v131 도움말)", "oldhelp", {"enabled": True, "table": "t.csv"},
+             ["KMM version skew"], keep_tmp=ptmp)
+    run_case("KMM 종료 코드 3 (덱 요소 소실) — 이유·rigidbody.json 안내", "rc3", on,
+             ["요소를 버렸다", "model_rigidbody.json", "table 로", "KMM rc=3 element loss"])
+    run_case("사전 해석 표 v0 가 이 낙하 √(2gh) 와 다름", "badv0", on, ["v0", "table drop mismatch"])
 
     tmp = new_tmp("etp_stale_")
     code, out = cli_prepare(tmp, with_presim(scen_faces2(tmp), on, koomeshmodifier_path=write_fake(tmp, "ok")))
@@ -547,7 +603,7 @@ def test_failures():
 
 # ── [6] apptainer 감싸기 ────────────────────────────────────────
 def test_apptainer():
-    print("[6] apptainer 감싸기 명령 (실행 없이 가로채기)")
+    print("[6] apptainer 감싸기 명령 (실행 없이 Popen 가로채기) — 새 세션·시간 제한·임시 폴더 정리")
     import Runner.EndTimePresim as EP
     tmp = new_tmp("etp_apt_")
     env = {"koomeshmodifier_path": "/opt/SmartTwinPreprocessor/bin/KooMeshModifier",
@@ -556,35 +612,438 @@ def test_apptainer():
            "timeout_koomeshmodifier_seconds": 77}
     doe_angles = {"1": {"1": {"angle_name": "F1", "roll": 0.0, "pitch": 0.0, "yaw": 0.0}}}
     steps = [{"step": 1, "mode": "DROP"}]
-    seen = {}
+    calls, helps = [], []
 
-    def fake_run(cmd, **kw):
-        seen.update(cmd=cmd, **kw)
-        return subprocess.CompletedProcess(cmd, 3)
-    real, old_tmpdir = EP.subprocess.run, os.environ.get("APPTAINER_TMPDIR")
-    EP.subprocess.run = fake_run
+    class FakePopen:
+        def __init__(self, cmd, **kw):
+            self.cmd, self.kw, self.pid, self.returncode, self.timeout = cmd, kw, -1, 0, None
+            self.tmpdir_env = os.environ.get("APPTAINER_TMPDIR")
+            (helps if "--help" in cmd else calls).append(self)
+
+        def communicate(self, timeout=None):
+            self.timeout = timeout
+            if "--help" in self.cmd:   # 러너 KMM 버전 확인
+                return "  EndTimeTable  [경로]\n", None
+            self.returncode = 2
+            return None, None
+
+        def wait(self):
+            return self.returncode
+
+    job = os.environ.get("SLURM_JOB_ID", str(os.getpid()))
+    real, old_tmpdir = EP.subprocess.Popen, os.environ.get("APPTAINER_TMPDIR")
+    EP._KMM_HELP_CACHE.clear()
+    EP.subprocess.Popen = FakePopen
     err = ""
     try:
         with contextlib.redirect_stdout(io.StringIO()):
-            EP.prepare_endtime_tables({"height": 800, "endtime_presim": {"enabled": True}}, env,
-                                      os.path.join(tmp, "model.k"), os.path.join(tmp, "output"), tmp, doe_angles, steps)
+            EP.prepare_endtime_tables({"height": 800, "endtime_presim": {"enabled": True, "presim_timeout_seconds": 77}},
+                                      env, os.path.join(tmp, "model.k"), os.path.join(tmp, "output"), tmp, doe_angles,
+                                      steps)
     except EP.EndTimePresimError as e:
         err = str(e)
     finally:
-        EP.subprocess.run = real
-        if old_tmpdir is None:
-            os.environ.pop("APPTAINER_TMPDIR", None)
-        else:
-            os.environ["APPTAINER_TMPDIR"] = old_tmpdir
+        EP.subprocess.Popen = real
     work = os.path.join(tmp, "output", "endtime_presim", "1")
+    c = calls[0] if calls else None
     check("apptainer exec --bind --env <sif> <KMM> <옵션> <작업 폴더>",
-          seen.get("cmd") == ["apptainer", "exec", "--bind", "/data:/data", "--env", "A=1",
-                              "/opt/apptainers/SmartTwinPreprocessor.sif",
-                              "/opt/SmartTwinPreprocessor/bin/KooMeshModifier", "rigid_drop_endtime.txt", work],
-          str(seen.get("cmd")))
-    check("cwd = 작업 폴더 · 시간 제한 = timeout_koomeshmodifier_seconds",
-          seen.get("cwd") == work and seen.get("timeout") == 77, str({k: seen.get(k) for k in ("cwd", "timeout")}))
-    check("rc≠0 → 표식 + 종료 코드", MARK in err and "종료 코드 3" in err, err)
+          c is not None and c.cmd == ["apptainer", "exec", "--bind", "/data:/data", "--env", "A=1",
+                                      "/opt/apptainers/SmartTwinPreprocessor.sif",
+                                      "/opt/SmartTwinPreprocessor/bin/KooMeshModifier", "rigid_drop_endtime.txt", work],
+          str(c and c.cmd))
+    check("cwd = 작업 폴더 · 시간 제한 = presim_timeout_seconds(77 — 러너 timeout 이 아니다) · 새 세션(start_new_session)",
+          c is not None and c.kw.get("cwd") == work and c.timeout == 77 and c.kw.get("start_new_session") is True,
+          str(c and (c.kw, c.timeout)))
+    check("rc≠0 → 표식 + 종료 코드", MARK in err and "종료 코드 2" in err, err)
+    h = helps[0] if helps else None
+    check("버전 확인도 러너와 같은 감싸기: apptainer exec … <sif> <KMM> --help DROP_ATTITUDE (한 번, 새 세션)",
+          len(helps) == 1 and h.cmd == ["apptainer", "exec", "--bind", "/data:/data", "--env", "A=1",
+                                        "/opt/apptainers/SmartTwinPreprocessor.sif",
+                                        "/opt/SmartTwinPreprocessor/bin/KooMeshModifier", "--help", "DROP_ATTITUDE"]
+          and h.kw.get("stdout") == subprocess.PIPE and h.timeout == EP.KMM_HELP_TIMEOUT
+          and h.kw.get("start_new_session") is True, str([(x.cmd, x.kw) for x in helps]))
+    job_dir = os.path.join(tmp, "apt", f"apptainer_job_{job}")
+    check("apptainer 임시 폴더: 실행 중 APPTAINER_TMPDIR = apptainer_tmpdir/apptainer_job_<id>, 끝나면 지우고 환경 변수를 되돌린다",
+          c is not None and c.tmpdir_env == job_dir and not os.path.exists(job_dir)
+          and os.environ.get("APPTAINER_TMPDIR") == old_tmpdir, f"{c and c.tmpdir_env} exists={os.path.exists(job_dir)}")
+    env2 = {k: v for k, v in env.items() if k != "apptainer_tmpdir"}
+    env2["apptainer_sif"] = "/opt/apptainers/Other.sif"   # 다른 SIF — 기억에 없어 다시 묻는다
+    EP.subprocess.Popen = FakePopen
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            EP.check_kmm_supports(env2, ("EndTimeTable",), tmp, EP.EndTimePresimError)
+    finally:
+        EP.subprocess.Popen = real
+    sys_job = os.path.join(tempfile.gettempdir(), f"apptainer_job_{job}")
+    check("apptainer_tmpdir 가 없으면 시스템 임시 폴더 아래(/opt/tmp 아님)에 만들고 지운다",
+          len(helps) == 2 and helps[1].tmpdir_env == sys_job and not os.path.exists(sys_job)
+          and not os.path.exists(f"/opt/tmp/apptainer_job_{job}"), str(helps[-1].tmpdir_env))
+    EP.subprocess.Popen = FakePopen
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            EP.check_kmm_supports(env, ("EndTimeTable",), tmp, EP.EndTimePresimError)
+    finally:
+        EP.subprocess.Popen = real
+    check("같은 KMM 은 prepare(프로세스) 안에서 한 번만 묻는다 (기억)", len(helps) == 2, str(len(helps)))
+
+
+# ── [7] 시간 제한 배율 ──────────────────────────────────────────
+def submit_scripts(kcr, rc_path, sequential=False, time_limit="01:00:00"):
+    """_submit_cumulative 를 가짜 sinfo·sbatch 로 돌려 slurm 스크립트 글과 화면 출력을 돌려준다 (실제 제출 없음)."""
+    import argparse
+    rc = json.load(open(rc_path, encoding="utf-8"))
+    rc["environment"]["time_limit"] = time_limit
+    json.dump(rc, open(rc_path, "w", encoding="utf-8"), indent=1)
+    slurm = os.path.join(rc["project"]["output_dir"], "slurm_scripts")
+    real = subprocess.run
+
+    def fake_run(cmd, *a, **k):
+        out = {"sinfo": "7-00:00:00\n" if "%l" in cmd else "", "sbatch": "Submitted batch job 4242\n",
+               "scontrol": ""}.get(cmd[0])
+        if out is None:
+            raise RuntimeError(f"예상 밖 명령 {cmd}")
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+    args = argparse.Namespace(config=rc_path, mode="cumulative", nodes=2, jobs_per_node=4, ncpu_per_job=None,
+                              partition=None, memory=None, time_limit=None, data_root="/data", sequential=sequential)
+    buf = io.StringIO()
+    subprocess.run = fake_run
+    try:
+        with contextlib.redirect_stdout(buf):
+            kcr._submit_cumulative(args, Path(rc_path))
+    finally:
+        subprocess.run = real
+    texts = {n: Path(slurm, n).read_text(encoding="utf-8") for n in sorted(os.listdir(slurm)) if n.endswith(".sh")}
+    for n in texts:
+        os.remove(os.path.join(slurm, n))
+    return texts, buf.getvalue()
+
+
+def test_time_factor(kcr, on):
+    print("[7] 시간 제한 배율 — ceil(endtim ÷ tFinal), 표가 없으면 그대로")
+    import Runner.EndTimePresim as EP
+    from Runner.CumulativeScenarioRunner import CumulativeScenarioRunner
+    f = EP.endtime_time_factor
+    check("표 없음 → 1", f({}) == 1 and f({"scenario": {}}) == 1 and f({"scenario": {"doe_endtim": {}}}) == 1)
+    cfg = {"scenario": {"doe_endtim": {"1": {"1": 0.012}, "2": {"1": 0.0042, "2": 0.0101}}},
+           "simulation_params": {"tFinal": 0.005}}
+    check("최대 0.012 / tFinal 0.005 → 3 · DOE 1 → 3 · DOE 2 스텝 1 → 1 · 스텝 2 → 3",
+          f(cfg) == 3 and f(cfg, 1, 1) == 3 and f(cfg, 2, 1) == 1 and f(cfg, 2, 2) == 3 and f(cfg, 9, 1) == 1)
+    check("부동소수 잡음: 0.01 / 0.005 → 2 (3 아님) · tFinal 기본 0.005", f({"scenario": {"doe_endtim": {"1": {"1": 0.01}}},
+          "simulation_params": {"tFinal": 0.005}}) == 2 and f({"scenario": {"doe_endtim": {"1": {"1": 0.01}}}}) == 2)
+    check("충격 조건처럼 짧은 표(2 ms < tFinal 5 ms) → 1", f({"scenario": {"doe_endtim": {"1": {"1": 0.0021}}}}) == 1)
+    r = CumulativeScenarioRunner.__new__(CumulativeScenarioRunner)
+    r.config = {"execution": {"timeout_per_step_seconds": 7200}, **cfg}
+    check("러너 스텝 시간 제한 = timeout_per_step_seconds × 그 DOE·스텝 배율", r._step_timeout(1, 1) == 21600
+          and r._step_timeout(2, 1) == 7200 and r._step_timeout(2, 2) == 21600)
+    r.config = {"execution": {"timeout_per_step_seconds": 7200}, "scenario": {}}
+    check("러너: 표 없으면 예전 값", r._step_timeout(1, 1) == 7200)
+
+    rc, tmp = on[0], on[1]
+    rc_path = os.path.join(tmp, "runner_config.json")
+    tf = rc["simulation_params"]["tFinal"]
+    # DOE 배율 F_d = Σ 스텝 ceil(endtim ÷ tFinal) (DR 없음) — 2 스텝 cyclic 이라 DOE 마다 다르다
+    fd = {int(d): sum(max(1, math.ceil(round(v / tf, 9))) for v in st.values())
+          for d, st in rc["scenario"]["doe_endtim"].items()}
+    want = max(fd.values())
+    texts, out = submit_scripts(kcr, rc_path)
+    tl = [l for t in texts.values() for l in t.splitlines() if l.startswith("#SBATCH --time=")]
+    check(f"submit(누적): DOE 배율 F_d = Σ 스텝 ceil(endtim/tFinal) {sorted(fd.values())} → --time 01:00:00 × 최대 {want}"
+          f" (예전 식 step 배율 2 × 표 배율 {max(math.ceil(round(v / tf, 9)) for st in rc['scenario']['doe_endtim'].values() for v in st.values())} 이 아니다)",
+          want > 2 and tl and all(l == f"#SBATCH --time={want}:00:00" for l in tl)
+          and f"endtime factor {want}" in out, f"{set(tl)} {out[-300:]}")
+    texts, out = submit_scripts(kcr, rc_path, sequential=True)
+    tl = {l for n, t in texts.items() if not n.startswith("run_doe_")   # DOE 별 스크립트도 미리 쓴다 — 슬롯 스크립트만 본다
+          for l in t.splitlines() if l.startswith("#SBATCH --time=")}
+    slot = max(sum(f for d, f in fd.items() if (d - 1) % 2 == n) for n in range(2))
+    check(f"submit --sequential: 01:00:00 × 슬롯마다 F_d 합의 최대 {slot} (노드 2)", tl == {f"#SBATCH --time={slot}:00:00"},
+          str(tl))
+    tmp0 = new_tmp("etp_tl_off_")
+    rc0, _ = designer_prepare(tmp0, scen_faces2(tmp0))
+    sdf = kcr._step_dr_time_factor(rc0)
+    texts, out = submit_scripts(kcr, os.path.join(tmp0, "runner_config.json"))
+    tl = {l for t in texts.values() for l in t.splitlines() if l.startswith("#SBATCH --time=")}
+    check(f"표 없음: --time = 01:00:00 × step 배율 {sdf} (예전 그대로) · 표 배율 안내 없음",
+          sdf == 2 and tl == {"#SBATCH --time=2:00:00"} and "endtime factor" not in out, str(tl))
+    try:
+        texts, out = submit_scripts(kcr, os.path.join(tmp0, "runner_config.json"), sequential=True, time_limit="100:00:00")
+        tl = {l for n, t in texts.items() if n.startswith("run_seq_") for l in t.splitlines() if l.startswith("#SBATCH --time=")}
+    except Exception as e:   # 고치기 전: 파티션 최대로 잘린 '7-00:00:00' 을 int('7-00') 로 읽다 죽었다
+        tl = repr(e)
+    check("sequential: 파티션 최대(7-00:00:00)로 잘린 DOE 시간도 읽는다 → 슬롯도 7-00:00:00", tl == {"#SBATCH --time=7-00:00:00"},
+          str(tl))
+    rc2 = json.load(open(rc_path, encoding="utf-8"))
+    rc2["scenario"]["doe_endtim"] = {d: {s: 0.0021 for s in st} for d, st in rc2["scenario"]["doe_endtim"].items()}
+    json.dump(rc2, open(rc_path, "w", encoding="utf-8"), indent=1)
+    texts, out = submit_scripts(kcr, rc_path)
+    tl = {l for t in texts.values() for l in t.splitlines() if l.startswith("#SBATCH --time=")}
+    check("표가 tFinal 보다 짧으면(충격 조건 1~2 ms) 표 없을 때와 같은 시간 (F_d = step 배율)",
+          tl == {"#SBATCH --time=2:00:00"}, str(tl))
+
+
+# ── [8] reach·n_unresolved 알림 ─────────────────────────────────
+def test_reach():
+    print("[8] reach·n_unresolved — 바닥판 반폭과 비교, 미해결 각도 수")
+    tmp = new_tmp("etp_reach_")
+    rc, out = designer_prepare(tmp, with_presim(scen_faces2(tmp), {"enabled": True},
+                                                koomeshmodifier_path=write_fake(tmp, "farreach")))
+    check("reach 최대 160 > 바닥판 200×200 반폭 100 → 경고 (한 변 320 이상으로)",
+          "reach 최대 160" in out and "plate reach" in out and "320" in out, out[-600:])
+    check("n_unresolved > 0 인 각도 2개 경고", "n_unresolved > 0 인 각도 2개" in out, out[-600:])
+    tmp2 = new_tmp("etp_reach_ok_")
+    _, out2 = designer_prepare(tmp2, with_presim(scen_faces2(tmp2), {"enabled": True},
+                                                 koomeshmodifier_path=write_fake(tmp2, "ok")))
+    check("reach 15 < 반폭 100 → 경고 없음, 미해결 없음", "reach 최대 15" in out2 and "plate reach" not in out2
+          and "n_unresolved" not in out2, out2[-400:])
+    tmp3 = new_tmp("etp_reach_rw_")
+    u = with_presim(scen_faces2(tmp3), {"enabled": True}, koomeshmodifier_path=write_fake(tmp3, "farreach"))
+    u["simulation_params"]["drop_surface"] = {"type": "RigidWall"}
+    _, out3 = designer_prepare(tmp3, u)
+    check("RigidWall 이면 판 크기 경고 없음", "RigidWall" in out3 and "plate reach" not in out3, out3[-400:])
+    import Runner.EndTimePresim as EP
+    check("drop_v0: mm-t-s 1500 → 5424.9 mm/s, mm-kg-ms → 5.4249 mm/ms, m-kg-s 1.5 → 5.4249 m/s, gravity 주면 그것",
+          abs(EP.drop_v0(1500, "mm-t-s") - 5424.942396) < 1e-5 and abs(EP.drop_v0(1500, "mm-kg-ms") - 5.424942396) < 1e-8
+          and abs(EP.drop_v0(1.5, "m-kg-s") - 5.424942396) < 1e-8 and abs(EP.drop_v0(1000, "mm-t-s", 9000) - 4242.640687) < 1e-5)
+
+
+# ── [9] 수정 묶음 (사용자 결정·리뷰 R3) ───────────────────────────
+def faces_table(tmp, angles, meta, bom=False, name="t.csv"):
+    """육면 6 자세 표(endtim 0.003 + 0.0001·i) — meta 는 '# k=v' 줄로, bom 이면 엑셀처럼 BOM 을 붙인다."""
+    lines = [f"# {k}={v}" for k, v in meta.items()] + ["name,roll,pitch,yaw,endtim"]
+    lines += [f"T{i},{r},{p},{y},{0.003 + 0.0001 * i:.6g}" for i, (_, r, p, y) in enumerate(angles)]
+    Path(tmp, name).write_text(("﻿" if bom else "") + "\n".join(lines) + "\n", encoding="utf-8")
+    return os.path.join(tmp, name)
+
+
+def table_prepare(tmp, presim_extra=None, sim_extra=None):
+    """table 지름길 prepare → (runner_config | None, 출력, 오류 글)."""
+    import Runner.EndTimePresim as EP
+    u = with_presim(scen_faces2(tmp), {"enabled": True, "table": "t.csv", **(presim_extra or {})},
+                    koomeshmodifier_path=write_fake(tmp, "rc1"))
+    u["simulation_params"].update(sim_extra or {})
+    try:
+        rc, out = designer_prepare(tmp, u)
+        return rc, out, ""
+    except EP.EndTimePresimError as e:
+        return None, "", str(e)
+
+
+def ref_find(rows, roll, pitch, yaw):
+    """옛 순수 파이썬 찾기 — numpy 판과 대조용."""
+    import Runner.EndTimePresim as EP
+    d = EP.drop_direction(roll, pitch, yaw)
+    hits = [r["endtim"] for r in rows if sum(a * b for a, b in zip(r["dir"], d)) >= math.cos(math.radians(0.01))]
+    return max(hits) if hits else None
+
+
+def test_r3(kcr, rc_off):
+    print("[9] 수정 묶음 — BOM·중력 메타·단위 g·덱·numpy 찾기·사전 해석 시간 제한·batch KMM·노드 확인·배열·deep·F_d")
+    import time
+    import Runner.EndTimePresim as EP
+    angles = EP.collect_drop_angles(rc_off["scenario"]["doe_angles"], rc_off["scenario"]["steps"])
+    v0 = math.sqrt(2 * 9810.0 * 1000)
+    good = {"format": "rigid_drop_endtime/endtime v1", "units": "mm-t-s", "time_unit": "s", "height": 1000, "v0": v0,
+            "gravity": 0, "t_sep_ms": 1.0}
+
+    tmp = new_tmp("etp_bom_")
+    faces_table(tmp, angles, good, bom=True)
+    rc, out, err = table_prepare(tmp)
+    got = sorted({v for st in (rc or {}).get("scenario", {}).get("doe_endtim", {}).values() for v in st.values()})
+    check("BOM(엑셀 저장) 붙은 표도 메타·칸을 읽는다", rc is not None and len(got) == 6 and abs(got[0] - 0.003) < 1e-12
+          and "t_sep_ms 메타가 없다" not in out, err or out[-300:])
+
+    tmp = new_tmp("etp_grav_")
+    faces_table(tmp, angles, {**good, "gravity": 1})
+    rc, out, err = table_prepare(tmp)
+    check("표 메타 gravity 1 ≠ 옵션 gravity false → 멈춘다", rc is None and "사전 해석 중력 켬" in err
+          and "table drop mismatch" in err, err)
+    rc, out, err = table_prepare(tmp, {"gravity": True})
+    check("옵션 gravity true 면 같은 표를 받는다", rc is not None, err)
+
+    tmp = new_tmp("etp_deck_")
+    faces_table(tmp, angles, {**good, "deck": "/elsewhere/other_model.k"})
+    rc, out, err = table_prepare(tmp)
+    check("표 메타 deck 이 템플릿과 다르면 경고만", rc is not None and "표를 만든 덱 /elsewhere/other_model.k" in out, err)
+
+    tmp = new_tmp("etp_mmkgms_")
+    faces_table(tmp, angles, {**good, "units": "mm-kg-ms", "time_unit": "ms", "v0": math.sqrt(2 * 9.81e-3 * 1000)})
+    rc, out, err = table_prepare(tmp)
+    check("mm-kg-ms 덱(표 메타)인데 simulation_params.gravity 없음 → 멈춘다 (FEM KMM 이 그 단위 g 를 못 정한다)",
+          rc is None and "gravity required for mm-kg-ms" in err and "0.00981" in err, err)
+    rc, out, err = table_prepare(tmp, sim_extra={"gravity": 0.00981})
+    check("simulation_params.gravity 0.00981 을 주면 받는다", rc is not None, err)
+
+    rnd = random.Random(7)
+    rows = []
+    for i in range(400):
+        r, p, y = rnd.uniform(-180, 180), rnd.uniform(-90, 90), rnd.uniform(-180, 180)
+        rows.append({"name": f"R{i}", "roll": r, "pitch": p, "yaw": y, "endtim": rnd.uniform(1e-3, 9e-3),
+                     "dir": EP.drop_direction(r, p, y)})
+    queries = [(r["roll"] + dr, r["pitch"] + dp, r["yaw"]) for r in rows[:150]
+               for dr, dp in ((0.0, 0.0), (0.004, 0.003), (0.012, 0.0), (0.0, 0.0099))]
+    queries += [(rnd.uniform(-180, 180), rnd.uniform(-90, 90), 0.0) for _ in range(100)]
+    same = all(EP.find_endtim(rows, *q) == ref_find(rows, *q) for q in queries)
+    check(f"numpy 찾기 = 옛 순수 파이썬 찾기 ({len(queries)} 묻기, 경계 0.004~0.012° 포함)", same)
+    big = [{"name": f"B{i}", "roll": a, "pitch": b, "yaw": 0.0, "endtim": 0.002 + 1e-7 * i,
+            "dir": EP.drop_direction(a, b, 0.0)}
+           for i, (a, b) in enumerate((rnd.uniform(-180, 180), rnd.uniform(-90, 90)) for _ in range(20000))]
+    t0 = time.time()
+    res = EP._endtims_for(big, [(r["name"], r["roll"], r["pitch"], 0.0) for r in big], "big.csv", by_name=True)
+    dt = time.time() - t0
+    check(f"2만 각도 × 2만 줄 찾기 {dt:.1f} 초 (< 30 초, 옛 순수 파이썬 99 초)", dt < 30 and len(res) == 20000, f"{dt:.1f}")
+
+    o = EP.presim_options({"endtime_presim": {"enabled": True}})
+    check("presim_timeout_seconds 기본 21600 (6 시간)", o["presim_timeout_seconds"] == 21600 == EP.PRESIM_TIMEOUT)
+    bad = []
+    for v in (0, -5, "x", True):
+        try:
+            EP.presim_options({"endtime_presim": {"enabled": True, "presim_timeout_seconds": v}})
+            bad.append(v)
+        except EP.EndTimePresimError as e:
+            if "presim_timeout_seconds" not in str(e):
+                bad.append(v)
+    check("presim_timeout_seconds 0·음수·글자·bool → 값 오류", not bad, str(bad))
+
+    # batch_koomeshmodifier — SIF 없고 /opt/ 경로면 koochainrun_path 옆 호스트 KMM 을 묻고 그것으로 사전 해석한다
+    tmp = new_tmp("etp_batch_")
+    os.makedirs(os.path.join(tmp, "bin"))
+    host = os.path.join(tmp, "bin", "KooMeshModifier")
+    Path(host).write_text(Path(write_fake(tmp, "ok")).read_text(encoding="utf-8"), encoding="utf-8")
+    os.chmod(host, 0o755)
+    u = with_presim(scen_faces2(tmp), {"enabled": True}, koomeshmodifier_path="/opt/nonexistent_kcr_test/bin/KooMeshModifier",
+                    koochainrun_path=os.path.join(tmp, "bin", "KooChainRun"))
+    u["scenarios"][0]["cumulative"] = {"num_steps": 1, "mode_sequence": ["DROP"]}
+    u["scenarios"][0]["batch_koomeshmodifier"] = True
+    EP._KMM_HELP_CACHE.clear()
+    try:
+        rc, out = designer_prepare(tmp, u)
+        err = ""
+    except EP.EndTimePresimError as e:
+        rc, out, err = None, "", str(e)
+    call = os.path.join(tmp, "output", "endtime_presim", "1", "fake_kmm_call.json")
+    argv0 = json.load(open(call, encoding="utf-8"))["argv"][0] if os.path.exists(call) else None
+    bcmd = batch_config(kcr, rc)[1] if rc else None
+    check("batch: 버전 확인·사전 해석 = 배치가 돌릴 호스트 KMM(koochainrun_path 옆) = _prepare_batch_koomeshmodifier 명령",
+          rc is not None and rc["scenario"].get("batch_koomeshmodifier") is True
+          and os.path.exists(os.path.join(tmp, "bin", "fake_help_calls.txt")) and argv0 == host
+          and bcmd and bcmd[0] == host, f"{err} argv0={argv0} bcmd={bcmd}")
+    u["scenarios"][0]["batch_koomeshmodifier"] = False
+    EP._KMM_HELP_CACHE.clear()
+    try:
+        designer_prepare(tmp, u)
+        err = ""
+    except EP.EndTimePresimError as e:
+        err = str(e)
+    check("batch 가 아니면 러너 KMM(koomeshmodifier_path)을 묻는다 — 헤드에 없으면 멈추고 헤드 실행이 필요하다고 알린다",
+          "cannot run KMM" in err and "/opt/nonexistent_kcr_test" in err and "헤드 노드" in err, err)
+
+    # 노드 쪽 확인 — KMM 출력에 [EndTimeTable]·[RigidAngularVelocity] 표식이 없으면 그 스텝을 실패로
+    from Runner.CumulativeScenarioRunner import CumulativeScenarioRunner as CSR
+    cfg = os.path.join(tmp, "cfg.txt")
+    Path(cfg).write_text("**DropAttitude,1\ntFinal,0.004\nEndTimeTable,/data/t.csv\nRigidAngularVelocityX,1\n**EndDropAttitude\n",
+                         encoding="utf-8")
+    plain = os.path.join(tmp, "plain.txt")
+    Path(plain).write_text("**DropAttitude,1\ntFinal,0.004\nInitialAngularVelocityX,0\n**EndDropAttitude\n", encoding="utf-8")
+    try:
+        u1 = CSR._unread_table_keys(cfg, "run ok")
+        u2 = CSR._unread_table_keys(cfg, "[EndTimeTable] /data/t.csv: 표 6줄에서 각도 1개를 모두 찾았다\n"
+                                         "[RigidAngularVelocity] centre=(0, 0, 0)")
+        u3 = CSR._unread_table_keys(cfg, "[EndTimeTable] ok")
+        u4 = CSR._unread_table_keys(plain, "")
+        ok = (u1 == ["EndTimeTable", "RigidAngularVelocity"] and u2 == [] and u3 == ["RigidAngularVelocity"] and u4 == [])
+    except Exception as e:   # 고치기 전 코드에는 없다
+        ok, u1 = False, repr(e)
+    check("러너: 스텝 설정의 표 줄을 KMM 출력 표식으로 확인 (표 줄 없는 설정은 검사 없음)", ok, str(u1))
+
+    # 대규모 배열 --time — 배열 DOE(0-based)의 최대 배율, 파티션 최대에서 자르고 🔴 경고
+    from Runner.LargeScaleDOEManager import LargeScaleDOEManager as LS
+    m = LS.__new__(LS)
+    m.partition, m.timeout = "normal", 7200
+    m.runner_config = {"simulation_params": {"tFinal": 0.004},
+                       "scenario": {"doe_endtim": {"1": {"1": 0.004}, "2": {"1": 0.0101}, "3": {"1": 0.004}}}}
+    real = subprocess.run
+
+    def fake_sinfo(cmd, *a, **k):
+        return subprocess.CompletedProcess(cmd, 0, stdout="1-00:00:00\n" if cmd[0] == "sinfo" else "", stderr="")
+    buf = io.StringIO()
+    subprocess.run = fake_sinfo
+    try:
+        with contextlib.redirect_stdout(buf):
+            t_all = m._array_time_limit(1, 0, 2)
+            t_one = m._array_time_limit(1, 0, 0)
+            m.timeout = 50000
+            t_cap = m._array_time_limit(1, 1, 1)
+            m.runner_config = {"scenario": {}}
+            t_off = m._array_time_limit(1, 0, 2)
+    except Exception as e:
+        t_all = t_one = t_cap = t_off = repr(e)
+    finally:
+        subprocess.run = real
+    check("대규모 배열: DOE 0..2(표 1..3) 최대 배율 3 → 06:00:00, DOE 0 만 → 02:00:00",
+          t_all == "06:00:00" and t_one == "02:00:00", f"{t_all} {t_one}")
+    check("대규모 배열: 50000 s × 3 > 파티션 1-00:00:00 → 24:00:00 + 🔴 경고 · 표 없으면 timeout 그대로",
+          t_cap == "24:00:00" and "time limit capped below need" in buf.getvalue() and t_off == "13:53:20",
+          f"{t_cap} {t_off} {buf.getvalue()[-200:]}")
+
+    # 대규모 배열 스크립트 — 표가 있을 때만 KMM 출력을 남겨 표식을 grep 한다
+    def array_script(rcfile, root):
+        m2 = None
+        with contextlib.redirect_stdout(io.StringIO()):
+            m2 = LS(rcfile, data_root=root)
+        m2.base_dir = root
+        subprocess.run = lambda cmd, *a, **k: subprocess.CompletedProcess(cmd, 0, stdout="4242\n", stderr="")
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                m2.submit_step_array_job(m2.scenarios[0], 1, 0, 5)
+        finally:
+            subprocess.run = real
+        names = [n for n in os.listdir(root) if n.startswith("slurm_") and n.endswith(".sh")]
+        return Path(root, names[0]).read_text(encoding="utf-8") if names else ""
+    try:
+        tmp_on, tmp_off = new_tmp("etp_ls_on_"), new_tmp("etp_ls_off_")
+        designer_prepare(tmp_on, with_presim(scen_faces2(tmp_on), {"enabled": True},
+                                             koomeshmodifier_path=write_fake(tmp_on, "ok")))
+        designer_prepare(tmp_off, scen_faces2(tmp_off))
+        s_on = array_script(os.path.join(tmp_on, "runner_config.json"), os.path.join(tmp_on, "ls"))
+        s_off = array_script(os.path.join(tmp_off, "runner_config.json"), os.path.join(tmp_off, "ls"))
+    except Exception as e:
+        s_on = s_off = repr(e)
+    check("대규모 배열 스크립트: 표가 있으면 KMM 출력 tee + [EndTimeTable] grep, 없으면 그 줄이 없다",
+          'tee "$STEP_DIR/kmm_drop_attitude.log"' in s_on and "KM_EXIT=${PIPESTATUS[0]}" in s_on
+          and '[EndTimeTable]' in s_on and "KMM version skew" in s_on
+          and "kmm_drop_attitude.log" not in s_off and "KM_EXIT=$?" in s_off, (s_on + s_off)[-300:])
+
+    # deep report 시간 제한 — 그 스텝 배율
+    try:
+        pp1 = CSR._scaled_deep_options({"deep_timeout_seconds": 3600, "deep_time_limit": "1-00:00:00", "x": 1}, 3)
+        pp2 = CSR._scaled_deep_options({}, 3)
+        from Runner.PostprocessShellGenerator import build_deep_report_sbatch
+        sb = build_deep_report_sbatch("/data/r", "/data/r/deep_report.sh", options=pp2, environment={})
+        ok = (pp1 == {"deep_timeout_seconds": 10800, "deep_time_limit": "72:00:00", "x": 1}
+              and pp2 == {"deep_timeout_seconds": 21600} and "#SBATCH --time=06:10:00" in sb)
+    except Exception as e:
+        ok, pp1 = False, repr(e)
+    check("deep report: deep_timeout_seconds·deep_time_limit × 배율 → sbatch --time 도 늘어난다", ok, str(pp1))
+
+    # DOE 배율 F_d — r 이 모두 1 이면 _step_dr_time_factor 와 같다
+    def cfg(steps, dr, table):
+        return {"scenario": {"total_steps": steps, "doe_count": len(table), "doe_endtim": table},
+                "simulation_params": {"tFinal": 0.004, "dynamic_relaxation": dr}}
+    try:
+        f_eq = [EP.doe_time_factors(cfg(n, dr, {"1": {str(s): 0.004 for s in range(1, n + 1)}}))[1]
+                == kcr._step_dr_time_factor(cfg(n, dr, {})) for n in (1, 2, 3) for dr in (False, True, {"enabled": True})]
+        f1 = EP.doe_time_factors(cfg(3, True, {"1": {"1": 0.012, "2": 0.004, "3": 0.004}, "2": {"2": 0.0081}}))
+        f0 = EP.doe_time_factors({"scenario": {"total_steps": 2}})
+        ok = all(f_eq) and f1 == {1: 3 + 2 + 2, 2: 1 + 4 + 2} and f0 is None
+    except Exception as e:
+        ok, f1 = False, repr(e)
+    check("F_d = Σ 스텝 (ceil(endtim/tFinal) + DR 2 스텝부터 1): 짧은 표 = 예전 step/DR 배율, 표에 없는 스텝(열)은 1",
+          ok, str(f1))
+    try:
+        hs = [kcr._hms_scale(a, b) for a, b in (("01:00:00", 3), ("1-00:00:00", 2), ("30", 2), ("2-12", 1), ("45:30", 2))]
+    except Exception as e:
+        hs = [repr(e)]
+    check("_hms_scale: Slurm 형식 HH:MM:SS·D-HH:MM:SS·MM·D-HH·MM:SS", hs == ["3:00:00", "48:00:00", "1:00:00", "60:00:00",
+                                                                           "1:31:00"], str(hs))
 
 
 def main():
@@ -602,6 +1061,9 @@ def main():
     test_table_shortcut(kcr, off[0])
     test_failures()
     test_apptainer()
+    test_time_factor(kcr, on)
+    test_reach()
+    test_r3(kcr, off[0])
     print()
     if FAILS:
         print("FAIL %d:" % len(FAILS))

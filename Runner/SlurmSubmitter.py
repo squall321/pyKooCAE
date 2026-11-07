@@ -132,6 +132,11 @@ class SlurmSubmitter:
         else:
             if not pp.get("auto_sphere", True):
                 return
+            # 충격 조건 DOE 는 전각도 sphere 리포트 대상이 아니다 — harvest --impact-map 으로 원래 각도마다 모은다
+            from Runner.ImpactConditions import is_impact_conditions, SPHERE_SKIP_MESSAGE
+            if is_impact_conditions(self.runner_config):
+                print(f"  {SPHERE_SKIP_MESSAGE}")
+                return
             report_label = "Sphere"
             sbatch_builder = build_sphere_sbatch
             sbatch_name = "sphere_report.sbatch"

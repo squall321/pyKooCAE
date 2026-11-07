@@ -160,11 +160,21 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
            "prepare 가 KMM RIGID_DROP_ENDTIME(Fibonacci num_directions, 중력 켬)으로 충돌 직전 상태(<base>_impacts.csv)를 받아 "
            "대표 count 개를 골라 DOE 하나씩(1 스텝 DROP: 자세=충돌 순간 자세, InitialVelocity=v, RigidAngularVelocity=w, Height 0, "
            "EndTimeTable=impact_conditions/endtime.csv). 1 스텝 DROP 만, tolerance·part_doe·endtime_presim 과 함께 못 쓴다. "
-           "기록 output/impact_conditions/index.json, runner_config scenario.doe_impact_meta·doe_impact_state"),
+           "기록 output/impact_conditions/index.json, runner_config scenario.doe_impact_meta·doe_impact_state. "
+           "prepare 가 표 줄을 읽을 KMM(러너의 apptainer_sif 안 또는 koomeshmodifier_path, batch_koomeshmodifier 면 그 헤드 노드 "
+           "KMM)의 --help 로 EndTimeTable·RigidAngularVelocityX 를 확인하고 모르면(v131 이하) 멈춘다 — 노드의 러너도 KMM 출력에 "
+           "[EndTimeTable]·[RigidAngularVelocity] 표식이 없으면 그 스텝을 실패로 둔다. 표의 height·v0·gravity 메타가 이 낙하·옵션과 "
+           "다르거나, mm-kg-ms·mm-g-ms 덱인데 simulation_params.gravity 가 없으면 멈춘다. 전각도 sphere 리포트는 돌리지 않는다 — "
+           "결과는 harvest --impact-map 으로(항복강도를 주면 σ/항복 비가 가장 큰 파트가 지배, 다시 prepare 한 뒤 남은 지난 Run 은 "
+           "step_config 대조로 뺀다)"),
          K("angle_source.impact_conditions.num_directions / restitution / friction / gravity", "정수 / 실수 목록 / 실수 / bool",
            "20000 / [0.1, 0.3, 0.5] / 0.5 / true", "사전 해석 방향 수(실제 낙하 방향 균일)·반발계수·마찰계수·중력(충격 조건은 켬)"),
-         K("angle_source.impact_conditions.margin_ms / exclude_parts / workers", "실수 / 정수 목록 / 정수", "1.0 / [] / 8",
-           "충돌 묶음 끝 뒤 여유(ms) · 사전 해석에서 뺄 파트 · 프로세스 수"),
+         K("angle_source.impact_conditions.margin_ms / workers", "실수 / 정수", "1.0 / 8",
+           "충돌 묶음 끝 뒤 여유(ms) · 프로세스 수. exclude_parts 는 쓸 수 없다(FEM 의 강체 회전 중심이 그 파트를 빼지 못한다 — "
+           "템플릿에서 지울 것. 병진 SPC 가 파트 절점의 10% 이상인 파트(바닥판 등)와 병진이 묶인 *MAT_RIGID 파트는 양쪽 모두 "
+           "자동으로 빠진다 — 10% 미만이면 SPC_ON_DEVICE_PART 경고만, 뺄 파트가 기기 파트와 절점을 나누면 KMM 종료 코드 1)"),
+         K("angle_source.impact_conditions.presim_timeout_seconds", "정수", "21600",
+           "사전 해석 KMM 시간 제한(초, 기본 6 시간 — 러너 KMM 의 timeout 과 따로). 넘으면 KMM 프로세스 묶음째 멈추고 prepare 가 멈춘다"),
          K("angle_source.impact_conditions.count / impacts / severity_fraction", "정수 / 정수 목록 / 실수", "100 / [1, 2] / 0.5",
            "대표 수 · 후보 충돌 차수(1 차·2 차) · 심각도(J_over_mv0·vn/v0 = 충격량 × 접촉점 접근 속도, 충격 에너지 대용) 상위로 고를 몫. 나머지는 상태 공간 최원점. "
            "모든 (각도, e, 차수)는 가장 가까운 대표에 묶인다"),
@@ -172,7 +182,8 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
            "심각도 몫의 비최대 억제 — 이미 고른 심각도 상태와 특징 f 거리가 이보다 가까운 상태는 건너뛴다(0.2 ≈ 자세 11° 또는 "
            "속도·각속도 0.2·v0 차이). 순위가 다 떨어지면 남은 몫은 최원점으로. 0 이면 끈다"),
          K("angle_source.impact_conditions.table", "경로", "null",
-           "이미 만든 <base>_impacts.csv (옆에 <base>_rigidbody.json). 주면 사전 해석을 건너뛴다"),
+           "이미 만든 <base>_impacts.csv (옆에 <base>_rigidbody.json — 그 presim.params.exclude_parts 가 [] 여야 한다, 기록이 "
+           "없으면 멈춘다). 주면 사전 해석을 건너뛴다(KMM --help 버전 확인은 한다 — 헤드 노드에서 그 KMM 이 돌아야 한다)"),
          K("angle_source.fibonacci_lattice.num_points", "정수", "26", "피보나치 구면 점 수 (별칭 num_directions)"),
          K("angle_source.cuboid_geometry.include_faces/edges/corners", "bool", "true", "육면체 방향 선택"),
          K("angle_source.fibonacci_lattice.sampling_space", "physical | latlon", "physical", "physical = 실제 낙하 방향 등간격. latlon = 옛 방식(방향이 적도에 몰림)"),
@@ -185,15 +196,29 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
          K("simulation_params.endtime_presim.enabled", "bool", "false",
            "prepare 때 KMM RIGID_DROP_ENDTIME(강체 낙하 사전 해석)을 돌려 DROP 자세마다 종료 시간을 정한다. "
            "DROP 스텝 설정(누적·대규모·배치)에 EndTimeTable 줄이 들어가 KMM 이 자세별 ENDTIM 을 쓴다(tFinal 줄은 남는다). "
-           "산출 <output_dir>/endtime_presim/1/, runner_config scenario.endtime_tables·doe_endtim. KMM 실패·각도 빠짐이면 prepare 가 멈춘다"),
+           "산출 <output_dir>/endtime_presim/1/, runner_config scenario.endtime_tables·doe_endtim. KMM 실패(3 = 덱 요소 소실)·각도 빠짐이면 "
+           "prepare 가 멈춘다. 러너가 쓸 KMM 의 --help 에 EndTimeTable 이 없으면(v131 이하 — 그 줄을 Height·tFinal 등으로 잘못 읽는다) "
+           "멈춘다(batch_koomeshmodifier 면 그 헤드 노드 KMM 을 묻는다. 노드의 러너도 KMM 출력에 [EndTimeTable] 표식이 없으면 그 "
+           "스텝을 실패로 둔다). endtim 이 tFinal 보다 길면 시간 제한을 늘린다 — submit 의 DOE time_limit 은 DOE 마다 Σ 스텝"
+           "(ceil(endtim ÷ tFinal) + DR 스텝 1) 의 최대 배(표가 짧으면 예전 step/DR 배율 그대로), sequential 은 슬롯 DOE 배율 합, "
+           "대규모 배열은 그 배열 DOE 의 최대 배, 러너 스텝 timeout_per_step_seconds·deep report(deep_timeout_seconds·"
+           "deep_time_limit)는 그 스텝 배. 파티션 최대에서 자르고 모자라면 🔴 경고. prepare 가 바닥 위 도달 거리 reach 최대"
+           "(바닥판 반폭보다 길면 경고)와 n_unresolved 각도 수를 찍는다"),
          K("simulation_params.endtime_presim.table", "경로", "null",
-           "이미 만든 <base>_endtime.csv (scenario.json 기준 상대 또는 절대). 주면 사전 해석을 건너뛴다. 모든 DROP 자세가 낙하 방향 0.01° 안에 있어야 한다"),
+           "이미 만든 <base>_endtime.csv (scenario.json 기준 상대 또는 절대). 주면 사전 해석을 건너뛴다. 모든 DROP 자세가 낙하 방향 0.01° 안에 있어야 하고, "
+           "표 메타 height·v0(√(2gh), units 기준)가 이 시나리오 낙하와 상대 1e-3 안이고 gravity(0/1)가 이 옵션 gravity 와 같아야 "
+           "한다(아니면 멈춘다). 메타 units 가 mm-kg-ms·mm-g-ms 인데 simulation_params.gravity 가 없으면 멈춘다(FEM KMM 이 그 단위의 "
+           "g 를 못 알아낸다). deck 이 템플릿과 다르거나 t_sep_ms 메타가 없으면 경고만. BOM(엑셀 저장)은 괜찮다"),
          K("simulation_params.endtime_presim.restitution / friction", "실수 목록 / 실수", "[0.1, 0.3, 0.5] / 0.5",
            "사전 해석 반발계수(가장 긴 종료 시간을 쓴다) · 바닥 마찰계수"),
          K("simulation_params.endtime_presim.gravity / margin_ms", "bool / 실수", "false / 1.0",
            "사전 해석 중력(기본 끔 — 낙하 덱에 중력이 없어 같은 조건이고, 다시 닿는 충격을 모두 2차 충격으로 센다) · 2차 충격 끝 뒤 여유(ms)"),
          K("simulation_params.endtime_presim.exclude_parts / workers", "정수 목록 / 정수", "[] / 8",
-           "사전 해석에서 뺄 파트(바닥판 등. SPC 로 병진이 묶인 절점이 하나라도 있는 파트는 KMM 이 자동으로 뺀다) · 프로세스 수"),
+           "사전 해석에서 뺄 파트(받침·고정구 등. 병진 SPC 가 파트 절점의 10% 이상인 파트(바닥판 등)와 병진이 묶인 *MAT_RIGID "
+           "파트는 KMM 이 자동으로 뺀다 — 10% 미만이면 기기 파트로 넣고 SPC_ON_DEVICE_PART 경고, 뺄 파트가 기기 파트와 절점을 "
+           "나누면 종료 코드 1) · 프로세스 수"),
+         K("simulation_params.endtime_presim.presim_timeout_seconds", "정수", "21600",
+           "사전 해석 KMM 시간 제한(초, 기본 6 시간 — 러너 KMM 의 timeout 과 따로). 넘으면 KMM 프로세스 묶음째 멈추고 prepare 가 멈춘다"),
          K("simulation_params.density / youngs_modulus / poisson_ratio", "실수", "7.85e-9 / 2e5 / 0.3", "바닥판 재질"),
          K("simulation_params.offset_distance", "실수", "0.05", "바닥판 초기 간격"),
          K("simulation_params.drop_surface", "객체", "Plane 300×300×20, 30×30×2", "type: Plane | PlaneGraded(num_outer_layers, ratio) | RigidWall | PlanewithRoughness"),
