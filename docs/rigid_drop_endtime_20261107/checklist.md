@@ -25,8 +25,8 @@
 - [x] e2e 기준값 다시 만듦(소스 b498d17, 48 OK·0 FAIL) — 판정을 가까운 것 건너뛰기 탐욕 조건으로 고침
 - [x] 빌드 — build_without_automatedmodeller.sh --clean (캡 scope 24G, 11:29~12:30, 최저 가용 13.9 GB), KMM 443b08a1·KCR 5bb90754, pybullet.so(GLIBC 2.34) dist 포함, 번들 GLIBC ≤ 2.35, "호스트 배포 완료"
 - [x] 컴파일본 e2e `/data/koopark/Test_E2E_v132` — v131 아는 불량(새 기능 38 FAIL·지킴 통과) 먼저, v132 호스트 엄격 54 OK·0 FAIL·0 SKIP, 표 = 소스 기준 100/100
-- [ ] SIF v132 — 굽기 전 sha·tar 번호 확인, kooremapper-fd 알림, 굽기, SIF e2e, Drive·메일
-- [ ] 커밋·푸시(pathspec)
-- [ ] 알림 — smarttwinmcp(새 kmm 모드·키·scenario 키), kooremapper-fd(굽기 뒤)
-- [ ] 메모리·문서(context-notes 결론, project 메모리, node_sif_deploy v132)
-- [ ] 헤드 /opt 교체·노드 배포 — 사용자에게 묻기
+- [x] SIF v132 — 굽기 전 sha(32260efb)·tar 번호(v131) 확인, 노드 배포 창(pykoocae-53) 뒤 굽기, KooRemapper 15d013ec 검증, SIF 18ed8a1e·compute-node-images 같음, tar v132 9cd1d7e0·Drive·메일, SIF e2e 엄격 54/54
+- [x] 커밋·푸시 — c26e6bb..198f969 (23 커밋)
+- [x] 알림 — pykoocae-53(push 끝), kooremapper-fd(굽기 앞뒤), smarttwinmcp-c8·4c(도구 재생성), kood3plotreader-a9·bf(Post 구면 지도 요청, POST_CONTRACT)
+- [x] 메모리 — pyKooCAE project_rigid_drop_endtime_20261107·MEMORY 줄·project_node_sif_deploy v132
+- [ ] 헤드 /opt 교체·노드 배포 — 사용자에게 묻기 (헤드·노드 = v131)
