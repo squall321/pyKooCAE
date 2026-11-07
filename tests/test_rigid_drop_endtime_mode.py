@@ -1,14 +1,16 @@
 # KMM RIGID_DROP_ENDTIME 모드(옵션 검사·산출 다섯 개·KMM→KMM 표 소비·오류 rc 1·도움말)를 실제 KMM 실행으로 검증하는 통합 시험
 """
-실행: venv312/bin/python tests/test_rigid_drop_endtime_mode.py   (pybullet 필요, KMM 서브프로세스 열 번, 1분 남짓)
+실행: venv312/bin/python tests/test_rigid_drop_endtime_mode.py   (pybullet 필요, KMM 서브프로세스 열두 번, 1분 남짓,
+      사전 해석 프로세스는 4 개 이하)
 
-  [1] 옵션 검사(parse_option_lines) — 키 이름 전체 일치·대소문자·기본값·AngleFile 절대 경로·오류(ValueError), AngleFile 읽기,
-      충돌 상태 표의 덱 단위 환산
+  [1] 옵션 검사(parse_option_lines) — 키 이름 전체 일치·대소문자·기본값·AngleFile 절대 경로·오류(ValueError, 모르는 키는
+      did you mean), AngleFile 읽기, 충돌 상태 표의 덱 단위 환산
   [2] MinimumModel Fibonacci 30 — rc 0, 작업 폴더에 산출 다섯 개, 덱 옆에는 리더의 _dump.k 만, JSON 질량·사전 해석 요약,
-      표(load_lookup)·충돌 상태 표(k=1 줄 = 입력 낙하 방향·(0,0,−v0)·각속도 0)
-  [3] 변형 — Angle 줄(모든 옵션, 키 대소문자 섞음)·AngleFile(작업 폴더 기준 상대 경로)
+      표(load_lookup·메타 v0·t_sep_ms·reach·n_unresolved)·충돌 상태 표(k=1 줄 = 입력 낙하 방향·(0,0,−v0)·각속도 0)
+  [3] 변형 — Angle 줄(모든 옵션, 키 대소문자 섞음, ExcludePart 13)·AngleFile(작업 폴더 기준 상대 경로)
   [4] KMM→KMM — DROP_ATTITUDE Fast DOE 세 각도 + EndTimeTable,<[2] 의 표> → 각도 덱의 ENDTIM = 표 endtim
-  [5] 오류 rc 1 — Height 없음·각도 출처 둘·없는 AngleFile·숫자 아닌 AngleFile(덱 읽기 전), 사전 해석 실패(PresimTMax 짧음)
+  [5] 오류 rc 1 — Height 없음·각도 출처 둘·없는 AngleFile·숫자 아닌 AngleFile·모르는 키(덱 읽기 전), 없는 ExcludePart·
+      사전 해석 실패(PresimTMax 짧음)(덱 읽기 뒤 — 지난 실행의 산출 다섯 개를 지운다)
   [6] 도움말 — 모드 상세, 별칭이 drop·낙하·rigid 를 다른 모드에서 뺏지 않음, format 주제의 산출 이름
 
 KMM 은 덱 옆에 _dump.k 를 쓰고 그 폴더로 chdir 하므로 덱은 늘 작업용 사본을 쓴다. 작업 폴더: RIGID_DROP_ENDTIME_TEST_DIR
@@ -83,14 +85,21 @@ def test_parser():
     print("[1] 옵션 검사 parse_option_lines · AngleFile · 덱 단위 환산")
     d = WORK / "parser"
     d.mkdir(parents=True, exist_ok=True)
-    logs = []
-    o = parse_option_lines(["Height,1500", "", "$ 주석", "# 주석", "FIBONACCI,12", "heightx,3", "angles,1"], str(d), logs.append)
+    o = parse_option_lines(["Height,1500", "", "$ 주석", "# 주석", "FIBONACCI,12"], str(d))
     check("기본값·대소문자 무관(FIBONACCI)·빈 줄/주석 건너뜀", o["Height"] == 1500.0 and o["Fibonacci"] == 12
           and o["Restitution"] == [0.1, 0.3, 0.5] and o["Friction"] == 0.5 and o["PresimGravity"] == 0
           and o["MarginMs"] == 1.0 and o["PresimDt"] == 1e-5 and o["PresimTMax"] == 1.0 and o["Units"] is None
           and 1 <= o["Workers"] <= 8 and o["OutDir"] == os.path.abspath(d), str(o))
-    check("키 이름 전체 일치만 — HeightX·Angles 는 모르는 키 경고(다른 키로 안 읽힘)",
-          len(logs) == 2 and all("unknown RigidDropEndtime option line" in x for x in logs), str(logs))
+    for line, hint in (("HeightX,3", "did you mean 'Height'?"), ("Angles,1", "did you mean 'Angle'?"),
+                       ("Restituion,0.3", "did you mean 'Restitution'?"), ("Gravity,1", "did you mean 'PresimGravity'?"),
+                       ("Foo,1", "키: Height, AngleFile")):
+        try:
+            parse_option_lines(["Height,1500", "Fibonacci,12", line], str(d))
+            msg = None
+        except ValueError as e:
+            msg = str(e)
+        check(f"모르는 키 '{line.split(',')[0]}' → ValueError 'unknown key' + {hint}", msg is not None and "unknown key" in msg
+              and hint in msg, str(msg))
     (d / "a.csv").write_text("name,pitch,roll,yaw\n# 주석\nA1,10,20,30\nA2,0,45,\n")
     (d / "b.csv").write_text("B1,1,2,3\nB2,4,5\n")
     o = parse_option_lines(["Height,10", "AngleFile,a.csv", "ExcludePart,3,4", "ExcludePart,9", "Units,mm-kg-ms",
@@ -156,9 +165,11 @@ def test_minimum():
     print("[2] MinimumModel — Fibonacci 30, *Inputfile 은 다른 폴더의 절대 경로")
     deck = deck_copy("fib_deck")
     work = WORK / "fib_work"
-    rc, out, sec = run_kmm(work, option(deck, ["Height,1500", "Fibonacci,30"]))
+    work.mkdir(parents=True, exist_ok=True)
+    rc, out, sec = run_kmm(work, option(deck, ["Height,1500", "Fibonacci,30", "Workers,4"]))
     print(f"    KMM {sec:.1f} s")
-    check("rc 0 · [RigidDropEndtime] DONE", rc == 0 and "[RigidDropEndtime] DONE angles=30" in out, out[-2500:])
+    check("rc 0 · [RigidDropEndtime] DONE · excluded=[none]", rc == 0 and "[RigidDropEndtime] DONE angles=30" in out
+          and "excluded=[none]" in out, out[-2500:])
     if rc != 0:
         return None
     check("작업 폴더 = 산출 다섯 개 + opt.txt·opt.log", sorted(p.name for p in work.iterdir()) == sorted(OUTS + ["opt.log", "opt.txt"]),
@@ -182,6 +193,18 @@ def test_minimum():
           and meta.get("time_unit") == "s" and meta.get("height") == "1500" and meta.get("restitution") == "0.1,0.3,0.5"
           and meta.get("friction") == "0.5" and meta.get("gravity") == "0" and meta.get("margin_ms") == "1"
           and meta.get("n_angles") == "30", str(meta))
+    from KooCAEManager.KooRigidDropPresim import T_SEP_MS
+    check(f"표 메타 v0 = √(2·9810·1500) = {V0_MM_S:.2f} mm/s (덱 단위), t_sep_ms = 엔진 기본값 {T_SEP_MS:g}",
+          abs(float(meta.get("v0", "nan")) / V0_MM_S - 1) < 1e-9 and float(meta.get("t_sep_ms", "nan")) == T_SEP_MS, str(meta))
+    head_cols = next(x for x in (work / "MinimumModel_endtime.csv").read_text().splitlines() if not x.startswith("#")).split(",")
+    reach = [float(r["raw"]["reach"]) for r in rows]
+    check("표 칸 reach(덱 길이 mm)·n_unresolved 가 governing_e 바로 뒤, reach_m 칸 없음",
+          head_cols[len(T.CORE_COLUMNS):len(T.CORE_COLUMNS) + 2] == ["reach", "n_unresolved"] and "reach_m" not in head_cols
+          and all(0.0 <= x < 300.0 for x in reach), str(head_cols[:18]))
+    check(f"JSON presim: reach_max(표 칸은 10자리) = 표 최대 {max(reach):g} mm·n_unresolved_total = 표 합·v0·t_sep_ms",
+          abs(pre["reach_max"] / max(reach) - 1) < 1e-9
+          and pre["n_unresolved_total"] == sum(int(r["raw"]["n_unresolved"]) for r in rows)
+          and abs(pre["params"]["v0"] / V0_MM_S - 1) < 1e-9 and pre["params"]["t_sep_ms"] == T_SEP_MS, json.dumps(pre)[:500])
     fib = T.fibonacci_angles(30)
     check("표 30줄 = 피보나치 각도(이름·차례)", [r["name"] for r in rows] == [a[0] for a in fib]
           and all(abs(r["roll"] - a[1]) < 1e-9 and abs(r["pitch"] - a[2]) < 1e-9 for r, a in zip(rows, fib)))
@@ -192,9 +215,10 @@ def test_minimum():
     imeta, imp = T.read_csv_table(str(work / "MinimumModel_impacts.csv"))
     head = (work / "MinimumModel_impacts.csv").read_text().splitlines()
     cols = next(x for x in head if not x.startswith("#")).split(",")
-    check("충돌 상태 표: format=rigid_drop_endtime/impacts v1 + 같은 메타, 칸 = IMPACT_COLUMNS",
-          imeta.get("format") == T.IMPACTS_FORMAT and all(imeta.get(k) == meta.get(k) for k in ("deck", "units", "height", "gravity"))
-          and cols == T.IMPACT_COLUMNS, str(imeta))
+    check("충돌 상태 표: format=rigid_drop_endtime/impacts v1 + 같은 메타(t_sep_ms·v0 포함), 칸 = IMPACT_COLUMNS",
+          imeta.get("format") == T.IMPACTS_FORMAT and cols == T.IMPACT_COLUMNS
+          and all(imeta.get(k) == meta.get(k) and k in imeta for k in ("deck", "units", "height", "gravity", "t_sep_ms", "v0")),
+          str(imeta))
     k1 = [r for r in imp if r["k"] == "1"]
     check("k=1 줄이 각도 × e 마다 하나 (30 × 3)", len(k1) == 90 and {(r["name"], r["e"]) for r in k1} ==
           {(a[0], e) for a in fib for e in ("0.1", "0.3", "0.5")}, str(len(k1)))
@@ -229,10 +253,12 @@ def test_variants():
     work = WORK / "angle_work"
     lines = ["height,1000", "ANGLE,FACE,0,0,0", "Angle,EDGE45,45,0,0", "angle,CORNER,35.26,45,0", "Restitution,0.3",
              "Friction,0.3", "PresimGravity,1", "MarginMs,2", "Units,mm-t-s", "Workers,2", "PresimDt,2e-5",
-             "PresimTMax,0.5", "ExcludePart,99"]
+             "PresimTMax,0.5", "ExcludePart,13"]
     rc, out, sec = run_kmm(work, option(deck, lines))
     print(f"    KMM {sec:.1f} s")
-    check("Angle 줄: rc 0", rc == 0, out[-2000:])
+    done = next((x for x in out.splitlines() if x.startswith("[RigidDropEndtime] DONE ")), "")
+    check("Angle 줄: rc 0 · DONE 줄에 뺀 파트 13(이름·이유·질량·몫)", rc == 0
+          and "excluded=[13(PKG\\PKG 11, user ExcludePart, mass 1.678e-08, 0.01%)]" in done, done or out[-2000:])
     if rc == 0:
         meta, rows = T.read_endtime_table(str(work / "MinimumModel_endtime.csv"))
         j = json.loads((work / "MinimumModel_rigidbody.json").read_text(encoding="utf-8"))
@@ -240,9 +266,14 @@ def test_variants():
         check("표 = FACE·EDGE45·CORNER, 메타 height 1000·gravity 1·margin 2·restitution 0.3·units 지정",
               [r["name"] for r in rows] == ["FACE", "EDGE45", "CORNER"] and meta["height"] == "1000" and meta["gravity"] == "1"
               and meta["margin_ms"] == "2" and meta["restitution"] == "0.3" and meta["units"] == "mm-t-s", str(meta))
-        check("JSON presim params = 옵션(μ 0.3·프로세스 2·dt 2e-5·t_max 0.5·제외 [99])", p["friction"] == 0.3 and p["workers"] == 2
-              and p["dt_s"] == 2e-5 and p["t_max_s"] == 0.5 and p["exclude_parts"] == [99] and j["units"]["source"] == "user", str(p))
-        check("없는 ExcludePart 99 → [RigidBody] WARNING EXCLUDE_UNKNOWN_PID", any("EXCLUDE_UNKNOWN_PID" in w for w in j["warnings"]))
+        check("JSON presim params = 옵션(μ 0.3·프로세스 2·dt 2e-5·t_max 0.5·제외 [13])", p["friction"] == 0.3 and p["workers"] == 2
+              and p["dt_s"] == 2e-5 and p["t_max_s"] == 0.5 and p["exclude_parts"] == [13] and j["units"]["source"] == "user", str(p))
+        m13 = 1.6776001e-08   # d3hsp 파트 13
+        ex = j["excluded_parts"]
+        check("ExcludePart 13 → 질량 = MinimumModel − 파트 13, EXCLUDED_PART 경고(질량·몫)",
+              abs(j["mass"] / (MASS_T - m13) - 1) < 1e-6 and [x["pid"] for x in ex] == [13]
+              and abs(ex[0]["mass"] / m13 - 1) < 1e-6 and abs(ex[0]["mass_fraction"] - m13 / MASS_T) < 1e-6
+              and any(w.startswith("EXCLUDED_PART: pid=13 ") and "% of deck mass" in w for w in j["warnings"]), str(ex))
         check("중력 켬 + e 하나 → e 칸은 0.3 만", all(r["raw"]["governing_e"] == "0.3" for r in rows))
     work = WORK / "file_work"
     work.mkdir(parents=True, exist_ok=True)
@@ -306,24 +337,34 @@ def test_kmm_to_kmm(made):
 
 # ── [5] 오류 rc 1 ────────────────────────────────────────────────────────────
 def test_errors():
-    print("[5] 오류 → rc 1, 산출 없음")
+    print("[5] 오류 → rc 1, 표 없음 (덱 읽기 뒤 실패는 지난 실행의 산출도 지운다)")
     deck = deck_copy("err_deck")
-    cases = {
-        "Height 없음": (["Fibonacci,10"], "Height missing", "option error"),
-        "각도 출처 둘": (["Height,1500", "Fibonacci,10", "Angle,A,0,0,0"], "need exactly one", "option error"),
-        "없는 AngleFile": (["Height,1500", "AngleFile,nope.csv"], "AngleFile not found", "option error"),
-        "숫자 아닌 AngleFile": (["Height,1500", "AngleFile,bad.csv"], "bad number", "option error"),
-        "사전 해석 실패(PresimTMax 2e-5 s — 바닥에 닿기 전)": (["Height,1500", "Fibonacci,2", "PresimTMax,2e-5"],
-                                                     "no floor contact", "failed (RuntimeError)"),
+    cases = {   # 이름: (줄, 표지, 종류, 덱 읽기 뒤 실패인가)
+        "Height 없음": (["Fibonacci,10"], "Height missing", "option error", False),
+        "각도 출처 둘": (["Height,1500", "Fibonacci,10", "Angle,A,0,0,0"], "need exactly one", "option error", False),
+        "없는 AngleFile": (["Height,1500", "AngleFile,nope.csv"], "AngleFile not found", "option error", False),
+        "숫자 아닌 AngleFile": (["Height,1500", "AngleFile,bad.csv"], "bad number", "option error", False),
+        "모르는 키 Heigth": (["Heigth,1500", "Fibonacci,10"], "did you mean 'Height'?", "option error", False),
+        "없는 ExcludePart 999": (["Height,1500", "Fibonacci,2", "ExcludePart,999", "Workers,2"], "unknown ExcludePart",
+                                "failed (ValueError)", True),
+        "사전 해석 실패(PresimTMax 2e-5 s — 바닥에 닿기 전)": (["Height,1500", "Fibonacci,2", "PresimTMax,2e-5", "Workers,2"],
+                                                     "no floor contact", "failed (RuntimeError)", True),
     }
-    for k, (label, (lines, marker, kind)) in enumerate(cases.items(), 1):
+    for k, (label, (lines, marker, kind, late)) in enumerate(cases.items(), 1):
         work = WORK / f"err_work{k}"
         work.mkdir(parents=True, exist_ok=True)
         (work / "bad.csv").write_text("name,roll,pitch,yaw\nA,abc,0,0\n")
+        if late:   # 지난 실행이 남긴 산출 — 이번 실행이 덱을 읽은 뒤 실패해도 남으면 안 된다
+            for name in OUTS:
+                (work / name).write_text("STALE\n")
         rc, out, sec = run_kmm(work, option(deck, lines))
         made = {p.name for p in work.iterdir()} & {"MinimumModel_endtime.csv", "MinimumModel_impacts.csv"}
         check(f"{label}: rc 1 · '🔴 RIGID_DROP_ENDTIME {kind}' · '{marker}' · 표 없음 ({sec:.1f} s)",
               rc == 1 and f"RIGID_DROP_ENDTIME {kind}" in out and marker in out and not made, f"rc={rc} {out[-1200:]}")
+        if late:
+            stale = [p.name for p in work.iterdir() if p.name in OUTS and p.read_text(errors="replace") == "STALE\n"]
+            check(f"{label}: 지난 산출 다섯 개를 지웠다 (REMOVED stale 다섯 줄)", not stale and out.count("REMOVED stale ") == 5,
+                  str(stale))
 
 
 # ── [6] 도움말 ───────────────────────────────────────────────────────────────
