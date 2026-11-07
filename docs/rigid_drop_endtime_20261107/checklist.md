@@ -17,7 +17,10 @@
 - [x] 사용자 결정 — 심각도 지표 J × vn/v0 (1차 충격은 모두 vn = v0 라 vn 으로는 못 가름)
 - [ ] G KCR 충격 조건 — `angle_source impact_conditions`(고르기·DOE·index.json), `harvest --impact-map` → per_angle_risk.csv
 - [ ] H Post 계약서 — 구면 보고서가 per_angle_risk.csv·index.json 을 그리도록 KooD3plotReader 세션에 요청
-- [ ] 적대 리뷰 — 물리·KMM 회귀·KCR, 고친 것마다 회귀 시험
+- [x] 적대 리뷰 R1(물리)·R2(KMM 회귀·패키징) — 회귀 없음, 결함 약 25건
+- [x] 리뷰 수정 B(사전 해석: 1 ms·고아·미해결·도달 거리, 8440f64)·A(질량특성·모드: SPC 10%·밀도·키·BOM·메타, 27de66c)
+- [ ] 리뷰 수정 C(DROP_ATTITUDE·파서: 단독 실행·종료 줄·오타 키·v0·회전 중심·경고) — 코드 끝, 재개 뒤 시험 → 커밋
+- [ ] 적대 리뷰 R3(KCR) → 수정 D(버전 확인·시간 상한 자동·exclude_parts 금지·표 메타·rc 3·도달 거리)
 - [ ] 전체 시험 묶음(tests/*.py) 통과
 - [ ] 빌드 — build_without_automatedmodeller.sh --clean (캡 scope), pybullet dist 포함, "호스트 배포 완료", bin mtime
 - [ ] 컴파일본 e2e `/data/koopark/Test_E2E_v132` — v131 아는 불량 먼저

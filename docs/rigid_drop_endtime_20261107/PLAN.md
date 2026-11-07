@@ -217,6 +217,16 @@ Fibonacci,100
 - 원래 각도마다 1·2차 충격 가운데 최대를 낸다.
 - Post 구면 보고서는 이 표를 그린다(계약서로 요청).
 
+## 리뷰 뒤 결정 (11-07)
+- **2차 충격 분리 0.3 → 1 ms**(사용자 "1 ms 로 맞추기"). 1 ms 안의 재접촉은 1차 묶음에 넣는다. 사전 해석을 멈추는 규칙(T_SEP_MAX 1 ms)과 같다.
+  - 근거(R1): 0.3 ms 규칙이 1차 직후 작은 재접촉(J 0.14)을 2차로 잡았다. 그러면 ENDTIM 이 그 뒤 진짜 슬랩다운(1.86·v0)보다 먼저 끝난다(상자 1000 각도 가운데 56~80 각도). 프로토타입 리포트도 같은 규칙이었다.
+  - 측정: 짧아지는 각도 없음, 88 각도가 1 ms 넘게 길어짐, FEM 총시간 +5%, 최대 196 ms 그대로.
+- **시간 상한 자동 늘리기**(사용자). DR 배율(`_step_dr_time_factor`)처럼 늘린다.
+  - sbatch time_limit 은 ceil(최대 endtim ÷ tFinal) 배다.
+  - 단계 timeout_per_step_seconds 는 DOE 마다 그 DOE 배율이다.
+  - 파티션 최대에서 자르고, prepare 가 늘린 값을 알린다.
+  - PLAN 위험 절의 "짧아지기만 하니 안전" 은 틀렸다(R2: MinimumModel 최대 179 ms = tFinal 5 ms 의 36 배).
+
 ## 검증 기준(값으로 잰다)
 - **질량특성, MinimumModel.k**: 총질량 180.318 g, 파트별 질량·무게중심·관성은 d3hsp(`/data/koopark/Test_Postprocess_v14/output/Run_20260522_132307_0d0978/Output/d3hsp`)와 0.1% 안이어야 한다.
 - **질량특성, SimpleDrop**: 바닥 자동 제외, 219.7 g, 관성 95.6/396.1/489.4 kg·mm²(Radioss 시작 출력에서 합친 값). 표준 위치는 `/home/koopark/claude/KooOpenRadioss/DynaExamples/SimpleDrop/simple_drop/case01_simple.k`.
@@ -261,7 +271,7 @@ Fibonacci,100
 - **중력 켬의 분류 위험**: 회전으로 온 2차 충격인데 무게중심이 1 mm 넘게 떠 있으면 'rebound' 로 분류돼 tFinal 이 짧아질 수 있다. 상자 1000방향에서 몇 건인지 잰다(중력 끈 재실행과 비교). 많으면 사용자에게 알린다.
 - **Nuitka + pybullet**: 102 MB 확장 모듈이 dist 에 들어가야 한다. 시작할 때 stdout 에 빌드 시각을 찍는다(KMM 로그에만 남는다).
 - **SIF LD_LIBRARY_PATH**: KMM lib 이 먼저라 같은 KMM 안이면 문제없다.
-- **시간 상한**: sbatch `--time`·`timeout_per_step_seconds` 는 그대로다(짧아지기만 하니 안전).
+- **시간 상한**: 각도별 ENDTIM 이 tFinal 보다 길 수 있다(최대 36 배). KCR 이 배율만큼 자동으로 늘린다(아래 '리뷰 뒤 결정').
 - **DR drterm**: 기본값이 tFinal 이다. 표는 KMM 안에서만 쓰므로 drterm 은 전역 tFinal 그대로다.
 - **누적 2스텝 이후**: 변형된 dti.k 에서 시작하지만 사전 해석은 원래 강체 형상이다(근사, 문서에 적는다).
 - **다른 세션**: pykoocae-53 이 Post v45 빌드 여부를 사용자에게 묻고 있다. 무거운 빌드는 겹치지 않는다. KooRemapper 세션은 굽기 앞뒤로 알린다.

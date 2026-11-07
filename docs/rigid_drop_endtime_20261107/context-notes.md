@@ -95,4 +95,43 @@
     - 840 s 는 31bc924 감시의 wait() 가 6만 future 를 매번 훑은 탓이었다. f8749c1 로 고쳤다(동시 4×작업자).
     - 1차 충격은 모두 vn/v0 = 1.000181 이다(꼭짓점 58,725·모서리 1,275). J 는 0.159~1.5 로 가른다.
     - 심각도 절반 50 은 모두 k=2 꼭짓점 슬랩다운이었고, 49 가 ±z 10° 안 한 꼴이었다. 사용자 결정은 가까운 것 건너뛰기(0.2)다.
+- **11-07 적대 리뷰 R1(물리)·R2(KMM 회귀·패키징).**
+  - **회귀 없음.** R2 가 단일·Fast·RigidWall·6면 RunDir·DWI·VIBRATION_LOAD 를 부모 c26e6bb 와 바이트 대조했다. 옛 키만 쓴 옵션 29 개는 파싱이 같았다.
+  - **R1 H1** 2차 충격 0.3 ms 규칙은 1 ms 로 바꾼다(사용자).
+  - **R1 중간 셋.**
+    - M1: SPC 절점 하나로 기기 파트를 조용히 뺐다. 규칙을 '10% 이상 묶인 파트만 자동 제외 + 절점 공유면 rc 1 + 모든 제외를 경고에' 로 바꾼다.
+    - M2: 표의 높이·v0 를 소비 쪽이 확인하지 않는다. 메타 v0 로 확인해 rc 1 로 막는다.
+    - M3: *_INERTIA 카드가 있는 원점 밖 덱에서 회전 중심이 틀렸다. MoveNodes 전에 계산하고 이동량을 더한다.
+  - **R1 작은 것.**
+    - t_max 미해결은 표시하고 경고한다.
+    - NPLTC int() 와 IVG 쓰기 정밀도(≤0.4%)는 그대로 두고 기록만 한다.
+    - impact_conditions 의 exclude_parts 는 금지한다.
+    - 바닥판 도달 거리는 reach 칸을 두고 경고한다(39% 각도가 첫 접촉에서 150 mm 넘게 떨어진 곳에 닿는다).
+  - **R1 의심(LS-DYNA 필요).** STYP 3 은 *_INERTIA 몸체 속도를 못 덮는다(경고로 처리). OMEGA 부호 규약(오른손)은 매뉴얼에 명시가 없어 실행으로 확인할 일이다.
+  - **R2 중간 다섯.**
+    - 부모가 죽으면 작업자가 고아로 남는다 → PDEATHSIG 로 막는다.
+    - 다른 모드와 함께 쓰면 기본 .k 가 사라지고 바닥판이 기기로 잡힌다 → 단독만 허용한다.
+    - ENDTIM 이 tFinal 의 36 배까지 간다 → 시간 상한을 자동으로 늘린다(사용자).
+    - *PART_INERTIA 덱은 rc 3 이다 → 유지하고 설명을 붙인다.
+    - KCR v132 + KMM v131 이면 Height=[0.0] 처럼 조용히 잘못 읽는다 → prepare 가 KMM 도움말로 키를 확인한다.
+  - **R2 작은 것.** 블록 모르는 키·종료 줄 빠짐·새 키 오타·BOM·PreserveIncludes 파트 누락·밀도 0 파트·없는 ExcludePart·옛 산출 남김을 고친다.
+- **11-07 리뷰 수정 C(KMM).**
+  - **새로 rc 1 로 막는 것**: RIGID_DROP_ENDTIME 은 단독만 받는다. 블록 종료 줄이 빠지면 막는다. 새 키 오타(`endtime`·`rigidangular` 가 든 정확하지 않은 키)를 막는다. 표 메타 v0 와 덱 √(2·fall_g·h) 가 다르면(V0_MISMATCH) 막는다. v0 표인데 초기 속도·각속도가 있으면(NOT_PURE_DROP) 막는다.
+  - **회전 중심**: MoveNodes 전 무게중심에 같은 이동량을 더한다. 원점 밖 상자 + CNRB_INERTIA 예에서 오차가 56.6 → 0 mm 가 됐다.
+  - **경고**: *_INERTIA 덱에서 강체 회전을 쓰면 경고한다. ENDTIM 이 tFinal 을 넘으면 최대값과 배율을 알린다. 바닥판 반 폭 < reach 이면 각도마다 경고하고 끝에 개수를 알린다(판은 충돌점 중심, RigidWall 은 안 봄).
+  - **rc 3** 은 유지하고 '표는 썼지만 리더가 요소를 버렸다' 줄을 더한다.
+  - **기존 결함(이번 범위 밖)**: DropAttitude 원점 이동이 원문 *CNRB_INERTIA·*PART_INERTIA 의 XC/YC/ZC 를 옮기지 않는다. 회전 중심은 이제 맞지만, 덱의 그 카드는 옛 자리에 남는다. 공유 쓰기 코드라 다음 판으로 넘긴다.
+  - 키가 없을 때 바이트 동일 46 사례를 확인했다. 일부 시험(새 검사 둘·남은 9개)은 다른 세션 굽기 때문에 멈췄고, 재개 뒤 돌린다.
+- **11-07 다른 세션 OOM.** pykoocae-53 의 Post v47 굽기가 08:56 earlyoom 에 끊겼다(가용 5.8%, 스왑 39 GB 가득). 원인은 VSCode·ollama·NewsKooo 등이 크기 때문이다. 다시 굽고 판정하는 약 50분 동안 이쪽 서브에이전트 시험을 멈췄다(요청).
 - **11-07 InitialAngularVelocity 확인.** R16 Vol I 28-121 에서 `*INITIAL_VELOCITY` 의 VXR/VYR/VZR 은 절점 회전 속도다. 솔리드 기기는 돌지 않는다. 강체 회전은 `*INITIAL_VELOCITY_GENERATION` 으로 준다(Remark 1: 둘은 함께 못 쓴다). 2단계 F 에서 새 키로 넣는다.
+- **11-07 KCR 수정(사용자 결정 6 + R3 8, 에이전트 D/G).**
+  - **표 줄을 읽을 KMM 을 묻는다.** prepare 가 `--help DROP_ATTITUDE` 로 EndTimeTable(+충격 조건은 RigidAngularVelocityX)을 확인한다. batch_koomeshmodifier 면 그 헤드 노드 KMM(SIF 없고 /opt/ 경로면 koochainrun_path 옆 호스트 KMM — KooChainRun 배치도 같은 함수 batch_kmm_path 를 부른다)이다. 사전 해석도 같은 KMM 으로 돈다. batch 여부는 Designer 가 한 번만 정한다.
+  - **노드에서도 본다.** 누적 러너는 스텝 설정에 EndTimeTable·RigidAngularVelocity 줄이 있는데 KMM 출력에 `[EndTimeTable]`·`[RigidAngularVelocity]` 표식이 없으면 스텝을 실패로 둔다. large-scale 배열 스크립트는 표가 있을 때만 KMM 출력을 tee 해 grep 한다. 표가 없으면 스크립트·동작이 예전과 같다.
+  - **apptainer 임시 폴더.** 헤드 노드 실행은 러너 기본 /opt/tmp 대신 apptainer_tmpdir(없으면 시스템 임시 폴더) 아래 이번 실행 폴더를 쓰고 지운다. APPTAINER_TMPDIR 도 되돌린다.
+  - **사전 해석 시간 제한.** presim_timeout_seconds(기본 6 시간)를 두 옵션에 둔다. 새 세션으로 돌리고 시간 초과·Ctrl-C 면 묶음째 SIGKILL 한다.
+  - **시간 배율.** DOE 배율 F_d = Σ_s (r_{d,s} + [DR 이고 s ≥ 2]) 로 바꿨다. r 이 모두 1 이면 _step_dr_time_factor 와 같아 짧은 표는 시간이 그대로다. sequential 은 슬롯 F 합의 최대, large-scale 배열은 배열 DOE r 최대(0-based 배열 번호 +1), 러너 스텝·deep report 는 그 스텝 r 이다. _hms_scale·cap 은 Slurm 형식(D-HH:MM:SS·D-HH·MM …)을 읽는다. 파티션 최대에서 자를 때 표가 있으면 🔴 경고를 찍는다.
+  - **표 확인.** 메타 gravity 가 옵션과 다르면 멈춘다. 메타 units 가 mm-kg-ms·mm-g-ms 인데 simulation_params.gravity 가 없으면 멈춘다(FEM KMM _ResolveFallGravity 가 그 단위를 못 알아내 9810 을 쓴다). deck 이 다르면 경고만 한다. 표 읽기는 utf-8-sig 다. 충격 조건 endtime.csv 에는 v0 메타를 쓰지 않는다(KMM NOT_PURE_DROP).
+  - **충격 조건 table.** 옆 rigidbody.json presim.params.exclude_parts 가 [] 여야 한다. 기록이 없어도 멈춘다.
+  - **harvest --impact-map.** 항복강도가 있으면 σ/항복 비로 지배 파트·요약 줄을 고른다(일반 harvest 위험도와 같은 기준). peak_stress 칸은 그 파트 응력이다. Run 은 step_config.txt 의 Euler·InitialVelocity·RigidAngularVelocity 가 index 대표와 같은 것만 쓰고, completed 가 먼저다. step_config 가 없으면 쓰고 수를 찍는다.
+  - **sphere.** 충격 조건 시나리오는 자동 sphere 를 건너뛰고 `--sphere` 는 멈춘다. deep report 는 그대로다.
+  - **조회 속도.** 표 찾기를 numpy D·d 로 바꿨다(2만 × 2만 99 초 → 수 초).
