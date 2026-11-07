@@ -23,9 +23,7 @@
    | DROP_ATTITUDE 표 키 | `EndTimeTable` |
    | scenario 키 | `simulation_params.endtime_presim` |
    | 산출 | `<base>_endtime.csv` |
-3. **물리 기본값**은 리포트처럼 **중력을 켠다**. 재착지(되튀어 다시 떨어짐)는 2차 충격에서 빼는 프로토타입 규칙을 그대로 쓴다.
-   - KMM DROP_ATTITUDE 덱에는 중력이 없다(초기 속도만). 이 차이는 사용자가 알고 고른 것이다.
-   - `PresimGravity,0` 으로 끌 수 있다.
+3. **물리 기본값.** 처음에는 리포트처럼 중력을 켜기로 했다. 그러나 B 실측(중력 켬 표가 덱보다 짧음)을 보고 11-07 에 바꿨다. **종료 시간 표는 중력 끔**(덱과 같음, 다시 닿는 충격 모두 셈)이고, **충격 조건 DOE 는 중력 켬**이다. 아래 2단계 절을 본다.
 4. **배포 범위**는 SIF v132·tar·Drive/메일까지다. 헤드 /opt 교체와 노드 배포는 결과를 보고 따로 묻는다.
 
 해석: "I A" 는 관성(I)과 면적(A)으로 본다. 그래서 질량·무게중심·관성 텐서·주축·바운딩 박스·외곽면 면적·볼록 껍질 부피와 면적을 JSON 으로 낸다.
@@ -81,7 +79,7 @@ Fibonacci,100
 | `Angle` | `<name>,<roll>,<pitch>,<yaw>` (여러 줄) | 〃 |
 | `Restitution` | e 목록 | 0.1,0.3,0.5 |
 | `Friction` | μ | 0.5 |
-| `PresimGravity` | 1 켬 / 0 끔 | 1 |
+| `PresimGravity` | 1 켬 / 0 끔(끄면 재접촉을 모두 2차 충격으로 셈) | 0 |
 | `MarginMs` | 여유(ms) | 1.0 |
 | `ExcludePart` | PID 목록(바닥판 등) | 없음(+ 모든 절점이 SPC 고정인 파트는 자동 제외, 로그에 이유) |
 | `Units` | `mm-t-s`·`mm-kg-ms`·`mm-g-ms`·`m-kg-s` | 재질 밀도 중앙값으로 자동, 판정 불가면 rc 1 |
@@ -118,13 +116,101 @@ Fibonacci,100
 ### 4. scenario `simulation_params.endtime_presim`
 ```json
 "endtime_presim": {"enabled": true, "table": null, "restitution": [0.1, 0.3, 0.5],
-                   "friction": 0.5, "gravity": true, "margin_ms": 1.0, "exclude_parts": [], "workers": 8}
+                   "friction": 0.5, "gravity": false, "margin_ms": 1.0, "exclude_parts": [], "workers": 8}
 ```
 - `enabled` 가 없거나 false 이면 runner_config·스텝 설정이 지금과 바이트까지 같다.
 - 켜면 prepare 가 DROP 스텝이 쓰는 템플릿마다 고유 각도를 모아 `<output_dir>/endtime_presim/<i>/angles.csv` 를 쓴다. 그다음 KMM `RIGID_DROP_ENDTIME` 을 러너와 같은 방식(apptainer 감싸기 포함)으로 돌린다.
 - 결과로 runner_config 에 `scenario.endtime_tables` 와 `scenario.doe_endtim`({doe: {step: endtim}}, 보기용)을 남긴다. 모든 DROP 스텝 설정(누적·대규모·배치)에는 `EndTimeTable,<절대경로>` 줄을 넣는다.
 - `table` 을 주면 사전 해석을 건너뛰고 그 표를 쓴다.
 - KMM 이 실패하거나 표에 빠진 각도가 있으면 prepare 를 멈춘다.
+
+## 2단계 — 충격 조건 연계 (사용자 결정 11-07 "연계 전체를 이번 판에")
+사용자 생각: 수만 각도의 1·2차 충격마다 자세·선속도·각속도를 뽑는다. 위험한 충격만 골라 FEM 초기조건으로 짧게 돌리면, 많은 시뮬 없이도 진짜 취약점을 찾을 수 있다. 각 조건이 '어느 낙하 각도의 몇 차 충격' 인지 메타데이터로 남겨 전각도 보고서를 쓴다.
+
+결정(11-07, 질문 다섯).
+- **중력.** 각도별 종료 시간 표는 FEM 덱과 같게 **중력 끔**으로 정한다. 다시 닿는 충격은 모두 2차 충격으로 센다.
+  - 그래서 `PresimGravity` 기본값은 0, `endtime_presim.gravity` 기본값은 false 다.
+  - **충격 조건 DOE 는 중력 켬**으로 실제 상태를 뽑는다.
+  - 근거(B 실측, 상자 1000각도): 중력 켬 표는 끔 덱보다 228각도에서 1 ms 넘게, 42각도에서 20 ms 넘게 짧았다. 최대는 113 대 196 ms 였다. 45° 짧은 모서리는 17.44 대 17.69 ms 로 거의 같다.
+- **이름.**
+
+  | 대상 | 이름 |
+  |---|---|
+  | KMM DROP_ATTITUDE 키 | `RigidAngularVelocityX/Y/Z` |
+  | KCR angle_source | `impact_conditions` |
+  | 충격 상태 표 | `<base>_impacts.csv` |
+  | 메타데이터 | `<output_dir>/impact_conditions/index.json` |
+  | 결과 모음 명령 | `KooChainRun harvest --impact-map` |
+  | 결과 표 | `per_angle_risk.csv` |
+- **고르는 규칙.** 대표 N 개 가운데 절반은 접촉점 접근 속도(vn) 상위에서, 절반은 상태 공간을 고르게 덮는 점(최원점 샘플링)으로 고른다. 모든 (각도, e, 충격 차수)는 가장 가까운 대표에 묶는다.
+- **기본 규모.** 2만 방향, 대표 100개다.
+- **보고서.** pyKooCAE 가 index.json·per_angle_risk.csv 까지 낸다. 구면 지도는 Post(KooD3plotReader) 세션에 계약서를 보내 요청한다.
+
+확인한 사실(R16 Vol I 28-121~124).
+- `*INITIAL_VELOCITY` 의 VXR/VYR/VZR 은 **절점 회전 속도**다. 지금 DROP_ATTITUDE 의 `InitialAngularVelocity*` 는 이 칸에 쓰이므로, 솔리드뿐인 기기는 돌지 않는다.
+- 강체 회전은 `*INITIAL_VELOCITY_GENERATION`(OMEGA·축·중심 XC/YC/ZC·VX/VY/VZ)으로 준다.
+- 두 키워드는 한 덱에 같이 쓸 수 없다(Remark 1).
+
+### 5. `<base>_impacts.csv` (RIGID_DROP_ENDTIME 산출, 덱 단위)
+- 메타 줄 `# format=rigid_drop_endtime/impacts v1` 와 deck·units·time_unit·height·restitution·friction·gravity·margin_ms 다음에, (각도, e, 충돌 묶음 k) 마다 한 줄이 온다.
+- 칸 = B `impact_rows` 키 그대로에 `endtim_k` 를 더한 것이다.
+
+  | 칸 | 뜻 |
+  |---|---|
+  | `name,roll,pitch,yaw,e,k,class` | 원래 낙하 각도·반발계수·묶음 차수. class 는 k=1 이면 first, k≥2 이면 slapdown/rebound |
+  | `t_start_ms,t_end_ms,J_over_mv0` | 묶음 시작·끝과 충격량 |
+  | `contact_x,contact_y,contact_z` | 첫 접촉점, 덱 좌표·덱 길이 |
+  | `contact_type` | face/edge/corner |
+  | `nx,ny,nz` | 바닥 법선, 덱 좌표 |
+  | `att_roll,att_pitch,att_yaw` | RotMat(att) = 바닥→덱 |
+  | `vx,vy,vz` | 바닥 좌표 무게중심 속도, 덱 길이/덱 시간 |
+  | `wx,wy,wz` | 바닥 좌표 각속도, rad/덱 시간 |
+  | `vn_contact` | 접촉점 접근 속도, 덱 단위 |
+  | `v0` | 덱 단위 |
+  | `tfinal_k_ms` | 그 충돌부터 돌릴 FEM 창(ms) |
+  | `endtim_k` | 덱 시간 단위, 0.1 ms 올림 |
+
+### 6. DROP_ATTITUDE `RigidAngularVelocityX/Y/Z,<목록>` (KMM)
+- **값.** 바닥 좌표계 각속도이고 단위는 rad/덱 시간이다. 각도마다 값 하나(EulerRolling 목록과 같은 길이)이고 Fast DOE 에서도 쓴다.
+- **덱에 쓰는 것.** 키가 있으면 기기에 `*INITIAL_VELOCITY` 대신 `*INITIAL_VELOCITY_GENERATION` 을 쓴다.
+
+  | 칸 | 값 |
+  |---|---|
+  | VX/VY/VZ | 덱 좌표 병진 속도 = RotMat·(InitialVelocity + 높이 속도) |
+  | OMEGA | \|RotMat·ω\| |
+  | 축 | 단위(RotMat·ω) |
+  | 중심 | **쓰인 덱 좌표의 기기 무게중심**(KooRigidBodyProperties, 바닥판 제외) |
+- **함께 못 쓰는 키.** `InitialAngularVelocity*` 와 같이 오면 rc 1 이다(두 키워드는 함께 못 쓴다).
+- **키가 없을 때.** 출력은 바이트까지 같다. 기존 `InitialAngularVelocity*` 동작도 그대로 둔다. 도움말에는 "절점 회전 자유도뿐 — 솔리드는 안 돈다" 를 적는다.
+- **표 단위 확인.** EndTimeTable 메타 `time_unit` 이 덱의 시간 단위(재질 밀도 판정)와 다르면 rc 1 이다. 판정이 안 되면 경고만 한다.
+
+### 7. KCR `angle_source.source_type = "impact_conditions"`
+```json
+"angle_source": {"source_type": "impact_conditions",
+  "impact_conditions": {"num_directions": 20000, "restitution": [0.1, 0.3, 0.5], "friction": 0.5, "gravity": true,
+                        "margin_ms": 1.0, "exclude_parts": [], "workers": 8,
+                        "count": 100, "impacts": [1, 2], "severity_fraction": 0.5, "table": null}}
+```
+- **사전 해석.** prepare 가 템플릿에 KMM `RIGID_DROP_ENDTIME`(`Fibonacci,<num_directions>`, PresimGravity 는 gravity)을 돌려 `<base>_impacts.csv` 를 받는다. `table` 을 주면 그 impacts.csv 를 쓴다.
+- **고르기.**
+  - 후보는 k ∈ impacts 인 줄이다.
+  - 특징 f 는 [nx, ny, nz, vn_contact/v0, |(vx,vy)|/v0, (RotMat(att)·w)·L/v0] 다. L 은 기기 바운딩 박스 대각선의 절반이다.
+  - 심각도는 vn_contact 다. ceil(count·severity_fraction) 개는 심각도 상위에서, 나머지는 f 공간 최원점으로 고른다.
+  - 모든 후보는 가장 가까운 대표에 묶는다.
+- **DOE.** 대표 하나가 DOE 하나다.
+  - roll/pitch/yaw = att_*
+  - InitialVelocityX/Y/Z = v
+  - RigidAngularVelocityX/Y/Z = w
+  - Height 0
+  - 종료 시간은 `impact_conditions/endtime.csv` 로 EndTimeTable 을 쓴다(att 각도, endtim_k).
+  - 기존 빌더 출력은 kwargs 기본 None 으로 그대로 둔다.
+- **메타데이터.** `index.json` 은 format, source(덱·impacts·사전 해석 값), features(정규화), conditions[doe→대표 줄·묶인 수], assignments[(각도, e, k)→doe·거리] 를 담는다. runner_config 에는 `scenario.doe_impact_meta` 를 남긴다.
+
+### 8. `KooChainRun harvest --impact-map <test_dir>` → `per_angle_risk.csv`
+- 기존 harvest(파트별 최대 응력 수집·run↔doe)를 그대로 쓴다.
+- index.json 의 assignments 로 (원래 각도, e, k) 마다 대표 DOE 의 결과를 붙인다(peak_stress·worst_pid·ratio).
+- 원래 각도마다 1·2차 충격 가운데 최대를 낸다.
+- Post 구면 보고서는 이 표를 그린다(계약서로 요청).
 
 ## 검증 기준(값으로 잰다)
 - **질량특성, MinimumModel.k**: 총질량 180.318 g, 파트별 질량·무게중심·관성은 d3hsp(`/data/koopark/Test_Postprocess_v14/output/Run_20260522_132307_0d0978/Output/d3hsp`)와 0.1% 안이어야 한다.

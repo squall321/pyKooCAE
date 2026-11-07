@@ -5,11 +5,16 @@
 - [x] 조사 — KMM 리더·모드 등록 4곳·부분 문자열 함정, KCR tFinal 흐름(누적·대규모·배치), 빌드·SIF 패턴, 이전 세션 규칙, 시험 덱·기준값
 - [x] 계획·체크리스트·결정 노트
 - [x] 계약 파일 `KooEndTimeTable.py`(표 쓰기·읽기·각도 찾기·낙하 방향 규약) + 시험 `tests/test_end_time_table.py` 22/22
-- [ ] A 질량특성 `KooRigidBodyProperties.py` — MinimumModel d3hsp·SimpleDrop·DropSet 바닥 제외·장난감 덱
-- [ ] B 사전 해석 `KooRigidDropPresim.py` — 상자 껍질 vs GEOM_BOX, e·dt 검증, 45° 17 ms, 6면, 중력 분류 위험 측정
-- [ ] C KMM 표 소비 — DROP_ATTITUDE `EndTimeTable`(단일·Fast DOE), 키 없을 때 바이트 동일
-- [ ] D KCR 연결 — `simulation_params.endtime_presim`, prepare 실행, 누적·대규모·배치 세 경로, 옵션 없을 때 바이트 동일, cli_help_kcr
-- [ ] E KMM 모드 연결 — `RIGID_DROP_ENDTIME` 등록·카탈로그·통합 시험(MinimumModel)
+- [x] A 질량특성 `KooRigidBodyProperties.py` — MinimumModel d3hsp 총질량 4e-8 안, SimpleDrop·DropSet 바닥 제외, 시험 122 (4ce5fd8)
+- [x] B 사전 해석 `KooRigidDropPresim.py` — 프로토타입 분류 100%, 껍질 여유 0, 속도 상한 해제, 45° 17.44 ms, 충돌 직전 상태·재시작, 2만×3 4.8분, 시험 52 (fdecb6d)
+- [x] C KMM 표 소비 — DROP_ATTITUDE `EndTimeTable`(단일·Fast DOE), 키 없을 때 10사례 바이트 동일, 시험 45 (b58e359)
+- [x] D KCR 연결 — `simulation_params.endtime_presim`, 누적·대규모·배치, 옵션 없을 때 1128 파일 바이트 동일, 시험 75 (9980e10)
+- [x] 사용자 결정(2단계) — 연계 전체를 이번 판에, RigidAngularVelocity 계열 이름, 심각도 절반+고르게 절반, 2만 방향·대표 100, 각도별 위험 표까지(구면 지도는 Post 요청), 종료 시간은 중력 끔·충격 조건은 중력 켬
+- [x] 중력 끔 기본값 반영 — PresimGravity 0, endtime_presim.gravity false, 끄면 재접촉을 모두 2차 충격으로 셈
+- [ ] E KMM 모드 연결 — `RIGID_DROP_ENDTIME` 등록·카탈로그·`<base>_impacts.csv`·통합 시험(MinimumModel, KMM→KMM)
+- [ ] F KMM 강체 회전 — DROP_ATTITUDE `RigidAngularVelocityX/Y/Z` → *INITIAL_VELOCITY_GENERATION(무게중심), Fast DOE, 표 시간 단위 확인
+- [ ] G KCR 충격 조건 — `angle_source impact_conditions`(고르기·DOE·index.json), `harvest --impact-map` → per_angle_risk.csv
+- [ ] H Post 계약서 — 구면 보고서가 per_angle_risk.csv·index.json 을 그리도록 KooD3plotReader 세션에 요청
 - [ ] 적대 리뷰 — 물리·KMM 회귀·KCR, 고친 것마다 회귀 시험
 - [ ] 전체 시험 묶음(tests/*.py) 통과
 - [ ] 빌드 — build_without_automatedmodeller.sh --clean (캡 scope), pybullet dist 포함, "호스트 배포 완료", bin mtime
