@@ -1,0 +1,368 @@
+# KMM RIGID_DROP_ENDTIME 모드(옵션 검사·산출 다섯 개·KMM→KMM 표 소비·오류 rc 1·도움말)를 실제 KMM 실행으로 검증하는 통합 시험
+"""
+실행: venv312/bin/python tests/test_rigid_drop_endtime_mode.py   (pybullet 필요, KMM 서브프로세스 열 번, 1분 남짓)
+
+  [1] 옵션 검사(parse_option_lines) — 키 이름 전체 일치·대소문자·기본값·AngleFile 절대 경로·오류(ValueError), AngleFile 읽기,
+      충돌 상태 표의 덱 단위 환산
+  [2] MinimumModel Fibonacci 30 — rc 0, 작업 폴더에 산출 다섯 개, 덱 옆에는 리더의 _dump.k 만, JSON 질량·사전 해석 요약,
+      표(load_lookup)·충돌 상태 표(k=1 줄 = 입력 낙하 방향·(0,0,−v0)·각속도 0)
+  [3] 변형 — Angle 줄(모든 옵션, 키 대소문자 섞음)·AngleFile(작업 폴더 기준 상대 경로)
+  [4] KMM→KMM — DROP_ATTITUDE Fast DOE 세 각도 + EndTimeTable,<[2] 의 표> → 각도 덱의 ENDTIM = 표 endtim
+  [5] 오류 rc 1 — Height 없음·각도 출처 둘·없는 AngleFile·숫자 아닌 AngleFile(덱 읽기 전), 사전 해석 실패(PresimTMax 짧음)
+  [6] 도움말 — 모드 상세, 별칭이 drop·낙하·rigid 를 다른 모드에서 뺏지 않음, format 주제의 산출 이름
+
+KMM 은 덱 옆에 _dump.k 를 쓰고 그 폴더로 chdir 하므로 덱은 늘 작업용 사본을 쓴다. 작업 폴더: RIGID_DROP_ENDTIME_TEST_DIR
+(기본 /data/koopark/Test_RigidDropEndtime/E/test — 시작할 때 비운다).
+"""
+import json
+import math
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent.parent
+GEN = ROOT / "occProject" / "Generators"
+PY = ROOT / "venv312" / "bin" / "python"
+MINI = ROOT / "Examples" / "MinimumModel.k"
+WORK = Path(os.environ.get("RIGID_DROP_ENDTIME_TEST_DIR", "/data/koopark/Test_RigidDropEndtime/E/test"))
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(GEN))
+
+from KooCAEManager import KooEndTimeTable as T  # noqa: E402
+from KooCAEManager.KooRigidDropEndtime import (impacts_to_deck, parse_option_lines, read_angle_file,  # noqa: E402
+                                              resolve_angles, SUFFIXES)
+
+FAILS = []
+OUTS = sorted("MinimumModel" + s for s in SUFFIXES.values())
+MASS_T = 1.80318e-4               # d3hsp 파트 1~22 합 (t)
+V0_MM_S = math.sqrt(2 * 9810.0 * 1500.0)
+
+
+def check(name, cond, detail=""):
+    print("  %-78s %s" % (name[:78], "OK" if cond else "FAIL"))
+    if not cond:
+        FAILS.append("%s %s" % (name, detail))
+
+
+def option(deck, lines, mode_id=1):
+    return "\n".join(["*Inputfile", str(deck), "*Mode", f"RIGID_DROP_ENDTIME,{mode_id}", f"**RigidDropEndtime,{mode_id}",
+                      *lines, "**EndRigidDropEndtime", "*End"]) + "\n"
+
+
+def run_kmm(work, text, timeout=900):
+    """작업 폴더에 opt.txt 를 두고 소스 KMM 을 돈다 → (rc, 출력, 초)."""
+    work = Path(work)
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "opt.txt").write_text(text)
+    t0 = time.time()
+    r = subprocess.run([str(PY), str(GEN / "KooMeshModifier.py"), "opt.txt", str(work)], cwd=str(GEN),
+                       capture_output=True, text=True, timeout=timeout)
+    return r.returncode, r.stdout + r.stderr, time.time() - t0
+
+
+def deck_copy(name):
+    d = WORK / name
+    d.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(MINI, d / MINI.name)
+    return d / MINI.name
+
+
+def angle_between_deg(a, b):
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    return math.degrees(math.acos(max(-1.0, min(1.0, float(a @ b) / (np.linalg.norm(a) * np.linalg.norm(b))))))
+
+
+# ── [1] 옵션 검사 ────────────────────────────────────────────────────────────
+def test_parser():
+    print("[1] 옵션 검사 parse_option_lines · AngleFile · 덱 단위 환산")
+    d = WORK / "parser"
+    d.mkdir(parents=True, exist_ok=True)
+    logs = []
+    o = parse_option_lines(["Height,1500", "", "$ 주석", "# 주석", "FIBONACCI,12", "heightx,3", "angles,1"], str(d), logs.append)
+    check("기본값·대소문자 무관(FIBONACCI)·빈 줄/주석 건너뜀", o["Height"] == 1500.0 and o["Fibonacci"] == 12
+          and o["Restitution"] == [0.1, 0.3, 0.5] and o["Friction"] == 0.5 and o["PresimGravity"] == 0
+          and o["MarginMs"] == 1.0 and o["PresimDt"] == 1e-5 and o["PresimTMax"] == 1.0 and o["Units"] is None
+          and 1 <= o["Workers"] <= 8 and o["OutDir"] == os.path.abspath(d), str(o))
+    check("키 이름 전체 일치만 — HeightX·Angles 는 모르는 키 경고(다른 키로 안 읽힘)",
+          len(logs) == 2 and all("unknown RigidDropEndtime option line" in x for x in logs), str(logs))
+    (d / "a.csv").write_text("name,pitch,roll,yaw\n# 주석\nA1,10,20,30\nA2,0,45,\n")
+    (d / "b.csv").write_text("B1,1,2,3\nB2,4,5\n")
+    o = parse_option_lines(["Height,10", "AngleFile,a.csv", "ExcludePart,3,4", "ExcludePart,9", "Units,mm-kg-ms",
+                            "Restitution,0.2,0.4", "presimgravity,1", "Workers,3", "PresimDt,2e-5", "PresimTMax,0.2",
+                            "Friction,0", "MarginMs,0"], str(d))
+    check("AngleFile 은 작업 폴더 기준 절대 경로, ExcludePart 여러 줄 이어 붙임, 값 그대로",
+          o["AngleFile"] == os.path.abspath(d / "a.csv") and o["ExcludePart"] == [3, 4, 9] and o["Units"] == "mm-kg-ms"
+          and o["Restitution"] == [0.2, 0.4] and o["PresimGravity"] == 1 and o["Workers"] == 3, str(o))
+    check("머리 줄 칸 차례(name,pitch,roll,yaw)·빈 yaw = 0",
+          read_angle_file(str(d / "a.csv")) == [("A1", 20.0, 10.0, 30.0), ("A2", 45.0, 0.0, 0.0)])
+    check("머리 줄 없는 csv = name,roll,pitch,yaw, yaw 없으면 0",
+          read_angle_file(str(d / "b.csv")) == [("B1", 1.0, 2.0, 3.0), ("B2", 4.0, 5.0, 0.0)])
+    o = parse_option_lines(["Height,10", "Angle,X,1,2,3", "angle,Y,4,5,6"], str(d))
+    check("Angle 줄 여러 개 → resolve_angles", resolve_angles(o) == ([("X", 1.0, 2.0, 3.0), ("Y", 4.0, 5.0, 6.0)], "Angle lines 2"))
+    try:
+        resolve_angles(parse_option_lines(["Height,10", "Angle,X,1,2,3", "Angle,X,4,5,6"], str(d)))
+        dup = False
+    except ValueError as e:
+        dup = "duplicate angle names" in str(e)
+    check("각도 이름이 겹치면 ValueError", dup)
+    bad = {
+        "Height 없음": (["Fibonacci,3"], "Height missing"),
+        "Height 0": (["Height,0", "Fibonacci,3"], "Height must be positive"),
+        "각도 출처 없음": (["Height,10"], "need exactly one"),
+        "각도 출처 둘(Fibonacci+Angle)": (["Height,10", "Fibonacci,3", "Angle,A,0,0,0"], "need exactly one"),
+        "각도 출처 둘(AngleFile+Fibonacci)": (["Height,10", "Fibonacci,3", "AngleFile,a.csv"], "need exactly one"),
+        "Height 두 번": (["Height,10", "Height,20", "Fibonacci,3"], "duplicate key"),
+        "숫자 아닌 Height": (["Height,abc", "Fibonacci,3"], "bad number"),
+        "정수 아닌 Fibonacci": (["Height,10", "Fibonacci,2.5"], "bad number"),
+        "Angle 칸 수": (["Height,10", "Angle,A,0,0"], "bad Angle line"),
+        "Restitution 범위": (["Height,10", "Fibonacci,3", "Restitution,0.3,1.5"], "0~1"),
+        "PresimGravity 2": (["Height,10", "Fibonacci,3", "PresimGravity,2"], "PresimGravity"),
+        "모르는 Units": (["Height,10", "Fibonacci,3", "Units,cgs"], "unknown units"),
+        "값 없음": (["Height,", "Fibonacci,3"], "value missing"),
+        "없는 AngleFile": (["Height,10", "AngleFile,nope.csv"], "AngleFile not found"),
+        "PresimTMax ≤ PresimDt": (["Height,10", "Fibonacci,3", "PresimTMax,1e-6"], "PresimTMax"),
+    }
+    for label, (lines, marker) in bad.items():
+        try:
+            parse_option_lines(lines, str(d))
+            msg = None
+        except ValueError as e:
+            msg = str(e)
+        check(f"오류 {label} → ValueError '{marker}'", msg is not None and marker in msg, str(msg))
+    (d / "c.csv").write_text("name,roll,pitch,yaw\nC1,abc,0,0\n")
+    try:
+        read_angle_file(str(d / "c.csv"))
+        msg = None
+    except ValueError as e:
+        msg = str(e)
+    check("숫자 아닌 AngleFile 칸 → ValueError(줄 번호)", msg is not None and "2번째 줄" in msg and "bad number" in msg, str(msg))
+    row = {k: 0.0 for k in T.IMPACT_COLUMNS if k != "endtim_k"}
+    row.update({"contact_x": 0.01, "vx": 2.0, "vn_contact": 3.0, "v0": 5.0, "wx": 100.0, "tfinal_k_ms": 3.21})
+    for unit, (ln, tt, want) in {"mm-t-s": (1e-3, 1.0, (10.0, 2000.0, 3000.0, 5000.0, 100.0, 0.0033)),
+                                 "mm-kg-ms": (1e-3, 1e-3, (10.0, 2.0, 3.0, 5.0, 0.1, 3.3))}.items():
+        g = impacts_to_deck([row], ln, tt)[0]
+        got = (g["contact_x"], g["vx"], g["vn_contact"], g["v0"], g["wx"], g["endtim_k"])
+        check(f"충돌 상태 덱 단위 {unit}: mm · mm/시간 · rad/시간 · endtim_k(0.1 ms 올림)", np.allclose(got, want, rtol=1e-12), str(got))
+
+
+# ── [2] MinimumModel Fibonacci 30 ─────────────────────────────────────────────
+def test_minimum():
+    print("[2] MinimumModel — Fibonacci 30, *Inputfile 은 다른 폴더의 절대 경로")
+    deck = deck_copy("fib_deck")
+    work = WORK / "fib_work"
+    rc, out, sec = run_kmm(work, option(deck, ["Height,1500", "Fibonacci,30"]))
+    print(f"    KMM {sec:.1f} s")
+    check("rc 0 · [RigidDropEndtime] DONE", rc == 0 and "[RigidDropEndtime] DONE angles=30" in out, out[-2500:])
+    if rc != 0:
+        return None
+    check("작업 폴더 = 산출 다섯 개 + opt.txt·opt.log", sorted(p.name for p in work.iterdir()) == sorted(OUTS + ["opt.log", "opt.txt"]),
+          str(sorted(p.name for p in work.iterdir())))
+    check("덱 옆에는 리더의 _dump.k 만 새로 생김", sorted(p.name for p in deck.parent.iterdir()) == ["MinimumModel.k", "MinimumModel_dump.k"],
+          str(sorted(p.name for p in deck.parent.iterdir())))
+    check("기본 .k 를 쓰지 않음(_skip_default_write)", "Default WriteModifiedFile skipped" in out)
+    n_bt = out.count("pybullet build time")
+    check(f"pybullet build time 줄 1번(부모가 먼저 import — fork 작업자가 다시 찍지 않음, 실제 {n_bt})", n_bt == 1)
+    j = json.loads((work / "MinimumModel_rigidbody.json").read_text(encoding="utf-8"))
+    pre = j.get("presim", {})
+    check(f"JSON 질량 1.80318e-4 t (rel 1e-6, 실제 {j['mass']:.6e})", abs(j["mass"] / MASS_T - 1) < 1e-6)
+    check("JSON presim 요약 — 각도 30·분류 합 30·중력 0·여유 1·Fibonacci 30·시간",
+          pre.get("n_angles") == 30 and sum(pre.get("classes", {}).values()) == 30 and pre["params"]["gravity"] == 0
+          and pre["params"]["margin_ms"] == 1.0 and pre["params"]["angle_source"] == "Fibonacci 30"
+          and pre["wall_time_s"]["total"] > 0, json.dumps(pre)[:600])
+    meta, rows = T.read_endtime_table(str(work / "MinimumModel_endtime.csv"))
+    look = T.load_lookup(str(work / "MinimumModel_endtime.csv"))
+    check("표 메타 deck·units·time_unit·height·restitution·friction·gravity·margin_ms·n_angles",
+          meta.get("format") == T.FORMAT and meta.get("deck") == str(deck) and meta.get("units") == "mm-t-s"
+          and meta.get("time_unit") == "s" and meta.get("height") == "1500" and meta.get("restitution") == "0.1,0.3,0.5"
+          and meta.get("friction") == "0.5" and meta.get("gravity") == "0" and meta.get("margin_ms") == "1"
+          and meta.get("n_angles") == "30", str(meta))
+    fib = T.fibonacci_angles(30)
+    check("표 30줄 = 피보나치 각도(이름·차례)", [r["name"] for r in rows] == [a[0] for a in fib]
+          and all(abs(r["roll"] - a[1]) < 1e-9 and abs(r["pitch"] - a[2]) < 1e-9 for r, a in zip(rows, fib)))
+    ends = [r["endtim"] for r in rows]
+    check(f"endtim ∈ [0.001, 0.3] s (실제 {min(ends):g}..{max(ends):g})", min(ends) >= 0.001 and max(ends) <= 0.3)
+    check("load_lookup 이 각도마다 자기 endtim 을 찾음", all(look.find(r["roll"], r["pitch"], r["yaw"]) == r["endtim"] for r in rows))
+    check("JSON tfinal 요약 = 표", abs(pre["tfinal_ms"]["max"] - max(float(r["raw"]["tfinal_ms"]) for r in rows)) < 1e-9)
+    imeta, imp = T.read_csv_table(str(work / "MinimumModel_impacts.csv"))
+    head = (work / "MinimumModel_impacts.csv").read_text().splitlines()
+    cols = next(x for x in head if not x.startswith("#")).split(",")
+    check("충돌 상태 표: format=rigid_drop_endtime/impacts v1 + 같은 메타, 칸 = IMPACT_COLUMNS",
+          imeta.get("format") == T.IMPACTS_FORMAT and all(imeta.get(k) == meta.get(k) for k in ("deck", "units", "height", "gravity"))
+          and cols == T.IMPACT_COLUMNS, str(imeta))
+    k1 = [r for r in imp if r["k"] == "1"]
+    check("k=1 줄이 각도 × e 마다 하나 (30 × 3)", len(k1) == 90 and {(r["name"], r["e"]) for r in k1} ==
+          {(a[0], e) for a in fib for e in ("0.1", "0.3", "0.5")}, str(len(k1)))
+    f = lambda r, k: float(r[k])  # noqa: E731
+    worst_dir = max(angle_between_deg(T.drop_direction(f(r, "att_roll"), f(r, "att_pitch"), f(r, "att_yaw")),
+                                      T.drop_direction(f(r, "roll"), f(r, "pitch"), f(r, "yaw"))) for r in k1)
+    check(f"k=1 att_* 의 낙하 방향 = 입력 낙하 방향 (최대 {worst_dir:.1e}°)", worst_dir < 1e-6)
+    vs = np.array([[f(r, "vx"), f(r, "vy"), f(r, "vz")] for r in k1])
+    ws = np.array([[f(r, "wx"), f(r, "wy"), f(r, "wz")] for r in k1])
+    check(f"k=1 v = (0, 0, −v0) mm/s, v0 = √(2·9810·1500) = {V0_MM_S:.2f}", np.allclose(vs, [0, 0, -V0_MM_S], rtol=0, atol=1e-6 * V0_MM_S)
+          and all(abs(f(r, "v0") / V0_MM_S - 1) < 1e-9 for r in k1), str(vs[:2]))
+    check("k=1 각속도 0", np.abs(ws).max() < 1e-9, str(np.abs(ws).max()))
+    bb = np.array(j["bbox"]["min"]), np.array(j["bbox"]["max"])
+    cp = np.array([[f(r, "contact_x"), f(r, "contact_y"), f(r, "contact_z")] for r in imp])
+    check("접촉점은 덱 좌표 mm — 기기 bbox 안(0.01 mm 여유)", (cp >= bb[0] - 0.01).all() and (cp <= bb[1] + 0.01).all())
+    from KooCAEManager.KooRigidDropPresim import endtim_from_ms
+    check("endtim_k = endtim_from_ms(tfinal_k_ms) (s)", all(abs(f(r, "endtim_k") - endtim_from_ms(f(r, "tfinal_k_ms"), 1.0)) < 1e-12
+                                                         for r in imp))
+    check("k≥2 줄은 slapdown/rebound", all(r["class"] in ("slapdown", "rebound") for r in imp if r["k"] != "1")
+          and any(r["k"] != "1" for r in imp))
+    log = (work / "opt.log").read_text(encoding="utf-8")
+    check("KMM 로그(opt.log)에 영어 표지 START·WROTE 다섯·DONE·[RigidBody] SUMMARY",
+          "[RigidDropEndtime] START " in log and log.count("[RigidDropEndtime] WROTE ") == 5 and "[RigidDropEndtime] DONE " in log
+          and "[RigidBody] SUMMARY " in log)
+    return work / "MinimumModel_endtime.csv", rows
+
+
+# ── [3] 변형 ─────────────────────────────────────────────────────────────────
+def test_variants():
+    print("[3] 변형 — Angle 줄(모든 옵션)·AngleFile(상대 경로)")
+    deck = deck_copy("var_deck")
+    work = WORK / "angle_work"
+    lines = ["height,1000", "ANGLE,FACE,0,0,0", "Angle,EDGE45,45,0,0", "angle,CORNER,35.26,45,0", "Restitution,0.3",
+             "Friction,0.3", "PresimGravity,1", "MarginMs,2", "Units,mm-t-s", "Workers,2", "PresimDt,2e-5",
+             "PresimTMax,0.5", "ExcludePart,99"]
+    rc, out, sec = run_kmm(work, option(deck, lines))
+    print(f"    KMM {sec:.1f} s")
+    check("Angle 줄: rc 0", rc == 0, out[-2000:])
+    if rc == 0:
+        meta, rows = T.read_endtime_table(str(work / "MinimumModel_endtime.csv"))
+        j = json.loads((work / "MinimumModel_rigidbody.json").read_text(encoding="utf-8"))
+        p = j["presim"]["params"]
+        check("표 = FACE·EDGE45·CORNER, 메타 height 1000·gravity 1·margin 2·restitution 0.3·units 지정",
+              [r["name"] for r in rows] == ["FACE", "EDGE45", "CORNER"] and meta["height"] == "1000" and meta["gravity"] == "1"
+              and meta["margin_ms"] == "2" and meta["restitution"] == "0.3" and meta["units"] == "mm-t-s", str(meta))
+        check("JSON presim params = 옵션(μ 0.3·프로세스 2·dt 2e-5·t_max 0.5·제외 [99])", p["friction"] == 0.3 and p["workers"] == 2
+              and p["dt_s"] == 2e-5 and p["t_max_s"] == 0.5 and p["exclude_parts"] == [99] and j["units"]["source"] == "user", str(p))
+        check("없는 ExcludePart 99 → [RigidBody] WARNING EXCLUDE_UNKNOWN_PID", any("EXCLUDE_UNKNOWN_PID" in w for w in j["warnings"]))
+        check("중력 켬 + e 하나 → e 칸은 0.3 만", all(r["raw"]["governing_e"] == "0.3" for r in rows))
+    work = WORK / "file_work"
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "angles.csv").write_text("name,roll,pitch,yaw\nT000,0,0,0\nT030,30,20,10\nT090,0,90,0\n")
+    rc, out, sec = run_kmm(work, option(deck, ["Height,1500", "AngleFile,angles.csv", "Workers,4"]))
+    print(f"    KMM {sec:.1f} s")
+    check("AngleFile(작업 폴더 기준 상대 경로): rc 0", rc == 0, out[-2000:])
+    if rc == 0:
+        _, rows = T.read_endtime_table(str(work / "MinimumModel_endtime.csv"))
+        j = json.loads((work / "MinimumModel_rigidbody.json").read_text(encoding="utf-8"))
+        check("표 이름·각도 = AngleFile, 출처는 절대 경로", [(r["name"], r["roll"], r["pitch"], r["yaw"]) for r in rows]
+              == [("T000", 0, 0, 0), ("T030", 30, 20, 10), ("T090", 0, 90, 0)]
+              and j["presim"]["params"]["angle_source"] == f"AngleFile {os.path.abspath(work / 'angles.csv')}")
+
+
+# ── [4] KMM → KMM ────────────────────────────────────────────────────────────
+def drop_option(model, angles, table):
+    n = len(angles)
+    rep = lambda v: ",".join([str(v)] * n)  # noqa: E731
+    lines = ["*Inputfile", model, "*Mode", "DROP_ATTITUDE,1", "**DropAttitude,1",
+             "EulerRolling," + ",".join(a[0] for a in angles), "EulerPitching," + ",".join(a[1] for a in angles),
+             "EulerYawing," + ",".join(a[2] for a in angles), "Gravity,9810", "Height," + rep(1500),
+             f"EndTimeTable,{table}", "InitialVelocityX," + rep(0), "InitialVelocityY," + rep(0), "InitialVelocityZ," + rep(0),
+             "InitialAngularVelocityX," + rep(0), "InitialAngularVelocityY," + rep(0), "InitialAngularVelocityZ," + rep(0),
+             "OffsetDistance,0.05", "Density,7.85e-09", "YoungsModulus,200000.0", "PoissonRatio,0.3", "dt,1e-05",
+             "DropSurface,Plane,0,0,0,10,10,2", "**EndDropAttitude", "*End"]
+    return "\n".join(lines) + "\n"
+
+
+def endtim_of(deck_path):
+    lines = Path(deck_path).read_text().splitlines()
+    i = lines.index("*CONTROL_TERMINATION") + 1
+    while lines[i].startswith("$"):
+        i += 1
+    return float(lines[i][:10])
+
+
+def test_kmm_to_kmm(made):
+    print("[4] KMM→KMM — DROP_ATTITUDE Fast DOE 세 각도 + EndTimeTable,<[2] 의 표>")
+    if made is None:
+        check("[2] 표가 있어야 함", False)
+        return
+    table, rows = made
+    picks = sorted(rows, key=lambda r: r["endtim"])
+    picks = [picks[0], picks[len(picks) // 2], picks[-1]]          # 가장 짧은·가운데·가장 긴 endtim
+    raw = [(r["raw"]["roll"], r["raw"]["pitch"], r["raw"]["yaw"]) for r in picks]   # 표에 적힌 글 그대로
+    work = WORK / "drop_work"
+    work.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(MINI, work / MINI.name)
+    rc, out, sec = run_kmm(work, drop_option(MINI.name, raw, table))
+    print(f"    KMM {sec:.1f} s, 표 각도 {[r['name'] for r in picks]} endtim {[r['endtim'] for r in picks]}")
+    check("DROP_ATTITUDE rc 0", rc == 0, out[-2500:])
+    decks = sorted(work.glob("MinimumModel_[0-9][0-9][0-9]_DA_*.k"))
+    check("각도 덱 셋 (Fast DOE)", len(decks) == 3, str([p.name for p in decks]))
+    if len(decks) == 3:
+        got = [endtim_of(p) for p in decks]
+        check(f"각도 덱 ENDTIM = 표 endtim {got}", all(abs(g - r["endtim"]) <= 1e-9 * max(1.0, r["endtim"]) for g, r in zip(got, picks)))
+        check("ENDTIM 이 각도마다 다름(가장 짧은 < 가장 긴)", got[0] < got[-1])
+    check("로그 [EndTimeTable] 각도마다 한 줄", out.count("[EndTimeTable] roll=") == 3, out[-1500:])
+
+
+# ── [5] 오류 rc 1 ────────────────────────────────────────────────────────────
+def test_errors():
+    print("[5] 오류 → rc 1, 산출 없음")
+    deck = deck_copy("err_deck")
+    cases = {
+        "Height 없음": (["Fibonacci,10"], "Height missing", "option error"),
+        "각도 출처 둘": (["Height,1500", "Fibonacci,10", "Angle,A,0,0,0"], "need exactly one", "option error"),
+        "없는 AngleFile": (["Height,1500", "AngleFile,nope.csv"], "AngleFile not found", "option error"),
+        "숫자 아닌 AngleFile": (["Height,1500", "AngleFile,bad.csv"], "bad number", "option error"),
+        "사전 해석 실패(PresimTMax 2e-5 s — 바닥에 닿기 전)": (["Height,1500", "Fibonacci,2", "PresimTMax,2e-5"],
+                                                     "no floor contact", "failed (RuntimeError)"),
+    }
+    for k, (label, (lines, marker, kind)) in enumerate(cases.items(), 1):
+        work = WORK / f"err_work{k}"
+        work.mkdir(parents=True, exist_ok=True)
+        (work / "bad.csv").write_text("name,roll,pitch,yaw\nA,abc,0,0\n")
+        rc, out, sec = run_kmm(work, option(deck, lines))
+        made = {p.name for p in work.iterdir()} & {"MinimumModel_endtime.csv", "MinimumModel_impacts.csv"}
+        check(f"{label}: rc 1 · '🔴 RIGID_DROP_ENDTIME {kind}' · '{marker}' · 표 없음 ({sec:.1f} s)",
+              rc == 1 and f"RIGID_DROP_ENDTIME {kind}" in out and marker in out and not made, f"rc={rc} {out[-1200:]}")
+
+
+# ── [6] 도움말 ───────────────────────────────────────────────────────────────
+def test_help():
+    print("[6] 도움말 — 모드 상세·별칭·format 주제")
+    from KooCLIHelp import engine as E
+    from KooCLIHelp.kmm_catalog import CATALOG
+    top = lambda q: E.render_query(CATALOG, q)[:400]  # noqa: E731
+    check("RIGID_DROP_ENDTIME 상세", top("RIGID_DROP_ENDTIME").startswith("=") and "RIGID_DROP_ENDTIME — " in top("RIGID_DROP_ENDTIME"))
+    for q, want in (("drop", "DROP_ATTITUDE — "), ("낙하", "DROP_ATTITUDE — "), ("rigid", "ELASTIC_TO_RIGID — "),
+                    ("endtime", "RIGID_DROP_ENDTIME — "), ("사전해석", "RIGID_DROP_ENDTIME — ")):
+        check(f"--help {q} → {want.split(' ')[0]}", want in top(q), top(q)[:200])
+    fmt = E.render_query(CATALOG, "format")
+    check("format 주제: RIGID_DROP_ENDTIME 산출 이름·빈 줄 규칙", "_endtime.csv" in fmt and "_impacts.csv" in fmt
+          and re.search(r"THERMAL_LOAD·RIGID_DROP_ENDTIME 만 빈 줄", fmt) is not None)
+
+
+def main():
+    if not MINI.exists():
+        print("SKIP Examples/MinimumModel.k 없음")
+        return
+    if WORK.exists():
+        shutil.rmtree(WORK)
+    WORK.mkdir(parents=True)
+    t0 = time.time()
+    test_parser()
+    made = test_minimum()
+    test_variants()
+    test_kmm_to_kmm(made)
+    test_errors()
+    test_help()
+    print("\n시간 %.0f s" % (time.time() - t0))
+    if FAILS:
+        print("FAIL %d 건" % len(FAILS))
+        for x in FAILS:
+            print("  -", x)
+        sys.exit(1)
+    print("ALL PASS")
+
+
+if __name__ == "__main__":
+    main()

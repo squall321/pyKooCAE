@@ -369,6 +369,9 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "merge_k" in svector[0].lower():
                             self.modeList.append("MERGE_K")
                             self.modeIDList.append(int(svector[1]))
+                        elif "rigid_drop_endtime" in svector[0].lower():
+                            self.modeList.append("RIGID_DROP_ENDTIME")
+                            self.modeIDList.append(int(svector[1]))
                         else:
                             print("Invalid mode")
                             sys.exit(1)
@@ -2799,6 +2802,26 @@ class KooMeshModifier(KooSimulationGenerator):
                             print(f"  Warning: unknown MergeK option line: {line}")
                     self.modeIDOption[curModeID] = curOptions
 
+                elif "**rigiddropendtime" in line.lower():
+                    # **RigidDropEndtime,<modeID> — 강체 낙하 사전 해석 → 각도별 종료 시간 표. 빈 줄·'$' 줄은 건너뛰고 **End 줄에서 끝난다.
+                    # 키(이름 전체 일치)·값 검사는 KooRigidDropEndtime.parse_option_lines — 틀리면 덱을 읽기 전에 rc 1
+                    from KooCAEManager.KooRigidDropEndtime import parse_option_lines
+                    curModeID = int(line.split(",")[1])
+                    blockLines = []
+                    while True:
+                        line = f.readline()
+                        if not line:
+                            break
+                        line = line.strip()
+                        if "**end" in line.lower():
+                            break
+                        blockLines.append(line)
+                    try:
+                        self.modeIDOption[curModeID] = parse_option_lines(blockLines, self.curDir)
+                    except ValueError as e:
+                        print(f"🔴 RIGID_DROP_ENDTIME option error: {e} (종료 코드 1)")
+                        sys.exit(1)
+
                 line = f.readline()
                 if not line:  # EOF
                     break
@@ -2846,6 +2869,19 @@ class KooMeshModifier(KooSimulationGenerator):
         filePath = filePath.replace(".k", "")
         curOption = self.modeIDOption[modeid]
         self.advancedModification.ThermalLoad(curOption, filePath)
+
+    def GenerateRigidDropEndtime(self, modeid):
+        # 강체 낙하 사전 해석 → 각도별 종료 시간 표. 산출은 작업 폴더(옵션을 읽을 때 절대 경로로 잡은 curDir)에 쓴다 — KCR 은
+        # *Inputfile 로 템플릿 절대 경로를 주므로 덱 옆이 아니다. 실패하면 rc 1
+        from KooCAEManager.KooRigidDropEndtime import run_rigid_drop_endtime
+        curOption = self.modeIDOption[modeid]
+        outDir = curOption["OutDir"]
+        deckPath = self.inputFileName if os.path.isabs(self.inputFileName) else os.path.join(outDir, self.inputFileName)
+        try:
+            run_rigid_drop_endtime(curOption, self.dynaImporter, deckPath, outDir)
+        except (ValueError, RuntimeError, OSError, ImportError) as e:
+            print(f"🔴 RIGID_DROP_ENDTIME failed ({type(e).__name__}): {e} — 사전 해석을 멈춘다 (종료 코드 1)")
+            sys.exit(1)
 
     def GenerateRemoveDuplicateTiedContacts(self, modeid):
         curOption = self.modeIDOption[modeid]
@@ -3318,6 +3354,9 @@ class KooMeshModifier(KooSimulationGenerator):
             elif mode == "THERMAL_LOAD":
                 self.GenerateThermalLoad(modeid)
                 self._skip_default_write = True  # ThermalSet.k 자체 write (VibrationLoad 결)
+            elif mode == "RIGID_DROP_ENDTIME":
+                self.GenerateRigidDropEndtime(modeid)
+                self._skip_default_write = True  # JSON·OBJ·표를 작업 폴더에 자체 write (VibrationLoad 결)
 
             self.dynaImporter.SyncronizeMaxID()
         ## write modified File

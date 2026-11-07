@@ -1,4 +1,4 @@
-# KooMeshModifier --help 카탈로그 — 32 모드의 키·형식·검증된 사례
+# KooMeshModifier --help 카탈로그 — 33 모드의 키·형식·검증된 사례
 """
 사례의 verify 는 tests/test_cli_help.py 가 KMM ImportOption 으로 파싱해 확인한다.
   {"mode": 모드이름, "id": 모드ID, "expect": {"옵션키": 값, "A.B": 중첩값}}
@@ -40,7 +40,7 @@ TOPICS = [
         "  - 옵션 블록은 *Mode 목록 뒤에 둔다. *Mode 목록은 `*` 로 시작하는 줄에서 끝난다.",
         "  - 블록 안의 빈 줄: DROP_ATTITUDE·DROP_WEIGHT_IMPACT_TEST 등 대부분의 모드는 빈 줄에서 블록이 끝나",
         "    뒤 키가 조용히 무시된다. 블록 안에는 빈 줄을 넣지 말 것 (DECOMPOSE_K·MERGE_K·IMPORT_MERGE_K·",
-        "    VIBRATION_LOAD·THERMAL_LOAD 만 빈 줄을 건너뛴다).",
+        "    VIBRATION_LOAD·THERMAL_LOAD·RIGID_DROP_ENDTIME 만 빈 줄을 건너뛴다).",
         "  - 키는 줄에 부분 문자열이 들어있는지로 찾는 모드가 많다. 모르는 키는 에러 없이 무시되므로",
         "    오타·잘못된 키 이름은 결과 .k 에 반영되지 않는다. 반드시 이 help 의 키 이름을 그대로 쓸 것.",
         "",
@@ -63,6 +63,7 @@ TOPICS = [
         "            IMPORT_MERGE_K _imported",
         "  - 자체 출력: DECOMPOSE_K → OutputDir/ · MERGE_K → OutputFile · VIBRATION_LOAD → <모델>_vib.k + .json",
         "    THERMAL_LOAD → Run_<시각>/ThermalSet.k · TRANSLATION_DOE → <모델>_TranslationDOE_<i>.k + .json",
+        "    RIGID_DROP_ENDTIME → 작업 폴더에 <모델>_rigidbody.json · _surface.obj · _hull.obj · _endtime.csv · _impacts.csv",
         "  - *RunDirectoryMode,True,<폴더> 면 DROP_ATTITUDE 는 <폴더>/Run_<시각>_<해시>/DropSet.k 로 쓴다.",
     ]),
     Topic("chain", "한 옵션 파일에 여러 모드를 순서대로 적용", aliases=["여러모드", "연쇄", "multi", "순서"], body=[
@@ -1144,6 +1145,84 @@ JsonFile,scenarios.json
 **EndSimulationAutomation""", header="*RunDirectoryMode,True,Data/Results,Data/Metadata\n"),
                        verify={"mode": "SIMULATION_AUTOMATION", "id": 1, "expect": {"JsonFile": "scenarios.json"}})],
      notes=["클러스터 누적·DOE 해석은 KooChainRun 시나리오가 표준이다."])
+
+
+# ━━ 낙하·충격 — 사전 해석 (개요에서는 낙하·충격 묶음에 함께 나온다) ━━
+mode("RIGID_DROP_ENDTIME", "강체 낙하 사전 해석 — 질량특성·외곽면(OBJ)·볼록 껍질로 각도별 종료 시간(ENDTIM) 표를 만든다",
+     category="낙하·충격",
+     aliases=["endtime", "종료시간", "엔드타임", "presim", "사전해석", "pybullet", "slapdown", "슬랩다운", "2차충격",
+              "강체낙하", "질량특성", "관성", "impacts"],
+     when=["전각도 낙하 DOE 에서 각도마다 2차 충격(슬랩다운)이 끝나는 때에 맞춰 ENDTIM 을 다르게 줄 때 — 하나로 짧게 잡으면 "
+           "2차 충격을 놓치고 길게 잡으면 d3plot 이 쌓인다",
+           "덱의 질량·무게중심·관성 텐서·주축·외곽면(OBJ)·볼록 껍질이 필요할 때",
+           "충돌마다 직전 자세·속도·각속도(충격 조건 DOE 후보)를 뽑을 때"],
+     syntax=["**RigidDropEndtime,<ID>", "Height,<낙하 높이 — 덱 길이 단위>",
+             "Fibonacci,<N>  |  AngleFile,<csv>  |  Angle,<이름>,<roll>,<pitch>,<yaw> (여러 줄)  — 셋 가운데 꼭 하나",
+             "Key,Value …", "**EndRigidDropEndtime"],
+     keys=[
+         K("Height", "실수", "-", "낙하 높이, 덱 길이 단위(mm 덱이면 mm). 없거나 0 이하면 rc 1", required=True),
+         K("Fibonacci", "정수 N", "-", "실제 낙하 방향 공간에 고르게 퍼진 N 방향(피보나치 나선). 이름 P0001…"),
+         K("AngleFile", "csv 경로", "-", "name,roll,pitch,yaw(도) 줄 — 머리 줄은 있어도 없어도 된다. 작업 폴더 기준 상대 경로 가능"),
+         K("Angle", "이름,roll,pitch,yaw", "-", "한 줄에 각도 하나(여러 줄). DROP_ATTITUDE EulerRolling/Pitching/Yawing 과 같은 뜻"),
+         K("Restitution", "e 목록", "0.1,0.3,0.5", "반발계수마다 돌려 가장 긴 tFinal 을 표에 쓴다"),
+         K("Friction", "실수", "0.5", "마찰계수 μ"),
+         K("PresimGravity", "0|1", "0", "0 = 중력 끔(DROP_ATTITUDE 덱과 같음 — 다시 닿는 충격을 모두 2차 충격으로 셈), 1 = 켬"),
+         K("MarginMs", "실수", "1.0", "tFinal = (2차 충격 끝, 없으면 1차 충돌 끝) + 여유 ms"),
+         K("ExcludePart", "PID 목록", "없음", "강체에서 뺄 파트(바닥판 등). SPC·강체 구속 파트는 저절로 빠진다"),
+         K("Units", "mm-t-s|mm-kg-ms|mm-g-ms|m-kg-s", "자동", "덱 단위계. 없으면 재질 밀도 중앙값으로 정하고, 못 정하면 rc 1"),
+         K("Workers", "정수", "min(8, CPU)", "사전 해석 프로세스 수(fork)"),
+         K("PresimDt", "실수(s)", "1e-5", "PyBullet 시간 간격"),
+         K("PresimTMax", "실수(s)", "1.0", "한 경우 최대 시뮬 시간"),
+     ],
+     examples=[
+         Example("MinimumModel 1.5 m, 피보나치 100 방향", _opt("MinimumModel.k", "RIGID_DROP_ENDTIME,1", """**RigidDropEndtime,1
+Height,1500
+Fibonacci,100
+**EndRigidDropEndtime"""),
+                 explain=["결과(작업 폴더): MinimumModel_rigidbody.json · _surface.obj · _hull.obj · _endtime.csv · _impacts.csv. "
+                          "기본 .k 는 쓰지 않는다.",
+                          "표를 DROP_ATTITUDE 에 EndTimeTable,MinimumModel_endtime.csv 로 주면 각도마다 ENDTIM 이 그 값이 된다."],
+                 verify={"mode": "RIGID_DROP_ENDTIME", "id": 1, "expect": {
+                     "Height": 1500.0, "Fibonacci": 100, "Restitution": [0.1, 0.3, 0.5], "Friction": 0.5,
+                     "PresimGravity": 0, "MarginMs": 1.0, "Units": None, "PresimDt": 1e-05, "PresimTMax": 1.0,
+                     "ExcludePart": [], "AngleFile": None}}),
+         Example("각도 직접, 중력 켬·바닥판 제외·단위 지정", _opt("drop_model.k", "RIGID_DROP_ENDTIME,2", """**RigidDropEndtime,2
+Height,1000
+Angle,FACE,0,0,0
+Angle,EDGE45,45,0,0
+Angle,CORNER,35.26,45,0
+Restitution,0.3,0.5
+Friction,0.3
+PresimGravity,1
+MarginMs,2
+ExcludePart,900
+Units,mm-t-s
+Workers,4
+**EndRigidDropEndtime"""),
+                 explain=["ExcludePart 900 은 덱에 바닥판 파트가 있을 때 — SPC 로 묶인 바닥판은 이 줄 없이도 빠진다."],
+                 verify={"mode": "RIGID_DROP_ENDTIME", "id": 2, "expect": {
+                     "Height": 1000.0, "@len:Angle": 3, "Angle.1": ["EDGE45", 45.0, 0.0, 0.0], "Restitution": [0.3, 0.5],
+                     "Friction": 0.3, "PresimGravity": 1, "MarginMs": 2.0, "ExcludePart": [900], "Units": "mm-t-s",
+                     "Workers": 4, "Fibonacci": None}}),
+     ],
+     notes=["산출은 모두 작업 폴더(KMM 둘째 인자, 없으면 현재 폴더)에 쓴다 — *Inputfile 이 다른 폴더의 절대 경로여도 덱 옆에는 "
+            "리더의 _dump.k 만 생긴다. 기본 .k 는 쓰지 않는다.",
+            "<모델>_endtime.csv: 각도마다 class·t1_end·t2_start·t2_end·tfinal_ms·endtim(덱 시간 단위, 0.1 ms 올림)·e 별 세부. "
+            "DROP_ATTITUDE 의 EndTimeTable 이 그대로 읽는다.",
+            "<모델>_impacts.csv: (각도, e, 충돌 묶음 k) 마다 충돌 직전 자세(att_*)·바닥 좌표 속도·각속도·첫 접촉점·접근 속도·"
+            "tfinal_k_ms·endtim_k — 덱 단위(길이 · 길이/시간 · rad/시간).",
+            "중력 기본값 0: DROP_ATTITUDE 덱은 초기 속도만 있고 중력이 없다. 그래서 다시 닿는 충격은 모두 회전으로 온 2차 충격으로 "
+            "센다. PresimGravity,1 이면 무게중심이 1 mm 넘게 떴다 닿은 재착지는 2차 충격으로 세지 않는다.",
+            "단위: Height 는 덱 길이 단위, endtim 은 덱 시간 단위(mm-t-s·m-kg-s 는 s, mm-kg-ms·mm-g-ms 는 ms). 사전 해석 안은 SI 다.",
+            "바닥판 자동 제외: 병진 자유도를 *BOUNDARY_SPC 로 묶은 절점이 하나라도 있는 파트, 병진 구속(CMO/CON1)이 있는 "
+            "*MAT_RIGID 파트 — 로그 [RigidBody] EXCLUDE 줄에 이유가 남는다.",
+            "볼록 껍질 꼭짓점은 131,072 개까지(pybullet 한도) — 넘으면 rc 1.",
+            "Workers 만큼 fork 프로세스를 쓴다(작업자마다 PyBullet DIRECT). 2만 각도 × e 3 개는 8 프로세스로 약 5분이다.",
+            "이 모드 블록은 빈 줄·`$`·`#` 줄을 건너뛴다. 키는 이름 전체가 같을 때만 맞고 모르는 키는 Warning 을 찍는다. 틀린 값·"
+            "Height 없음·각도 출처 0 개 또는 2 개 이상·없는 AngleFile 은 덱을 읽기 전에 rc 1('RIGID_DROP_ENDTIME option error').",
+            "로그 표지: [RigidDropEndtime] START·WROTE·DONE, [RigidBody] UNITS·EXCLUDE·WARNING, [presim] 진행. "
+            "사전 해석 실패는 'RIGID_DROP_ENDTIME failed' (rc 1)."],
+     related=["DROP_ATTITUDE"])
 
 
 CATALOG = Catalog(
