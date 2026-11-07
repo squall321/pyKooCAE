@@ -27,6 +27,28 @@ def drop_direction(roll, pitch, yaw=0.0):
     return np.array([dx * math.cos(y) + dy * math.sin(y), -dx * math.sin(y) + dy * math.cos(y), dz])
 
 
+def rotation_from_euler(roll, pitch, yaw=0.0):
+    """KMM DropAttitude 의 RotMat = Rz(-yaw)·Ry(-pitch)·Rx(-roll). 바닥 좌표계 벡터 → 덱 좌표계 벡터."""
+    a, b, c = (-math.radians(float(v)) for v in (roll, pitch, yaw))
+    rx = np.array([[1, 0, 0], [0, math.cos(a), -math.sin(a)], [0, math.sin(a), math.cos(a)]])
+    ry = np.array([[math.cos(b), 0, math.sin(b)], [0, 1, 0], [-math.sin(b), 0, math.cos(b)]])
+    rz = np.array([[math.cos(c), -math.sin(c), 0], [math.sin(c), math.cos(c), 0], [0, 0, 1]])
+    return rz @ ry @ rx
+
+
+def euler_from_rotation(m):
+    """RotMat(바닥 → 덱) → (roll, pitch, yaw) 도. rotation_from_euler 의 역. pitch=±90 이면 yaw=0 으로 둔다."""
+    m = np.asarray(m, dtype=float)
+    b = math.asin(max(-1.0, min(1.0, -m[2, 0])))
+    if abs(math.cos(b)) > 1e-9:
+        a = math.atan2(m[2, 1], m[2, 2])
+        c = math.atan2(m[1, 0], m[0, 0])
+    else:
+        a = math.atan2(-m[1, 2], m[1, 1])
+        c = 0.0
+    return -math.degrees(a), -math.degrees(b), -math.degrees(c)
+
+
 def euler_from_direction(d, ndigits=2):
     """낙하 방향 → (roll, pitch, 0). AngleSourceParser._dir_to_euler 와 같은 역산(roll ∈ [-90, 90])."""
     d = np.asarray(d, dtype=float)

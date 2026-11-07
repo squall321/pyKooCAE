@@ -19,7 +19,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(GEN))
 
 from KooCAEManager.KooEndTimeTable import (CORE_COLUMNS, EndTimeLookup, drop_direction, euler_from_direction,  # noqa: E402
-                                           fibonacci_angles, load_lookup, read_endtime_table, write_endtime_table)
+                                           euler_from_rotation, fibonacci_angles, load_lookup, read_endtime_table,
+                                           rotation_from_euler, write_endtime_table)
 
 FAILS = []
 
@@ -59,6 +60,17 @@ def main():
         r, p, y = euler_from_direction(d, ndigits=12)
         worst = max(worst, float(np.abs(drop_direction(r, p, y) - d).max()))
     check("방향 → 각도 → 방향 왕복 < 1e-9", worst < 1e-9, f"worst={worst}")
+
+    print("[2b] 회전행렬 ↔ 오일러 (충격 순간 자세 → DROP_ATTITUDE 입력)")
+    worst_m = worst_d = 0.0
+    for r, p, y in rng.uniform(-180, 180, size=(500, 3)):
+        m = rotation_from_euler(r, p, y)
+        worst_d = max(worst_d, float(np.abs(m @ [0.0, 0.0, -1.0] - kmm_rotmat_direction(r, p, y)).max()))
+        worst_m = max(worst_m, float(np.abs(rotation_from_euler(*euler_from_rotation(m)) - m).max()))
+    check("RotMat·(0,0,-1) = KMM 낙하 방향 < 1e-12", worst_d < 1e-12, f"worst={worst_d}")
+    check("행렬 → 오일러 → 행렬 왕복 < 1e-9", worst_m < 1e-9, f"worst={worst_m}")
+    gm = rotation_from_euler(30.0, 90.0, 20.0)
+    check("pitch 90 (짐벌) 도 같은 행렬로 돌아옴", np.allclose(rotation_from_euler(*euler_from_rotation(gm)), gm, atol=1e-9))
 
     print("[3] 피보나치 방향")
     angles = fibonacci_angles(1000)
