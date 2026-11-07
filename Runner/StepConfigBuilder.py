@@ -97,6 +97,7 @@ def build_drop_attitude_config(
     run_directory_mode: bool = True,
     preserve_includes: list = None,
     part_moves: Optional[dict] = None,
+    end_time_table: Optional[str] = None,
 ) -> str:
     """DROP_ATTITUDE step_config 내용 생성
 
@@ -113,6 +114,9 @@ def build_drop_attitude_config(
         run_directory_mode: RunDirectoryMode 활성화 여부
         part_moves: 파트 이동 DOE 항목 (doe_part_moves[doe][step]).
                     None 이면 이동 블록 자체가 생성되지 않아 기존 출력과 바이트 동일.
+        end_time_table: 각도별 종료 시간 표(<base>_endtime.csv) 절대 경로 (simulation_params.endtime_presim).
+                    KMM 이 이 자세의 ENDTIM 을 표에서 찾아 쓴다(tFinal 줄은 그대로 남는다).
+                    None 이면 줄이 없어 기존 출력과 바이트 동일.
 
     Returns:
         step_config 파일 내용 문자열
@@ -264,6 +268,9 @@ def build_drop_attitude_config(
     pt_decl, pt_block = build_part_translate_block(part_moves, mode_id=1)
     drop_mode_id = 2 if pt_decl else 1
 
+    # 각도별 종료 시간 표 — 있으면 KMM 이 tFinal 대신 표에서 찾은 이 자세의 값을 쓴다. 없으면 "" (바이트 동일)
+    end_time_line = f"\nEndTimeTable,{end_time_table}" if end_time_table else ""
+
     config_content = f"""*Inputfile
 {model_file}
 {run_dir_line}
@@ -287,7 +294,7 @@ OffsetDistance,{offset_distance}{gravity_line}{thermal_carry_line}
 Density,{density}
 YoungsModulus,{youngs_modulus}
 PoissonRatio,{poisson_ratio}
-tFinal,{tFinal}
+tFinal,{tFinal}{end_time_line}
 dt,{dt}
 {drop_surface_line}{d2r_line}{dr_line}{contact_opt_line}{drop_contact_line}{tied_opt_line}{control_line}
 **EndDropAttitude

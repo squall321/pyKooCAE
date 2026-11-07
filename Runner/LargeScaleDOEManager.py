@@ -268,6 +268,7 @@ class LargeScaleDOEManager:
 
         try:
             from Runner.StepConfigBuilder import build_drop_attitude_config
+            from Runner.EndTimePresim import endtime_table_for_step
             step_config_content = build_drop_attitude_config(
                 model_file=model_file,
                 output_dir=step_dir,
@@ -279,6 +280,8 @@ class LargeScaleDOEManager:
                 euler=angle,
                 sim_params=sim_params,
                 run_directory_mode=False,
+                # 각도별 종료 시간 표(prepare 의 endtime_presim) — DROP 스텝이고 표가 있을 때만, 없으면 None
+                end_time_table=endtime_table_for_step(self.runner_config, step_number),
             )
             step_config_path = os.path.join(step_dir, "step_config.txt")
             with open(step_config_path, 'w', encoding='utf-8') as scf:

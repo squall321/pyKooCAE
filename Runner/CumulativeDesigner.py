@@ -872,6 +872,13 @@ class CumulativeDesigner:
         for doe_idx in sorted(doe_angle_map.keys()):
             doe_angles[str(doe_idx + 1)] = doe_angle_map[doe_idx]
 
+        # 각도별 종료 시간 사전 해석 (simulation_params.endtime_presim) — 켜져 있으면 KMM RIGID_DROP_ENDTIME 을 돌려
+        # DROP 스텝 각도마다 표를 마련한다. 꺼져 있으면 (None, None) 이라 아래 키 자체가 없다. 실패하면 prepare 가 멈춘다.
+        from Runner.EndTimePresim import prepare_endtime_tables
+        endtime_tables, doe_endtim = prepare_endtime_tables(
+            runner_config.simulation_params, runner_config.environment, model_file, output_dir_path,
+            self.scenario_dir, doe_angles, runner_steps)
+
         # IMPACT 모드: doe_positions 생성
         doe_positions = {}
         if hasattr(self, '_impact_positions') and self._impact_positions:
@@ -978,6 +985,10 @@ class CumulativeDesigner:
                 **({"doe_vibrations": doe_vibrations} if doe_vibrations else {}),
                 # 파트 이동 DOE (조건 축과 직교). 미사용 시 키 자체가 없어 회귀 0.
                 **({"doe_part_moves": doe_part_moves} if doe_part_moves else {}),
+                # 각도별 종료 시간 표 (endtime_presim). 미사용 시 키 자체가 없어 회귀 0.
+                #   endtime_tables: 스텝 설정 EndTimeTable 줄의 출처, doe_endtim: {doe: {step: endtim}} 보기용
+                **({"endtime_tables": endtime_tables} if endtime_tables else {}),
+                **({"doe_endtim": doe_endtim} if doe_endtim else {}),
                 # batch_koomeshmodifier: 1-step 시나리오에서 헤드노드 일괄 생성 옵션
                 "batch_koomeshmodifier": self._get_batch_koomeshmodifier_flag()
             },

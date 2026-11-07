@@ -164,6 +164,18 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
          K("simulation_params.height", "실수", "1500", "낙하 높이 (모델 단위)"),
          K("simulation_params.gravity", "실수", "재질 밀도로 판정", "자유낙하 g (모델 단위, --help units)"),
          K("simulation_params.tFinal / dt", "실수", "0.005 / 1e-6", "종료 시간 / d3plot 간격"),
+         K("simulation_params.endtime_presim.enabled", "bool", "false",
+           "prepare 때 KMM RIGID_DROP_ENDTIME(강체 낙하 사전 해석)을 돌려 DROP 자세마다 종료 시간을 정한다. "
+           "DROP 스텝 설정(누적·대규모·배치)에 EndTimeTable 줄이 들어가 KMM 이 자세별 ENDTIM 을 쓴다(tFinal 줄은 남는다). "
+           "산출 <output_dir>/endtime_presim/1/, runner_config scenario.endtime_tables·doe_endtim. KMM 실패·각도 빠짐이면 prepare 가 멈춘다"),
+         K("simulation_params.endtime_presim.table", "경로", "null",
+           "이미 만든 <base>_endtime.csv (scenario.json 기준 상대 또는 절대). 주면 사전 해석을 건너뛴다. 모든 DROP 자세가 낙하 방향 0.01° 안에 있어야 한다"),
+         K("simulation_params.endtime_presim.restitution / friction", "실수 목록 / 실수", "[0.1, 0.3, 0.5] / 0.5",
+           "사전 해석 반발계수(가장 긴 종료 시간을 쓴다) · 바닥 마찰계수"),
+         K("simulation_params.endtime_presim.gravity / margin_ms", "bool / 실수", "false / 1.0",
+           "사전 해석 중력(기본 끔 — 낙하 덱에 중력이 없어 같은 조건이고, 다시 닿는 충격을 모두 2차 충격으로 센다) · 2차 충격 끝 뒤 여유(ms)"),
+         K("simulation_params.endtime_presim.exclude_parts / workers", "정수 목록 / 정수", "[] / 8",
+           "사전 해석에서 뺄 파트(바닥판 등. SPC 로 병진이 묶인 절점이 하나라도 있는 파트는 KMM 이 자동으로 뺀다) · 프로세스 수"),
          K("simulation_params.density / youngs_modulus / poisson_ratio", "실수", "7.85e-9 / 2e5 / 0.3", "바닥판 재질"),
          K("simulation_params.offset_distance", "실수", "0.05", "바닥판 초기 간격"),
          K("simulation_params.drop_surface", "객체", "Plane 300×300×20, 30×30×2", "type: Plane | PlaneGraded(num_outer_layers, ratio) | RigidWall | PlanewithRoughness"),

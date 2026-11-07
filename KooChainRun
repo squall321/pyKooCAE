@@ -1642,6 +1642,10 @@ def _prepare_batch_koomeshmodifier(runner_config, output_dir, env):
         control_line += f"\nControlTimestep.{key},{val}"
     for key, val in sim_params.get("control_hourglass", {}).items():
         control_line += f"\nControlHourglass.{key},{val}"
+    # 각도별 종료 시간 표(prepare 의 endtime_presim) — Fast DOE 의 각도마다 KMM 이 표에서 ENDTIM 을 찾는다. 없으면 ""
+    from Runner.EndTimePresim import endtime_table_for_step
+    _end_time_table = endtime_table_for_step(runner_config, 1)
+    end_time_line = f"\nEndTimeTable,{_end_time_table}" if _end_time_table else ""
 
     n = doe_count
     height_list = ",".join([str(height)] * n)
@@ -1672,7 +1676,7 @@ OffsetDistance,0.1
 Density,{density}
 YoungsModulus,{youngs_modulus}
 PoissonRatio,{poisson_ratio}
-tFinal,{tFinal}
+tFinal,{tFinal}{end_time_line}
 dt,{dt}
 {drop_surface_line}{d2r_line}{contact_opt_line}{tied_opt_line}{drop_contact_line}{control_line}
 **EndDropAttitude

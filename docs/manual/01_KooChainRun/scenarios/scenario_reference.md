@@ -163,6 +163,41 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 
 `drop_surface.type` 값별 추가 필드 (StepConfigBuilder.py:51-73): `RigidWall` / `Plane`(`size`,`mesh`) / `PlaneGraded`(`size`,`mesh`,`num_outer_layers`,`ratio`) / 거칠기 옵션(`roughness_mode`,`r_max`,`shape_factor`,`shape_factor2`) / `deformable_to_rigid`(false).
 
+#### `simulation_params.endtime_presim` — 자세별 종료 시간 사전 해석 (선택, Runner/EndTimePresim.py)
+
+모든 자세에 `tFinal` 하나를 쓰는 대신, `prepare` 가 KMM `RIGID_DROP_ENDTIME`(강체 낙하 사전 해석)을 돌려 자세마다 2차 충격이 끝나는 시간(`endtim`)을 정한다. 키가 없거나 `enabled` 가 false 이면 runner_config·스텝 설정은 예전과 바이트까지 같다.
+
+```json
+"endtime_presim": {"enabled": true, "table": null, "restitution": [0.1, 0.3, 0.5],
+                   "friction": 0.5, "gravity": false, "margin_ms": 1.0, "exclude_parts": [], "workers": 8}
+```
+
+| 필드 | 기본값 | 의미 |
+|---|---|---|
+| `enabled` | false | 켜면 prepare 가 사전 해석을 돌린다 (`true` 만 써도 기본값으로 켠다) |
+| `table` | null | 이미 만든 `<base>_endtime.csv` (scenario.json 기준 상대 또는 절대). 주면 사전 해석을 건너뛴다 |
+| `restitution` | [0.1, 0.3, 0.5] | 반발계수 목록. 가장 긴 종료 시간을 쓴다 |
+| `friction` | 0.5 | 바닥 마찰계수 |
+| `gravity` | false | 사전 해석 중력. 낙하 덱에는 중력이 없어(초기 속도만) 기본은 끔이고, 끄면 다시 닿는 충격을 모두 2차 충격으로 센다. 켜면 리포트와 같은 조건(재착지는 뺀다) |
+| `margin_ms` | 1.0 | 2차 충격(없으면 1차 충돌) 끝 뒤 여유(ms) |
+| `exclude_parts` | [] | 사전 해석에서 뺄 PID(바닥판 등). SPC 로 병진이 묶인 절점이 하나라도 있는 파트는 KMM 이 자동으로 뺀다 |
+| `workers` | 8 | 사전 해석 프로세스 수 |
+
+모르는 하위 키는 경고만 하고 무시한다.
+
+동작은 다음과 같다.
+1. DOE 의 **DROP 스텝** 자세(roll, pitch, yaw)를 값으로 중복 없이 모은다. 열(THERM) 스텝의 0/0/0 은 빠진다. 이를 `<output_dir>/endtime_presim/1/angles.csv` 에 쓴다.
+2. 같은 폴더에 KMM 옵션 파일 `rigid_drop_endtime.txt` 를 쓰고 KMM 을 러너와 같은 방식으로 돌린다. 실행 파일은 `environment.koomeshmodifier_path`, 컨테이너는 `apptainer_sif` 가 있으면 감싼다. 시간 제한은 `environment.timeout_koomeshmodifier_seconds` 다. `*Inputfile` 은 러너 1 스텝과 같은 템플릿 절대 경로라서 `*INCLUDE` 가 그대로 풀린다. 작업 폴더는 KMM 둘째 인자로 넘긴다. KMM 출력은 `kmm_stdout.log` 에 남는다.
+3. 작업 폴더의 `<base>_endtime.csv` 를 읽는다. 모든 자세가 있고 `endtim > 0` 이어야 한다.
+4. runner_config 에 `scenario.endtime_tables`(표 절대 경로)와 `scenario.doe_endtim`(`{doe: {step: endtim}}`, 보기용)을 남긴다.
+5. 모든 DROP 스텝 설정(누적 러너·`--mode large-scale`·`batch_koomeshmodifier`)의 DropAttitude 블록에 `EndTimeTable,<표 절대 경로>` 줄이 들어간다. KMM 은 자세마다 낙하 방향이 0.01° 안인 줄의 `endtim` 을 ENDTIM 으로 쓴다(`tFinal` 줄은 남는다).
+
+KMM 실패(종료 코드≠0·시간 초과), 표 없음, 빠진 자세, `endtim ≤ 0`, `table` 파일 없음이면 prepare 가 `[ENDTIME_PRESIM_FAILED]` 와 이유를 찍고 종료 코드 1 로 멈춘다. 조용히 `tFinal` 로 돌아가지 않는다. `table` 의 자세는 낙하 방향 d = Rz(-yaw)·Ry(-pitch)·Rx(-roll)·(0,0,-1) 로 찾는다. 같은 방향이면 오일러 표기가 달라도 된다.
+
+한계가 둘 있다.
+- 누적 2 스텝부터는 앞 스텝의 변형된 `_dti.k` 에서 시작하지만, 사전 해석은 원래 템플릿의 강체 형상으로 한다(근사).
+- KMM 의 단위계 판정(`Units`)·시간 간격(`PresimDt`)·최대 시간(`PresimTMax`)은 KCR 에서 넘기지 않는다(KMM 기본값). 판정이 안 되는 덱은 KMM 을 직접 돌려 만든 표를 `table` 로 준다.
+
 ### 2-5. IMPACT 모드 필드
 
 #### `position_source` (ImpactPositionSource.parse_position_source:195-)
