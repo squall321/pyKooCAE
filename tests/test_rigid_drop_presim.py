@@ -4,7 +4,9 @@
 
 기준값은 프로토타입 /home/koopark/kooOmniDropAnalyzer/fullangle_mbd (PyBullet GEOM_BOX 150×75×7.5 mm, 200 g, μ 0.5)의
 저장 결과(results_mu0.5, tilt45_sensitivity.csv, six_face_exact.csv)다. 전체 측정은 /data/koopark/Test_RigidDropEndtime/B 에 있다.
+프로토타입 대조는 프로토타입 규칙(2차 이격 0.3 ms)으로 하고, 엔진 기본(1 ms, 사용자 결정 11-07)은 [11] 에서 따로 본다.
 """
+import inspect
 import math
 import multiprocessing as mp
 import os
@@ -213,6 +215,17 @@ def main():
     check("slapdown cluster: t2_end extends through gaps < t_sep",
           P.second_impact([ev(0, 0.05), ev(0.2, 0.25), ev(3.0, 3.1), ev(3.3, 3.35), ev(9.0, 9.0)], 0.3) == (3.0, 3.35, "slapdown", 0.25))
     check("rebound when CoM rose > 1 mm", P.second_impact([ev(0, 0.01), ev(100.0, 100.0, 1.5)], 0.3)[2] == "rebound")
+    check("default t_sep = 1 ms (= stop rule T_SEP_MAX) in second_impact, impact_rows, run_presim", P.T_SEP_MS == 1.0
+          and all(inspect.signature(f).parameters["t_sep_ms"].default == 1.0
+                  for f in (P.second_impact, P.impact_rows, P.run_presim)))
+    evs = [ev(0, 0.01), ev(0.5, 0.6), ev(5.0, 5.1)]
+    check("1 ms rule: a re-contact 0.49 ms later is part of the 1st cluster",
+          P.second_impact(evs) == (5.0, 5.1, "slapdown", 0.6) and P.second_impact(evs, 0.3) == (0.5, 0.6, "slapdown", 0.01))
+    try:
+        P.run_presim(BOX, [("A", 0.0, 0.0, 0.0)], H, t_sep_ms=1.5, log=lambda s: None)
+        check("run_presim rejects t_sep_ms > 1 ms (stop rule cannot capture it)", False)
+    except ValueError:
+        check("run_presim rejects t_sep_ms > 1 ms (stop rule cannot capture it)", True)
     t2s, t2e, cls, t1e = P.second_impact([ev(0, 0.01), ev(0.1, 0.2)], 0.3)
     check("none: t1_end = last event end (not NaN)", cls == "none" and t1e == 0.2 and math.isnan(t2s))
     check("tfinal rule: slapdown -> t2_end + 1, rebound -> t1_end + 1",
@@ -228,7 +241,8 @@ def main():
     rows, imps = P.run_presim(BOX, angles, H, ES, friction=MU, workers=4, time_to_s=1.0, log=lambda s: None,
                               return_impacts=True)
     per_e = [f"{c}_e{e}" for e in ES for c in ("class", "t1_end_ms", "t2_start_ms", "t2_end_ms")]
-    check("columns = CORE_COLUMNS + per-e (class/t1/t2s/t2e _e<e>)", list(rows[0]) == CORE_COLUMNS + per_e, f"{list(rows[0])}")
+    check("columns = CORE_COLUMNS + n_unresolved, reach_m + per-e (class/t1/t2s/t2e _e<e>)",
+          list(rows[0]) == CORE_COLUMNS + ["n_unresolved", "reach_m"] + per_e, f"{list(rows[0])}")
     ok = True
     for row, (name, rr, pp, yy) in zip(rows, angles):
         tfs = []
@@ -359,6 +373,87 @@ def main():
               and time.time() - t < 20 and not alive, f"{exc} after {time.time() - t:.1f}s alive={alive}")
     finally:
         P.NO_PROGRESS_S = old_np
+
+    print("[11] 2차 이격 0.3 → 1 ms (H1): 상자 피보나치 1000 × e 3, 중력 끔 — 짧아지는 각도 없음")
+    ang1000 = fibonacci_angles(1000)
+    old = P.run_presim(BOX, ang1000, H, ES, friction=MU, gravity_on=False, t_sep_ms=0.3, workers=4, log=lambda s: None)
+    new = P.run_presim(BOX, ang1000, H, ES, friction=MU, gravity_on=False, workers=4, log=lambda s: None)
+    d = np.array([b["tfinal_ms"] - a["tfinal_ms"] for a, b in zip(old, new)])
+    longer = d > 1e-9
+    print(f"      longer {int(longer.sum())} angles, increase median {np.median(d[longer]):.2f} max {d.max():.2f} ms, "
+          f"total {sum(a['tfinal_ms'] for a in old) / 1e3:.2f} -> {sum(b['tfinal_ms'] for b in new) / 1e3:.2f} s")
+    check("no angle gets a shorter tfinal with the 1 ms rule", (d >= -1e-9).all(), f"min {d.min()}")
+    p5o, p5n = old[4], new[4]
+    check("P0005 (roll 1.34, pitch -172.42): old 1.42 ms missed the 1.86·v0 impact at 2.09 ms; new tfinal covers it",
+          p5n["name"] == "P0005" and abs(p5o["tfinal_ms"] - 1.42) < 0.011 and p5n["tfinal_ms"] >= 3.27 + 1.0 - 1e-9
+          and abs(p5n["t2_start_ms_e0.5"] - 2.09) < 0.011, f"{p5o['tfinal_ms']} -> {p5n['tfinal_ms']}")
+
+    print("[12] 중력 끔에서 t_max 까지 2차도 벗어남도 없음 → n_unresolved + WARNING (L1)")
+    logs = []
+    ru = P.run_presim(BOX, [("FACE", 0.0, 0.0, 0.0), ("S45", 0.0, 45.0, 0.0)], H, ES, friction=MU, gravity_on=False,
+                      t_max=0.002, workers=2, log=logs.append)
+    warn = [x for x in logs if "WARNING" in x]
+    check("face drop stopped at t_max=2 ms: n_unresolved = 3, tfinal kept = t1_end + 1",
+          ru[0]["n_unresolved"] == 3 and abs(ru[0]["tfinal_ms"] - (ru[0]["t1_end_ms"] + 1.0)) < 1e-12, f"{ru[0]}")
+    check("one English WARNING line naming the angle; gravity on -> 0", len(warn) == 1 and "FACE" in warn[0]
+          and all(r_["n_unresolved"] == 0 for r_ in P.run_presim(BOX, [("FACE", 0.0, 0.0, 0.0)], H, ES, t_max=0.002,
+                                                                 workers=2, log=lambda s: None)), f"{warn}")
+
+    print("[13] 바닥 위 접촉 거리 reach_m (L6)")
+    sim = P.simulate_drop(BOX, d45, 0.3, MU, H)
+    evs = sim["events"]
+    t2s, t2e, cls, t1e = P.second_impact(evs)
+    p1 = np.array([evs[0]["floor_x_m"], evs[0]["floor_y_m"]])
+    lower = max(np.hypot(e_["floor_x_m"] - p1[0], e_["floor_y_m"] - p1[1]) for e_ in evs if e_["t_end_ms"] <= t2e + 1e-9)
+    rr = P.run_presim(BOX, [("S45", 0.0, 45.0, 0.0)], H, (0.3,), friction=MU, workers=1, log=lambda s: None)[0]
+    check("45° short edge: reach = slap end to first end on the floor (0.13-0.17 m) >= event centroids' distance",
+          0.13 < rr["reach_m"] < 0.17 and rr["reach_m"] >= lower - 1e-9, f"reach {rr['reach_m']} lower {lower}")
+    check("reach_m = max of per-event reach over events inside tfinal",
+          abs(rr["reach_m"] - max(e_["reach_m"] for e_ in evs if e_["t_end_ms"] <= t2e + 1e-9)) < 1e-12)
+    flat = P.simulate_drop(BOX, (0, 0, -1), 0.3, MU, H)["events"][0]
+    check("flat drop 1st event: reach from the face-contact centroid to a corner ~ half diagonal 83.9 mm (80-90)",
+          0.080 < flat["reach_m"] < 0.090, f"{flat['reach_m']}")
+
+    print("[14] 부모가 kill -9 로 죽으면 작업자도 몇 초 안에 죽는다 (고아 작업자 없음, R2-1)")
+
+    def children_of(pid):
+        kids = []
+        for dname in os.listdir("/proc"):
+            if dname.isdigit():
+                try:
+                    st = open(f"/proc/{dname}/stat").read().rsplit(")", 1)[1].split()
+                except OSError:
+                    continue
+                if int(st[1]) == pid and st[0] not in ("Z", "X"):
+                    kids.append(int(dname))
+        return kids
+
+    def alive(pid):
+        try:
+            return open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()[0] not in ("Z", "X")
+        except OSError:
+            return False
+    code = ("import sys; sys.path.insert(0, %r)\nimport numpy as np\n"
+            "from KooCAEManager import KooRigidDropPresim as P\nfrom KooCAEManager.KooEndTimeTable import fibonacci_angles\n"
+            "C = np.array([[a, b, c] for a in (-1, 1) for b in (-1, 1) for c in (-1, 1)]) * np.array(%r)\n"
+            "B = P.make_body(0.2, (0, 0, 0), np.diag(%r), C)\n"
+            "P.run_presim(B, fibonacci_angles(5000), 1.5, workers=2, log=lambda s: None)\n") % (
+        str(GEN), HALF.tolist(), np.diag(box_inertia()).tolist())
+    parent = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    kids, t = [], time.time()
+    while time.time() - t < 30 and len(kids) < 2:
+        time.sleep(0.2)
+        kids = children_of(parent.pid)
+    os.kill(parent.pid, signal.SIGKILL)
+    parent.wait()
+    t = time.time()
+    while time.time() - t < 5 and any(alive(k) for k in kids):
+        time.sleep(0.1)
+    check("2 workers seen, all gone within 5 s after SIGKILL of the parent", len(kids) == 2 and not any(alive(k) for k in kids),
+          f"kids {kids} alive {[k for k in kids if alive(k)]}")
+    for k in kids:  # 실패했을 때 남은 것 정리
+        if alive(k):
+            os.kill(k, signal.SIGKILL)
 
     print(f"\n{'PASS' if not FAILS else 'FAIL'} ({time.time() - t_all:.0f} s)")
     for f in FAILS:

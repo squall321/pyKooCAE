@@ -3,7 +3,10 @@
 프로토타입 /home/koopark/kooOmniDropAnalyzer/fullangle_mbd/fullangle_drop_mbd.py 를 일반 강체로 옮긴 것이다.
   - 입력은 덱에서 구한 질량·무게중심·무게중심 기준 관성 텐서·볼록 껍질 꼭짓점이다(기기(덱) 좌표계, SI).
   - 접촉 설정, 충돌 이벤트 판정, 채터링 묶음(0.05 ms), 스침 버림(2%·m·v0), 시작 간격 0.5 mm,
-    종료 조건(1 ms 이상 떨어졌다 닿은 묶음 뒤 1 ms 조용), 2차 충격 판정(T_sep 0.3 ms, 상승 1 mm)은 프로토타입 그대로다.
+    종료 조건(1 ms 이상 떨어졌다 닿은 묶음 뒤 1 ms 조용), 재착지 판정(무게중심 상승 1 mm)은 프로토타입 그대로다.
+  - 2차 충격 이격 기준은 종료 조건과 같은 1 ms 다(사용자 결정 11-07 "1 ms 로 맞추기", 프로토타입은 0.3 ms).
+    1 ms 안에 다시 닿는 것은 1차 묶음이다. 0.3 ms 로 끊으면 1 ms 안의 작은 재접촉이 '2차'가 되어, 그 뒤에 오는 더 센
+    충격(예: 중력 끔 P0005 e 0.5, 2.09 ms 에 1.86·v0)이 표에서 빠졌다.
   - pybullet 은 함수 안에서 늦게 import 한다. 모듈 import 는 pybullet 없이 된다.
 
 좌표
@@ -13,6 +16,9 @@
     월드 -Z 로 보낸다(프로토타입 quat_down). 축 가정이 없으므로 길이 방향이 X 든 Y 든 같다.
   - 월드 = 바닥 좌표계(z 위 = 바닥 법선). 이벤트의 접촉 위치(cx/cy/cz, x/y 범위)와 바닥 법선(nb)은 기기 좌표로
     돌려 보고한다(위치는 덱 원점 기준 mm).
+  - 바닥 위 접촉 위치도 남긴다: 이벤트마다 floor_x_m·floor_y_m(월드 충격량 가중 접촉점), reach_m(첫 충돌 이벤트의 충격량
+    가중 접촉점에서 그 이벤트의 개별 접촉점들까지 수평 거리 최대). 표 줄의 reach_m 은 tFinal 안에 드는 이벤트들의 최대다
+    (FEM 바닥판 크기 점검용).
 
 충돌 직전 상태(FEM 초기 조건용)
   - 이벤트마다 첫 접촉 스텝 바로 앞 스텝의 상태를 남긴다: pre_rot(바닥→덱 회전 = KMM RotMat), pre_pos·pre_v·pre_w
@@ -42,6 +48,8 @@
 import itertools
 import math
 import multiprocessing
+import os
+import signal
 import time
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
@@ -53,6 +61,7 @@ G = 9.81
 GAP = 5e-4             # 시작 시 최저점과 바닥 사이 간격 (m)
 T_CHATTER = 5e-5       # 이 간격 이내 충격 스텝은 같은 이벤트 (s)
 T_SEP_MAX = 1e-3       # 이만큼 떨어졌다 닿은 충돌 묶음이 이만큼 조용해지면 종료 (s)
+T_SEP_MS = T_SEP_MAX * 1e3  # 2차 충격 이격 기준 (ms) = 종료 규칙 — 이보다 길면 2차 묶음을 다 못 담는다
 MAX_EVENTS = 30
 J_STEP = 1e-3          # 스텝 충격량 > J_STEP·m·v0 이면 충돌 스텝
 J_EVENT_MIN = 0.02     # 합계 < J_EVENT_MIN·m·v0 인 이벤트는 스침으로 버림
@@ -223,13 +232,16 @@ def _simulate(body, q, gap_m, v_init, w_init, e, mu, gravity_on, dt, t_max, trac
                     cur = dict(t_start=t, t_last=t, J=0.0, w=np.zeros(3), rise=rise, vn=vn,
                                nb=R[2, :].copy(), pts=[],
                                pre=(np.array(p.getMatrixFromQuaternion(orn_prev)).reshape(3, 3), pos_prev, v_prev,
-                                    w_prev, wsum / J - pos_prev))
+                                    w_prev, wsum / J - pos_prev),
+                               fw=np.zeros(3), fxy=[])
                 cur["t_last"] = t
                 cur["J"] += J
                 cur["w"] += R.T @ (wsum - J * pos)  # 몸체 좌표 기준 충격량 가중 접촉 위치
-                for c in cps:  # 기기 좌표 접촉점 (x, y, 충격량) — 접촉 범위 계산용
+                cur["fw"] += wsum  # 월드(바닥) 좌표 충격량 가중 접촉 위치 합
+                for c in cps:  # 기기 좌표 접촉점 (x, y, 충격량) — 접촉 범위 계산용, 바닥 위 접촉점 (x, y) — reach 용
                     b = com + Rp @ (R.T @ (np.array(c[5]) - pos))
                     cur["pts"].append((b[0], b[1], c[9] * dt))
+                    cur["fxy"].append(c[5][:2])
                 cur["z_last"] = cur["z_max"] = pos[2]
             else:
                 if cur is not None:
@@ -254,6 +266,8 @@ def _simulate(body, q, gap_m, v_init, w_init, e, mu, gravity_on, dt, t_max, trac
         p.disconnect(cid)
 
     t0 = events[0]["t_start"] if events else 0.0
+    # 첫 충돌(첫 이벤트)의 바닥 위 충격량 가중 접촉점 (월드 x, y) — 동시 접촉(면·모서리)은 접촉 영역 가운데가 된다
+    p0 = events[0]["fw"][:2] / events[0]["J"] if events else None
     evs = []
     for i, ev in enumerate(events, start=1):
         c = com + Rp @ ev["c"]
@@ -263,6 +277,8 @@ def _simulate(body, q, gap_m, v_init, w_init, e, mu, gravity_on, dt, t_max, trac
         h = pos0[2] + verts @ Rw[2, :]
         ctype, nlow = _contact_type(h, (verts @ Rw.T)[:, :2], r_max)
         c0 = com + rot @ rc0  # 첫 접촉 스텝 접촉 위치 (덱 좌표, m)
+        fl = ev["fw"][:2] / ev["J"]
+        reach = float(np.sqrt(((np.array(ev["fxy"]) - p0) ** 2).sum(axis=1)).max())
         evs.append(dict(k=i, t_start_ms=(ev["t_start"] - t0) * 1e3, t_end_ms=(ev["t_last"] - t0) * 1e3,
                         J=ev["J"], rise_mm=ev["rise"] * 1e3, vn_mps=ev["vn"],
                         cx_mm=c[0] * 1e3, cy_mm=c[1] * 1e3, cz_mm=c[2] * 1e3,
@@ -272,7 +288,8 @@ def _simulate(body, q, gap_m, v_init, w_init, e, mu, gravity_on, dt, t_max, trac
                         pre_rot=tuple(tuple(float(x) for x in row) for row in rot),
                         pre_pos=tuple(float(x) for x in pos0), pre_v=tuple(float(x) for x in v_0),
                         pre_w=tuple(float(x) for x in w_0), pre_gap_m=float(h.min()),
-                        pre_contact=tuple(float(x) for x in c0), contact_type=ctype, contact_nverts=nlow))
+                        pre_contact=tuple(float(x) for x in c0), contact_type=ctype, contact_nverts=nlow,
+                        floor_x_m=float(fl[0]), floor_y_m=float(fl[1]), reach_m=reach))
     out = {"v0": v_ref, "t0_s": t0 if events else math.nan, "stop": stop, "events": evs}
     if trace:
         out["trace"] = np.array(tl)
@@ -310,11 +327,11 @@ def simulate_from_state(body, rot_floor_to_deck, v, w, e, mu, gap_m=GAP, v_ref=N
                      float(np.linalg.norm(v)) if v_ref is None else float(v_ref))
 
 
-def second_impact(events, t_sep_ms=0.3, rise_th_mm=1.0):
-    """이격 시간 t_sep 이상 떨어졌다 다시 닿는 첫 이벤트를 2차 충격으로 본다. → (t2_start, t2_end, cls, t1_end) ms.
+def second_impact(events, t_sep_ms=T_SEP_MS, rise_th_mm=1.0):
+    """이격 시간 t_sep(기본 1 ms) 이상 떨어졌다 다시 닿는 첫 이벤트를 2차 충격으로 본다. → (t2_start, t2_end, cls, t1_end) ms.
 
     cls: 무게중심이 rise_th 넘게 떴다 닿으면 "rebound", 아니면 "slapdown", 다시 닿지 않으면 "none".
-    t2_end 는 t_sep 이내로 이어지는 접촉 묶음(꼭짓점 → 모서리 → 면)의 끝이다.
+    t1_end 는 t_sep 안으로 이어지는 1차 묶음의 끝, t2_end 는 t_sep 안으로 이어지는 2차 묶음(꼭짓점 → 모서리 → 면)의 끝이다.
     "none" 이면 모든 접촉이 1차 묶음이므로 t1_end = 마지막 이벤트 끝이다(프로토타입은 NaN).
     """
     for j in range(1, len(events)):
@@ -330,11 +347,11 @@ def second_impact(events, t_sep_ms=0.3, rise_th_mm=1.0):
     return math.nan, math.nan, "none", (events[-1]["t_end_ms"] if events else math.nan)
 
 
-def impact_rows(body, sim, name="", roll=0.0, pitch=0.0, yaw=0.0, e=math.nan, t_sep_ms=0.3, rise_th_mm=1.0,
+def impact_rows(body, sim, name="", roll=0.0, pitch=0.0, yaw=0.0, e=math.nan, t_sep_ms=T_SEP_MS, rise_th_mm=1.0,
                 margin_ms=1.0):
     """simulate_drop 결과 → 충돌 묶음마다 FEM 초기 조건 한 줄 (k=1 1차, k=2 2차, …).
 
-    묶음 = t_sep 이상 떨어진 곳에서 끊은 연속 이벤트(second_impact 와 같은 규칙, k=2 의 끝 = t2_end).
+    묶음 = t_sep(기본 1 ms) 이상 떨어진 곳에서 끊은 연속 이벤트(second_impact 와 같은 규칙, k=1 끝 = t1_end, k=2 끝 = t2_end).
     시뮬은 2차 묶음 뒤 1 ms 조용하면 멈추므로 k≥3 은 그 앞에 생긴 것만 있다.
     class: k=1 "first", k≥2 "slapdown"/"rebound"(무게중심 상승 > rise_th).
     상태는 묶음 첫 이벤트의 첫 접촉 스텝 바로 앞 값이다. 접촉점(contact_*, 덱 좌표 m)은 그 첫 접촉 스텝의 충격량 가중
@@ -389,9 +406,17 @@ def endtim_from_ms(tf_ms, time_to_s=1.0):
 _BODY = None
 
 
-def _init_worker(body):
+def _init_worker(body, parent_pid):
     global _BODY
     _BODY = body
+    # 부모(KMM)가 SIGKILL·SIGTERM 으로 죽으면 작업자도 죽는다(리눅스 PR_SET_PDEATHSIG = 1). 설정 전에 이미 죽었으면 바로 끝낸다
+    try:
+        import ctypes
+        ctypes.CDLL(None, use_errno=True).prctl(1, int(signal.SIGKILL), 0, 0, 0)
+    except (OSError, AttributeError):
+        pass
+    if os.getppid() != parent_pid:
+        os._exit(1)
 
 
 def _job(args):
@@ -401,17 +426,24 @@ def _job(args):
     if imp:  # (name, roll, pitch, yaw, margin_ms)
         name, roll, pitch, yaw, margin_ms = imp
         rows = impact_rows(_BODY, r, name, roll, pitch, yaw, e, t_sep_ms=t_sep_ms, margin_ms=margin_ms)
-    return i, k, second_impact(r["events"], t_sep_ms), r["stop"], rows
+    si = second_impact(r["events"], t_sep_ms)
+    end_ms = tfinal_ms(si[1], si[2], si[3], 0.0, count_rebound=not gravity_on)  # tFinal 이 담는 마지막 이벤트 끝
+    reach = max((ev["reach_m"] for ev in r["events"] if ev["t_end_ms"] <= end_ms + 1e-9), default=0.0)
+    return i, k, si, r["stop"], rows, reach
 
 
 def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.5, gravity_on=True, margin_ms=1.0,
-               t_sep_ms=0.3, dt=1e-5, t_max=1.0, workers=8, time_to_s=1.0, log=print, return_impacts=False):
+               t_sep_ms=T_SEP_MS, dt=1e-5, t_max=1.0, workers=8, time_to_s=1.0, log=print, return_impacts=False):
     """각도 목록 [(name, roll, pitch, yaw) 도] × 반발계수 → 각도마다 한 줄 (KooEndTimeTable 표 칸).
 
     낙하 방향은 KMM DropAttitude 규약 drop_direction(roll, pitch, yaw) (기기 좌표)이다.
     e 마다 tFinal = (slapdown 이면 t2_end, 아니면 t1_end) + margin_ms, 표 값은 e 들 가운데 최대다.
+    2차 충격은 t_sep(기본 1 ms = 종료 규칙) 이상 떨어졌다 다시 닿는 첫 묶음이다.
     gravity_on=False(FEM DROP_ATTITUDE 덱과 같음)면 rebound 도 2차 충격으로 센다(사용자 결정 11-07).
     endtim = 그 값을 0.1 ms 단위로 올려 덱 시간 단위로 바꾼 것이다.
+    표 칸: CORE_COLUMNS, n_unresolved(중력 끔에서 2차 충격도 바닥 벗어남도 없이 t_max·이벤트 수 상한에서 끝난 e 개수 —
+    tFinal 은 t1_end + 여유 그대로), reach_m(tFinal 안 접촉점이 첫 접촉점에서 바닥 위로 떨어진 최대 거리, m, e 들 최대),
+    그다음 e 마다 class·t1_end_ms·t2_start_ms·t2_end_ms.
     return_impacts=True 면 (rows, impacts) — impacts 는 (각도, e, 충돌 묶음 k) 마다 impact_rows 한 줄이다.
     """
     angles = [(str(n), float(r), float(pt), float(y)) for n, r, pt, y in angles]
@@ -420,6 +452,9 @@ def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.
         raise ValueError("rigid drop presim: no angles or restitutions")
     if not time_to_s > 0.0:
         raise ValueError(f"rigid drop presim: time_to_s must be positive, got {time_to_s}")
+    if not 0.0 < t_sep_ms <= T_SEP_MS:
+        raise ValueError(f"rigid drop presim: t_sep_ms must be in (0, {T_SEP_MS:g}] ms (the simulation stops "
+                         f"{T_SEP_MS:g} ms after the 2nd-impact cluster), got {t_sep_ms}")
     dirs = [drop_direction(r, pt, y) for _, r, pt, y in angles]
     jobs = [(i, k, dirs[i], es[k], float(friction), float(height_m), bool(gravity_on), float(dt), float(t_max),
              float(t_sep_ms), (*angles[i], float(margin_ms)) if return_impacts else None)
@@ -428,12 +463,13 @@ def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.
     log(f"[presim] 강체 낙하 사전 해석 {len(angles)} 각도 × 반발계수 {len(es)} = {len(jobs)} 경우 — 높이 {height_m:g} m, "
         f"마찰 {friction:g}, 중력 {'켬' if gravity_on else '끔'}, dt {dt:g} s, 최대 {t_max:g} s, 프로세스 {nw}")
     t_start = time.time()
-    res, stops, imps = {}, {}, {}
+    res, stops, imps, stop_ik, reach_ik = {}, {}, {}, {}, {}
     every = max(1, len(jobs) // 10)
     # fork 프로세스 풀 — 작업자마다 자기 p.DIRECT 를 연다. 작업자가 죽으면(OOM 등) BrokenProcessPool 로 멈춘다(무한 대기 없음).
     # 작업자가 멈춘 채 남으면(네이티브 스레드가 많은 프로세스의 fork) NO_PROGRESS_S 동안 끝나는 경우가 없을 때 작업자를 죽이고 멈춘다.
+    # 부모가 죽으면 작업자도 죽는다(_init_worker 의 PR_SET_PDEATHSIG) — 고아 작업자가 메모리를 잡고 남지 않는다.
     pool = ProcessPoolExecutor(nw, mp_context=multiprocessing.get_context("fork"),
-                               initializer=_init_worker, initargs=(body,))
+                               initializer=_init_worker, initargs=(body, os.getpid()))
     finished = False
     try:
         # 한꺼번에 다 넣지 않는다 — wait() 는 걸어 둔 future 를 매번 다 훑으므로 6만 개를 걸면 부모가 CPU 를 다 쓴다(840 s 대 289 s)
@@ -452,8 +488,8 @@ def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.
                                    f"({n}/{len(jobs)} done) — a worker may be hung")
             for fut in done:
                 n += 1
-                i, k, si, stop, rows_k = fut.result()
-                res[(i, k)], imps[(i, k)] = si, rows_k
+                i, k, si, stop, rows_k, reach = fut.result()
+                res[(i, k)], imps[(i, k)], stop_ik[(i, k)], reach_ik[(i, k)] = si, rows_k, stop, reach
                 stops[stop] = stops.get(stop, 0) + 1
                 if n % every == 0 or n == len(jobs):
                     log(f"[presim] {n}/{len(jobs)} 경우 완료 ({time.time() - t_start:.0f} s)")
@@ -475,11 +511,15 @@ def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.
             per.append((e, cls, t1e, t2s, t2e, tfinal_ms(t2e, cls, t1e, margin_ms, count_rebound=not gravity_on)))
         g = max(range(len(per)), key=lambda j: (per[j][5], -j))  # 최대 tFinal, 같으면 앞의 e
         classes = [x[1] for x in per]
+        # 중력 끔인데 2차 충격도 바닥 벗어남('clear')도 없이 끝난 e — t_max 뒤에 다시 닿을 수 있어 tFinal 이 짧을 수 있다
+        unresolved = sum(1 for k in range(len(es)) if not gravity_on and res[(i, k)][2] == "none"
+                         and stop_ik[(i, k)] in ("t_max", "max_events"))
         row = {"name": name, "roll": roll, "pitch": pitch, "yaw": yaw,
                "dx": float(dirs[i][0]), "dy": float(dirs[i][1]), "dz": float(dirs[i][2]),
                "class": "slapdown" if "slapdown" in classes else "rebound" if "rebound" in classes else "none",
                "t1_end_ms": per[g][2], "t2_start_ms": per[g][3], "t2_end_ms": per[g][4], "tfinal_ms": per[g][5],
-               "endtim": endtim_from_ms(per[g][5], time_to_s), "governing_e": per[g][0]}
+               "endtim": endtim_from_ms(per[g][5], time_to_s), "governing_e": per[g][0],
+               "n_unresolved": unresolved, "reach_m": max(reach_ik[(i, k)] for k in range(len(es)))}
         for e, cls, t1e, t2s, t2e, _ in per:
             row.update({f"class_e{e}": cls, f"t1_end_ms_e{e}": t1e, f"t2_start_ms_e{e}": t2s, f"t2_end_ms_e{e}": t2e})
         rows.append(row)
@@ -488,7 +528,12 @@ def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.
     n_cls = {c: sum(r["class"] == c for r in rows) for c in ("slapdown", "rebound", "none")}
     log(f"[presim] 사전 해석 끝 — {time.time() - t_start:.0f} s, 슬랩다운 {n_cls['slapdown']} · 재착지 {n_cls['rebound']} · "
         f"2차 없음 {n_cls['none']} 각도, tFinal {tf.min():.2f} ~ {tf.max():.2f} ms (중앙값 {np.median(tf):.2f}), "
-        f"종료 이유 {stops}")
+        f"바닥 위 최대 거리 {max(r['reach_m'] for r in rows) * 1e3:.1f} mm, 종료 이유 {stops}")
+    unres = [r["name"] for r in rows if r["n_unresolved"]]
+    if unres:
+        more = f" ... (+{len(unres) - 20} more)" if len(unres) > 20 else ""
+        log(f"[presim] WARNING: {len(unres)} angle(s) reached t_max={t_max:g} s (gravity off) without a 2nd impact or "
+            f"leaving the floor; tfinal kept as t1_end + margin (column n_unresolved): {', '.join(unres[:20])}{more}")
     if return_impacts:
         return rows, [r for i in range(len(angles)) for k in range(len(es)) for r in imps[(i, k)]]
     return rows
