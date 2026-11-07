@@ -45,6 +45,7 @@
     이때 무게중심이 r_max(무게중심~꼭짓점 최대 거리)보다 높고 멀어지는 중이면 다시 닿을 수 없으므로 멈춘다(결과 불변).
     중력이 없으면 되떨어짐이 없으므로 'rebound'(무게중심 1 mm 넘게 상승) 로 분류된 접촉도 회전으로 온 것이다.
 """
+import gc
 import itertools
 import math
 import multiprocessing
@@ -468,6 +469,9 @@ def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.
     # fork 프로세스 풀 — 작업자마다 자기 p.DIRECT 를 연다. 작업자가 죽으면(OOM 등) BrokenProcessPool 로 멈춘다(무한 대기 없음).
     # 작업자가 멈춘 채 남으면(네이티브 스레드가 많은 프로세스의 fork) NO_PROGRESS_S 동안 끝나는 경우가 없을 때 작업자를 죽이고 멈춘다.
     # 부모가 죽으면 작업자도 죽는다(_init_worker 의 PR_SET_PDEATHSIG) — 고아 작업자가 메모리를 잡고 남지 않는다.
+    # fork 전에 부모 객체를 GC 영구 세대로 옮긴다 — 작업자의 GC 가 덱 객체를 건드려 복사-쓰기로 부모 메모리를 복제하지 않게(큰 덱)
+    gc.collect()
+    gc.freeze()
     pool = ProcessPoolExecutor(nw, mp_context=multiprocessing.get_context("fork"),
                                initializer=_init_worker, initargs=(body, os.getpid()))
     finished = False
@@ -500,6 +504,7 @@ def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.
             for proc in list((getattr(pool, "_processes", None) or {}).values()):
                 proc.kill()
         pool.shutdown(wait=finished, cancel_futures=True)
+        gc.unfreeze()
 
     rows = []
     for i, (name, roll, pitch, yaw) in enumerate(angles):
