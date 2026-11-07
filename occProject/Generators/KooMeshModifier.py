@@ -1522,6 +1522,17 @@ class KooMeshModifier(KooSimulationGenerator):
                                 sys.exit(1)
                             curOptions["EndTimeTable"] = os.path.abspath(os.path.join(self.curDir, tablePath))
                             continue
+                        # RigidAngularVelocityX/Y/Z,<목록> — 기기 강체 각속도(바닥 좌표, rad/덱 시간), 각도마다 하나. 키 이름 전체가 같을
+                        # 때만 받는다(InitialAngularVelocity* 와 섞이지 않게). 숫자가 아닌 값은 0 으로 두지 않고 멈춘다
+                        if line.split(",")[0].strip().lower() in ("rigidangularvelocityx", "rigidangularvelocityy",
+                                                                  "rigidangularvelocityz"):
+                            key = "RigidAngularVelocity" + line.split(",")[0].strip()[-1].upper()
+                            values = [KooDynaFloat(v, None) for v in line.split(",")[1:]]
+                            if not values or None in values:
+                                print(f"🔴 DROP_ATTITUDE: {key} 에 숫자가 아닌 값이나 빈 칸이 있다 — '{line}' (종료 코드 1)")
+                                sys.exit(1)
+                            curOptions[key] = values
+                            continue
                         if "runid" in line.lower():
                             svector = line.split(",")
                             for i in range(1, len(svector)):

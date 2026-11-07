@@ -2168,17 +2168,19 @@ class KooDynaAdvancedModification:
         path = option.get("EndTimeTable")
         if path is None:
             return None
-        from KooCAEManager.KooEndTimeTable import MATCH_TOL_DEG, load_lookup
+        from KooCAEManager.KooEndTimeTable import MATCH_TOL_DEG, EndTimeLookup, read_endtime_table
         if not option.get("DT"):
             print("🔴 [EndTimeTable] dt 가 없다(0) — 각도별 ENDTIM 으로 d3plot·INTFOR 출력 수(NPLTC = ENDTIM/dt)를 정하려면 "
                   "dt(출력 간격)가 있어야 한다 (종료 코드 1)")
             sys.exit(1)
         try:
-            lookup = load_lookup(path)
+            meta, rows = read_endtime_table(path)
         except (OSError, ValueError, csv.Error) as e:
             print(f"🔴 [EndTimeTable] 표를 읽지 못했다 — {e} (종료 코드 1)")
             sys.exit(1)
-        endtims = [lookup.find(RxList[i], RyList[i], RzList[i]) for i in range(len(RxList))]
+        lookup = EndTimeLookup(rows, path)
+        self._CheckEndTimeTableUnit(meta, path)
+        endtims =[lookup.find(RxList[i], RyList[i], RzList[i]) for i in range(len(RxList))]
         missing = [i for i, e in enumerate(endtims) if e is None]
         if missing:
             for i in missing:
@@ -2214,6 +2216,108 @@ class KooDynaAdvancedModification:
             sys.exit(1)
         return cached_base.replace(old, head(), 1)
 
+    def _CheckEndTimeTableUnit(self, meta, path):
+        """표 메타 time_unit 을 덱 시간 단위(재질 밀도 중앙값 판정)와 대조한다 — 다르면 rc 1, 판정이 안 되면 경고만, 메타가 없으면
+        예전 그대로. 띠: < 1e-7 mm-t-s(s) · 1e-7~1e-4 mm-kg-ms(ms) · 1e-4~0.1 mm-g-ms(ms) · 100~1e5 m-kg-s(s)."""
+        unit = str(meta.get("time_unit", "")).strip().lower()
+        if not unit:
+            return
+        rhos = []
+        matMan = self.dynaImporter.matManager
+        for coll in (getattr(matMan, "materials", {}), getattr(matMan, "rigidMaterials", {})):
+            for m in coll.values():
+                try:
+                    r = float(m.GetRho())
+                except Exception:
+                    continue
+                if r > 0.0:
+                    rhos.append(r)
+        rhos.sort()
+        med = rhos[len(rhos) // 2] if rhos else None
+        deck = None
+        if med is not None:
+            if med < 1.0e-7:
+                deck = ("s", "mm-t-s")
+            elif med < 1.0e-4:
+                deck = ("ms", "mm-kg-ms")
+            elif med < 0.1:
+                deck = ("ms", "mm-g-ms")
+            elif 100.0 <= med <= 1.0e5:
+                deck = ("s", "m-kg-s")
+        if deck is None:
+            print(f"WARNING [EndTimeTable] 표 time_unit={unit} 을 덱 시간 단위와 대조하지 못했다 — 재질 밀도 중앙값 {med} 로 단위계를 "
+                  f"정할 수 없다. 표의 endtim 이 덱 시간 단위인지 확인할 것")
+            return
+        if unit != deck[0]:
+            print(f"🔴 [EndTimeTable] 표 time_unit={unit} 이 덱 시간 단위 {deck[0]}(재질 밀도 중앙값 {med:.3g} → {deck[1]})와 다르다 — "
+                  f"{path} 를 이 덱 단위로 다시 만들 것 (종료 코드 1)")
+            sys.exit(1)
+        print(f"[EndTimeTable] time_unit={unit} — 덱 시간 단위와 같다({deck[1]}, 재질 밀도 중앙값 {med:.3g})")
+
+    def _ResolveRigidAngularVelocity(self, option, nAngles):
+        """RigidAngularVelocityX/Y/Z(기기 강체 각속도, 바닥 좌표, rad/덱 시간)가 있으면 (wx 목록, wy 목록, wz 목록)을, 없으면 None(기존
+        동작)을 돌려준다. InitialAngularVelocity* 와 함께 오거나(두 키워드는 한 덱에 못 쓴다 — R16 28-124 Remark 1), 셋이 다 없거나,
+        목록 길이가 각도 수와 다르거나, 덱에 *INITIAL_VELOCITY(_NODE) 가 이미 있으면 덱을 쓰기 전에 rc 1 로 멈춘다."""
+        keys = ("RigidAngularVelocityX", "RigidAngularVelocityY", "RigidAngularVelocityZ")
+        if not any(k in option for k in keys):
+            return None
+        old = [k for k in ("InitialAngularVelocityX", "InitialAngularVelocityY", "InitialAngularVelocityZ") if k in option]
+        if old:
+            print(f"🔴 [RigidAngularVelocity] {'·'.join(old)} 와 함께 쓸 수 없다 — InitialAngularVelocity 는 *INITIAL_VELOCITY 의 절점 "
+                  f"회전 속도(VXR~VZR), RigidAngularVelocity 는 *INITIAL_VELOCITY_GENERATION 의 강체 회전이고 두 키워드는 한 덱에 같이 "
+                  f"쓸 수 없다(R16 28-124 Remark 1). 한쪽만 줄 것 (종료 코드 1)")
+            sys.exit(1)
+        bad = [k for k in keys if len(option.get(k, [])) != nAngles]
+        if bad:
+            print(f"🔴 [RigidAngularVelocity] {'·'.join(bad)} — X·Y·Z 셋 모두, 각도 수({nAngles}개)만큼 값을 줄 것(목록 키의 i 번째 값끼리 "
+                  f"케이스 i, 값 하나를 모든 각도에 펴지 않는다). 받은 개수 "
+                  f"{[len(option.get(k, [])) for k in keys]} (종료 코드 1)")
+            sys.exit(1)
+        from KooCAEManager.KooInitial import KooInitialVelocity, KooInitialVelocityNode
+        clash = sorted({type(o).__name__ for o in self.dynaImporter.initialManager.inits.values()
+                        if isinstance(o, (KooInitialVelocity, KooInitialVelocityNode))})
+        if clash:
+            print(f"🔴 [RigidAngularVelocity] 덱에 이미 *INITIAL_VELOCITY 계열 카드가 있다({', '.join(clash)}) — "
+                  f"*INITIAL_VELOCITY_GENERATION 과 한 덱에 같이 쓸 수 없다(R16 28-124 Remark 1). 덱에서 지우고 돌릴 것 (종료 코드 1)")
+            sys.exit(1)
+        return tuple(option[k] for k in keys)
+
+    def _DropSpinCentre(self):
+        """RigidAngularVelocity 의 회전 중심 = 쓰는 덱 좌표의 기기 무게중심(KooRigidBodyProperties — SPC 로 묶인 파트는 뺀다).
+        DropAttitude 가 기기를 원점으로 옮기고 강체화한 뒤·바닥판을 만들기 전에 한 번 부른다(바닥판은 들어가지 않는다).
+        무게중심은 단위계와 무관하므로, 재질 밀도로 단위계를 정하지 못하면 단위 이름만 임시로 주고 다시 잰다."""
+        from KooCAEManager.KooRigidBodyProperties import compute_rigid_body
+        try:
+            rb = compute_rigid_body(self.dynaImporter, log=print)
+        except ValueError as e:
+            if "cannot detect units" not in str(e):
+                print(f"🔴 [RigidAngularVelocity] 기기 무게중심을 구하지 못했다 — {e} (종료 코드 1)")
+                sys.exit(1)
+            print("[RigidAngularVelocity] 재질 밀도로 단위계를 정하지 못했다 — 무게중심은 단위와 무관하므로 단위 이름(m-kg-s)만 "
+                  "임시로 주고 다시 잰다")
+            rb = compute_rigid_body(self.dynaImporter, units="m-kg-s", log=print)
+        if not rb["mass"] > 0.0:
+            print("🔴 [RigidAngularVelocity] 기기 질량이 0 이다 — 회전 중심(무게중심)을 정할 수 없다 (종료 코드 1)")
+            sys.exit(1)
+        centre = np.asarray(rb["com"], dtype=float)
+        print(f"[RigidAngularVelocity] centre=({centre[0]:.6g}, {centre[1]:.6g}, {centre[2]:.6g}) mass={rb['mass']:.6g} "
+              f"excluded_parts={[p['pid'] for p in rb['excluded_parts']]} — 회전 중심 = 기기 무게중심(쓰는 덱 좌표, 바닥판 제외)")
+        return centre
+
+    def _CreateDropRigidSpin(self, nsid, velocity, omega, centre):
+        """*INITIAL_VELOCITY_GENERATION(R16 28-124) 한 장 — 기기 절점 셋의 모든 절점에 v + ω×(x − c).
+          ID·STYP 3 = 기존 *INITIAL_VELOCITY 와 같은 기기 절점 셋(AllNodes, 바닥판 전)이다. 변형체·강체 파트·CNRB·여분 절점이 모두
+            직접 들어 있다. Remark 5 는 *INERTIA 없는 CNRB 가 STYP 1·2 로는 잡히지 않아 STYP 3 을 쓰라고 한다.
+          IVATN 1 은 구속된 파트·절점도 그 파트처럼 받게 한다(ID 의 WARNING: IVATN 0 이면 *CONSTRAINED_EXTRA_NODES 절점이 빠진다).
+            모든 절점이 이미 셋에 있고 속도장이 강체 운동이라 겹쳐도 같은 값이다(Remark 3 의 강체 일관성도 그대로 맞는다).
+          IRIGID 0(STYP 3 에는 쓰이지 않는다), PHASE 0(강체는 PHASE 0 — 변형 전 형상 기준), ICID 0(전역 좌표).
+          VX~VZ 는 기존 *INITIAL_VELOCITY 와 같은 덱 좌표 병진 속도, ω 는 덱 좌표 각속도(RotMat·ω바닥)다. ω = 0 이면 OMEGA 0 에 축 (0,0,1)."""
+        w = float(np.linalg.norm(omega))
+        axis = np.asarray(omega, dtype=float) / w if w > 0.0 else np.array([0.0, 0.0, 1.0])
+        return self.dynaImporter.initialManager.CreateInitialVelocityGeneration(
+            nsid, 3, w, velocity[0], velocity[1], velocity[2], 1, 0,
+            centre[0], centre[1], centre[2], axis[0], axis[1], axis[2], 0, 0)
+
     def DropAttitude(self, option, filePath):
         # 이전 열 스텝에서 이월된 열하중 처리 (THERM→DROP 방향). 열하중이 없으면 무동작
         self._ApplyThermalCarryPolicy(option, "DROP_ATTITUDE")
@@ -2226,9 +2330,15 @@ class KooDynaAdvancedModification:
         VxList = option["InitialVelocityX"]
         VyList = option["InitialVelocityY"]
         VzList = option["InitialVelocityZ"]
-        wxList = option["InitialAngularVelocityX"]
-        wyList = option["InitialAngularVelocityY"]
-        wzList = option["InitialAngularVelocityZ"]
+        # RigidAngularVelocity — 기기 강체 회전(*INITIAL_VELOCITY_GENERATION). 키가 없으면 None 이고 예전 그대로다. 있으면 그 목록이
+        # InitialAngularVelocity 자리에 들어가 같은 RotMat 으로 덱 좌표가 되고, 각도마다 *INITIAL_VELOCITY 대신 GENERATION 을 쓴다
+        rigidOmega = self._ResolveRigidAngularVelocity(option, len(RxList))
+        if rigidOmega is None:
+            wxList = option["InitialAngularVelocityX"]
+            wyList = option["InitialAngularVelocityY"]
+            wzList = option["InitialAngularVelocityZ"]
+        else:
+            wxList, wyList, wzList = rigidOmega
         runids = option["runid"]
         offset_distance = option["OffsetDistance"]
         rho = option["Density"]
@@ -2364,6 +2474,8 @@ class KooDynaAdvancedModification:
                 element_ids=rigidify_eids
             )
 
+        # RigidAngularVelocity 의 회전 중심 — 기기를 원점으로 옮기고 강체화한 뒤, 바닥판을 만들기 전(각도와 무관해 한 번)
+        spinCentre = self._DropSpinCentre() if rigidOmega is not None else None
 
         # === FastDOE: 베이스 캐시 초기화 ===
         use_fast_mode = len(RxList) > 1
@@ -2469,7 +2581,14 @@ class KooDynaAdvancedModification:
             print("Impact Point [", impactPoint[0],",", impactPoint[1],"," ,  impactPoint[2], "]")
             impactPoint = [impactPoint[0]+z_direction[0]*offset_distance, impactPoint[1]+z_direction[1]*offset_distance, impactPoint[2]+z_direction[2]*offset_distance]
             print("Impact Point [", impactPoint[0],",", impactPoint[1],"," ,  impactPoint[2], "]")
-            initV = self.dynaImporter.initialManager.CreateInitialVelocity(nsid,0,0,0,0, velocity[0],velocity[1],velocity[2],angular_velocity[0],angular_velocity[1],angular_velocity[2],0.0,0.0,0.0,0.0,0.0,0.0)
+            if rigidOmega is None:
+                initV = self.dynaImporter.initialManager.CreateInitialVelocity(nsid,0,0,0,0, velocity[0],velocity[1],velocity[2],angular_velocity[0],angular_velocity[1],angular_velocity[2],0.0,0.0,0.0,0.0,0.0,0.0)
+            else:
+                # 강체 회전 — *INITIAL_VELOCITY 대신 *INITIAL_VELOCITY_GENERATION (같은 초기조건 관리자라 Fast 캐시·되돌리기·차분을 그대로 탄다)
+                initV = self._CreateDropRigidSpin(nsid, velocity, angular_velocity, spinCentre)
+                print(f"[RigidAngularVelocity] roll={RxOrigin:g} pitch={RyOrigin:g} yaw={RzOrigin:g} OMEGA={initV.OMEGA:.6g} "
+                      f"axis=({initV.NX:.6g}, {initV.NY:.6g}, {initV.NZ:.6g}) V=({velocity[0]:.6g}, {velocity[1]:.6g}, {velocity[2]:.6g}) "
+                      f"(각도 {i + 1}/{len(RxList)}) — 덱 좌표 강체 회전(*INITIAL_VELOCITY_GENERATION)")
 
             # 접촉 처리 (바닥판 생성 전)
             convertToSS = option.get("ConvertGeneralToSingleSurface", True)

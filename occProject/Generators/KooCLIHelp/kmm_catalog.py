@@ -218,6 +218,27 @@ EndTimeTable,/data/DropCampaign/endtime_presim/0/model_endtime.csv
 DropSurface,RigidWall,0,0,0,0,0,0
 **EndDropAttitude""")
 
+DROP_SPIN = _opt("model.k", "DROP_ATTITUDE,1", """**DropAttitude,1
+EulerRolling,12.5,-30
+EulerPitching,40,15
+EulerYawing,0,75
+Gravity,9810
+Height,0,0
+InitialVelocityX,350,-120
+InitialVelocityY,-80,40
+InitialVelocityZ,-4200,-3900
+RigidAngularVelocityX,15.2,-40
+RigidAngularVelocityY,-3.5,22
+RigidAngularVelocityZ,60,-8.5
+OffsetDistance,0.05
+Density,7.85e-09
+YoungsModulus,200000.0
+PoissonRatio,0.3
+tFinal,0.003
+dt,1e-05
+DropSurface,RigidWall,0,0,0,0,0,0
+**EndDropAttitude""")
+
 mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)·높이·바닥판·접촉 자동 구성",
      category="낙하·충격", aliases=["drop", "낙하", "자유낙하", "dropset", "오일러", "바닥판"],
      when=["모델을 지정 자세로 돌려 바닥판 위 높이에 두고 낙하 속도·중력·접촉·CONTROL 을 붙인 해석 덱이 필요할 때",
@@ -231,7 +252,8 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
          K("Height", "실수 리스트", "-", "낙하 높이 → 초기 속도 √(2gh) 가 InitialVelocity 에 더해진다 (모델은 OffsetDistance 간격에 놓임). g 는 Gravity 키, 없으면 모델 재질 밀도로 단위계 판정 (ton-mm-s → 9810, kg-m-s → 9.81)", True),
          K("Gravity", "실수", "모델 재질 밀도로 판정", "자유낙하 g (모델 단위). 재질 밀도 중앙값 < 1e-7 → 9810, 100~1e5 → 9.81. 그 밖(kg-mm-ms·g-cm-s·g-mm-ms 등)은 WARNING 후 옛 추정 → 반드시 지정"),
          K("InitialVelocityX/Y/Z", "실수 리스트", "-", "추가 초기 속도 (각 케이스). Height 속도와 합산", True),
-         K("InitialAngularVelocityX/Y/Z", "실수 리스트", "-", "초기 각속도 (각 케이스)", True),
+         K("InitialAngularVelocityX/Y/Z", "실수 리스트", "-", "초기 각속도 (각 케이스). *INITIAL_VELOCITY 의 절점 회전 속도(VXR~VZR)뿐이라 솔리드만인 기기는 돌지 않는다 — 기기 강체 회전은 RigidAngularVelocity 로 줄 것 (RigidAngularVelocity 를 쓰면 이 키는 뺀다)", True),
+         K("RigidAngularVelocityX/Y/Z", "실수 리스트", "없음 (강체 회전 없음)", "기기 강체 각속도 (바닥 좌표, rad/덱 시간, 각 케이스 — X·Y·Z 셋 모두 각도 수만큼). 각도마다 *INITIAL_VELOCITY 대신 *INITIAL_VELOCITY_GENERATION 을 쓴다: OMEGA = |RotMat·ω|, 축 = 단위(RotMat·ω), 중심 = 쓰는 덱 좌표의 기기 무게중심(SPC 로 묶인 파트·바닥판 제외), VX~VZ = 기존과 같은 병진 속도, 기기 절점 셋 전체(STYP 3·IVATN 1)에 v + ω×(x − c). InitialAngularVelocity 와 같이 오거나 덱에 *INITIAL_VELOCITY 가 이미 있으면 종료 코드 1 (R16 Remark 1 — 두 키워드는 한 덱에 못 쓴다). 키 이름 전체가 같아야 한다"),
          K("OffsetDistance", "실수", "-", "바닥판과의 초기 간격", True),
          K("Density", "실수", "-", "바닥판 밀도 (RigidWall 이면 쓰지 않지만 키는 필요)", True),
          K("YoungsModulus", "실수", "-", "바닥판 탄성계수", True),
@@ -239,7 +261,7 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
          K("tFinal", "실수", "0 (필수로 줄 것)", "종료 시간. tFinal 과 dt 가 둘 다 0 이 아니어야 CONTROL/DATABASE 카드를 쓴다 (EndTimeTable 이 있으면 각도마다 표 값)"),
          K("dt", "실수", "0 (필수로 줄 것)", "d3plot 출력 간격 (키 이름 정확히 dt)"),
          K("DTMIN", "실수", "없음", "CONTROL_TERMINATION DTMIN — dt 붕괴 시 자동 종료 비율"),
-         K("EndTimeTable", "경로", "없음 (모든 각도가 tFinal 하나)", "각도별 종료 시간 표 csv (RIGID_DROP_ENDTIME 의 <base>_endtime.csv). 각도마다 낙하 방향이 0.01° 안으로 같은 줄의 endtim(덱 시간 단위)을 그 각도 덱의 ENDTIM 으로 쓰고 d3plot·INTFOR NPLTC = int(ENDTIM/dt) 를 다시 매긴다 — 한 각도·여러 각도 모두, 맞는 줄이 여럿이면 최대. 표에 없는 각도·잘못된 표·dt 없음은 덱을 쓰지 않고 종료 코드 1. 키 이름 전체가 같아야 한다(대소문자 무관). 상대 경로는 작업폴더 기준"),
+         K("EndTimeTable", "경로", "없음 (모든 각도가 tFinal 하나)", "각도별 종료 시간 표 csv (RIGID_DROP_ENDTIME 의 <base>_endtime.csv). 각도마다 낙하 방향이 0.01° 안으로 같은 줄의 endtim(덱 시간 단위)을 그 각도 덱의 ENDTIM 으로 쓰고 d3plot·INTFOR NPLTC = int(ENDTIM/dt) 를 다시 매긴다 — 한 각도·여러 각도 모두, 맞는 줄이 여럿이면 최대. 표에 없는 각도·잘못된 표·dt 없음은 덱을 쓰지 않고 종료 코드 1. 표 메타 time_unit(s·ms)이 덱 시간 단위(재질 밀도 중앙값 판정)와 다르면 종료 코드 1, 판정이 안 되면 경고만 한다. 키 이름 전체가 같아야 한다(대소문자 무관). 상대 경로는 작업폴더 기준"),
          K("DropSurface", "형식별", "Plane,0,0,0,10,10,10", "Plane,Lx,Ly,Lz,Nx,Ny,Nz | PlaneGraded,Lx,Ly,Lz,Nx,Ny,Nz[,외곽층수=5[,비율=1.5]] | RigidWall,0,0,0,0,0,0 | PlanewithRoughness,Lx,Ly,Lz,Nx,Ny,Nz,모드,Rmax,SF1[,SF2]"),
          K("DeformableToRigid", "True/False", "False", "DEFORMABLE_TO_RIGID_AUTOMATIC 쌍 스위치(SWSET 20 code 2: 접촉력 0→강체 / SWSET 10 code 4: 접촉력 비0→변형체 — 덱 D2R 이 20·10 을 쓰면 비는 번호로 옮긴다). 바닥판 접촉이 S2S 여야 켜진다(매뉴얼 Remark 1) — ConvertGeneralToSingleSurface=False 면 S2S 로 자동 선택"),
          K("D2RTime1/D2RTime2/D2RTime3", "실수", "0 / 1e20 / 0", "전환 검사 시작·종료 시각, 전환 간 최소 간격(TIME3, 0 이면 채터)"),
@@ -301,8 +323,17 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
                      "EndTimeTable": "/data/DropCampaign/endtime_presim/0/model_endtime.csv",
                      "EulerRolling": [0.0, 35.264, 90.0], "EulerPitching": [0.0, 45.0, 0.0],
                      "Height": [1500.0, 1500.0, 1500.0], "TFinal": 0.005, "DT": 1e-05, "DropSurface": ["RigidWall"]}}),
+         Example("충격 직전 상태로 시작 — 자세·무게중심 속도·강체 각속도(RigidAngularVelocity), 두 경우", DROP_SPIN,
+                 explain=["RigidAngularVelocity 는 바닥 좌표 각속도(rad/덱 시간)다. 각도마다 *INITIAL_VELOCITY 대신 *INITIAL_VELOCITY_GENERATION 한 장을 쓴다.",
+                          "OMEGA = |RotMat·ω|, 축 = 단위(RotMat·ω), 중심 = 쓰는 덱 좌표의 기기 무게중심, VX~VZ = RotMat·(InitialVelocity + 높이 속도). Height 0 이면 InitialVelocity 가 무게중심 속도다.",
+                          "기기 절점 셋 전체(STYP 3·IVATN 1)에 v + ω×(x − c) 가 들어가 솔리드·강체 파트·CNRB 절점이 함께 돈다. 로그에 각도마다 '[RigidAngularVelocity] roll=… OMEGA=… axis=…' 한 줄.",
+                          "InitialAngularVelocity 줄은 쓰지 않는다 — 같이 오면 종료 코드 1."],
+                 verify={"mode": "DROP_ATTITUDE", "id": 1, "expect": {
+                     "RigidAngularVelocityX": [15.2, -40.0], "RigidAngularVelocityY": [-3.5, 22.0],
+                     "RigidAngularVelocityZ": [60.0, -8.5], "InitialVelocityZ": [-4200.0, -3900.0],
+                     "Height": [0.0, 0.0], "EulerYawing": [0.0, 75.0], "TFinal": 0.003, "DT": 1e-05}}),
      ],
-     notes=["Euler/Height/InitialVelocity/InitialAngularVelocity 10 개 리스트 키와 OffsetDistance·Density·YoungsModulus·PoissonRatio 는 빠지면 KeyError 로 멈춘다.",
+     notes=["Euler/Height/InitialVelocity/InitialAngularVelocity 10 개 리스트 키와 OffsetDistance·Density·YoungsModulus·PoissonRatio 는 빠지면 KeyError 로 멈춘다 (RigidAngularVelocity 를 쓰면 InitialAngularVelocity 3개 대신 그 3개).",
             "블록 안 빈 줄에서 블록이 끝난다 — 뒤 키는 무시된다.",
             "오일러 회전 순서 R = Rz·Ry·Rx (롤 → 피치 → 요).",
             "누적 낙하·전각도 DOE 는 KooChainRun 시나리오로 돌리는 편이 낫다 (KooChainRun --help drop)."],
