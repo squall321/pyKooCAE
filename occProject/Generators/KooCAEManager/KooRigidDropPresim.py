@@ -436,8 +436,15 @@ def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.
                                initializer=_init_worker, initargs=(body,))
     finished = False
     try:
-        pending = {pool.submit(_job, job) for job in jobs}
-        n = 0
+        # 한꺼번에 다 넣지 않는다 — wait() 는 걸어 둔 future 를 매번 다 훑으므로 6만 개를 걸면 부모가 CPU 를 다 쓴다(840 s 대 289 s)
+        todo, pending, n = iter(jobs), set(), 0
+        in_flight = 4 * nw
+
+        def refill():
+            for job in itertools.islice(todo, max(0, in_flight - len(pending))):
+                pending.add(pool.submit(_job, job))
+
+        refill()
         while pending:
             done, pending = wait(pending, timeout=NO_PROGRESS_S, return_when=FIRST_COMPLETED)
             if not done:
@@ -450,6 +457,7 @@ def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.
                 stops[stop] = stops.get(stop, 0) + 1
                 if n % every == 0 or n == len(jobs):
                     log(f"[presim] {n}/{len(jobs)} 경우 완료 ({time.time() - t_start:.0f} s)")
+            refill()
         finished = True
     finally:
         if not finished:  # 멈춘 작업자를 남기지 않는다 — shutdown(wait=True) 는 멈춘 작업자를 영영 기다린다
