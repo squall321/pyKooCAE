@@ -1602,6 +1602,7 @@ class CumulativeScenarioRunner:
             # 낙하 시뮬레이션 설정
             from Runner.StepConfigBuilder import build_drop_attitude_config
             from Runner.EndTimePresim import endtime_table_for_step
+            from Runner.ImpactConditions import impact_kwargs
             euler = self._get_doe_euler(doe_index, step_num, condition)
             sim_params = self.config.get("simulation_params", {})
 
@@ -1621,6 +1622,8 @@ class CumulativeScenarioRunner:
                 part_moves=self._get_doe_part_moves(doe_index, step_num),
                 # 각도별 종료 시간 표(prepare 의 endtime_presim) — 없으면 None 이라 줄이 없다
                 end_time_table=endtime_table_for_step(self.config, step_num),
+                # 충격 조건 DOE(angle_source impact_conditions) — 높이 0·초기 속도·강체 각속도. 없으면 {} 라 예전 그대로
+                **impact_kwargs(self.config, doe_index, step_num),
             )
 
         elif mode == "IMPACT":

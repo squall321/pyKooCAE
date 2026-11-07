@@ -418,6 +418,25 @@ KooChainRun harvest <dir> --yield-by-part 3:350,7:120  # 파트별
 위험도는 `AdaptiveOrientation.compute_risk` 를 그대로 쓴다
 (per-part z-score 상대 + yield 절대비 병행).
 
+#### 충격 조건 DOE 결과를 원래 각도로 — `harvest --impact-map`
+
+`angle_source.source_type="impact_conditions"`(scenario_reference 참조)로 돌린 시험은 대표 충격 조건만 FEM 으로 돌린다.
+`--impact-map` 은 `output/impact_conditions/index.json` 의 assignments 로, 완료 DOE 의 파트별 최대 응력을
+(원래 낙하 각도, e, 충돌 차수)마다 붙인다.
+
+```bash
+KooChainRun harvest --impact-map <test_dir> [--yield 350 | --yield-by-part 3:350] [--parts 12,15] [-o per_angle_risk.csv]
+```
+
+- `per_angle_risk.csv` — 배정마다 한 줄. 칸은 `angle,roll,pitch,yaw,dx,dy,dz,e,k,doe,distance,peak_stress,worst_pid,worst_part,ratio` 다.
+  - `peak_stress`·`worst_pid`·`worst_part` 는 그 DOE 에서 응력이 가장 큰 파트다(`--parts` 면 그 파트들 가운데).
+  - `ratio` 는 그 파트의 peak/limit 다. limit 은 result.json 의 stress_limit 또는 `--yield`·`--yield-by-part` 이고, 없으면 빈칸이다.
+  - 결과가 없는 DOE 는 빈칸이다.
+- `per_angle_risk_summary.csv` — 원래 각도마다 한 줄. e·충돌 차수 가운데 최대(`governing_e`·`governing_k`·`governing_doe`)와 배정 수·빠진 수를 담는다.
+- 화면에 결과가 있는 DOE 수, 빠진 DOE 번호, 빠진 배정·각도 수를 찍는다. 결과가 하나도 없거나 index.json 이 없으면 종료 코드 1 이다.
+- run ↔ DOE 는 `output/simulation_index.json` 으로 잇는다. 같은 DOE 를 여러 번 돌렸으면 폴더 이름이 가장 늦은 Run 을 쓴다.
+- `--impact-map` 이 없으면 위의 기존 수확 그대로다.
+
 **scenario.json 안에서 자동 해석(`from_run`)하지 않는 이유.** 수백 잡을 던지기
 전에 뽑힌 조건을 사람이 확인해야 하고, 이전 run 디렉토리가 바뀌면 같은
 scenario.json 이 다른 결과를 내 재현성이 깨진다. 파일로 분리하면 목록을 손으로

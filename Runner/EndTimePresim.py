@@ -145,12 +145,13 @@ def write_angles_csv(path, angles):
         w.writerows(angles)
 
 
-def build_option_text(template, angle_file, height, opts):
+def build_option_text(template, angle_file, height, opts, fibonacci=None):
     """KMM RIGID_DROP_ENDTIME 옵션 파일. StepConfigBuilder 처럼 '키,값' 한 줄씩이고 블록 안에 빈 줄이 없다
-    (KMM 은 빈 줄에서 블록을 끝낸다). ExcludePart 는 줄 때만 쓴다."""
+    (KMM 은 빈 줄에서 블록을 끝낸다). ExcludePart 는 줄 때만 쓴다.
+    fibonacci=N 이면 AngleFile 대신 'Fibonacci,N'(실제 낙하 방향 균일 N 점)을 쓴다 — impact_conditions 사전 해석."""
     lines = ["*Inputfile", template, "*Mode", "RIGID_DROP_ENDTIME,1", "**RigidDropEndtime,1",
              f"Height,{height}",
-             f"AngleFile,{angle_file}",
+             f"Fibonacci,{fibonacci}" if fibonacci else f"AngleFile,{angle_file}",
              "Restitution," + ",".join(str(e) for e in opts["restitution"]),
              f"Friction,{opts['friction']}",
              f"PresimGravity,{1 if opts['gravity'] else 0}",

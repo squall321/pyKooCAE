@@ -194,6 +194,12 @@ class CumulativeDesigner:
         num_steps = cumulative_cfg.get("num_steps", 1)
         mode_sequence = self._parse_mode_sequence(cumulative_cfg, num_steps)
 
+        # 충격 조건 DOE(angle_source impact_conditions) — 사전 해석·대표 고르기는 output_dir 를 아는 save_runner_config 가 한다.
+        # 여기서는 쓸 수 있는 시나리오인지 보고 요청만 남긴다(스텝은 거기서 채운다)
+        self._n_scenarios = getattr(self, "_n_scenarios", 0) + 1
+        if (scenario_cfg.get("angle_source") or {}).get("source_type") == "impact_conditions":
+            return self._defer_impact_conditions(scenario_cfg, scenario_name, num_steps, mode_sequence)
+
         # IMPACT 모드 여부 확인
         has_impact = any(m == SimulationMode.IMPACT for m in mode_sequence)
         # VIBRATION 모드 여부 확인
@@ -222,6 +228,47 @@ class CumulativeDesigner:
         else:
             return self._process_drop_scenario(scenario_cfg, scenario_name,
                                                 cumulative_cfg, num_steps, mode_sequence)
+
+    def _defer_impact_conditions(self, scenario_cfg: Dict[str, Any], scenario_name: str, num_steps: int,
+                                 mode_sequence: List[SimulationMode]) -> ScenarioConfig:
+        """angle_source impact_conditions — 조건을 검사하고 요청을 남긴다. 스텝은 save_runner_config 가 채운다."""
+        from Runner.ImpactConditions import ImpactConditionsError, impact_options
+        from Runner.EndTimePresim import presim_options
+        why = []
+        if self._n_scenarios != 1:
+            why.append("첫 시나리오에서만 쓸 수 있다")
+        if num_steps != 1 or mode_sequence != [SimulationMode.DROP]:
+            why.append(f"1 스텝 DROP 시나리오만 된다 (지금 {num_steps} 스텝 {[m.value for m in mode_sequence]})")
+        if scenario_cfg.get("tolerance"):
+            why.append("tolerance 와 함께 쓸 수 없다")
+        if self._part_moves:
+            why.append("part_doe 와 함께 쓸 수 없다")
+        if presim_options(self.user_config.get("simulation_params")) is not None:
+            why.append("simulation_params.endtime_presim 과 함께 쓸 수 없다 (충격 조건 DOE 는 자기 종료 시간 표를 쓴다)")
+        if why:
+            raise ImpactConditionsError("angle_source impact_conditions — " + "; ".join(why) + " (unsupported scenario)")
+        self._impact_request = {
+            "opts": impact_options(scenario_cfg["angle_source"].get("impact_conditions")),
+            "template": select_template_for_scenario(mode_sequence)[0].value,
+        }
+        return ScenarioConfig(scenario_id=f"{scenario_name}_S{num_steps:03d}", scenario_name=scenario_name,
+                              total_steps=num_steps, steps=[])
+
+    def _resolve_impact_conditions(self, runner_config: RunnerConfig, model_file: str, output_dir: str):
+        """impact_conditions 요청이 있으면 사전 해석·대표 고르기를 하고 첫 시나리오에 대표마다 1 스텝 DROP 을 채운다.
+        없으면 None (기존 경로 그대로)."""
+        req = getattr(self, "_impact_request", None)
+        if not req or not runner_config.scenarios:
+            return None
+        from Runner.ImpactConditions import prepare_impact_conditions
+        impact = prepare_impact_conditions(req["opts"], runner_config.simulation_params or {}, runner_config.environment,
+                                           model_file, output_dir, self.scenario_dir)
+        runner_config.scenarios[0].steps = [
+            StepConfig(step_number=1, template=req["template"], mode="DROP", angle_name=c["name"],
+                       angle_roll=c["roll"], angle_pitch=c["pitch"], angle_yaw=c["yaw"],
+                       input_file="Step001.k", output_dir="Step001", dynain_source=None, doe_index=c["doe"] - 1)
+            for c in impact["conditions"]]
+        return impact
 
     def _process_thermal_scenario(self, scenario_cfg: Dict[str, Any],
                                   scenario_name: str,
@@ -820,6 +867,10 @@ class CumulativeDesigner:
         output_dir_path = str(Path(output_path).parent / "output")
         model_file = getattr(self, '_current_model_file', '')
 
+        # 충격 조건 DOE(angle_source impact_conditions) — 여기서야 output_dir 를 안다. 사전 해석·대표 고르기 뒤
+        # 첫 시나리오의 스텝을 채운다. 요청이 없으면 None 이라 아래는 모두 예전 그대로다
+        impact = self._resolve_impact_conditions(runner_config, model_file, output_dir_path)
+
         # 첫 번째 시나리오를 기준으로 Runner 호환 구조 생성
         first_scenario = runner_config.scenarios[0] if runner_config.scenarios else None
 
@@ -874,10 +925,14 @@ class CumulativeDesigner:
 
         # 각도별 종료 시간 사전 해석 (simulation_params.endtime_presim) — 켜져 있으면 KMM RIGID_DROP_ENDTIME 을 돌려
         # DROP 스텝 각도마다 표를 마련한다. 꺼져 있으면 (None, None) 이라 아래 키 자체가 없다. 실패하면 prepare 가 멈춘다.
-        from Runner.EndTimePresim import prepare_endtime_tables
-        endtime_tables, doe_endtim = prepare_endtime_tables(
-            runner_config.simulation_params, runner_config.environment, model_file, output_dir_path,
-            self.scenario_dir, doe_angles, runner_steps)
+        # 충격 조건 DOE 는 자기 표(impact_conditions/endtime.csv)를 쓴다 — endtime_presim 과 함께 쓰는 것은 앞에서 막았다
+        if impact:
+            endtime_tables, doe_endtim = impact["endtime_tables"], impact["doe_endtim"]
+        else:
+            from Runner.EndTimePresim import prepare_endtime_tables
+            endtime_tables, doe_endtim = prepare_endtime_tables(
+                runner_config.simulation_params, runner_config.environment, model_file, output_dir_path,
+                self.scenario_dir, doe_angles, runner_steps)
 
         # IMPACT 모드: doe_positions 생성
         doe_positions = {}
@@ -989,6 +1044,10 @@ class CumulativeDesigner:
                 #   endtime_tables: 스텝 설정 EndTimeTable 줄의 출처, doe_endtim: {doe: {step: endtim}} 보기용
                 **({"endtime_tables": endtime_tables} if endtime_tables else {}),
                 **({"doe_endtim": doe_endtim} if doe_endtim else {}),
+                # 충격 조건 DOE (angle_source impact_conditions). 미사용 시 키 자체가 없어 회귀 0.
+                #   doe_impact_meta: {doe: 원래 각도·e·k·class·contact_type} 보기용, doe_impact_state: {doe: {step: 속도·각속도·높이}} 러너 입력
+                **({"doe_impact_meta": impact["doe_impact_meta"]} if impact else {}),
+                **({"doe_impact_state": impact["doe_impact_state"]} if impact else {}),
                 # batch_koomeshmodifier: 1-step 시나리오에서 헤드노드 일괄 생성 옵션
                 "batch_koomeshmodifier": self._get_batch_koomeshmodifier_flag()
             },

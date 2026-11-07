@@ -377,6 +377,11 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
     harvest_parser.add_argument('--yield-by-part', default=None,
                                 help='파트별 항복강도. "3:350,7:120" 형식. '
                                      '--yield 보다 우선(개별 지정이 더 구체적)')
+    harvest_parser.add_argument('--impact-map', action='store_true',
+                                help='angle_source impact_conditions 시험: output/impact_conditions/index.json 의 '
+                                     '(원래 각도, e, 충격 차수)마다 대표 DOE 결과(파트별 최대 응력)를 붙여 '
+                                     'test_dir/per_angle_risk.csv 와 각도별 최대 per_angle_risk_summary.csv 를 쓴다 '
+                                     '(-o 로 경로, --parts·--yield 도 쓴다)')
 
     # Parse arguments
     args = parser.parse_args()
@@ -449,6 +454,16 @@ def cmd_harvest(args):
     except ValueError as e:
         print(f"❌ {e}")
         sys.exit(1)
+    if getattr(args, "impact_map", False):
+        # 충격 조건 DOE 결과 → 원래 각도마다 (PLAN §8). 아래 기존 수확은 그대로다
+        from Runner.ImpactConditions import ImpactConditionsError, harvest_impact_map
+        try:
+            harvest_impact_map(str(test_dir), out_csv=args.out, parts_filter=set(pid_list) if pid_list else None,
+                               yields=yields)
+        except (ImpactConditionsError, ValueError, OSError) as e:
+            print(f"❌ 수확 실패: {e}")
+            sys.exit(1)
+        return
     if not yields:
         print("항복강도 : 미지정 — 상대 기준(z-score)만 사용 "
               "(통합 리포트에 항복강도가 없다. --yield 로 주면 절대 기준도 켜진다)")
@@ -1650,6 +1665,19 @@ def _prepare_batch_koomeshmodifier(runner_config, output_dir, env):
     n = doe_count
     height_list = ",".join([str(height)] * n)
     zeros = ",".join(["0"] * n)
+    velocity_lines = f"InitialVelocityX,{zeros}\nInitialVelocityY,{zeros}\nInitialVelocityZ,{zeros}"
+    angular_lines = f"InitialAngularVelocityX,{zeros}\nInitialAngularVelocityY,{zeros}\nInitialAngularVelocityZ,{zeros}"
+    # 충격 조건 DOE(angle_source impact_conditions) — DOE 마다 높이 0·초기 속도·강체 각속도 목록. 없으면 위 그대로
+    from Runner.ImpactConditions import impact_state_for_step
+    _states = [impact_state_for_step(runner_config, d, 1) for d in range(1, n + 1)]
+    if any(_states):
+        if not all(_states):
+            raise ValueError(f"doe_impact_state 가 DOE {[d for d, s in enumerate(_states, 1) if not s]} 에 없다")
+        height_list = ",".join(str(s["height"]) for s in _states)
+        velocity_lines = "\n".join(f"InitialVelocity{a},{','.join(str(s['velocity'][i]) for s in _states)}"
+                                   for i, a in enumerate("XYZ"))
+        angular_lines = "\n".join(f"RigidAngularVelocity{a},{','.join(str(s['rigid_angular_velocity'][i]) for s in _states)}"
+                                  for i, a in enumerate("XYZ"))
 
     # batch config 파일 생성
     batch_config_content = f"""*Inputfile
@@ -1666,12 +1694,8 @@ EulerRolling,{','.join(rolls)}
 EulerPitching,{','.join(pitches)}
 EulerYawing,{','.join(yaws)}
 Height,{height_list}
-InitialVelocityX,{zeros}
-InitialVelocityY,{zeros}
-InitialVelocityZ,{zeros}
-InitialAngularVelocityX,{zeros}
-InitialAngularVelocityY,{zeros}
-InitialAngularVelocityZ,{zeros}
+{velocity_lines}
+{angular_lines}
 OffsetDistance,0.1
 Density,{density}
 YoungsModulus,{youngs_modulus}

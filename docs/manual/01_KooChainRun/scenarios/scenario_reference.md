@@ -122,8 +122,42 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 | `pitching_sweep` | `pitching_sweep` | `pitch_min`(-90), `pitch_max`(90), `pitch_step`(10), `roll_fixed`(0), `yaw_fixed`(0) | CumulativeDesigner.py:530-541 |
 | `rolling_sweep` | `rolling_sweep` | `roll_min`(-180), `roll_max`(170), `roll_step`(10), `pitch_fixed`(0), `yaw_fixed`(0) | CumulativeDesigner.py:543-554 |
 | `case_txt_file` | `case_txt_file` | `file_path`, `selected_indices` | CumulativeDesigner.py:556-564 |
+| `impact_conditions` | `impact_conditions` | `num_directions`(20000), `count`(100), `impacts`([1,2]), `severity_fraction`(0.5), `table` 등 — 아래 | Runner/ImpactConditions.py |
 
-(enum: AngleSourceParser.py:23-29)
+(enum: AngleSourceParser.py:23-29. `impact_conditions` 는 enum 이 아니라 CumulativeDesigner 가 따로 처리한다)
+
+#### `angle_source.impact_conditions` — 충돌 직전 상태에서 고른 대표 충격 조건 DOE (Runner/ImpactConditions.py)
+
+수만 각도 낙하의 1·2차 충돌마다 자세·선속도·각속도를 강체 사전 해석으로 뽑고, 그 가운데 대표 몇 개만 FEM 초기 조건으로 짧게 돌린다. 각 대표가 "어느 낙하 각도의 몇 차 충돌" 을 맡는지는 메타데이터로 남기고, 결과는 `harvest --impact-map` 으로 원래 각도에 되돌려 붙인다.
+
+```json
+"angle_source": {"source_type": "impact_conditions",
+  "impact_conditions": {"num_directions": 20000, "restitution": [0.1, 0.3, 0.5], "friction": 0.5, "gravity": true,
+                        "margin_ms": 1.0, "exclude_parts": [], "workers": 8,
+                        "count": 100, "impacts": [1, 2], "severity_fraction": 0.5, "severity_min_distance": 0.2,
+                        "table": null}}
+```
+
+| 필드 | 기본값 | 의미 |
+|---|---|---|
+| `num_directions` | 20000 | 사전 해석 방향 수(실제 낙하 방향 균일 피보나치) |
+| `restitution` / `friction` | [0.1, 0.3, 0.5] / 0.5 | 사전 해석 반발계수 목록 · 마찰계수 |
+| `gravity` | true | 사전 해석 중력. 충격 조건은 실제 상태를 뽑으려고 켠다(종료 시간 표 `endtime_presim` 은 끔이 기본) |
+| `margin_ms` / `exclude_parts` / `workers` | 1.0 / [] / 8 | 충돌 묶음 끝 뒤 여유 · 뺄 파트 · 프로세스 수 |
+| `count` | 100 | 대표 수 = DOE 수 |
+| `impacts` | [1, 2] | 후보 충돌 차수 |
+| `severity_fraction` | 0.5 | 심각도(J_over_mv0·vn_contact/v0) 상위로 고를 몫 |
+| `severity_min_distance` | 0.2 | 심각도 몫의 비최대 억제 거리(특징 f 공간). 0.2 ≈ 자세 11° 또는 속도·각속도 0.2·v0 차이. 0 이면 끈다 |
+| `table` | null | 이미 만든 `<base>_impacts.csv`(옆에 `<base>_rigidbody.json`). 주면 사전 해석을 건너뛴다 |
+
+동작은 다음과 같다.
+1. prepare 가 템플릿에 KMM `RIGID_DROP_ENDTIME`(`Fibonacci,<num_directions>`, `PresimGravity`=gravity)을 돌린다. 방식은 `endtime_presim` 과 같다(러너와 같은 KMM·apptainer 감싸기, 작업 폴더 `<output_dir>/impact_conditions/presim/` 를 KMM 둘째 인자로). 산출 `<base>_impacts.csv`(덱 단위)와 `<base>_rigidbody.json`(바운딩 박스)을 읽는다.
+2. 후보는 k ∈ `impacts` 인 줄이다. 자세·속도·각속도가 같은 줄은 한 상태로 묶는다(1차 충돌 직전 상태는 e 와 무관하다).
+3. 특징 f = [nx, ny, nz, vn_contact/v0, |(vx,vy)|/v0, (RotMat(att)·w)·L/v0] 이다(무차원, L = 바운딩 박스 대각선의 절반). 심각도는 J_over_mv0 × vn_contact/v0 다(충격량 × 접촉점 접근 속도 — 충격 에너지 m_eff·vn² 대용, 사용자 결정 11-07). 1차 충돌은 vn 이 모두 v0 라도 접촉 형태·유효 질량(J)으로 갈리고, 센 2차 슬랩다운이 위로 온다. 같은 상태로 묶인 줄들(1차 충돌은 e 마다 J 가 다르다)은 그 가운데 최대를 쓰고, 그 줄이 조건의 출처(e·J)가 된다. ceil(count·severity_fraction) 개는 심각도 순위를 내려가며 고른다. 이때 이미 고른 심각도 상태와 f 거리가 `severity_min_distance` 보다 가까운 상태는 건너뛴다(비최대 억제, 사용자 결정 11-07 — 실측 2만 방향에서 거의 같은 모서리 슬랩다운 50 개가 몫을 다 먹었다). 심각도가 0.1% 안으로 같은 묶음은 최원점 차례로 돌고(같은 값이 많을 때 파일 순서로 자르면 한쪽 방향에 몰린다), 여기에도 거리 조건이 걸린다. 순위가 다 떨어지면 남은 몫은 덮기로 가고 prepare 가 경고한다. 나머지는 이미 고른 점에서 시작하는 f 공간 최원점 샘플링으로 고른다. 그 밖의 같은 값은 파일에서 먼저 나온 상태가 먼저다. 모든 후보는 가장 가까운 대표에 묶는다.
+4. 대표 하나가 DOE 하나(1 스텝 DROP, 이름 `IC001`…)다. 자세 roll/pitch/yaw = 충돌 순간 자세(att), `InitialVelocityX/Y/Z` = v, `RigidAngularVelocityX/Y/Z` = w(둘 다 바닥 좌표, 덱 단위 — KMM 이 `*INITIAL_VELOCITY_GENERATION` 으로 쓴다, `InitialAngularVelocity*` 줄은 쓰지 않는다), `Height,0`, `EndTimeTable` = `impact_conditions/endtime.csv`(같은 상태 줄들의 endtim_k 최대, 메타 time_unit). 누적 러너·`--mode large-scale`·`batch_koomeshmodifier`(DOE 목록) 세 경로 모두 같다.
+5. `impact_conditions/index.json` 에 format·source(덱·impacts·사전 해석 값)·features(정의·L·정규화·고르기 수·severity_min_distance·심각도 몫)·conditions(DOE → 대표 줄·묶인 수·심각도 값·심각도 순위 또는 coverage·가장 가까운 다른 대표까지 거리)·assignments((원래 각도, e, k) → DOE·거리·낙하 방향 dx/dy/dz)를 남긴다. runner_config 에는 `scenario.doe_impact_meta`(보기용)·`doe_impact_state`(러너 입력)·`endtime_tables`·`doe_endtim` 이 들어간다.
+
+1 스텝 DROP 시나리오(첫 시나리오)에서만 쓴다. `tolerance`·`part_doe`·`simulation_params.endtime_presim` 과 함께 쓰면 prepare 가 `[IMPACT_CONDITIONS_FAILED]` 로 멈춘다. KMM 실패, 산출 없음, 칸 빠짐, 후보 없음도 같다. 대표들의 낙하 방향이 0.01° 안으로 같으면 KMM 은 그들 가운데 endtim 최대를 쓴다(prepare 가 경고한다).
 
 #### `tolerance` (선택, CumulativeDesigner.py:571-608)
 

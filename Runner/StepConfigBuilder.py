@@ -5,7 +5,7 @@ cumulative와 large-scale 모드에서 동일한 옵션으로 step_config를 생
 접촉 설정, D2R, OptCard 등 모든 최신 기능이 양쪽에 동일하게 적용됩니다.
 """
 
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 
 def build_dynamic_relaxation_lines(sim_params: dict, tFinal: float) -> str:
@@ -98,6 +98,9 @@ def build_drop_attitude_config(
     preserve_includes: list = None,
     part_moves: Optional[dict] = None,
     end_time_table: Optional[str] = None,
+    initial_velocity: Optional[Sequence[float]] = None,
+    rigid_angular_velocity: Optional[Sequence[float]] = None,
+    height: Optional[float] = None,
 ) -> str:
     """DROP_ATTITUDE step_config 내용 생성
 
@@ -117,6 +120,12 @@ def build_drop_attitude_config(
         end_time_table: 각도별 종료 시간 표(<base>_endtime.csv) 절대 경로 (simulation_params.endtime_presim).
                     KMM 이 이 자세의 ENDTIM 을 표에서 찾아 쓴다(tFinal 줄은 그대로 남는다).
                     None 이면 줄이 없어 기존 출력과 바이트 동일.
+        initial_velocity: (vx, vy, vz) 바닥 좌표 무게중심 속도, 덱 단위 (angle_source impact_conditions).
+                    None 이면 InitialVelocity 0 그대로.
+        rigid_angular_velocity: (wx, wy, wz) 바닥 좌표 강체 각속도, rad/덱 시간 → RigidAngularVelocityX/Y/Z
+                    (KMM 이 *INITIAL_VELOCITY_GENERATION 으로 쓴다). 주면 절점 회전 속도 InitialAngularVelocity* 줄은
+                    쓰지 않는다(두 키워드는 함께 못 쓴다). None 이면 예전 줄 그대로.
+        height: 낙하 높이 덮어쓰기 (impact_conditions 는 0). None 이면 simulation_params.height.
 
     Returns:
         step_config 파일 내용 문자열
@@ -129,7 +138,16 @@ def build_drop_attitude_config(
     density = sim_params.get("density", 7.85e-9)            # tonne/mm³
     youngs_modulus = sim_params.get("youngs_modulus", 2.0e5)  # MPa
     poisson_ratio = sim_params.get("poisson_ratio", 0.3)
-    sim_height = sim_params.get("height", 1500)            # mm
+    sim_height = sim_params.get("height", 1500) if height is None else height   # mm
+    # 충격 조건 DOE(impact_conditions) — 초기 속도·강체 각속도. 없으면 예전 리터럴 그대로라 바이트 동일
+    if initial_velocity is None:
+        velocity_lines = "InitialVelocityX,0\nInitialVelocityY,0\nInitialVelocityZ,0"
+    else:
+        velocity_lines = "\n".join(f"InitialVelocity{a},{v}" for a, v in zip("XYZ", initial_velocity))
+    if rigid_angular_velocity is None:
+        angular_lines = "InitialAngularVelocityX,0\nInitialAngularVelocityY,0\nInitialAngularVelocityZ,0"
+    else:
+        angular_lines = "\n".join(f"RigidAngularVelocity{a},{w}" for a, w in zip("XYZ", rigid_angular_velocity))
     # 자유낙하 g (모델 단위). 없으면 KMM 이 모델 재질 밀도로 단위계를 판정한다
     gravity_line = f"\nGravity,{sim_params['gravity']}" if sim_params.get("gravity") else ""
     # 이월된 열하중 정책 (THERM→DROP). 미지정이면 줄을 넣지 않는다 → KMM 기본 stress_only
@@ -284,12 +302,8 @@ EulerRolling,{euler['roll']}
 EulerPitching,{euler['pitch']}
 EulerYawing,{euler['yaw']}
 Height,{sim_height}
-InitialVelocityX,0
-InitialVelocityY,0
-InitialVelocityZ,0
-InitialAngularVelocityX,0
-InitialAngularVelocityY,0
-InitialAngularVelocityZ,0
+{velocity_lines}
+{angular_lines}
 OffsetDistance,{offset_distance}{gravity_line}{thermal_carry_line}
 Density,{density}
 YoungsModulus,{youngs_modulus}

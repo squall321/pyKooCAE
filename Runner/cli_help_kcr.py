@@ -54,6 +54,7 @@ TOPICS = [
         "  KooChainRun run runner_config.json --doe N [--resume]       (계산 노드용) DOE 하나 실행",
         "  KooChainRun reprioritize [테스트폴더] [--apply]              완료 결과로 대기 잡 우선순위 재배치",
         "  KooChainRun harvest [테스트폴더] [--top N --hot-only]        취약 각도/위치를 JSON 으로 뽑기",
+        "  KooChainRun harvest --impact-map [테스트폴더]                충격 조건 DOE 결과를 원래 각도·e·충돌 차수로 (per_angle_risk.csv)",
         "",
         "  명령별 전체 옵션: KooChainRun <명령> --help",
         "",
@@ -154,7 +155,24 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
      syntax=['scenarios[].cumulative.mode_sequence: ["DROP", ...]', "scenarios[].angle_source: 자세 목록",
              "simulation_params: 낙하 조건 (KMM DROP_ATTITUDE 로 전달)"],
      keys=[
-         K("angle_source.source_type", "문자", "cuboid_geometry", "cuboid_geometry(면·모서리·꼭짓점 26) | fibonacci_lattice | pitching_sweep | rolling_sweep | case_txt_file"),
+         K("angle_source.source_type", "문자", "cuboid_geometry", "cuboid_geometry(면·모서리·꼭짓점 26) | fibonacci_lattice | pitching_sweep | rolling_sweep | case_txt_file | impact_conditions"),
+         K("angle_source.impact_conditions (source_type impact_conditions)", "객체", "-",
+           "prepare 가 KMM RIGID_DROP_ENDTIME(Fibonacci num_directions, 중력 켬)으로 충돌 직전 상태(<base>_impacts.csv)를 받아 "
+           "대표 count 개를 골라 DOE 하나씩(1 스텝 DROP: 자세=충돌 순간 자세, InitialVelocity=v, RigidAngularVelocity=w, Height 0, "
+           "EndTimeTable=impact_conditions/endtime.csv). 1 스텝 DROP 만, tolerance·part_doe·endtime_presim 과 함께 못 쓴다. "
+           "기록 output/impact_conditions/index.json, runner_config scenario.doe_impact_meta·doe_impact_state"),
+         K("angle_source.impact_conditions.num_directions / restitution / friction / gravity", "정수 / 실수 목록 / 실수 / bool",
+           "20000 / [0.1, 0.3, 0.5] / 0.5 / true", "사전 해석 방향 수(실제 낙하 방향 균일)·반발계수·마찰계수·중력(충격 조건은 켬)"),
+         K("angle_source.impact_conditions.margin_ms / exclude_parts / workers", "실수 / 정수 목록 / 정수", "1.0 / [] / 8",
+           "충돌 묶음 끝 뒤 여유(ms) · 사전 해석에서 뺄 파트 · 프로세스 수"),
+         K("angle_source.impact_conditions.count / impacts / severity_fraction", "정수 / 정수 목록 / 실수", "100 / [1, 2] / 0.5",
+           "대표 수 · 후보 충돌 차수(1 차·2 차) · 심각도(J_over_mv0·vn/v0 = 충격량 × 접촉점 접근 속도, 충격 에너지 대용) 상위로 고를 몫. 나머지는 상태 공간 최원점. "
+           "모든 (각도, e, 차수)는 가장 가까운 대표에 묶인다"),
+         K("angle_source.impact_conditions.severity_min_distance", "실수", "0.2",
+           "심각도 몫의 비최대 억제 — 이미 고른 심각도 상태와 특징 f 거리가 이보다 가까운 상태는 건너뛴다(0.2 ≈ 자세 11° 또는 "
+           "속도·각속도 0.2·v0 차이). 순위가 다 떨어지면 남은 몫은 최원점으로. 0 이면 끈다"),
+         K("angle_source.impact_conditions.table", "경로", "null",
+           "이미 만든 <base>_impacts.csv (옆에 <base>_rigidbody.json). 주면 사전 해석을 건너뛴다"),
          K("angle_source.fibonacci_lattice.num_points", "정수", "26", "피보나치 구면 점 수 (별칭 num_directions)"),
          K("angle_source.cuboid_geometry.include_faces/edges/corners", "bool", "true", "육면체 방향 선택"),
          K("angle_source.fibonacci_lattice.sampling_space", "physical | latlon", "physical", "physical = 실제 낙하 방향 등간격. latlon = 옛 방식(방향이 적도에 몰림)"),
@@ -429,7 +447,8 @@ CMDS = [
     ("stop", "잡 전부 취소", "KooChainRun stop [테스트폴더]"),
     ("run", "계산 노드에서 DOE 하나 실행 (submit 이 부른다)", "KooChainRun run runner_config.json --doe 1 [--resume]"),
     ("reprioritize", "대기 잡 우선순위 재배치", "KooChainRun reprioritize [테스트폴더] [--apply] [--radius-deg 25]"),
-    ("harvest", "취약 조건 JSON 추출", "KooChainRun harvest [테스트폴더] [--top 20] [--hot-only] [--yield 350]"),
+    ("harvest", "취약 조건 JSON 추출 · 충격 조건 결과를 원래 각도로 (--impact-map → per_angle_risk.csv)",
+     "KooChainRun harvest [테스트폴더] [--top 20] [--hot-only] [--yield 350] [--impact-map]"),
 ]
 for name, summary, usage in CMDS:
     mode(name, summary, category="명령", syntax=[usage, f"전체 옵션: KooChainRun {name} --help"])
