@@ -18,6 +18,11 @@ REQUIRED_COLUMNS = ("roll", "pitch", "yaw", "endtim")
 CORE_COLUMNS = ["name", "roll", "pitch", "yaw", "dx", "dy", "dz", "class",
                 "t1_end_ms", "t2_start_ms", "t2_end_ms", "tfinal_ms", "endtim", "governing_e"]
 MATCH_TOL_DEG = 0.01
+# 충돌 상태 표 <base>_impacts.csv (PLAN §5, 덱 단위) — KooRigidDropPresim.impact_rows 칸 차례 + endtim_k
+IMPACTS_FORMAT = "rigid_drop_endtime/impacts v1"
+IMPACT_COLUMNS = ["name", "roll", "pitch", "yaw", "e", "k", "class", "t_start_ms", "t_end_ms", "J_over_mv0",
+                  "contact_x", "contact_y", "contact_z", "contact_type", "nx", "ny", "nz", "att_roll", "att_pitch",
+                  "att_yaw", "vx", "vy", "vz", "wx", "wy", "wz", "vn_contact", "v0", "tfinal_k_ms", "endtim_k"]
 
 
 def drop_direction(roll, pitch, yaw=0.0):
@@ -55,7 +60,7 @@ def euler_from_direction(d, ndigits=2):
     d = d / np.linalg.norm(d)
     roll = -math.degrees(math.asin(max(-1.0, min(1.0, d[1]))))
     pitch = math.degrees(math.atan2(d[0], -d[2]))
-    return round(roll, ndigits), round(pitch, ndigits), 0.0
+    return round(roll, ndigits) + 0.0, round(pitch, ndigits) + 0.0, 0.0  # + 0.0: -0.0 → 0.0 (표에 '-0' 이 안 찍히게)
 
 
 def fibonacci_angles(n):
@@ -91,6 +96,31 @@ def write_endtime_table(path, rows, meta):
         w.writerow(columns)
         for r in rows:
             w.writerow([_fmt(r.get(c)) for c in columns])
+
+
+def write_csv_table(path, rows, columns, meta, fmt):
+    """같은 꼴의 다른 표(<base>_impacts.csv 등): '# format=<fmt>'·'# key=value' 메타 → 머리 줄(columns) → rows(dict) 한 줄씩."""
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        f.write(f"# format={fmt}\n")
+        for k, v in meta.items():
+            f.write(f"# {k}={_fmt(v)}\n")
+        w = csv.writer(f)
+        w.writerow(columns)
+        for r in rows:
+            w.writerow([_fmt(r.get(c)) for c in columns])
+
+
+def read_csv_table(path):
+    """write_csv_table 의 역 → (meta dict, rows: dict 목록, 값은 글 그대로)."""
+    meta, body = {}, []
+    with open(path, newline="", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#"):
+                k, _, v = line[1:].strip().partition("=")
+                meta[k.strip()] = v.strip()
+            elif line.strip():
+                body.append(line)
+    return meta, list(csv.DictReader(body))
 
 
 def read_endtime_table(path):
