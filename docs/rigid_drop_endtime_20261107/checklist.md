@@ -29,4 +29,4 @@
 - [x] 커밋·푸시 — c26e6bb..198f969 (23 커밋)
 - [x] 알림 — pykoocae-53(push 끝), kooremapper-fd(굽기 앞뒤), smarttwinmcp-c8·4c(도구 재생성), kood3plotreader-a9·bf(Post 구면 지도 요청, POST_CONTRACT)
 - [x] 메모리 — pyKooCAE project_rigid_drop_endtime_20261107·MEMORY 줄·project_node_sif_deploy v132
-- [ ] 헤드 /opt 교체·노드 배포 — 사용자에게 묻기 (헤드·노드 = v131)
+- [x] 헤드 /opt 교체 — 사용자 "헤드 /opt 만 v132 로": 14:11, rename 백업 _backup_20261107_141125(v131), apptainer exec 확인. 노드는 v131(VM 꺼짐, 켜면 compute-node-images v132 를 deploy_apptainers.sh --image 로)
