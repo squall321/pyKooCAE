@@ -123,6 +123,16 @@
   - **기존 결함(이번 범위 밖)**: DropAttitude 원점 이동이 원문 *CNRB_INERTIA·*PART_INERTIA 의 XC/YC/ZC 를 옮기지 않는다. 회전 중심은 이제 맞지만, 덱의 그 카드는 옛 자리에 남는다. 공유 쓰기 코드라 다음 판으로 넘긴다.
   - 키가 없을 때 바이트 동일 46 사례를 확인했다. 일부 시험(새 검사 둘·남은 9개)은 다른 세션 굽기 때문에 멈췄고, 재개 뒤 돌린다.
 - **11-07 다른 세션 OOM.** pykoocae-53 의 Post v47 굽기가 08:56 earlyoom 에 끊겼다(가용 5.8%, 스왑 39 GB 가득). 원인은 VSCode·ollama·NewsKooo 등이 크기 때문이다. 다시 굽고 판정하는 약 50분 동안 이쪽 서브에이전트 시험을 멈췄다(요청).
+- **11-07 빌드·컴파일본 e2e.**
+  - 빌드는 b498d17 을 build_without_automatedmodeller.sh --clean 로 했다(캡 scope 24G, 11:29~12:30, 최저 가용 13.9 GB).
+    - KMM 은 443b08a1(GLIBC 2.35), KCR 은 5bb90754(2.35)다.
+    - pybullet.so 는 dist 에 들어갔다(GLIBC 2.34). 컴파일본 `--help` 에 새 모드·키가 보인다.
+  - e2e 판정(/data/koopark/Test_E2E_v132)은 v131 바이너리·SIF 로 먼저 돌렸다. 새 기능 38 은 FAIL, 지킴은 통과였다.
+  - 판정이 바뀐 규칙(가까운 것 건너뛰기)을 상위 N 으로 잘못 보던 것을 탐욕 선택의 필요충분조건으로 고쳤다. 그 뒤 소스 기준값을 다시 만들었다(48 OK).
+  - v132 호스트 엄격 판정은 54 OK·0 FAIL·0 SKIP 이다. 컴파일본 표 = 소스 표 100/100(최대 |Δ| 0)이다.
+- **11-07 노드 배포 창(pykoocae-53).**
+  - 빌드 뒤·굽기 전에 그쪽이 compute-node-images 의 Pre v131·Post v47 을 node001·002 에 보내고 판정했다(12:33~12:40, ALL PASS). VM 은 다시 껐다.
+  - 주의: deploy_apptainers.sh --image 는 헤드 /opt 의 SIF 를 sudo cp 로 제자리에 덮는다. 하드 링크 백업은 같은 inode 라 함께 덮인다. 헤드 교체 백업은 rename 이나 실제 사본으로 한다.
 - **11-07 InitialAngularVelocity 확인.** R16 Vol I 28-121 에서 `*INITIAL_VELOCITY` 의 VXR/VYR/VZR 은 절점 회전 속도다. 솔리드 기기는 돌지 않는다. 강체 회전은 `*INITIAL_VELOCITY_GENERATION` 으로 준다(Remark 1: 둘은 함께 못 쓴다). 2단계 F 에서 새 키로 넣는다.
 - **11-07 KCR 수정(사용자 결정 6 + R3 8, 에이전트 D/G).**
   - **표 줄을 읽을 KMM 을 묻는다.** prepare 가 `--help DROP_ATTITUDE` 로 EndTimeTable(+충격 조건은 RigidAngularVelocityX)을 확인한다. batch_koomeshmodifier 면 그 헤드 노드 KMM(SIF 없고 /opt/ 경로면 koochainrun_path 옆 호스트 KMM — KooChainRun 배치도 같은 함수 batch_kmm_path 를 부른다)이다. 사전 해석도 같은 KMM 으로 돈다. batch 여부는 Designer 가 한 번만 정한다.

@@ -19,11 +19,12 @@
 - [ ] H Post 계약서 — 구면 보고서가 per_angle_risk.csv·index.json 을 그리도록 KooD3plotReader 세션에 요청
 - [x] 적대 리뷰 R1(물리)·R2(KMM 회귀·패키징) — 회귀 없음, 결함 약 25건
 - [x] 리뷰 수정 B(사전 해석: 1 ms·고아·미해결·도달 거리, 8440f64)·A(질량특성·모드: SPC 10%·밀도·키·BOM·메타, 27de66c)
-- [ ] 리뷰 수정 C(DROP_ATTITUDE·파서: 단독 실행·종료 줄·오타 키·v0·회전 중심·경고) — 코드 끝, 재개 뒤 시험 → 커밋
-- [ ] 적대 리뷰 R3(KCR) → 수정 D(버전 확인·시간 상한 자동·exclude_parts 금지·표 메타·rc 3·도달 거리)
-- [ ] 전체 시험 묶음(tests/*.py) 통과
-- [ ] 빌드 — build_without_automatedmodeller.sh --clean (캡 scope), pybullet dist 포함, "호스트 배포 완료", bin mtime
-- [ ] 컴파일본 e2e `/data/koopark/Test_E2E_v132` — v131 아는 불량 먼저
+- [x] 리뷰 수정 C(DROP_ATTITUDE·파서: 단독 실행·종료 줄·오타 키·v0·회전 중심·경고) (c60f9aa·71f2846) + gc.freeze (6504b11)
+- [x] 적대 리뷰 R3(KCR, 바이트 동일 40/45 확인) → 수정 D(버전 확인 헤드·노드·시간 상한 자동·사전 해석 시간 제한·표 메타·비율 harvest·충격 조건 구면 건너뜀) (2c827e2)
+- [x] 전체 시험 묶음 — KMM 회귀 26 + 사전 해석 64 + KCR 120·105 + 1128/1918 파일 바이트 동일
+- [x] e2e 기준값 다시 만듦(소스 b498d17, 48 OK·0 FAIL) — 판정을 가까운 것 건너뛰기 탐욕 조건으로 고침
+- [x] 빌드 — build_without_automatedmodeller.sh --clean (캡 scope 24G, 11:29~12:30, 최저 가용 13.9 GB), KMM 443b08a1·KCR 5bb90754, pybullet.so(GLIBC 2.34) dist 포함, 번들 GLIBC ≤ 2.35, "호스트 배포 완료"
+- [x] 컴파일본 e2e `/data/koopark/Test_E2E_v132` — v131 아는 불량(새 기능 38 FAIL·지킴 통과) 먼저, v132 호스트 엄격 54 OK·0 FAIL·0 SKIP, 표 = 소스 기준 100/100
 - [ ] SIF v132 — 굽기 전 sha·tar 번호 확인, kooremapper-fd 알림, 굽기, SIF e2e, Drive·메일
 - [ ] 커밋·푸시(pathspec)
 - [ ] 알림 — smarttwinmcp(새 kmm 모드·키·scenario 키), kooremapper-fd(굽기 뒤)

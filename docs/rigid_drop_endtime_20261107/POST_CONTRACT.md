@@ -28,9 +28,9 @@
 | `angle` | 원래 낙하 각도 이름(P0001…P20000) |
 | `roll,pitch,yaw` | KMM DROP_ATTITUDE 오일러 각(도) |
 | `dx,dy,dz` | **물리 낙하 방향**(기기 좌표, 기기가 바닥으로 움직이는 방향) = Rz(−yaw)·Ry(−pitch)·Rx(−roll)·(0,0,−1) |
-| `peak_stress` | 묶인 대표 DOE 들의 최대 응력 가운데 최대(결과 없으면 빈칸) |
-| `worst_pid,worst_part` | 그 최대가 나온 파트 |
-| `ratio` | peak/허용값(`--yield` 를 줄 때만) |
+| `peak_stress` | 지배 파트의 최대 응력(결과 없으면 빈칸) |
+| `worst_pid,worst_part` | 지배 파트. 허용값(`--yield`·`--yield-by-part`)이 있으면 σ/허용값 비가 가장 큰 파트, 없으면 응력이 가장 큰 파트 |
+| `ratio` | 지배 파트의 σ/허용값(허용값을 줄 때만). 요약 줄도 이 비로 고른다(일반 harvest 위험도와 같은 기준) |
 | `governing_e,governing_k,governing_doe` | 최대를 낸 반발계수·충돌 차수(1 또는 2)·DOE 번호 |
 | `n_impacts,n_missing` | 이 각도에 묶인 (e, k) 수, 결과 없는 수 |
 
@@ -55,6 +55,10 @@ DOE 번호는 runner_config `scenario.doe_impact_meta` 와 simulation_index.json
 2. 차수별 층(1차만·2차만·최대)을 고를 수 있으면 좋다. 원천은 per_angle_risk.csv 의 `k` 다.
 3. 범례·도움말에 "대표 충격 조건 FEM 에서 펼친 추정값" 이라고 적고, 툴팁에 governing_doe·조건 이름(IC###)·distance 를 보여 주세요.
 4. 빈칸(결과 없는 DOE)은 칠하지 말고 따로 센다.
+
+## 함께 알아 둘 것
+- 충격 조건 시나리오(`scenario.doe_impact_meta` 가 있는 runner_config)는 자동 구면 보고서를 건너뛰고 `postprocess --sphere` 는 rc 1 로 멈춘다(대표 100 개의 충돌 자세를 낙하 각도처럼 그리지 않게). deep report 는 그대로다.
+- 다시 prepare 해 조건이 바뀐 시험 폴더에서는 harvest 가 옛 Run 을 건너뛴다. Run 의 step_config 자세·속도가 index.json 과 다르면 건너뛰고 수를 알린다.
 
 ## 아직 확인하지 못한 것
 - LS-DYNA 라이선스가 만료돼 대표 DOE 를 실제 FEM 으로 돌려 보지 못했다. 강체 회전 초기조건(*INITIAL_VELOCITY_GENERATION)은 매뉴얼 근거와 카드 값 검사까지만 했다.
