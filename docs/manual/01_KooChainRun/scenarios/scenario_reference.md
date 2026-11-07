@@ -202,12 +202,12 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 
 #### `simulation_params.endtime_presim` — 자세별 종료 시간 사전 해석 (선택, Runner/EndTimePresim.py)
 
-모든 자세에 `tFinal` 하나를 쓰는 대신, `prepare` 가 KMM `RIGID_DROP_ENDTIME`(강체 낙하 사전 해석)을 돌려 자세마다 2차 충격이 끝나는 시간(`endtim`)을 정한다. 키가 없거나 `enabled` 가 false 이면 runner_config·스텝 설정은 예전과 바이트까지 같다.
+모든 자세에 `tFinal` 하나를 쓰는 대신, `prepare` 가 KMM `RIGID_DROP_ENDTIME`(강체 낙하 사전 해석)을 돌려 자세마다 종료 시간(`endtim`)을 정한다. 중력 끔(기본)이면 1차 충돌 뒤 접근 속도가 `strong_contact`·v0 이상인 마지막 재접촉 묶음의 끝 + `margin_ms` 이고(v133), 그런 묶음이 없으면 1차 충돌 끝 + `margin_ms` 다. 중력 켬이면 1차 뒤 첫 재접촉 묶음 끝 + `margin_ms`(v132 규칙)다. 키가 없거나 `enabled` 가 false 이면 runner_config·스텝 설정은 예전과 바이트까지 같다.
 
 ```json
 "endtime_presim": {"enabled": true, "table": null, "restitution": [0.1, 0.3, 0.5],
-                   "friction": 0.5, "gravity": false, "margin_ms": 1.0, "exclude_parts": [], "workers": 8,
-                   "presim_timeout_seconds": 21600}
+                   "friction": 0.5, "gravity": false, "strong_contact": 0.3, "margin_ms": 1.0,
+                   "exclude_parts": [], "workers": 8, "presim_timeout_seconds": 21600}
 ```
 
 | 필드 | 기본값 | 의미 |
@@ -216,8 +216,9 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 | `table` | null | 이미 만든 `<base>_endtime.csv` (scenario.json 기준 상대 또는 절대). 주면 사전 해석을 건너뛴다 |
 | `restitution` | [0.1, 0.3, 0.5] | 반발계수 목록. 가장 긴 종료 시간을 쓴다 |
 | `friction` | 0.5 | 바닥 마찰계수 |
-| `gravity` | false | 사전 해석 중력. 낙하 덱에는 중력이 없어(초기 속도만) 기본은 끔이고, 끄면 다시 닿는 충격을 모두 2차 충격으로 센다. 켜면 리포트와 같은 조건(재착지는 뺀다) |
-| `margin_ms` | 1.0 | 2차 충격(없으면 1차 충돌) 끝 뒤 여유(ms) |
+| `gravity` | false | 사전 해석 중력. 낙하 덱에는 중력이 없어(초기 속도만) 기본은 끔이다. 끄면 접근 속도가 `strong_contact`·v0 이상인 마지막 재접촉 묶음 끝까지 본다. 켜면 리포트와 같은 조건(재착지는 뺀다)이고 1차 뒤 첫 재접촉 묶음 끝까지 본다(v132 규칙, `strong_contact` 는 쓰지 않는다) |
+| `strong_contact` | 0.3 | 중력 끔 규칙의 문턱(접근 속도 ÷ v0, 0 보다 큰 실수). 묶음은 1 ms 간격으로 나누고 묶음 세기는 묶음 안 최대 접근 속도다. 낮추면 약한 늦은 스침까지 기다려 `endtim` 이 길어지고, 높이면 짧아진다. KMM 옵션 파일에 `PresimStrongContact,<값>` 줄로 넘긴다(v133 이상 KMM). `gravity` 가 true 이면 쓰지 않고 경고만 한다 |
+| `margin_ms` | 1.0 | 종료 시간을 정한 묶음(중력 끔은 마지막 강한 재접촉, 켬은 첫 재접촉, 없으면 1차 충돌) 끝 뒤 여유(ms) |
 | `exclude_parts` | [] | 사전 해석에서 뺄 PID(받침·고정구 등). 병진 SPC 가 파트 절점의 10% 이상인 파트(바닥판 등)와 병진이 묶인 `*MAT_RIGID` 파트는 KMM 이 자동으로 뺀다. 10% 미만이면 기기 파트로 넣고 `SPC_ON_DEVICE_PART` 경고를 남기고, 뺄 파트가 기기 파트와 절점을 나누면 종료 코드 1 이다 |
 | `workers` | 8 | 사전 해석 프로세스 수 |
 | `presim_timeout_seconds` | 21600 | 사전 해석 KMM 시간 제한(초, 6 시간 — 러너 KMM 의 `timeout_koomeshmodifier_seconds` 와 따로). 넘으면 KMM 프로세스 묶음(apptainer·작업자)째 멈추고 prepare 가 멈춘다 |
@@ -226,15 +227,15 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 
 동작은 다음과 같다.
 1. DOE 의 **DROP 스텝** 자세(roll, pitch, yaw)를 값으로 중복 없이 모은다. 열(THERM) 스텝의 0/0/0 은 빠진다. 이를 `<output_dir>/endtime_presim/1/angles.csv` 에 쓴다.
-2. 같은 폴더에 KMM 옵션 파일 `rigid_drop_endtime.txt` 를 쓰고 표 줄을 읽을 KMM 으로 돌린다. 실행 파일은 러너와 같은 `environment.koomeshmodifier_path`(`batch_koomeshmodifier` 면 그 헤드 노드 KMM — SIF 가 없고 `/opt/` 경로면 `koochainrun_path` 옆 호스트 KMM), 컨테이너는 `apptainer_sif` 가 있으면 감싼다. apptainer 임시 폴더는 `environment.apptainer_tmpdir`(없으면 시스템 임시 폴더) 아래 이번 실행 것을 쓰고 끝나면 지운다. 시간 제한은 `presim_timeout_seconds`(기본 6 시간)이고, 넘으면 KMM 프로세스 묶음째 멈춘다. `*Inputfile` 은 러너 1 스텝과 같은 템플릿 절대 경로라서 `*INCLUDE` 가 그대로 풀린다. 작업 폴더는 KMM 둘째 인자로 넘긴다. KMM 출력은 `kmm_stdout.log` 에 남는다.
-3. 작업 폴더의 `<base>_endtime.csv` 를 읽는다. 모든 자세가 있고 `endtim > 0` 이어야 한다. 표 메타 `height`·`v0`(√(2gh), 메타 `units` 기준, `simulation_params.gravity` 가 있으면 그 g)가 이 시나리오 낙하와 상대 1e-3 넘게 다르면 멈춘다(`table` 지름길도 같다). 메타 `gravity`(0/1)가 이 옵션 `gravity` 와 다르면 멈춘다. 메타 `units` 가 mm-kg-ms·mm-g-ms 인데 `simulation_params.gravity` 가 없으면 멈춘다 — FEM 의 KMM DROP_ATTITUDE 는 그 단위의 g 를 재질 밀도로 알아내지 못하고 9810(mm-t-s 값) 또는 9.81 을 쓴다(그 단위의 g 는 0.00981). 메타 `deck` 이 템플릿과 다르거나 `t_sep_ms` 메타가 없으면 경고만 한다. 엑셀이 붙이는 BOM 은 떼고 읽는다. 표에 `reach`(첫 접촉점에서 바닥 위 접촉점까지 가장 먼 거리)가 있으면 최대값을 찍고, 메시 바닥판 한 변의 절반보다 길면 경고한다(`drop_surface.size` 를 한 변 2·reach 이상으로 — RigidWall 은 무관). `n_unresolved > 0` 인 각도(중력 끔에서 2차 충격도 바닥 벗어남도 없이 시간 상한에서 끝나 endtim 이 짧을 수 있는 각도) 수도 경고한다.
+2. 같은 폴더에 KMM 옵션 파일 `rigid_drop_endtime.txt` 를 쓰고 표 줄을 읽을 KMM 으로 돌린다. 중력 끔이면 블록의 `PresimGravity,0` 다음 줄이 `PresimStrongContact,<strong_contact>` 다(중력 켬은 이 줄이 없어 v132 와 같다). 실행 파일은 러너와 같은 `environment.koomeshmodifier_path`(`batch_koomeshmodifier` 면 그 헤드 노드 KMM — SIF 가 없고 `/opt/` 경로면 `koochainrun_path` 옆 호스트 KMM), 컨테이너는 `apptainer_sif` 가 있으면 감싼다. apptainer 임시 폴더는 `environment.apptainer_tmpdir`(없으면 시스템 임시 폴더) 아래 이번 실행 것을 쓰고 끝나면 지운다. 시간 제한은 `presim_timeout_seconds`(기본 6 시간)이고, 넘으면 KMM 프로세스 묶음째 멈춘다. `*Inputfile` 은 러너 1 스텝과 같은 템플릿 절대 경로라서 `*INCLUDE` 가 그대로 풀린다. 작업 폴더는 KMM 둘째 인자로 넘긴다. KMM 출력은 `kmm_stdout.log` 에 남는다.
+3. 작업 폴더의 `<base>_endtime.csv` 를 읽는다. 모든 자세가 있고 `endtim > 0` 이어야 한다. 표 메타 `height`·`v0`(√(2gh), 메타 `units` 기준, `simulation_params.gravity` 가 있으면 그 g)가 이 시나리오 낙하와 상대 1e-3 넘게 다르면 멈춘다(`table` 지름길도 같다). 메타 `gravity`(0/1)가 이 옵션 `gravity` 와 다르면 멈춘다. 메타 `units` 가 mm-kg-ms·mm-g-ms 인데 `simulation_params.gravity` 가 없으면 멈춘다 — FEM 의 KMM DROP_ATTITUDE 는 그 단위의 g 를 재질 밀도로 알아내지 못하고 9810(mm-t-s 값) 또는 9.81 을 쓴다(그 단위의 g 는 0.00981). 메타 `deck` 이 템플릿과 다르거나 `t_sep_ms` 메타가 없으면 경고만 한다. 메타 `endtime_rule` 이 없으면(v132 표 — 1차 뒤 첫 재접촉 규칙이라 꼭짓점마다 갈라져 오는 슬랩다운의 더 센 뒷부분을 놓칠 수 있다) 경고한다(메타 `gravity` 가 1 인 표는 v133 도 같은 규칙이라 경고하지 않는다). `endtime_rule=last_strong`(중력 끔) 표의 메타 `strong_contact` 가 이 옵션 `strong_contact` 와 1e-9 넘게 다르면 멈추고, `first_recontact`(중력 켬) 표는 `strong_contact` 를 보지 않는다(`table` 지름길도 같다). 엑셀이 붙이는 BOM 은 떼고 읽는다. 표에 `reach`(첫 접촉점에서 바닥 위 접촉점까지 가장 먼 거리)가 있으면 최대값을 찍고, 메시 바닥판 한 변의 절반보다 길면 경고한다(`drop_surface.size` 를 한 변 2·reach 이상으로 — RigidWall 은 무관). `n_unresolved > 0` 인 각도(중력 끔 사전 해석이 끝을 보지 못하고 시간 상한 — v133 은 이벤트 상한도 — 에서 멈춰 endtim 이 짧을 수 있는 각도) 수도 경고한다.
 4. runner_config 에 `scenario.endtime_tables`(표 절대 경로)와 `scenario.doe_endtim`(`{doe: {step: endtim}}`, 보기용)을 남긴다.
 5. 모든 DROP 스텝 설정(누적 러너·`--mode large-scale`·`batch_koomeshmodifier`)의 DropAttitude 블록에 `EndTimeTable,<표 절대 경로>` 줄이 들어간다. KMM 은 자세마다 낙하 방향이 0.01° 안인 줄의 `endtim` 을 ENDTIM 으로 쓴다(`tFinal` 줄은 남는다).
 6. endtim 이 `tFinal` 보다 길면 시간 제한을 늘린다. 스텝 배율 r = ceil(그 스텝 endtim ÷ tFinal)(1 이상, 표에 없는 스텝은 1)이고 DOE 배율 F = Σ 스텝 (r + DR 이 켜진 2 스텝부터 1) 이다 — r 이 모두 1 이면 예전 step/DR 배율과 같다. submit(누적)과 rerun 의 DOE `time_limit` 은 F 의 최대 배, `--sequential` 은 슬롯마다 DOE 의 F 합의 최대 배, `--mode large-scale` 배열은 그 배열 DOE 의 r 최대 배, 러너의 스텝 `timeout_per_step_seconds` 와 deep report(`deep_timeout_seconds`·`deep_time_limit`)는 그 스텝의 r 배다. `time_limit` 은 Slurm 형식(`HH:MM:SS`·`D-HH:MM:SS`·`D-HH`·`MM` …)을 읽고, 파티션 최대에서 자르며 모자라면 🔴 경고를 찍는다. prepare·submit 이 늘린 값을 찍는다.
 
-**러너 KMM 버전 확인.** 표를 쓰기 전에(사전 해석·`table` 지름길 모두) prepare 가 표 줄을 읽을 KMM 에 `--help DROP_ATTITUDE` 를 물어 `EndTimeTable` 이 있는지 본다. 러너와 같은 실행 파일(`environment.koomeshmodifier_path`, `batch_koomeshmodifier` 면 그 헤드 노드 KMM)이고 `apptainer_sif` 가 있으면 같은 apptainer 감싸기다. 그래서 `table` 을 줘도 헤드 노드에서 그 KMM(또는 SIF)이 돌아야 한다. 노드에서도 본다 — 누적 러너는 스텝 설정에 `EndTimeTable`·`RigidAngularVelocity` 줄이 있는데 KMM 출력에 `[EndTimeTable]`·`[RigidAngularVelocity]` 표식이 없으면 그 스텝을 실패로 두고(`[KMM version skew]` 로그), `--mode large-scale` 배열 스크립트도 KMM 출력을 `kmm_drop_attitude.log` 에 남겨 같은 표식을 grep 한다. 없으면(v131 이하) `(KMM version skew)` 로 멈춘다 — 옛 KMM 은 `EndTimeTable,<경로>` 줄을 다른 키로 잘못 읽는다(경로에 height 가 들면 Height=0, tfinal·density·dropsurface 를 덮고, runid 가 들면 죽는다). `apptainer_sif` 를 v132 이상 SIF 로(SIF 없이 쓰면 `koomeshmodifier_path` 를 v132 이상으로) 바꾼다. 결과는 prepare 마다 한 번만 묻는다.
+**러너 KMM 버전 확인.** 표를 쓰기 전에(사전 해석·`table` 지름길 모두) prepare 가 표 줄을 읽을 KMM 에 `--help DROP_ATTITUDE` 를 물어 `EndTimeTable` 이 있는지 본다. 러너와 같은 실행 파일(`environment.koomeshmodifier_path`, `batch_koomeshmodifier` 면 그 헤드 노드 KMM)이고 `apptainer_sif` 가 있으면 같은 apptainer 감싸기다. 그래서 `table` 을 줘도 헤드 노드에서 그 KMM(또는 SIF)이 돌아야 한다. 노드에서도 본다 — 누적 러너는 스텝 설정에 `EndTimeTable`·`RigidAngularVelocity` 줄이 있는데 KMM 출력에 `[EndTimeTable]`·`[RigidAngularVelocity]` 표식이 없으면 그 스텝을 실패로 두고(`[KMM version skew]` 로그), `--mode large-scale` 배열 스크립트도 KMM 출력을 `kmm_drop_attitude.log` 에 남겨 같은 표식을 grep 한다. 없으면(v131 이하) `(KMM version skew)` 로 멈춘다 — 옛 KMM 은 `EndTimeTable,<경로>` 줄을 다른 키로 잘못 읽는다(경로에 height 가 들면 Height=0, tfinal·density·dropsurface 를 덮고, runid 가 들면 죽는다). `apptainer_sif` 를 v132 이상 SIF 로(SIF 없이 쓰면 `koomeshmodifier_path` 를 v132 이상으로) 바꾼다. 중력 끔 사전 해석은 돌리기 전에 같은 KMM 에 `--help RIGID_DROP_ENDTIME` 도 물어 `PresimStrongContact` 가 있는지 본다. 없으면(v132 이하 — 그 줄에서 종료 코드 1) `(KMM too old for strong_contact)` 로 멈추니 v133 이상 SIF(또는 KMM)로 바꾼다. `table` 지름길·중력 켬은 그 줄을 쓰지 않아 묻지 않는다. 결과는 prepare 마다 (실행 파일, SIF, 모드) 하나에 한 번만 묻는다.
 
-KMM 실패(종료 코드≠0·시간 초과), 표 없음, 빠진 자세, `endtim ≤ 0`, `table` 파일 없음, 표의 낙하 조건이 다름, 러너 KMM 이 너무 옛것이면 prepare 가 `[ENDTIME_PRESIM_FAILED]` 와 이유를 찍고 종료 코드 1 로 멈춘다. KMM 종료 코드 3 은 덱을 읽으며 요소를 버렸다는 뜻이다(예: `*PART_INERTIA` 파트) — 질량특성·껍질이 모자랄 수 있으니 `<base>_rigidbody.json` 의 warnings 를 보고, 받아들일 수 있으면 검토한 표를 `table` 로 준다. 조용히 `tFinal` 로 돌아가지 않는다. `table` 의 자세는 낙하 방향 d = Rz(-yaw)·Ry(-pitch)·Rx(-roll)·(0,0,-1) 로 찾는다. 같은 방향이면 오일러 표기가 달라도 된다.
+KMM 실패(종료 코드≠0·시간 초과), 표 없음, 빠진 자세, `endtim ≤ 0`, `table` 파일 없음, 표의 낙하 조건이 다름, 표 `strong_contact` 가 옵션과 다름, 러너 KMM 이 너무 옛것이면 prepare 가 `[ENDTIME_PRESIM_FAILED]` 와 이유를 찍고 종료 코드 1 로 멈춘다. KMM 종료 코드 3 은 덱을 읽으며 요소를 버렸다는 뜻이다(예: `*PART_INERTIA` 파트) — 질량특성·껍질이 모자랄 수 있으니 `<base>_rigidbody.json` 의 warnings 를 보고, 받아들일 수 있으면 검토한 표를 `table` 로 준다. 조용히 `tFinal` 로 돌아가지 않는다. `table` 의 자세는 낙하 방향 d = Rz(-yaw)·Ry(-pitch)·Rx(-roll)·(0,0,-1) 로 찾는다. 같은 방향이면 오일러 표기가 달라도 된다.
 
 한계가 둘 있다.
 - 누적 2 스텝부터는 앞 스텝의 변형된 `_dti.k` 에서 시작하지만, 사전 해석은 원래 템플릿의 강체 형상으로 한다(근사).

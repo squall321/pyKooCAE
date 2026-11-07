@@ -19,8 +19,12 @@
   [9] 수정 묶음 — BOM 표, 표 메타 gravity·deck·mm-kg-ms g, numpy 찾기(옛 식과 같고 2만×2만 < 30 초), presim_timeout_seconds,
       batch_koomeshmodifier 의 호스트 KMM 묻기, 러너 노드 표식 확인, 대규모 배열 --time·스크립트 grep, deep report 배율,
       DOE 배율 F_d(짧은 표 = 예전 step/DR), _hms_scale Slurm 형식
+  [10] v133 strong_contact — table 메타 endtime_rule(없음 → v132 경고, 중력 켬 표는 빼고)·last_strong strong_contact(1e-9 넘게
+      다르면 멈춤)·first_recontact(안 봄)·모르는 규칙, 사전 해석 중력 켬은 v132 와 같은 옵션 파일(줄·RIGID_DROP_ENDTIME 확인 없음)
   ([5] 에 러너 KMM 버전(v131 도움말·도움말 없는 옛 바이너리·table 지름길), KMM rc 3, 표 v0 다름, 시간 초과면 묶음째 죽임,
-   [4] 에 표 높이 다름 → 멈춤)
+   사전 해석 KMM 이 PresimStrongContact 를 모름(v132 도움말 — 사전 해석 전에 멈춤)·표 strong_contact 다름,
+   [4] 에 표 높이 다름 → 멈춤, [1] 에 strong_contact 옵션 값·PresimStrongContact 줄, [6] 에 --help RIGID_DROP_ENDTIME 감싸기·
+   (실행 파일, SIF, 모드) 기억)
 """
 import contextlib
 import copy
@@ -66,6 +70,11 @@ if sys.argv[1:2] == ["--help"]:   # 러너 KMM 버전 확인 — 부를 때마�
     open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_help_calls.txt"), "a").write(" ".join(sys.argv[1:]) + "\n")
     if MODE == "nohelp":   # 도움말이 없는 옛 바이너리 — '--help' 를 옵션 파일로 읽다 죽는다
         raise FileNotFoundError("DROP_ATTITUDE/--help")
+    if sys.argv[2:3] == ["RIGID_DROP_ENDTIME"]:   # 사전 해석 KMM 의 v133 키 확인 — v132help·oldhelp 는 그 키를 모른다
+        print("RIGID_DROP_ENDTIME — 가짜 도움말\n  Height  [실수 · 필수]\n  PresimGravity  [0|1 · 기본 0]")
+        if MODE not in ("v132help", "oldhelp"):
+            print("  PresimStrongContact  [실수 · 기본 0.3]")
+        sys.exit(0)
     print("DROP_ATTITUDE — 가짜 도움말\n  Height  [실수]\n  tFinal  [실수]")
     if MODE != "oldhelp":
         print("  EndTimeTable  [경로]\n  RigidAngularVelocityX/Y/Z  [실수 리스트]")
@@ -81,6 +90,8 @@ with open(os.path.join(work, "fake_kmm_call.json"), "w", encoding="utf-8") as f:
 print("fake KMM", MODE)
 if MODE == "rc1":
     print("가짜 실패"); sys.exit(1)
+if MODE == "v132help" and "PresimStrongContact" in kv:   # v132 KMM 은 모르는 블록 키에서 죽는다
+    print("[RIGID_DROP_ENDTIME] 모르는 키 PresimStrongContact (가짜 v132)"); sys.exit(1)
 if MODE == "rc3":
     print("🔴 요소 소실: 읽기에서 요소 12개를 버렸다 (가짜)"); sys.exit(3)
 if MODE == "sleep":
@@ -106,10 +117,16 @@ for i, a in enumerate(angles):
                  "n_unresolved": (1 if MODE == "farreach" and i in (0, 2) else 0)}})
 base = os.path.splitext(os.path.basename(template))[0]
 v0 = (2 * 9810.0 * float(kv["Height"])) ** 0.5 * (1.01 if MODE == "badv0" else 1.0)   # E 와 같은 메타 — √(2gh), 덱 단위
-write_endtime_table(os.path.join(work, base + "_endtime.csv"), rows,
-                    {{"deck": template, "units": "mm-t-s", "time_unit": "s", "height": kv["Height"], "v0": v0,
-                     "restitution": kv["Restitution"], "friction": kv["Friction"], "gravity": kv["PresimGravity"],
-                     "margin_ms": kv["MarginMs"], "t_sep_ms": 1.0}})
+meta = {{"deck": template, "units": "mm-t-s", "time_unit": "s", "height": kv["Height"], "v0": v0,
+        "restitution": kv["Restitution"], "friction": kv["Friction"], "gravity": kv["PresimGravity"],
+        "margin_ms": kv["MarginMs"], "t_sep_ms": 1.0}}
+if MODE not in ("v132help", "v132table"):   # v133 KMM 의 규칙 메타 — 중력 끔 last_strong + strong_contact, 켬 first_recontact
+    if kv["PresimGravity"] == "1":
+        meta["endtime_rule"] = "first_recontact"
+    else:
+        meta.update(endtime_rule="last_strong",
+                    strong_contact="0.5" if MODE == "badstrong" else kv.get("PresimStrongContact", "0.3"))
+write_endtime_table(os.path.join(work, base + "_endtime.csv"), rows, meta)
 '''
 
 
@@ -124,6 +141,12 @@ def write_fake(tmp, mode="ok"):
     Path(p).write_text(FAKE_KMM.format(py=sys.executable, gen=str(GEN), mode=mode), encoding="utf-8")
     os.chmod(p, 0o755)
     return p
+
+
+def help_calls(tmp):
+    """가짜 KMM 이 받은 --help 호출(그 폴더의 fake_help_calls.txt) — ['--help DROP_ATTITUDE', ...]."""
+    p = os.path.join(tmp, "fake_help_calls.txt")
+    return Path(p).read_text(encoding="utf-8").splitlines() if os.path.exists(p) else []
 
 
 def new_tmp(prefix):
@@ -346,12 +369,40 @@ def test_pure():
             nbad += MARK in str(e) and "bad value" in str(e)
     check(f"잘못된 값 {len(bad)}가지 → 표식 붙은 오류", nbad == len(bad), f"{nbad}/{len(bad)}")
 
+    o = EP.presim_options({"endtime_presim": {"enabled": True}})
+    check("strong_contact 기본 0.3", o["strong_contact"] == 0.3 == EP.DEFAULTS["strong_contact"], str(o))
+    good_sc = [0.5, 1, 2.0, 1e-6]
+    check("strong_contact 0.5·1·2.0·1e-6 → 그대로", all(
+        EP.presim_options({"endtime_presim": {"enabled": True, "strong_contact": v}})["strong_contact"] == v for v in good_sc))
+    bad_sc = [0, 0.0, -0.1, True, False, "0.3", None, float("nan"), [0.3]]
+    nbad = 0
+    for v in bad_sc:
+        try:
+            EP.presim_options({"endtime_presim": {"enabled": True, "strong_contact": v}})
+        except EP.EndTimePresimError as e:
+            nbad += (MARK in str(e) and "strong_contact 는 0.0 보다 큰 숫자여야 한다" in str(e) and "bad value" in str(e))
+    check(f"strong_contact 0·음수·bool·글자·None·nan·목록 {len(bad_sc)}가지 → 값 오류 (0 보다 커야 한다)", nbad == len(bad_sc),
+          f"{nbad}/{len(bad_sc)}")
+    warn = []
+    for extra in ({"strong_contact": 0.5}, {}):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            EP.presim_options({"endtime_presim": {"enabled": True, "gravity": True, **extra}})
+        warn.append(buf.getvalue().count("ignored with gravity"))
+    check("gravity=true 에 strong_contact 를 주면 경고 한 줄(쓰지 않음), 안 주면 경고 없음", warn == [1, 0], str(warn))
+
     opts = {**EP.DEFAULTS, "enabled": True, "exclude_parts": [23, 24]}
     text = EP.build_option_text("/m/Deck.k", "/w/angles.csv", 1500, opts)
     want = ("*Inputfile\n/m/Deck.k\n*Mode\nRIGID_DROP_ENDTIME,1\n**RigidDropEndtime,1\nHeight,1500\n"
             "AngleFile,/w/angles.csv\nRestitution,0.1,0.3,0.5\nFriction,0.5\nPresimGravity,0\nMarginMs,1.0\n"
             "ExcludePart,23,24\nWorkers,8\n**EndRigidDropEndtime\n*End\n")
     check("KMM 옵션 파일 글 (계약 §1 그대로)", text == want, repr(text))
+    text = EP.build_option_text("/m/Deck.k", "/w/angles.csv", 1500, opts, strong_contact=0.3)
+    check("strong_contact 를 주면 PresimGravity 바로 뒤 PresimStrongContact,0.3 한 줄만 더해진다",
+          text == want.replace("PresimGravity,0\n", "PresimGravity,0\nPresimStrongContact,0.3\n"), repr(text))
+    ic = EP.build_option_text("/m/Deck.k", None, 1000, {**opts, "gravity": True, "exclude_parts": []}, fibonacci=12)
+    check("impact_conditions 꼴(Fibonacci, strong_contact 안 줌) → PresimStrongContact 줄 없음",
+          "PresimStrongContact" not in ic and "Fibonacci,12\nRestitution" in ic and "PresimGravity,1\nMarginMs" in ic, repr(ic))
     text = EP.build_option_text("/m/Deck.k", "/w/angles.csv", 800.0,
                                 {**opts, "exclude_parts": [], "gravity": True, "workers": 2})
     check("ExcludePart 는 줄 때만 · PresimGravity,1(켬)", "ExcludePart" not in text and "PresimGravity,1\n" in text
@@ -402,8 +453,13 @@ def test_enabled(kcr):
     opt = Path(work, "rigid_drop_endtime.txt").read_text(encoding="utf-8")
     want = (f"*Inputfile\n{os.path.join(tmp, 'model.k')}\n*Mode\nRIGID_DROP_ENDTIME,1\n**RigidDropEndtime,1\n"
             f"Height,1000\nAngleFile,{os.path.join(work, 'angles.csv')}\nRestitution,0.1,0.3,0.5\nFriction,0.5\n"
-            f"PresimGravity,0\nMarginMs,1.0\nExcludePart,99\nWorkers,8\n**EndRigidDropEndtime\n*End\n")
-    check("옵션 파일: 템플릿 절대 경로·높이·AngleFile·기본값·ExcludePart", opt == want, repr(opt))
+            f"PresimGravity,0\nPresimStrongContact,0.3\nMarginMs,1.0\nExcludePart,99\nWorkers,8\n**EndRigidDropEndtime\n*End\n")
+    check("옵션 파일: 템플릿 절대 경로·높이·AngleFile·기본값(PresimStrongContact,0.3 — 중력 끔)·ExcludePart", opt == want,
+          repr(opt))
+    check("KMM 에 묻기: --help DROP_ATTITUDE(표 줄) → --help RIGID_DROP_ENDTIME(PresimStrongContact) 각 한 번",
+          help_calls(tmp) == ["--help DROP_ATTITUDE", "--help RIGID_DROP_ENDTIME"], str(help_calls(tmp)))
+    check("v133 표(endtime_rule=last_strong·strong_contact=0.3) → v132 표 경고·strong_contact 오류 없음",
+          "v132 first-recontact table" not in out and "strong_contact" not in out, out[-400:])
     call = json.load(open(os.path.join(work, "fake_kmm_call.json"), encoding="utf-8"))
     check("호출: [KMM, 옵션 이름, 작업 폴더 절대 경로] (apptainer 없음)",
           call["argv"] == [fake, "rigid_drop_endtime.txt", work], str(call["argv"]))
@@ -584,6 +640,13 @@ def test_failures():
     run_case("KMM 종료 코드 3 (덱 요소 소실) — 이유·rigidbody.json 안내", "rc3", on,
              ["요소를 버렸다", "model_rigidbody.json", "table 로", "KMM rc=3 element loss"])
     run_case("사전 해석 표 v0 가 이 낙하 √(2gh) 와 다름", "badv0", on, ["v0", "table drop mismatch"])
+    t_old = run_case("사전 해석 KMM 이 PresimStrongContact 를 모름 (v132 도움말, 중력 끔)", "v132help", on,
+                     ["KMM too old for strong_contact", "PresimStrongContact", "v133", "apptainer_sif"])
+    check("  … 사전 해석을 돌리기 전에 멈춘다 (KMM 호출 기록 없음) · 물은 것 DROP_ATTITUDE → RIGID_DROP_ENDTIME",
+          not os.path.exists(os.path.join(t_old, "output", "endtime_presim", "1", "fake_kmm_call.json"))
+          and help_calls(t_old) == ["--help DROP_ATTITUDE", "--help RIGID_DROP_ENDTIME"], str(help_calls(t_old)))
+    run_case("사전 해석 표 strong_contact(0.5) ≠ 옵션(기본 0.3)", "badstrong", on,
+             ["strong_contact mismatch", "strong_contact=0.5", "strong_contact 0.3 와 다르다"])
 
     tmp = new_tmp("etp_stale_")
     code, out = cli_prepare(tmp, with_presim(scen_faces2(tmp), on, koomeshmodifier_path=write_fake(tmp, "ok")))
@@ -622,8 +685,9 @@ def test_apptainer():
 
         def communicate(self, timeout=None):
             self.timeout = timeout
-            if "--help" in self.cmd:   # 러너 KMM 버전 확인
-                return "  EndTimeTable  [경로]\n", None
+            if "--help" in self.cmd:   # 러너 KMM 버전 확인 — 모드마다 그 모드의 새 키를 아는 v133 KMM 처럼 답한다
+                return ("  PresimStrongContact  [실수]\n" if self.cmd[-1] == "RIGID_DROP_ENDTIME"
+                        else "  EndTimeTable  [경로]\n"), None
             self.returncode = 2
             return None, None
 
@@ -655,13 +719,13 @@ def test_apptainer():
           c is not None and c.kw.get("cwd") == work and c.timeout == 77 and c.kw.get("start_new_session") is True,
           str(c and (c.kw, c.timeout)))
     check("rc≠0 → 표식 + 종료 코드", MARK in err and "종료 코드 2" in err, err)
-    h = helps[0] if helps else None
-    check("버전 확인도 러너와 같은 감싸기: apptainer exec … <sif> <KMM> --help DROP_ATTITUDE (한 번, 새 세션)",
-          len(helps) == 1 and h.cmd == ["apptainer", "exec", "--bind", "/data:/data", "--env", "A=1",
-                                        "/opt/apptainers/SmartTwinPreprocessor.sif",
-                                        "/opt/SmartTwinPreprocessor/bin/KooMeshModifier", "--help", "DROP_ATTITUDE"]
-          and h.kw.get("stdout") == subprocess.PIPE and h.timeout == EP.KMM_HELP_TIMEOUT
-          and h.kw.get("start_new_session") is True, str([(x.cmd, x.kw) for x in helps]))
+    wrap = ["apptainer", "exec", "--bind", "/data:/data", "--env", "A=1", "/opt/apptainers/SmartTwinPreprocessor.sif",
+            "/opt/SmartTwinPreprocessor/bin/KooMeshModifier"]
+    check("버전 확인도 러너와 같은 감싸기: apptainer exec … <sif> <KMM> --help DROP_ATTITUDE → --help RIGID_DROP_ENDTIME "
+          "(각 한 번, 사전 해석 전, 새 세션)",
+          len(helps) == 2 and [h.cmd for h in helps] == [wrap + ["--help", "DROP_ATTITUDE"], wrap + ["--help", "RIGID_DROP_ENDTIME"]]
+          and all(h.kw.get("stdout") == subprocess.PIPE and h.timeout == EP.KMM_HELP_TIMEOUT
+                  and h.kw.get("start_new_session") is True for h in helps), str([(x.cmd, x.kw) for x in helps]))
     job_dir = os.path.join(tmp, "apt", f"apptainer_job_{job}")
     check("apptainer 임시 폴더: 실행 중 APPTAINER_TMPDIR = apptainer_tmpdir/apptainer_job_<id>, 끝나면 지우고 환경 변수를 되돌린다",
           c is not None and c.tmpdir_env == job_dir and not os.path.exists(job_dir)
@@ -676,15 +740,27 @@ def test_apptainer():
         EP.subprocess.Popen = real
     sys_job = os.path.join(tempfile.gettempdir(), f"apptainer_job_{job}")
     check("apptainer_tmpdir 가 없으면 시스템 임시 폴더 아래(/opt/tmp 아님)에 만들고 지운다",
-          len(helps) == 2 and helps[1].tmpdir_env == sys_job and not os.path.exists(sys_job)
+          len(helps) == 3 and helps[2].tmpdir_env == sys_job and not os.path.exists(sys_job)
           and not os.path.exists(f"/opt/tmp/apptainer_job_{job}"), str(helps[-1].tmpdir_env))
     EP.subprocess.Popen = FakePopen
     try:
         with contextlib.redirect_stdout(io.StringIO()):
             EP.check_kmm_supports(env, ("EndTimeTable",), tmp, EP.EndTimePresimError)
+            EP.check_kmm_strong_contact(env, tmp)
     finally:
         EP.subprocess.Popen = real
-    check("같은 KMM 은 prepare(프로세스) 안에서 한 번만 묻는다 (기억)", len(helps) == 2, str(len(helps)))
+    check("같은 KMM·모드는 prepare(프로세스) 안에서 한 번만 묻는다 (기억)", len(helps) == 3, str(len(helps)))
+    EP.subprocess.Popen = FakePopen
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            EP.check_kmm_strong_contact(env2, tmp)
+            EP.check_kmm_strong_contact(env2, tmp)
+    finally:
+        EP.subprocess.Popen = real
+    check("기억은 (실행 파일, SIF, 모드) 마다 — 다른 SIF 의 RIGID_DROP_ENDTIME 은 한 번 더 묻는다",
+          len(helps) == 4 and helps[3].cmd[-3:] == ["/opt/SmartTwinPreprocessor/bin/KooMeshModifier", "--help",
+                                                    "RIGID_DROP_ENDTIME"] and "/opt/apptainers/Other.sif" in helps[3].cmd,
+          str([h.cmd for h in helps[3:]]))
 
 
 # ── [7] 시간 제한 배율 ──────────────────────────────────────────
@@ -926,6 +1002,9 @@ def test_r3(kcr, rc_off):
           rc is not None and rc["scenario"].get("batch_koomeshmodifier") is True
           and os.path.exists(os.path.join(tmp, "bin", "fake_help_calls.txt")) and argv0 == host
           and bcmd and bcmd[0] == host, f"{err} argv0={argv0} bcmd={bcmd}")
+    check("batch: --help RIGID_DROP_ENDTIME(PresimStrongContact)도 그 호스트 KMM 에 묻는다",
+          help_calls(os.path.join(tmp, "bin")) == ["--help DROP_ATTITUDE", "--help RIGID_DROP_ENDTIME"],
+          str(help_calls(os.path.join(tmp, "bin"))))
     u["scenarios"][0]["batch_koomeshmodifier"] = False
     EP._KMM_HELP_CACHE.clear()
     try:
@@ -1046,6 +1125,84 @@ def test_r3(kcr, rc_off):
                                                                            "1:31:00"], str(hs))
 
 
+# ── [10] v133 strong_contact ───────────────────────────────────
+def test_v133(kcr, rc_off):
+    print("[10] v133 strong_contact — 표 메타 endtime_rule·strong_contact, 사전 해석 중력 켬은 v132 와 같은 옵션 파일")
+    import Runner.EndTimePresim as EP
+    angles = EP.collect_drop_angles(rc_off["scenario"]["doe_angles"], rc_off["scenario"]["steps"])
+    v0 = math.sqrt(2 * 9810.0 * 1000)
+    base = {"format": "rigid_drop_endtime/endtime v1", "units": "mm-t-s", "time_unit": "s", "height": 1000, "v0": v0,
+            "gravity": 0, "t_sep_ms": 1.0}
+    strong = {**base, "endtime_rule": "last_strong", "strong_contact": 0.3}
+    W132, MIS = "v132 first-recontact table", "strong_contact mismatch"
+
+    def tbl(meta, presim_extra=None):
+        tmp = new_tmp("etp_rule_")
+        faces_table(tmp, angles, meta)
+        rc, out, err = table_prepare(tmp, presim_extra)
+        return rc, out, err, help_calls(tmp)
+
+    rc, out, err, calls = tbl(base)
+    check("table: endtime_rule 없는 v132 표(중력 끔) → 경고 한 줄 + 받는다", rc is not None and out.count(W132) == 1,
+          err or out[-400:])
+    check("table 지름길은 --help RIGID_DROP_ENDTIME 을 묻지 않는다 (DROP_ATTITUDE 만)", calls == ["--help DROP_ATTITUDE"],
+          str(calls))
+    rc, out, err, _ = tbl(strong)
+    check("table: last_strong·strong_contact 0.3 = 옵션 기본 → 경고·오류 없음",
+          rc is not None and W132 not in out and "strong_contact" not in out, err or out[-400:])
+    rc, out, err, _ = tbl({**strong, "strong_contact": "0.3000000001"})
+    check("table: strong_contact 차 1e-10 (≤ 1e-9) → 받는다", rc is not None, err)
+    rc, out, err, _ = tbl({**strong, "strong_contact": "0.300001"})
+    check("table: strong_contact 차 1e-6 → 멈춘다 (두 값을 찍는다)", rc is None and MIS in err and "strong_contact=0.300001" in err
+          and "strong_contact 0.3 와 다르다" in err, err)
+    rc, out, err, _ = tbl({**strong, "strong_contact": 0.5}, {"strong_contact": 0.5})
+    check("table: 옵션 strong_contact 0.5 = 표 0.5 → 받는다", rc is not None, err)
+    rc, out, err, _ = tbl(strong, {"strong_contact": 0.5})
+    check("table: 옵션 0.5 ≠ 표 0.3 → 멈춘다", rc is None and MIS in err, err)
+    rc, out, err, _ = tbl({**base, "gravity": 1, "endtime_rule": "first_recontact", "strong_contact": 9}, {"gravity": True})
+    check("table: first_recontact(중력 켬) 표는 strong_contact 를 보지 않는다 (메타 9 여도 받는다, 경고 없음)",
+          rc is not None and W132 not in out and "strong_contact" not in out, err or out[-400:])
+    rc, out, err, _ = tbl({**base, "gravity": 1}, {"gravity": True})
+    check("table: endtime_rule 없는 중력 켬 표(v132) → 경고 없음 (v133 도 같은 첫 재접촉 규칙)",
+          rc is not None and W132 not in out, err or out[-400:])
+    rc, out, err, _ = tbl({**base, "endtime_rule": "some_future_rule"})
+    check("table: 모르는 endtime_rule → 경고만", rc is not None and "unknown endtime_rule" in out, err or out[-400:])
+    rc, out, err, _ = tbl({**base, "endtime_rule": "last_strong"})
+    check("table: last_strong 인데 strong_contact 메타 없음 → 경고만", rc is not None and "strong_contact unreadable" in out,
+          err or out[-400:])
+
+    def presim(opts, mode):
+        tmp = new_tmp("etp_v133_")
+        try:
+            rc, out = designer_prepare(tmp, with_presim(scen_faces2(tmp), {"enabled": True, **opts},
+                                                        koomeshmodifier_path=write_fake(tmp, mode)))
+            err = ""
+        except EP.EndTimePresimError as e:
+            rc, out, err = None, "", str(e)
+        work = os.path.join(tmp, "output", "endtime_presim", "1")
+        p = os.path.join(work, "rigid_drop_endtime.txt")
+        return rc, out, err, (Path(p).read_text(encoding="utf-8") if os.path.exists(p) else ""), help_calls(tmp), tmp, work
+
+    rc, out, err, opt, calls, tmp, work = presim({"gravity": True}, "v132help")
+    want = (f"*Inputfile\n{os.path.join(tmp, 'model.k')}\n*Mode\nRIGID_DROP_ENDTIME,1\n**RigidDropEndtime,1\n"
+            f"Height,1000\nAngleFile,{os.path.join(work, 'angles.csv')}\nRestitution,0.1,0.3,0.5\nFriction,0.5\n"
+            f"PresimGravity,1\nMarginMs,1.0\nWorkers,8\n**EndRigidDropEndtime\n*End\n")
+    check("사전 해석 중력 켬: 옵션 파일에 PresimStrongContact 없음 (v132 와 같은 글) → v132 KMM 으로도 돈다",
+          rc is not None and opt == want, err or repr(opt))
+    check("사전 해석 중력 켬: --help RIGID_DROP_ENDTIME 을 묻지 않는다 · 경고 없음",
+          calls == ["--help DROP_ATTITUDE"] and "ignored with gravity" not in out and W132 not in out, f"{calls} {out[-300:]}")
+    rc, out, err, opt, calls, tmp, work = presim({"gravity": True, "strong_contact": 0.5}, "ok")
+    check("사전 해석 중력 켬 + strong_contact 0.5 → 경고 한 줄, 줄은 넘기지 않는다",
+          rc is not None and out.count("ignored with gravity") == 1 and "PresimStrongContact" not in opt, err or out[-300:])
+    rc, out, err, opt, calls, tmp, work = presim({"strong_contact": 0.5}, "ok")
+    check("사전 해석 중력 끔 + strong_contact 0.5 → PresimGravity,0 뒤 PresimStrongContact,0.5 (표 메타 0.5 와 맞는다)",
+          rc is not None and "\nPresimGravity,0\nPresimStrongContact,0.5\nMarginMs,1.0\n" in opt and MIS not in out,
+          err or repr(opt))
+    rc, out, err, opt, calls, tmp, work = presim({}, "v132table")
+    check("사전 해석 표에 endtime_rule 이 없으면(KMM 이 규칙 메타를 안 씀) → v132 표 경고 한 줄",
+          rc is not None and out.count(W132) == 1, err or out[-300:])
+
+
 def main():
     with contextlib.redirect_stdout(io.StringIO()):
         kcr = load_kcr()
@@ -1064,6 +1221,7 @@ def main():
     test_time_factor(kcr, on)
     test_reach()
     test_r3(kcr, off[0])
+    test_v133(kcr, off[0])
     print()
     if FAILS:
         print("FAIL %d:" % len(FAILS))

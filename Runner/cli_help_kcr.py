@@ -199,7 +199,9 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
            "산출 <output_dir>/endtime_presim/1/, runner_config scenario.endtime_tables·doe_endtim. KMM 실패(3 = 덱 요소 소실)·각도 빠짐이면 "
            "prepare 가 멈춘다. 러너가 쓸 KMM 의 --help 에 EndTimeTable 이 없으면(v131 이하 — 그 줄을 Height·tFinal 등으로 잘못 읽는다) "
            "멈춘다(batch_koomeshmodifier 면 그 헤드 노드 KMM 을 묻는다. 노드의 러너도 KMM 출력에 [EndTimeTable] 표식이 없으면 그 "
-           "스텝을 실패로 둔다). endtim 이 tFinal 보다 길면 시간 제한을 늘린다 — submit 의 DOE time_limit 은 DOE 마다 Σ 스텝"
+           "스텝을 실패로 둔다). 중력 끔 사전 해석은 그 KMM 의 --help RIGID_DROP_ENDTIME 에 PresimStrongContact 가 없으면(v132 "
+           "이하 — 그 줄에서 종료 코드 1) 사전 해석 전에 멈춘다. endtim 이 tFinal 보다 길면 시간 제한을 늘린다 — submit 의 DOE "
+           "time_limit 은 DOE 마다 Σ 스텝"
            "(ceil(endtim ÷ tFinal) + DR 스텝 1) 의 최대 배(표가 짧으면 예전 step/DR 배율 그대로), sequential 은 슬롯 DOE 배율 합, "
            "대규모 배열은 그 배열 DOE 의 최대 배, 러너 스텝 timeout_per_step_seconds·deep report(deep_timeout_seconds·"
            "deep_time_limit)는 그 스텝 배. 파티션 최대에서 자르고 모자라면 🔴 경고. prepare 가 바닥 위 도달 거리 reach 최대"
@@ -208,11 +210,21 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
            "이미 만든 <base>_endtime.csv (scenario.json 기준 상대 또는 절대). 주면 사전 해석을 건너뛴다. 모든 DROP 자세가 낙하 방향 0.01° 안에 있어야 하고, "
            "표 메타 height·v0(√(2gh), units 기준)가 이 시나리오 낙하와 상대 1e-3 안이고 gravity(0/1)가 이 옵션 gravity 와 같아야 "
            "한다(아니면 멈춘다). 메타 units 가 mm-kg-ms·mm-g-ms 인데 simulation_params.gravity 가 없으면 멈춘다(FEM KMM 이 그 단위의 "
-           "g 를 못 알아낸다). deck 이 템플릿과 다르거나 t_sep_ms 메타가 없으면 경고만. BOM(엑셀 저장)은 괜찮다"),
+           "g 를 못 알아낸다). deck 이 템플릿과 다르거나 t_sep_ms 메타가 없으면 경고만. BOM(엑셀 저장)은 괜찮다. 메타 endtime_rule 이 "
+           "없으면(v132 표 — 첫 재접촉 규칙이라 슬랩다운 뒷부분을 놓칠 수 있다, 중력 켬 표는 빼고) 경고하고, endtime_rule=last_strong "
+           "표의 strong_contact 가 이 옵션 strong_contact 와 다르면 멈춘다(first_recontact 표는 보지 않는다)"),
          K("simulation_params.endtime_presim.restitution / friction", "실수 목록 / 실수", "[0.1, 0.3, 0.5] / 0.5",
            "사전 해석 반발계수(가장 긴 종료 시간을 쓴다) · 바닥 마찰계수"),
          K("simulation_params.endtime_presim.gravity / margin_ms", "bool / 실수", "false / 1.0",
-           "사전 해석 중력(기본 끔 — 낙하 덱에 중력이 없어 같은 조건이고, 다시 닿는 충격을 모두 2차 충격으로 센다) · 2차 충격 끝 뒤 여유(ms)"),
+           "사전 해석 중력(기본 끔 — 낙하 덱에 중력이 없어 같은 조건이다. 끄면 접근 속도가 strong_contact·v0 이상인 마지막 재접촉 "
+           "묶음 끝까지 보고, 켜면 1차 뒤 첫 재접촉 묶음 끝(v132 규칙, strong_contact 는 안 쓴다)) · 종료 시간을 정한 묶음(없으면 "
+           "1차 충돌) 끝 뒤 여유(ms)"),
+         K("simulation_params.endtime_presim.strong_contact", "실수", "0.3",
+           "중력 끔 종료 시간 규칙의 문턱(접근 속도 ÷ v0, 0 보다 큰 실수). 각도마다 ENDTIM = 1차 묶음 뒤 접근 속도가 strong_contact·v0 "
+           "이상인 마지막 재접촉 묶음의 끝 + margin_ms 이고, 그런 묶음이 없으면 1차 충돌 끝 + margin_ms 다(묶음은 1 ms 간격, 세기는 "
+           "묶음 안 최대 접근 속도). 낮추면 약한 늦은 스침까지 기다려 길어지고 높이면 짧아진다. KMM 옵션 파일에 "
+           "PresimStrongContact,<값> 줄로 넘긴다(v133 이상 KMM). gravity=true 면 쓰지 않는다(경고). 표(사전 해석·table 지름길 모두)의 "
+           "메타 strong_contact 가 이 값과 1e-9 넘게 다르면 멈춘다"),
          K("simulation_params.endtime_presim.exclude_parts / workers", "정수 목록 / 정수", "[] / 8",
            "사전 해석에서 뺄 파트(받침·고정구 등. 병진 SPC 가 파트 절점의 10% 이상인 파트(바닥판 등)와 병진이 묶인 *MAT_RIGID "
            "파트는 KMM 이 자동으로 뺀다 — 10% 미만이면 기기 파트로 넣고 SPC_ON_DEVICE_PART 경고, 뺄 파트가 기기 파트와 절점을 "

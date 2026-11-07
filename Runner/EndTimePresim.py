@@ -4,8 +4,11 @@ simulation_params.endtime_presim — KooChainRun prepare(CumulativeDesigner.save
 
   켜지면(enabled=true)
     1. DOE 의 DROP 스텝 각도(roll, pitch, yaw)를 값으로 중복 없이 모아 <output_dir>/endtime_presim/1/angles.csv 를 쓴다
-    2. KMM RIGID_DROP_ENDTIME 옵션 파일을 쓰고 러너와 같은 방식(koomeshmodifier_path·apptainer 감싸기·시간 제한)으로 돌린다
-    3. 작업 폴더의 <base>_endtime.csv 를 읽어 모든 각도가 있고 endtim > 0 인지 본다 — 아니면 prepare 를 멈춘다
+    2. KMM RIGID_DROP_ENDTIME 옵션 파일을 쓰고 러너와 같은 방식(koomeshmodifier_path·apptainer 감싸기·시간 제한)으로 돌린다.
+       중력 끔(기본)이면 옵션 파일에 PresimStrongContact,<strong_contact> 줄이 들어간다(v133 — 접근 속도가 strong_contact·v0
+       이상인 마지막 재접촉 묶음 끝 + 여유). 그 KMM 이 이 키를 아는지 --help RIGID_DROP_ENDTIME 으로 먼저 본다
+    3. 작업 폴더의 <base>_endtime.csv 를 읽어 모든 각도가 있고 endtim > 0 인지 본다 — 아니면 prepare 를 멈춘다.
+       표 메타 endtime_rule·strong_contact 도 본다(check_table_rule)
   table 을 주면 2 를 건너뛰고 그 표를 쓴다. 각도는 낙하 방향 사이 각 0.01° 안으로 찾는다(KMM DROP_ATTITUDE 와 같은 규칙).
 
   runner_config 에 남기는 것(꺼져 있으면 키 자체가 없다)
@@ -34,8 +37,9 @@ STDOUT_FILE = "kmm_stdout.log"
 MATCH_TOL_DEG = 0.01
 PRESIM_TIMEOUT = 21600   # 사전 해석 KMM 시간 제한 기본 6 시간 (presim_timeout_seconds) — 러너 KMM 의 7 일과 따로
 DEFAULTS = {"enabled": False, "table": None, "restitution": [0.1, 0.3, 0.5], "friction": 0.5,
-            "gravity": False, "margin_ms": 1.0, "exclude_parts": [], "workers": 8,
+            "gravity": False, "strong_contact": 0.3, "margin_ms": 1.0, "exclude_parts": [], "workers": 8,
             "presim_timeout_seconds": PRESIM_TIMEOUT}
+STRONG_CONTACT_TOL = 1e-9   # 표 메타 strong_contact 와 옵션이 이보다 더 다르면 멈춘다 (메타는 유효 10자리)
 
 
 class EndTimePresimError(RuntimeError):
@@ -45,9 +49,11 @@ class EndTimePresimError(RuntimeError):
         super().__init__(f"{MARKER} {msg}")
 
 
-def _number(key, v, lo, hi=None):
-    if isinstance(v, bool) or not isinstance(v, (int, float)) or not (v >= lo and (hi is None or v <= hi)):
-        span = f"{lo} 이상" if hi is None else f"{lo}~{hi}"
+def _number(key, v, lo, hi=None, above=False):
+    """v 가 lo 이상(above=True 면 lo 보다 큰), hi 이하인 숫자인지 본다 — bool 은 숫자로 치지 않는다."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not (
+            (v > lo if above else v >= lo) and (hi is None or v <= hi)):
+        span = f"{lo} 보다 큰" if above else f"{lo} 이상" if hi is None else f"{lo}~{hi}"
         raise EndTimePresimError(f"simulation_params.endtime_presim.{key} 는 {span} 숫자여야 한다: {v!r} (bad value)")
     return v
 
@@ -76,9 +82,13 @@ def presim_options(sim_params):
         raise EndTimePresimError("simulation_params.endtime_presim.restitution 이 비어 있다 (bad value)")
     _number("friction", opts["friction"], 0.0)
     _number("margin_ms", opts["margin_ms"], 0.0)
+    _number("strong_contact", opts["strong_contact"], 0.0, above=True)
     _number("presim_timeout_seconds", opts["presim_timeout_seconds"], 1)
     if not isinstance(opts["gravity"], bool):
         raise EndTimePresimError(f"simulation_params.endtime_presim.gravity 는 true/false 여야 한다: {opts['gravity']!r} (bad value)")
+    if opts["gravity"] and "strong_contact" in raw:   # 중력 켬은 v132 규칙 — KMM 에 넘기지 않는다(build_option_text)
+        print("⚠️  simulation_params.endtime_presim.strong_contact: gravity=true 면 쓰지 않는다 — 중력 켬 표는 첫 재접촉 "
+              "묶음 끝 + 여유(v132 규칙)다 (ignored with gravity)")
     w = opts["workers"]
     if isinstance(w, bool) or not isinstance(w, int) or w < 1:
         raise EndTimePresimError(f"simulation_params.endtime_presim.workers 는 1 이상 정수여야 한다: {w!r} (bad value)")
@@ -164,17 +174,21 @@ def write_angles_csv(path, angles):
         w.writerows(angles)
 
 
-def build_option_text(template, angle_file, height, opts, fibonacci=None):
+def build_option_text(template, angle_file, height, opts, fibonacci=None, strong_contact=None):
     """KMM RIGID_DROP_ENDTIME 옵션 파일. StepConfigBuilder 처럼 '키,값' 한 줄씩이고 블록 안에 빈 줄이 없다
     (KMM 은 빈 줄에서 블록을 끝낸다). ExcludePart 는 줄 때만 쓴다.
-    fibonacci=N 이면 AngleFile 대신 'Fibonacci,N'(실제 낙하 방향 균일 N 점)을 쓴다 — impact_conditions 사전 해석."""
+    fibonacci=N 이면 AngleFile 대신 'Fibonacci,N'(실제 낙하 방향 균일 N 점)을 쓴다 — impact_conditions 사전 해석.
+    strong_contact 를 주면 PresimGravity 다음에 'PresimStrongContact,<값>'(v133 KMM 키)을 쓴다 — endtime_presim 중력 끔만
+    준다. impact_conditions·중력 켬은 주지 않아 옵션 파일이 v132 와 바이트까지 같다."""
     lines = ["*Inputfile", template, "*Mode", "RIGID_DROP_ENDTIME,1", "**RigidDropEndtime,1",
              f"Height,{height}",
              f"Fibonacci,{fibonacci}" if fibonacci else f"AngleFile,{angle_file}",
              "Restitution," + ",".join(str(e) for e in opts["restitution"]),
              f"Friction,{opts['friction']}",
-             f"PresimGravity,{1 if opts['gravity'] else 0}",
-             f"MarginMs,{opts['margin_ms']}"]
+             f"PresimGravity,{1 if opts['gravity'] else 0}"]
+    if strong_contact is not None:
+        lines.append(f"PresimStrongContact,{strong_contact}")
+    lines.append(f"MarginMs,{opts['margin_ms']}")
     if opts["exclude_parts"]:
         lines.append("ExcludePart," + ",".join(str(p) for p in opts["exclude_parts"]))
     lines += [f"Workers,{opts['workers']}", "**EndRigidDropEndtime", "*End"]
@@ -350,7 +364,8 @@ def _run_presim(opts, sim_params, environment, template, work, angles, batch=Fal
     angle_file = os.path.join(work, "angles.csv")
     write_angles_csv(angle_file, angles)
     with open(os.path.join(work, OPTION_FILE), "w", encoding="utf-8") as f:
-        f.write(build_option_text(template, angle_file, sim_params.get("height", 1500), opts))
+        f.write(build_option_text(template, angle_file, sim_params.get("height", 1500), opts,
+                                  strong_contact=None if opts["gravity"] else opts["strong_contact"]))
     timeout = opts["presim_timeout_seconds"]
     print(f"  [endtime_presim] KMM RIGID_DROP_ENDTIME 실행 — 각도 {len(angles)}개, 작업 폴더 {work}")
     log_path = os.path.join(work, STDOUT_FILE)
@@ -385,9 +400,9 @@ def prepare_endtime_tables(sim_params, environment, model_file, output_dir, scen
 
     doe_angles: save_runner_config 의 DOE 각도표(1-based), runner_steps: scenario.steps([{step, mode, ...}]).
     batch: batch_koomeshmodifier 로 돌 시나리오인가 — 그러면 표 줄을 읽을 KMM(버전 확인·사전 해석)이 헤드 노드 일괄 KMM 이다.
-    실패(러너 KMM 이 EndTimeTable 을 모름·KMM rc≠0(3 = 요소 소실)·시간 초과·표 없음·각도 빠짐·endtim≤0·table 파일 없음·
-    표 높이·v0·사전 해석 중력이 시나리오와 다름·mm-kg-ms·mm-g-ms 덱인데 simulation_params.gravity 없음)는
-    EndTimePresimError — prepare 가 멈춘다.
+    실패(러너 KMM 이 EndTimeTable 을 모름·사전 해석 KMM 이 PresimStrongContact 를 모름(중력 끔, v132 이하)·KMM rc≠0(3 = 요소
+    소실)·시간 초과·표 없음·각도 빠짐·endtim≤0·table 파일 없음·표 높이·v0·사전 해석 중력이 시나리오와 다름·표 strong_contact 가
+    옵션과 다름·mm-kg-ms·mm-g-ms 덱인데 simulation_params.gravity 없음)는 EndTimePresimError — prepare 가 멈춘다.
     """
     opts = presim_options(sim_params)
     if opts is None:
@@ -407,12 +422,15 @@ def prepare_endtime_tables(sim_params, environment, model_file, output_dir, scen
         source = "table"
         print(f"  [endtime_presim] 사전 해석을 건너뛰고 주어진 표를 쓴다: {table}")
     else:
+        if not opts["gravity"]:   # 옵션 파일에 PresimStrongContact 줄이 들어간다 — v132 KMM 은 그 줄에서 rc 1 로 죽는다
+            check_kmm_strong_contact(environment, os.path.abspath(output_dir), batch)
         table = _run_presim(opts, sim_params, environment, template,
                             os.path.abspath(os.path.join(output_dir, "endtime_presim", "1")), angles, batch)
         source = "presim"
     meta, rows = read_endtime_csv(table)
     check_table_drop(meta, sim_params, table, EndTimePresimError, "endtime_presim", gravity=opts["gravity"],
                      template=template)
+    check_table_rule(meta, table, opts["strong_contact"])
     per_angle = _endtims_for(rows, angles, table, by_name=(source == "presim"))
     report_reach(rows, sim_params, "endtime_presim")
     drop = _drop_steps(runner_steps)
@@ -431,36 +449,47 @@ def prepare_endtime_tables(sim_params, environment, model_file, output_dir, scen
 
 
 KMM_HELP_TIMEOUT = 300
-_KMM_HELP_CACHE = {}
+_KMM_HELP_CACHE = {}   # (실행 파일, SIF, 모드) → (--help 종료 코드, 출력)
 
 
-def check_kmm_supports(environment, keys, work_dir, err, batch=False):
-    """그 표 줄을 읽을 KMM 이 DROP_ATTITUDE 키(keys)를 아는지 '--help DROP_ATTITUDE' 로 본다 — 모르면 err 로 멈춘다.
+def _kmm_help(environment, mode, work_dir, err, batch=False):
+    """그 표 줄을 읽을 KMM 의 '--help <mode>' → (종료 코드, 출력, 사람이 읽을 KMM 설명).
 
-    실행 파일·apptainer 감싸기는 head_kmm_command 와 같다(러너 KMM, batch=True 면 batch_koomeshmodifier 의 KMM).
-    결과는 prepare(프로세스)마다 실행 파일·SIF 하나에 한 번만 묻고 기억한다. table 지름길도 묻는다 — 그래서 헤드 노드에서
-    그 KMM(또는 SIF)이 돌아야 한다. 옛 KMM(v131 이하)은 EndTimeTable 줄을 다른 키로 잘못 읽는다 — 경로에 height 가 들면
-    Height=0, tfinal·density·dropsurface 가 들면 그 값을 덮고, runid 가 들면 죽는다. 그래서 그런 줄을 쓰기 전에 막는다.
+    실행 파일·apptainer 감싸기는 head_kmm_command 와 같다(러너 KMM, batch=True 면 batch_koomeshmodifier 의 KMM — 사전 해석
+    run_kmm 도 같은 실행 파일). prepare(프로세스)마다 (실행 파일, SIF, 모드) 하나에 한 번만 묻고 기억한다.
+    시간 초과·실행 못 함은 err 로 멈춘다.
     """
     kmm, where = _head_kmm(environment, batch)
-    key = (kmm, environment.get("apptainer_sif") or "")
+    key = (kmm, environment.get("apptainer_sif") or "", mode)
     try:
         if key not in _KMM_HELP_CACHE:
             os.makedirs(work_dir, exist_ok=True)
-            cmd, done = head_kmm_command(environment, ["--help", "DROP_ATTITUDE"], batch)
+            cmd, done = head_kmm_command(environment, ["--help", mode], batch)
             try:
                 rc, out = _run_group(cmd, work_dir, KMM_HELP_TIMEOUT, subprocess.PIPE)
             finally:
                 done()
             _KMM_HELP_CACHE[key] = (rc, out or "")
     except subprocess.TimeoutExpired:
-        raise err(f"러너가 쓸 KMM({where})의 --help 가 {KMM_HELP_TIMEOUT}초 안에 끝나지 않았다 "
+        raise err(f"러너가 쓸 KMM({where})의 --help {mode} 가 {KMM_HELP_TIMEOUT}초 안에 끝나지 않았다 "
                   f"(KMM version check timeout)") from None
     except OSError as e:
         raise err(f"KMM 을 실행하지 못했다: {e} — 러너가 쓸 KMM({where}). prepare 는 헤드 노드에서 그 KMM 으로 버전을 확인한다"
                   f"(table 을 줘도) — 헤드 노드에서 돌 수 있어야 한다. environment.koomeshmodifier_path·apptainer_sif·"
                   f"apptainer_tmpdir 를 확인할 것 (cannot run KMM)") from None
     rc, text = _KMM_HELP_CACHE[key]
+    return rc, text, where
+
+
+def check_kmm_supports(environment, keys, work_dir, err, batch=False):
+    """그 표 줄을 읽을 KMM 이 DROP_ATTITUDE 키(keys)를 아는지 '--help DROP_ATTITUDE' 로 본다 — 모르면 err 로 멈춘다.
+
+    실행 파일·apptainer 감싸기·기억은 _kmm_help 와 같다(러너 KMM, batch=True 면 batch_koomeshmodifier 의 KMM).
+    table 지름길도 묻는다 — 그래서 헤드 노드에서 그 KMM(또는 SIF)이 돌아야 한다. 옛 KMM(v131 이하)은 EndTimeTable 줄을
+    다른 키로 잘못 읽는다 — 경로에 height 가 들면 Height=0, tfinal·density·dropsurface 가 들면 그 값을 덮고, runid 가 들면
+    죽는다. 그래서 그런 줄을 쓰기 전에 막는다.
+    """
+    rc, text, where = _kmm_help(environment, "DROP_ATTITUDE", work_dir, err, batch)
     missing = [k for k in keys if k not in text]
     if missing:
         tail = " | ".join(text.strip().splitlines()[-2:])[:240]
@@ -468,6 +497,21 @@ def check_kmm_supports(environment, keys, work_dir, err, batch=False):
                   f"읽는다(경로에 height 가 들면 Height=0, tfinal·density·dropsurface 를 덮고, runid 가 들면 죽는다). "
                   f"environment.apptainer_sif 를 v132 이상 SmartTwinPreprocessor SIF 로 바꿀 것 — SIF 없이 쓰면 "
                   f"koomeshmodifier_path 를 v132 이상 KMM 으로. --help 종료 코드 {rc}: {tail} (KMM version skew)")
+
+
+def check_kmm_strong_contact(environment, work_dir, batch=False):
+    """endtime_presim(중력 끔) 사전 해석 KMM 이 RIGID_DROP_ENDTIME 키 PresimStrongContact 를 아는지 '--help RIGID_DROP_ENDTIME'
+    으로 본다 — 모르면 멈춘다. v132 이하 KMM 은 모르는 블록 키에서 종료 코드 1 로 죽으므로 사전 해석을 돌리기 전에 까닭을 알린다.
+    사전 해석 KMM 은 run_kmm 과 같은 실행 파일이다(_kmm_help). table 지름길·중력 켬·impact_conditions 는 그 줄을 쓰지 않아 묻지 않는다.
+    """
+    rc, text, where = _kmm_help(environment, "RIGID_DROP_ENDTIME", work_dir, EndTimePresimError, batch)
+    if "PresimStrongContact" not in text:
+        tail = " | ".join(text.strip().splitlines()[-2:])[:240]
+        raise EndTimePresimError(f"사전 해석 KMM({where})이 RIGID_DROP_ENDTIME 키 PresimStrongContact 를 모른다. strong_contact"
+                                 f"(중력 끔 종료 시간 규칙의 문턱)를 넘기려면 v133 이상 KMM 이 필요하다 — 이 KMM(v132 이하)은 그 줄에서 "
+                                 f"종료 코드 1 로 멈춘다. environment.apptainer_sif 를 v133 이상 SmartTwinPreprocessor SIF 로 바꿀 것 — "
+                                 f"SIF 없이 쓰면 koomeshmodifier_path 를 v133 이상 KMM 으로. --help 종료 코드 {rc}: {tail} "
+                                 f"(KMM too old for strong_contact)")
 
 
 G_SI = 9.81
@@ -541,6 +585,39 @@ def check_table_drop(meta, sim_params, path, err, label, gravity=None, template=
                   f"(9.81 m/s² 를 {units} 로)를 줄 것 (gravity required for {units})")
 
 
+def check_table_rule(meta, path, strong_contact):
+    """표 메타의 종료 시간 규칙(v133)을 본다 — endtime_presim(사전 해석·table 지름길)만 부른다. impact_conditions 는 v132 그대로.
+
+      endtime_rule 없음 : v132 표(1차 뒤 첫 재접촉 묶음 끝 + 여유)라 경고 한 줄. 메타 gravity 가 켬이면 경고하지 않는다 —
+                          중력 켬은 v133 도 같은 규칙이다
+      last_strong       : 중력 끔 표. 메타 strong_contact 가 옵션 strong_contact 와 1e-9 넘게 다르면 멈춘다
+      first_recontact   : 중력 켬 표 — strong_contact 를 보지 않는다
+    """
+    rule = str(meta.get("endtime_rule") or "").strip()
+    if not rule:
+        grav = {"1": True, "true": True, "0": False, "false": False}.get(str(meta.get("gravity") or "").strip().lower())
+        if grav is not True:
+            print(f"⚠️  endtime_presim: 표 {path} — endtime_rule 메타가 없는 v132 표다(1차 뒤 첫 재접촉 묶음 끝 + 여유). 슬랩다운이 "
+                  f"꼭짓점마다 갈라져 오면 더 센 뒷부분을 놓칠 수 있다. v133 이상 KMM 으로 표를 다시 만들 것 "
+                  f"(v132 first-recontact table)")
+        return
+    if rule == "first_recontact":
+        return
+    if rule != "last_strong":
+        print(f"⚠️  endtime_presim: 표 {path} — 모르는 endtime_rule={rule} 라 strong_contact 를 확인하지 못했다 (unknown endtime_rule)")
+        return
+    try:
+        got = float(meta.get("strong_contact"))
+    except (TypeError, ValueError):
+        print(f"⚠️  endtime_presim: 표 {path} — endtime_rule=last_strong 인데 strong_contact 메타 {meta.get('strong_contact')!r} 를 "
+              f"읽지 못해 문턱을 확인하지 못했다 (strong_contact unreadable)")
+        return
+    if not abs(got - float(strong_contact)) <= STRONG_CONTACT_TOL:
+        raise EndTimePresimError(f"표 {path} 의 문턱 strong_contact={meta['strong_contact']}(endtime_rule=last_strong)가 옵션 "
+                                 f"simulation_params.endtime_presim.strong_contact {strong_contact!r} 와 다르다 — 이 문턱으로 표를 "
+                                 f"다시 만들거나 옵션을 표에 맞출 것 (strong_contact mismatch)")
+
+
 def report_reach(rows, sim_params, label):
     """표의 reach(첫 접촉점에서 바닥 위 접촉점까지 가장 먼 거리, 덱 길이)·n_unresolved 를 알린다.
     reach 가 메시 바닥판 한 변의 절반보다 길면 경고한다(RigidWall 은 판 크기와 무관). 칸이 없으면 아무것도 안 한다."""
@@ -568,8 +645,8 @@ def report_reach(rows, sim_params, label):
                       f"있다. simulation_params.drop_surface.size 를 한 변 {2.0 * rmax:g} 이상으로 키울 것 (plate reach)")
     if unres:
         more = " …" if len(unres) > 10 else ""
-        print(f"⚠️  {label}: n_unresolved > 0 인 각도 {len(unres)}개 — 중력 끔에서 2차 충격도 바닥 벗어남도 없이 시간 상한에서 "
-              f"끝나 endtim 이 1차 충돌 끝 + 여유뿐이다(짧을 수 있다): {', '.join(unres[:10])}{more}")
+        print(f"⚠️  {label}: n_unresolved > 0 인 각도 {len(unres)}개 — 중력 끔 사전 해석이 끝을 보지 못하고 시간 상한(v133 은 "
+              f"이벤트 상한도)에서 멈춰 그 뒤 충돌이 endtim 에 들지 않았다(짧을 수 있다): {', '.join(unres[:10])}{more}")
 
 
 def endtime_time_factor(config, doe=None, step=None):
