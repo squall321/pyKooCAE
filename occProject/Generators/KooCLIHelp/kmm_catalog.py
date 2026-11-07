@@ -1199,8 +1199,16 @@ mode("RIGID_DROP_ENDTIME", "강체 낙하 사전 해석 — 질량특성·외곽
          K("Angle", "이름,roll,pitch,yaw", "-", "한 줄에 각도 하나(여러 줄). DROP_ATTITUDE EulerRolling/Pitching/Yawing 과 같은 뜻"),
          K("Restitution", "e 목록", "0.1,0.3,0.5", "반발계수마다 돌려 가장 긴 tFinal 을 표에 쓴다"),
          K("Friction", "실수", "0.5", "마찰계수 μ"),
-         K("PresimGravity", "0|1", "0", "0 = 중력 끔(DROP_ATTITUDE 덱과 같음 — 다시 닿는 충격을 모두 2차 충격으로 셈), 1 = 켬"),
-         K("MarginMs", "실수", "1.0", "tFinal = (2차 충격 끝, 없으면 1차 충돌 끝) + 여유 ms"),
+         K("PresimGravity", "0|1", "0", "0 = 중력 끔(DROP_ATTITUDE 덱과 같음 — 2차 묶음 뒤에도 이어 돌려, 접근 속도가 "
+           "PresimStrongContact·v0 이상인 마지막 재접촉 묶음까지 ENDTIM 에 담는다), 1 = 켬(v132 규칙 — 첫 재접촉 묶음까지, 무게중심이 "
+           "1 mm 넘게 떴다 닿은 재착지는 2차 충격으로 세지 않는다)"),
+         K("PresimStrongContact", "실수(v0 배수)", "0.3", "중력 끔(PresimGravity 0)의 ENDTIM 문턱. 사전 해석은 2차 묶음 뒤에도 이어 "
+           "돌고, ENDTIM = 접근 속도가 이 값·v0 이상인 마지막 재접촉 묶음의 끝 + MarginMs 다(그런 묶음이 없으면 1차 묶음 끝 + MarginMs). "
+           "묶음 세기는 묶음 안 접촉점 접근 속도의 최대 ÷ v0 다. 낮추면 더 약한 재접촉까지 담는다. 0 이하·숫자 아님은 rc 1. "
+           "PresimGravity 1 이면 무시한다(첫 재접촉 규칙 — 직접 주면 '[RigidDropEndtime] WARNING PresimStrongContact ignored with "
+           "PresimGravity 1' 한 줄)"),
+         K("MarginMs", "실수", "1.0", "tFinal = (중력 끔은 PresimStrongContact 문턱을 넘는 마지막 재접촉 묶음 끝, 중력 켬은 2차 충격 끝 — "
+           "없으면 1차 충돌 끝) + 여유 ms"),
          K("ExcludePart", "PID 목록", "없음", "강체에서 뺄 파트(바닥판 등). 절점 10% 이상이 병진 SPC 로 묶인 파트·병진 구속 *MAT_RIGID 파트는 저절로 빠진다. 읽은 파트·*PART_INERTIA·CNRB 에 없는 PID 는 rc 1"),
          K("Units", "mm-t-s|mm-kg-ms|mm-g-ms|m-kg-s", "자동", "덱 단위계. 없으면 재질 밀도 중앙값으로 정하고, 못 정하면 rc 1"),
          K("Workers", "정수", "min(8, CPU)", "사전 해석 프로세스 수(fork)"),
@@ -1218,7 +1226,7 @@ Fibonacci,100
                  verify={"mode": "RIGID_DROP_ENDTIME", "id": 1, "expect": {
                      "Height": 1500.0, "Fibonacci": 100, "Restitution": [0.1, 0.3, 0.5], "Friction": 0.5,
                      "PresimGravity": 0, "MarginMs": 1.0, "Units": None, "PresimDt": 1e-05, "PresimTMax": 1.0,
-                     "ExcludePart": [], "AngleFile": None}}),
+                     "PresimStrongContact": 0.3, "ExcludePart": [], "AngleFile": None}}),
          Example("각도 직접, 중력 켬·바닥판 제외·단위 지정", _opt("drop_model.k", "RIGID_DROP_ENDTIME,2", """**RigidDropEndtime,2
 Height,1000
 Angle,FACE,0,0,0
@@ -1241,19 +1249,26 @@ Workers,4
      notes=["산출은 모두 작업 폴더(KMM 둘째 인자, 없으면 현재 폴더)에 쓴다 — *Inputfile 이 다른 폴더의 절대 경로여도 덱 옆에는 "
             "리더의 _dump.k 만 생긴다. 기본 .k 는 쓰지 않는다.",
             "<모델>_endtime.csv: 각도마다 class·t1_end·t2_start·t2_end·tfinal_ms·endtim(덱 시간 단위, 0.1 ms 올림)·reach(덱 길이 — 첫 "
-            "충돌의 바닥 위 접촉점에서 센 접촉들까지 가장 먼 거리)·n_unresolved·e 별 세부. 메타에 v0(√(2gh), 덱 단위)·t_sep_ms(1.0) 가 "
-            "있다. DROP_ATTITUDE 의 EndTimeTable 이 그대로 읽고 v0 를 자기 높이·g 와, reach 를 메시 바닥판 크기와 대조한다.",
-            "2차 충격: 1차 충돌 묶음 뒤 1 ms 이상 떨어졌다 다시 닿은 묶음(멈춤 규칙과 같은 1 ms).",
+            "충돌의 바닥 위 접촉점에서 센 접촉들까지 가장 먼 거리)·n_unresolved·strong_end_ms(ENDTIM 을 정한 마지막 강한 재접촉 묶음의 "
+            "끝, ms — 그런 묶음이 없거나 중력 켬이면 빈칸)·strong_vn_max(재접촉 묶음 세기의 최대, v0 배수 — 재접촉이 없거나 중력 켬이면 "
+            "빈칸)·e 별 세부(strong_end_ms_e<e> 포함). 메타에 v0(√(2gh), 덱 단위)·t_sep_ms(1.0)·endtime_rule(중력 끔 last_strong, "
+            "켬 first_recontact)·strong_contact(중력 끔만) 가 있다. DROP_ATTITUDE 의 EndTimeTable 이 그대로 읽고 v0 를 자기 높이·g 와, "
+            "reach 를 메시 바닥판 크기와 대조한다.",
+            "2차 충격(class·t2_* 칸): 1차 충돌 묶음 뒤 1 ms 이상 떨어졌다 다시 닿은 첫 묶음. 묶음은 모두 1 ms(t_sep_ms) 간격으로 끊는다. "
+            "중력 끔은 남은 회전으로 문턱을 넘는 접촉이 더 올 수 없으면 멈추므로, 그 뒤의 약한 재접촉은 이 칸에도 없을 수 있다.",
             "<모델>_impacts.csv: (각도, e, 충돌 묶음 k) 마다 충돌 직전 자세(att_*)·바닥 좌표 속도·각속도·첫 접촉점·접근 속도·"
-            "tfinal_k_ms·endtim_k — 덱 단위(길이 · 길이/시간 · rad/시간).",
-            "중력 기본값 0: DROP_ATTITUDE 덱은 초기 속도만 있고 중력이 없다. 그래서 다시 닿는 충격은 모두 회전으로 온 2차 충격으로 "
-            "센다. PresimGravity,1 이면 무게중심이 1 mm 넘게 떴다 닿은 재착지는 2차 충격으로 세지 않는다.",
+            "tfinal_k_ms·endtim_k — 덱 단위(길이 · 길이/시간 · rad/시간). 중력 끔은 2차 묶음 뒤에도 이어 돌므로 k ≥ 3 줄도 나온다.",
+            "중력 기본값 0: DROP_ATTITUDE 덱은 초기 속도만 있고 중력이 없다. 그래서 다시 닿는 충격은 모두 회전으로 온 것이다. 사전 해석은 "
+            "2차 묶음 뒤에도 이어 돌고, ENDTIM 은 접근 속도가 PresimStrongContact·v0(기본 0.3) 이상인 마지막 재접촉 묶음의 끝 + MarginMs "
+            "다 — 꼭짓점마다 갈라져 오는 슬랩다운 뒷부분을 담고, 오래 돈 뒤의 약한 스침은 뺀다(v133). PresimGravity,1 이면 v132 규칙(첫 "
+            "재접촉 묶음 끝)이고, 무게중심이 1 mm 넘게 떴다 닿은 재착지는 2차 충격으로 세지 않는다.",
             "단위: Height 는 덱 길이 단위, endtim 은 덱 시간 단위(mm-t-s·m-kg-s 는 s, mm-kg-ms·mm-g-ms 는 ms). 사전 해석 안은 SI 다.",
             "바닥판 자동 제외: 절점의 10% 이상이 병진 *BOUNDARY_SPC 로 묶인 파트, 병진 구속(CMO/CON1)이 있는 *MAT_RIGID 파트. "
             "10% 미만이면 기기 파트로 넣고 SPC_ON_DEVICE_PART 경고. 저절로 뺀 파트가 넣은 파트와 절점을 나누면 rc 1(ExcludePart 로 "
             "직접 줄 것). 뺀 파트는 모두 EXCLUDED_PART 경고(이유·질량·몫)와 DONE 줄 excluded=[…] 에 남는다.",
             "볼록 껍질 꼭짓점은 131,072 개까지(pybullet 한도) — 넘으면 rc 1.",
-            "Workers 만큼 fork 프로세스를 쓴다(작업자마다 PyBullet DIRECT). 2만 각도 × e 3 개는 8 프로세스로 약 5분이다.",
+            "Workers 만큼 fork 프로세스를 쓴다(작업자마다 PyBullet DIRECT). 2만 각도 × e 3 개는 8 프로세스로 약 5분이다(v132 규칙에서 "
+            "잰 값 — 중력 끔 v133 규칙은 2차 묶음 뒤에도 돌아 더 걸릴 수 있다).",
             "이 모드 블록은 빈 줄·`$`·`#` 줄을 건너뛴다. 키는 이름 전체가 같을 때만 맞고 모르는 키는 rc 1(did you mean …). 틀린 값·"
             "Height 없음·각도 출처 0 개 또는 2 개 이상·없는 AngleFile·블록 끝줄(**EndRigidDropEndtime) 전에 '*' 줄은 덱을 읽기 전에 "
             "rc 1('RIGID_DROP_ENDTIME option error', 끝줄이 빠지면 'missing **EndRigidDropEndtime').",
@@ -1263,7 +1278,8 @@ Workers,4
             "에 요소가 있음(PASSTHROUGH_INCLUDE_PARTS). 시작할 때 작업 폴더의 지난 <모델>_* 산출 다섯 개를 지운다.",
             "리더가 요소를 버리면(예: *PART_INERTIA 파트) 표는 써도 rc 3 이다 — '[RIGID_DROP_ENDTIME] tables were written, but the "
             "reader dropped elements' 줄: 질량특성·껍질·종료 시간에 그 파트가 빠졌을 수 있다.",
-            "로그 표지: [RigidDropEndtime] START·REMOVED·WROTE·DONE, [RigidBody] UNITS·EXCLUDE·WARNING(EXCLUDED_PART·SPC_ON_DEVICE_PART …), "
+            "로그 표지: [RigidDropEndtime] START·REMOVED·WROTE·DONE(rule=…)·WARNING PresimStrongContact ignored …, [RigidBody] "
+            "UNITS·EXCLUDE·WARNING(EXCLUDED_PART·SPC_ON_DEVICE_PART …), "
             "[presim] 진행. 사전 해석 실패는 'RIGID_DROP_ENDTIME failed' (rc 1)."],
      related=["DROP_ATTITUDE"])
 

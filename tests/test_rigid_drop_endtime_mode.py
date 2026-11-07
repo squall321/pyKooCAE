@@ -1,17 +1,21 @@
 # KMM RIGID_DROP_ENDTIME 모드(옵션 검사·산출 다섯 개·KMM→KMM 표 소비·오류 rc 1·도움말)를 실제 KMM 실행으로 검증하는 통합 시험
 """
-실행: venv312/bin/python tests/test_rigid_drop_endtime_mode.py   (pybullet 필요, KMM 서브프로세스 열두 번, 1분 남짓,
+실행: venv312/bin/python tests/test_rigid_drop_endtime_mode.py   (pybullet 필요, KMM 서브프로세스 열세 번, 1분 남짓,
       사전 해석 프로세스는 4 개 이하)
 
   [1] 옵션 검사(parse_option_lines) — 키 이름 전체 일치·대소문자·기본값·AngleFile 절대 경로·오류(ValueError, 모르는 키는
-      did you mean), AngleFile 읽기, 충돌 상태 표의 덱 단위 환산
+      did you mean), AngleFile 읽기, 충돌 상태 표의 덱 단위 환산, PresimStrongContact(기본 0.3 = 엔진 STRONG_CONTACT·값·
+      틀린 값·비슷한 키), 중력 켬 + PresimStrongContact 경고 줄(가짜 덱으로 START·경고 줄까지만 돌림)
   [2] MinimumModel Fibonacci 30 — rc 0, 작업 폴더에 산출 다섯 개, 덱 옆에는 리더의 _dump.k 만, JSON 질량·사전 해석 요약,
-      표(load_lookup·메타 v0·t_sep_ms·reach·n_unresolved)·충돌 상태 표(k=1 줄 = 입력 낙하 방향·(0,0,−v0)·각속도 0)
-  [3] 변형 — Angle 줄(모든 옵션, 키 대소문자 섞음, ExcludePart 13)·AngleFile(작업 폴더 기준 상대 경로)
+      표(load_lookup·메타 v0·t_sep_ms·reach·n_unresolved)·충돌 상태 표(k=1 줄 = 입력 낙하 방향·(0,0,−v0)·각속도 0),
+      v133 규칙(메타 endtime_rule=last_strong·strong_contact=0.3, strong_* 칸, tfinal = (strong_end 또는 t1_end) + 여유)
+  [3] 변형 — Angle 줄(모든 옵션, 키 대소문자 섞음, ExcludePart 13, 중력 켬 + PresimStrongContact → 경고 한 줄·
+      endtime_rule=first_recontact·v132 규칙)·AngleFile(작업 폴더 기준 상대 경로)
   [4] KMM→KMM — DROP_ATTITUDE Fast DOE 세 각도 + EndTimeTable,<[2] 의 표> → 각도 덱의 ENDTIM = 표 endtim
-  [5] 오류 rc 1 — Height 없음·각도 출처 둘·없는 AngleFile·숫자 아닌 AngleFile·모르는 키(덱 읽기 전), 없는 ExcludePart·
-      사전 해석 실패(PresimTMax 짧음)(덱 읽기 뒤 — 지난 실행의 산출 다섯 개를 지운다)
-  [6] 도움말 — 모드 상세, 별칭이 drop·낙하·rigid 를 다른 모드에서 뺏지 않음, format 주제의 산출 이름
+  [5] 오류 rc 1 — Height 없음·각도 출처 둘·없는 AngleFile·숫자 아닌 AngleFile·모르는 키·PresimStrongContact 0(덱 읽기 전),
+      없는 ExcludePart·사전 해석 실패(PresimTMax 짧음)(덱 읽기 뒤 — 지난 실행의 산출 다섯 개를 지운다)
+  [6] 도움말 — 모드 상세(PresimStrongContact 키), 별칭이 drop·낙하·rigid 를 다른 모드에서 뺏지 않음, format 주제의 산출 이름
+  [7] PresimStrongContact 전달 — [2] 에서 강한 재접촉이 있던 각도를 문턱 100 으로 다시 → strong_end 빈칸·tfinal = t1_end + 여유
 
 KMM 은 덱 옆에 _dump.k 를 쓰고 그 폴더로 chdir 하므로 덱은 늘 작업용 사본을 쓴다. 작업 폴더: RIGID_DROP_ENDTIME_TEST_DIR
 (기본 /data/koopark/Test_RigidDropEndtime/E/test — 시작할 때 비운다).
@@ -44,6 +48,17 @@ FAILS = []
 OUTS = sorted("MinimumModel" + s for s in SUFFIXES.values())
 MASS_T = 1.80318e-4               # d3hsp 파트 1~22 합 (t)
 V0_MM_S = math.sqrt(2 * 9810.0 * 1500.0)
+WARN_STRONG = "[RigidDropEndtime] WARNING PresimStrongContact ignored with PresimGravity 1 (first re-contact rule)"
+
+
+def num(text):
+    """표 칸 글 → float (빈칸은 nan)."""
+    return float(text) if text not in ("", None) else math.nan
+
+
+def log_line(out, head):
+    """출력에서 head 로 시작하는 첫 줄 (없으면 빈 글)."""
+    return next((x for x in out.splitlines() if x.startswith(head)), "")
 
 
 def check(name, cond, detail=""):
@@ -90,8 +105,17 @@ def test_parser():
           and o["Restitution"] == [0.1, 0.3, 0.5] and o["Friction"] == 0.5 and o["PresimGravity"] == 0
           and o["MarginMs"] == 1.0 and o["PresimDt"] == 1e-5 and o["PresimTMax"] == 1.0 and o["Units"] is None
           and 1 <= o["Workers"] <= 8 and o["OutDir"] == os.path.abspath(d), str(o))
+    from KooCAEManager import KooRigidDropPresim as P
+    check(f"PresimStrongContact 기본 0.3 = 엔진 STRONG_CONTACT({getattr(P, 'STRONG_CONTACT', None)}), GivenKeys = 준 키만",
+          o["PresimStrongContact"] == 0.3 == getattr(P, "STRONG_CONTACT", None) and o["GivenKeys"] == ["Fibonacci", "Height"],
+          str(o))
+    o = parse_option_lines(["Height,1500", "Fibonacci,12", "presimstrongcontact,0.5"], str(d))
+    check("PresimStrongContact 0.5(대소문자 무관) → 값·GivenKeys", o["PresimStrongContact"] == 0.5
+          and "PresimStrongContact" in o["GivenKeys"], str(o))
     for line, hint in (("HeightX,3", "did you mean 'Height'?"), ("Angles,1", "did you mean 'Angle'?"),
                        ("Restituion,0.3", "did you mean 'Restitution'?"), ("Gravity,1", "did you mean 'PresimGravity'?"),
+                       ("PresimStrongContacts,0.3", "did you mean 'PresimStrongContact'?"),
+                       ("StrongContact,0.3", "did you mean 'PresimStrongContact'?"),
                        ("Foo,1", "키: Height, AngleFile")):
         try:
             parse_option_lines(["Height,1500", "Fibonacci,12", line], str(d))
@@ -136,6 +160,12 @@ def test_parser():
         "값 없음": (["Height,", "Fibonacci,3"], "value missing"),
         "없는 AngleFile": (["Height,10", "AngleFile,nope.csv"], "AngleFile not found"),
         "PresimTMax ≤ PresimDt": (["Height,10", "Fibonacci,3", "PresimTMax,1e-6"], "PresimTMax"),
+        "PresimStrongContact 0": (["Height,10", "Fibonacci,3", "PresimStrongContact,0"], "PresimStrongContact: 양수여야 한다"),
+        "PresimStrongContact 음수": (["Height,10", "Fibonacci,3", "PresimStrongContact,-0.3"], "PresimStrongContact: 양수여야 한다"),
+        "숫자 아닌 PresimStrongContact": (["Height,10", "Fibonacci,3", "PresimStrongContact,abc"], "bad number"),
+        "PresimStrongContact inf": (["Height,10", "Fibonacci,3", "PresimStrongContact,inf"], "bad number"),
+        "PresimStrongContact 두 번": (["Height,10", "Fibonacci,3", "PresimStrongContact,0.3", "PresimStrongContact,0.5"],
+                                    "duplicate key"),
     }
     for label, (lines, marker) in bad.items():
         try:
@@ -158,6 +188,30 @@ def test_parser():
         g = impacts_to_deck([row], ln, tt)[0]
         got = (g["contact_x"], g["vx"], g["vn_contact"], g["v0"], g["wx"], g["endtim_k"])
         check(f"충돌 상태 덱 단위 {unit}: mm · mm/시간 · rad/시간 · endtim_k(0.1 ms 올림)", np.allclose(got, want, rtol=1e-12), str(got))
+
+    # 경고 줄은 중력 켬 + PresimStrongContact 를 직접 줬을 때만. 덱 대신 처음 속성을 읽을 때 멈추는 가짜를 줘
+    # run_rigid_drop_endtime 을 START·경고 줄까지만 돌린다(질량특성 계산이 덱을 처음 읽는 곳에서 멈춘다)
+    from KooCAEManager.KooRigidDropEndtime import run_rigid_drop_endtime
+
+    class Halt(Exception):
+        pass
+
+    class NoDeck:
+        def __getattr__(self, name):
+            raise Halt(name)
+
+    for grav, given in ((1, True), (1, False), (0, True), (0, False)):
+        lines = ["Height,1500", "Angle,A,0,0,0", f"PresimGravity,{grav}"] + (["PresimStrongContact,0.5"] if given else [])
+        logs, sc = [], 0.5 if given else 0.3
+        try:
+            run_rigid_drop_endtime(parse_option_lines(lines, str(d)), NoDeck(), str(d / "warn.k"), str(d), log=logs.append)
+        except Halt:
+            pass
+        start = log_line("\n".join(logs), "[RigidDropEndtime] START ")
+        want = 1 if grav and given else 0
+        check(f"중력 {'켬' if grav else '끔'} · PresimStrongContact {'직접 0.5' if given else '기본'} → 경고 {want}줄, "
+              f"START strong_contact={sc:g}", logs.count(WARN_STRONG) == want and f" strong_contact={sc:g} " in start,
+              "\n".join(logs))
 
 
 # ── [2] MinimumModel Fibonacci 30 ─────────────────────────────────────────────
@@ -196,15 +250,38 @@ def test_minimum():
     from KooCAEManager.KooRigidDropPresim import T_SEP_MS
     check(f"표 메타 v0 = √(2·9810·1500) = {V0_MM_S:.2f} mm/s (덱 단위), t_sep_ms = 엔진 기본값 {T_SEP_MS:g}",
           abs(float(meta.get("v0", "nan")) / V0_MM_S - 1) < 1e-9 and float(meta.get("t_sep_ms", "nan")) == T_SEP_MS, str(meta))
+    check("표 메타 endtime_rule=last_strong · strong_contact=0.3 (중력 끔, 기본값 — v133)",
+          meta.get("endtime_rule") == "last_strong" and meta.get("strong_contact") == "0.3", str(meta))
     head_cols = next(x for x in (work / "MinimumModel_endtime.csv").read_text().splitlines() if not x.startswith("#")).split(",")
     reach = [float(r["raw"]["reach"]) for r in rows]
     check("표 칸 reach(덱 길이 mm)·n_unresolved 가 governing_e 바로 뒤, reach_m 칸 없음",
           head_cols[len(T.CORE_COLUMNS):len(T.CORE_COLUMNS) + 2] == ["reach", "n_unresolved"] and "reach_m" not in head_cols
           and all(0.0 <= x < 300.0 for x in reach), str(head_cols[:18]))
+    strong_cols = ["strong_end_ms", "strong_vn_max"] + [f"strong_end_ms_e{e}" for e in ("0.1", "0.3", "0.5")]
+    check("표 칸 strong_end_ms·strong_vn_max·strong_end_ms_e<e> (v133)", all(c in head_cols for c in strong_cols),
+          str(head_cols))
+    bad_rule, n_strong = [], 0
+    for r in rows:
+        x = r["raw"]
+        se, vmax, t1, t2e, tf = (num(x.get(c)) for c in ("strong_end_ms", "strong_vn_max", "t1_end_ms", "t2_end_ms", "tfinal_ms"))
+        n_strong += math.isfinite(se)
+        if not (abs(tf - ((se if math.isfinite(se) else t1) + 1.0)) < 1e-6          # ms 그대로 — 덱 단위로 바꾸지 않음
+                and math.isfinite(se) == (vmax >= 0.3 * (1 - 1e-9))                 # 강한 묶음 ⇔ 재접촉 세기 최대 ≥ 문턱 (nan 은 거짓)
+                and (not math.isfinite(se) or se >= t2e - 1e-6)                     # 강한 묶음 = 첫 재접촉 묶음이거나 그 뒤
+                and x.get("strong_end_ms") == x.get(f"strong_end_ms_e{x['governing_e']}")):   # 지배 e 의 값
+            bad_rule.append((x["name"], x.get("strong_end_ms"), x.get("strong_vn_max"), x["t1_end_ms"], x["t2_end_ms"], x["tfinal_ms"]))
+    check(f"v133 규칙: tfinal_ms = (strong_end_ms 또는 t1_end_ms) + 1 ms · strong_end ⇔ strong_vn_max ≥ 0.3 · strong_end ≥ t2_end · "
+          f"지배 e 칸 (강한 재접촉 {n_strong}/30 각도)", not bad_rule and n_strong > 0, str(bad_rule[:5]))
     check(f"JSON presim: reach_max(표 칸은 10자리) = 표 최대 {max(reach):g} mm·n_unresolved_total = 표 합·v0·t_sep_ms",
           abs(pre["reach_max"] / max(reach) - 1) < 1e-9
           and pre["n_unresolved_total"] == sum(int(r["raw"]["n_unresolved"]) for r in rows)
           and abs(pre["params"]["v0"] / V0_MM_S - 1) < 1e-9 and pre["params"]["t_sep_ms"] == T_SEP_MS, json.dumps(pre)[:500])
+    check("JSON presim params endtime_rule=last_strong · strong_contact 0.3",
+          pre["params"].get("endtime_rule") == "last_strong" and pre["params"].get("strong_contact") == 0.3, str(pre["params"]))
+    start, done = log_line(out, "[RigidDropEndtime] START "), log_line(out, "[RigidDropEndtime] DONE ")
+    check("로그 START strong_contact=0.3 · DONE rule=last_strong · PresimStrongContact 경고 없음",
+          " strong_contact=0.3 " in start and " rule=last_strong " in done and "WARNING PresimStrongContact" not in out,
+          start + "\n" + done)
     fib = T.fibonacci_angles(30)
     check("표 30줄 = 피보나치 각도(이름·차례)", [r["name"] for r in rows] == [a[0] for a in fib]
           and all(abs(r["roll"] - a[1]) < 1e-9 and abs(r["pitch"] - a[2]) < 1e-9 for r, a in zip(rows, fib)))
@@ -215,9 +292,11 @@ def test_minimum():
     imeta, imp = T.read_csv_table(str(work / "MinimumModel_impacts.csv"))
     head = (work / "MinimumModel_impacts.csv").read_text().splitlines()
     cols = next(x for x in head if not x.startswith("#")).split(",")
-    check("충돌 상태 표: format=rigid_drop_endtime/impacts v1 + 같은 메타(t_sep_ms·v0 포함), 칸 = IMPACT_COLUMNS",
+    check("충돌 상태 표: format=rigid_drop_endtime/impacts v1 + 같은 메타(t_sep_ms·v0·endtime_rule·strong_contact 포함), "
+          "칸 = IMPACT_COLUMNS",
           imeta.get("format") == T.IMPACTS_FORMAT and cols == T.IMPACT_COLUMNS
-          and all(imeta.get(k) == meta.get(k) and k in imeta for k in ("deck", "units", "height", "gravity", "t_sep_ms", "v0")),
+          and all(imeta.get(k) == meta.get(k) and k in imeta for k in ("deck", "units", "height", "gravity", "t_sep_ms", "v0",
+                                                                         "endtime_rule", "strong_contact")),
           str(imeta))
     k1 = [r for r in imp if r["k"] == "1"]
     check("k=1 줄이 각도 × e 마다 하나 (30 × 3)", len(k1) == 90 and {(r["name"], r["e"]) for r in k1} ==
@@ -239,6 +318,8 @@ def test_minimum():
                                                          for r in imp))
     check("k≥2 줄은 slapdown/rebound", all(r["class"] in ("slapdown", "rebound") for r in imp if r["k"] != "1")
           and any(r["k"] != "1" for r in imp))
+    k_max = max(int(r["k"]) for r in imp)
+    check(f"중력 끔 v133: 2차 묶음 뒤에도 이어 돌아 k ≥ 3 줄이 있음 (최대 k {k_max})", k_max >= 3)
     log = (work / "opt.log").read_text(encoding="utf-8")
     check("KMM 로그(opt.log)에 영어 표지 START·WROTE 다섯·DONE·[RigidBody] SUMMARY",
           "[RigidDropEndtime] START " in log and log.count("[RigidDropEndtime] WROTE ") == 5 and "[RigidDropEndtime] DONE " in log
@@ -253,12 +334,14 @@ def test_variants():
     work = WORK / "angle_work"
     lines = ["height,1000", "ANGLE,FACE,0,0,0", "Angle,EDGE45,45,0,0", "angle,CORNER,35.26,45,0", "Restitution,0.3",
              "Friction,0.3", "PresimGravity,1", "MarginMs,2", "Units,mm-t-s", "Workers,2", "PresimDt,2e-5",
-             "PresimTMax,0.5", "ExcludePart,13"]
+             "PresimTMax,0.5", "ExcludePart,13", "PresimStrongContact,0.5"]
     rc, out, sec = run_kmm(work, option(deck, lines))
     print(f"    KMM {sec:.1f} s")
     done = next((x for x in out.splitlines() if x.startswith("[RigidDropEndtime] DONE ")), "")
     check("Angle 줄: rc 0 · DONE 줄에 뺀 파트 13(이름·이유·질량·몫)", rc == 0
           and "excluded=[13(PKG\\PKG 11, user ExcludePart, mass 1.678e-08, 0.01%)]" in done, done or out[-2000:])
+    check("중력 켬 + PresimStrongContact 직접 → 경고 한 줄(그 글 그대로) · DONE rule=first_recontact",
+          out.count(WARN_STRONG) == 1 and " rule=first_recontact " in done, out[-2000:])
     if rc == 0:
         meta, rows = T.read_endtime_table(str(work / "MinimumModel_endtime.csv"))
         j = json.loads((work / "MinimumModel_rigidbody.json").read_text(encoding="utf-8"))
@@ -275,6 +358,16 @@ def test_variants():
               and abs(ex[0]["mass"] / m13 - 1) < 1e-6 and abs(ex[0]["mass_fraction"] - m13 / MASS_T) < 1e-6
               and any(w.startswith("EXCLUDED_PART: pid=13 ") and "% of deck mass" in w for w in j["warnings"]), str(ex))
         check("중력 켬 + e 하나 → e 칸은 0.3 만", all(r["raw"]["governing_e"] == "0.3" for r in rows))
+        check("중력 켬: 메타 endtime_rule=first_recontact, strong_contact 없음 · JSON endtime_rule·strong_contact 0.5(옵션 그대로)",
+              meta.get("endtime_rule") == "first_recontact" and "strong_contact" not in meta
+              and p.get("endtime_rule") == "first_recontact" and p.get("strong_contact") == 0.5, f"{meta} {p}")
+        check("중력 켬: strong_end_ms·strong_vn_max·strong_end_ms_e0.3 칸은 있고 모두 빈칸",
+              all(r["raw"].get(c) == "" for r in rows for c in ("strong_end_ms", "strong_vn_max", "strong_end_ms_e0.3")),
+              str([{c: r["raw"].get(c) for c in ("strong_end_ms", "strong_vn_max")} for r in rows]))
+        v132 = [(r["name"], r["raw"]["class"], r["raw"]["t1_end_ms"], r["raw"]["t2_end_ms"], r["raw"]["tfinal_ms"]) for r in rows
+                if abs(num(r["raw"]["tfinal_ms"]) - (num(r["raw"]["t2_end_ms"] if r["raw"]["class"] == "slapdown"
+                                                         else r["raw"]["t1_end_ms"]) + 2.0)) > 1e-6]
+        check("중력 켬 = v132 규칙: tfinal_ms = (slapdown 이면 t2_end, 아니면 t1_end) + 2 ms", not v132, str(v132))
     work = WORK / "file_work"
     work.mkdir(parents=True, exist_ok=True)
     (work / "angles.csv").write_text("name,roll,pitch,yaw\nT000,0,0,0\nT030,30,20,10\nT090,0,90,0\n")
@@ -335,6 +428,41 @@ def test_kmm_to_kmm(made):
     check("로그 [EndTimeTable] 각도마다 한 줄", out.count("[EndTimeTable] roll=") == 3, out[-1500:])
 
 
+# ── [7] PresimStrongContact 전달 ─────────────────────────────────────────────
+def test_strong_contact(made):
+    """[2](문턱 0.3)에서 강한 재접촉이 있던 각도를 문턱 100·v0(닿을 수 없는 세기)로 다시 돌린다. 값이 엔진에 닿지 않으면
+    [2] 와 같은 표가 나와 strong_end 가 남는다. 문턱이 높으면 시뮬이 같은 자리에서 더 일찍 멈추기만 하므로 endtim 은 [2] 이하다."""
+    print("[7] PresimStrongContact 전달 — [2] 에서 강한 재접촉이 있던 각도를 문턱 100 으로 다시")
+    if made is None:
+        check("[2] 표가 있어야 함", False)
+        return
+    picks = [r for r in made[1] if r["raw"].get("strong_end_ms")][:3]
+    check(f"[2] 에 강한 재접촉 각도가 있음 {[r['name'] for r in picks]}", bool(picks))
+    if not picks:
+        return
+    deck = deck_copy("strong_deck")
+    work = WORK / "strong_work"
+    lines = ["Height,1500", *(f"Angle,{r['name']},{r['raw']['roll']},{r['raw']['pitch']},{r['raw']['yaw']}" for r in picks),
+             "PresimStrongContact,100", "Workers,3"]
+    rc, out, sec = run_kmm(work, option(deck, lines))
+    print(f"    KMM {sec:.1f} s")
+    check("rc 0 · 중력 끔이라 PresimStrongContact 경고 없음", rc == 0 and "WARNING PresimStrongContact" not in out, out[-2000:])
+    if rc != 0:
+        return
+    meta, got = T.read_endtime_table(str(work / "MinimumModel_endtime.csv"))
+    j = json.loads((work / "MinimumModel_rigidbody.json").read_text(encoding="utf-8"))
+    start = log_line(out, "[RigidDropEndtime] START ")
+    check("메타 strong_contact=100 · endtime_rule=last_strong, JSON strong_contact 100, START strong_contact=100",
+          meta.get("strong_contact") == "100" and meta.get("endtime_rule") == "last_strong"
+          and j["presim"]["params"]["strong_contact"] == 100.0 and " strong_contact=100 " in start, f"{meta}\n{start}")
+    before = {r["name"]: r["endtim"] for r in picks}
+    seen = [(g["name"], g["raw"]["strong_end_ms"], g["raw"]["t1_end_ms"], g["raw"]["tfinal_ms"], before.get(g["name"]), g["endtim"])
+            for g in got]
+    check(f"문턱 100: strong_end_ms 빈칸 · tfinal = t1_end + 1 ms · endtim ≤ 문턱 0.3 의 값 {[(s[0], s[4], s[5]) for s in seen]}",
+          [g["name"] for g in got] == list(before) and all(
+              s[1] == "" and abs(num(s[3]) - num(s[2]) - 1.0) < 1e-6 and s[5] <= s[4] for s in seen), str(seen))
+
+
 # ── [5] 오류 rc 1 ────────────────────────────────────────────────────────────
 def test_errors():
     print("[5] 오류 → rc 1, 표 없음 (덱 읽기 뒤 실패는 지난 실행의 산출도 지운다)")
@@ -345,6 +473,8 @@ def test_errors():
         "없는 AngleFile": (["Height,1500", "AngleFile,nope.csv"], "AngleFile not found", "option error", False),
         "숫자 아닌 AngleFile": (["Height,1500", "AngleFile,bad.csv"], "bad number", "option error", False),
         "모르는 키 Heigth": (["Heigth,1500", "Fibonacci,10"], "did you mean 'Height'?", "option error", False),
+        "PresimStrongContact 0": (["Height,1500", "Fibonacci,10", "PresimStrongContact,0"], "PresimStrongContact: 양수여야 한다",
+                                  "option error", False),
         "없는 ExcludePart 999": (["Height,1500", "Fibonacci,2", "ExcludePart,999", "Workers,2"], "unknown ExcludePart",
                                 "failed (ValueError)", True),
         "사전 해석 실패(PresimTMax 2e-5 s — 바닥에 닿기 전)": (["Height,1500", "Fibonacci,2", "PresimTMax,2e-5", "Workers,2"],
@@ -374,6 +504,9 @@ def test_help():
     from KooCLIHelp.kmm_catalog import CATALOG
     top = lambda q: E.render_query(CATALOG, q)[:400]  # noqa: E731
     check("RIGID_DROP_ENDTIME 상세", top("RIGID_DROP_ENDTIME").startswith("=") and "RIGID_DROP_ENDTIME — " in top("RIGID_DROP_ENDTIME"))
+    detail = E.render_query(CATALOG, "RIGID_DROP_ENDTIME")
+    check("RIGID_DROP_ENDTIME 상세에 키 줄 'PresimStrongContact  [실수(v0 배수) · 기본 0.3]' (KCR 이 v133 KMM 을 이 키 이름으로 가른다)",
+          "PresimStrongContact  [실수(v0 배수) · 기본 0.3]" in detail)
     for q, want in (("drop", "DROP_ATTITUDE — "), ("낙하", "DROP_ATTITUDE — "), ("rigid", "ELASTIC_TO_RIGID — "),
                     ("endtime", "RIGID_DROP_ENDTIME — "), ("사전해석", "RIGID_DROP_ENDTIME — ")):
         check(f"--help {q} → {want.split(' ')[0]}", want in top(q), top(q)[:200])
@@ -394,6 +527,7 @@ def main():
     made = test_minimum()
     test_variants()
     test_kmm_to_kmm(made)
+    test_strong_contact(made)
     test_errors()
     test_help()
     print("\n시간 %.0f s" % (time.time() - t0))

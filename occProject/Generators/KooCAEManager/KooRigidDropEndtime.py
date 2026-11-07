@@ -4,15 +4,20 @@
   1. **RigidDropEndtime 블록 → parse_option_lines(키 이름 전체 일치, 모르는 키·틀린 값은 ValueError → KMM rc 1)
   2. 지난 실행의 산출 다섯 개를 지운다(실패한 실행 뒤에 옛 표가 남아 KCR 이 읽지 않게).
   3. KooRigidBodyProperties.compute_rigid_body → <base>_rigidbody.json · <base>_surface.obj · <base>_hull.obj
-  4. KooRigidDropPresim.make_body(SI 값) → run_presim(각도 × 반발계수, return_impacts=True)
+  4. KooRigidDropPresim.make_body(SI 값) → run_presim(각도 × 반발계수, strong_contact, return_impacts=True)
   5. <base>_endtime.csv(KooEndTimeTable.write_endtime_table) · <base>_impacts.csv(덱 단위, PLAN §5)
-     메타: deck·units·time_unit·height·v0(√(2gh), 덱 단위)·restitution·friction·gravity·margin_ms·t_sep_ms·n_angles.
-     표 칸에 엔진이 주는 reach(덱 길이)·n_unresolved 를 더한다. rigidbody.json 에 사전 해석 요약("presim")을 더해 다시 쓴다.
+     메타: deck·units·time_unit·height·v0(√(2gh), 덱 단위)·restitution·friction·gravity·endtime_rule·strong_contact(중력 끔만)·
+     margin_ms·t_sep_ms·n_angles.
+     표 칸에 엔진이 주는 reach(덱 길이)·n_unresolved 를 더한다. 엔진의 나머지 칸(strong_end_ms·strong_vn_max·e 별 칸)은 그대로
+     옮긴다(*_ms 칸은 ms 그대로). rigidbody.json 에 사전 해석 요약("presim")을 더해 다시 쓴다.
   산출은 모두 out_dir(= KMM 작업 폴더)에 쓴다. KCR 은 *Inputfile 로 템플릿 절대 경로를, 둘째 인자로 작업 폴더를 주므로
   덱 옆에 쓰면 안 된다. base = 덱 파일 이름에서 확장자를 뺀 것.
 
-중력: PresimGravity 기본 0 — DROP_ATTITUDE 덱(초기 속도만, 중력 없음)과 같은 조건이고, 다시 닿는 충격을 모두 2차 충격으로 센다
-(사용자 결정 11-07). 1 이면 중력을 켜고 무게중심이 1 mm 넘게 떴다 닿은 재착지는 2차 충격으로 세지 않는다.
+중력: PresimGravity 기본 0 — DROP_ATTITUDE 덱(초기 속도만, 중력 없음)과 같은 조건이다(사용자 결정 11-07). 이때 사전 해석은
+2차 묶음 뒤에도 이어 돌고, ENDTIM 은 접근 속도가 PresimStrongContact·v0(기본 0.3) 이상인 마지막 재접촉 묶음의 끝 + MarginMs 다.
+그런 묶음이 없으면 1차 묶음 끝 + MarginMs 다(v133, 메타 endtime_rule=last_strong). 꼭짓점마다 갈라져 오는 슬랩다운 뒷부분을
+담고, 오래 돈 뒤의 약한 스침은 뺀다. 1 이면 중력을 켜고 v132 규칙(첫 재접촉 묶음 끝, endtime_rule=first_recontact)을 쓴다.
+무게중심이 1 mm 넘게 떴다 닿은 재착지는 2차 충격으로 세지 않고, PresimStrongContact 는 무시한다(직접 주면 경고 한 줄).
 로그 줄머리는 영어 표지 [RigidDropEndtime] 다(컴파일본은 한글 글자를 찾기 어렵다).
 """
 import csv
@@ -29,7 +34,7 @@ _TAG = "[RigidDropEndtime]"
 KEYS = {"height": "Height", "anglefile": "AngleFile", "fibonacci": "Fibonacci", "angle": "Angle",
         "restitution": "Restitution", "friction": "Friction", "presimgravity": "PresimGravity",
         "marginms": "MarginMs", "excludepart": "ExcludePart", "units": "Units", "workers": "Workers",
-        "presimdt": "PresimDt", "presimtmax": "PresimTMax"}
+        "presimdt": "PresimDt", "presimtmax": "PresimTMax", "presimstrongcontact": "PresimStrongContact"}
 _REPEATABLE = ("Angle", "ExcludePart")
 _SOURCES = ("AngleFile", "Fibonacci", "Angle")
 SUFFIXES = {"rigidbody": "_rigidbody.json", "surface": "_surface.obj", "hull": "_hull.obj",
@@ -48,9 +53,11 @@ def default_workers():
 
 
 def default_options(cur_dir="."):
+    """옵션 기본값. GivenKeys 는 블록에 직접 준 키 이름이다(parse_option_lines 가 채운다 — 중력 켬 + PresimStrongContact 경고)."""
     return {"Height": None, "AngleFile": None, "Fibonacci": None, "Angle": [], "Restitution": [0.1, 0.3, 0.5],
             "Friction": 0.5, "PresimGravity": 0, "MarginMs": 1.0, "ExcludePart": [], "Units": None,
-            "Workers": default_workers(), "PresimDt": 1e-5, "PresimTMax": 1.0, "OutDir": os.path.abspath(cur_dir)}
+            "Workers": default_workers(), "PresimDt": 1e-5, "PresimTMax": 1.0, "PresimStrongContact": 0.3,
+            "OutDir": os.path.abspath(cur_dir), "GivenKeys": []}
 
 
 def _float(key, text):
@@ -146,9 +153,9 @@ def parse_option_lines(lines, cur_dir):
             if vals[0] not in UNIT_SYSTEMS:
                 raise ValueError(f"Units: '{vals[0]}' — {', '.join(UNIT_SYSTEMS)} 가운데 하나 (unknown units)")
             opt[name] = vals[0]
-        else:   # Friction · MarginMs · PresimDt · PresimTMax
+        else:   # Friction · MarginMs · PresimDt · PresimTMax · PresimStrongContact(v0 배수 문턱)
             opt[name] = _float(name, vals[0])
-            if opt[name] < 0 or (name in ("PresimDt", "PresimTMax") and opt[name] == 0):
+            if opt[name] < 0 or (name in ("PresimDt", "PresimTMax", "PresimStrongContact") and opt[name] == 0):
                 raise ValueError(f"{name}: {'양수' if name.startswith('Presim') else '0 이상'}여야 한다 ({vals[0]})")
     if opt["Height"] is None:
         raise ValueError("Height 가 없다 — 낙하 높이(덱 길이 단위)를 줄 것 (Height missing)")
@@ -162,6 +169,7 @@ def parse_option_lines(lines, cur_dir):
         raise ValueError(f"PresimTMax({opt['PresimTMax']}) 는 PresimDt({opt['PresimDt']}) 보다 커야 한다")
     if opt["AngleFile"]:
         read_angle_file(opt["AngleFile"])   # 덱을 읽기 전에 틀린 파일을 알린다
+    opt["GivenKeys"] = sorted(seen)
     return opt
 
 
@@ -198,7 +206,8 @@ def impacts_to_deck(impacts, length_to_m, time_to_s):
 
 
 def table_rows(rows, length_to_m):
-    """run_presim 줄 → 표 줄: CORE 칸, 그다음 reach(엔진 reach_m 을 덱 길이로)·n_unresolved(엔진이 주면), 그다음 e 별 칸."""
+    """run_presim 줄 → 표 줄: CORE 칸, 그다음 reach(엔진 reach_m 을 덱 길이로)·n_unresolved(엔진이 주면), 그다음 엔진 줄의
+    나머지 칸(strong_end_ms·strong_vn_max·e 별 칸)을 엔진 차례대로. 바꾸는 것은 reach 뿐이다(*_ms 칸은 ms 그대로)."""
     from KooCAEManager.KooEndTimeTable import CORE_COLUMNS
     out = []
     for r in rows:
@@ -232,9 +241,14 @@ def run_rigid_drop_endtime(options, dyna_importer, deck_path, out_dir, log=print
     import pybullet   # 덱을 다 읽은 뒤 사전 해석에서 죽지 않게 먼저 확인 — 부모가 읽어 두면 작업자(fork)가 다시 읽지 않는다
     log(f"{_TAG} pybullet {getattr(pybullet, '__file__', '?')}")
     t_sep_ms = inspect.signature(run_presim).parameters["t_sep_ms"].default   # 엔진 기본값을 그대로 쓰고 메타에 남긴다
+    gravity_on = bool(opt["PresimGravity"])
+    # ENDTIM 규칙(v133): 중력 끔은 문턱(PresimStrongContact·v0) 넘는 마지막 재접촉 묶음, 중력 켬은 v132 첫 재접촉 묶음
+    rule = "first_recontact" if gravity_on else "last_strong"
     log(f"{_TAG} START deck={deck_path} out_dir={out_dir} angles={len(angles)} ({src}) height={opt['Height']:g} "
         f"restitution={opt['Restitution']} friction={opt['Friction']:g} gravity={int(opt['PresimGravity'])} "
-        f"margin_ms={opt['MarginMs']:g} workers={opt['Workers']}")
+        f"strong_contact={opt['PresimStrongContact']:g} margin_ms={opt['MarginMs']:g} workers={opt['Workers']}")
+    if gravity_on and "PresimStrongContact" in opt["GivenKeys"]:
+        log(f"{_TAG} WARNING PresimStrongContact ignored with PresimGravity 1 (first re-contact rule)")
 
     rb = compute_rigid_body(dyna_importer, exclude_pids=opt["ExcludePart"], units=opt["Units"], log=log)
     u = rb["units"]
@@ -250,20 +264,21 @@ def run_rigid_drop_endtime(options, dyna_importer, deck_path, out_dir, log=print
     si = rb["si"]
     body = make_body(si["mass_kg"], si["com_m"], si["inertia_com_kgm2"], si["hull_vertices_m"])
     height_m = opt["Height"] * length_to_m
-    gravity_on = bool(opt["PresimGravity"])
     t1 = time.time()
     rows, impacts = run_presim(body, angles, height_m, restitutions=opt["Restitution"], friction=opt["Friction"],
                                gravity_on=gravity_on, margin_ms=opt["MarginMs"], dt=opt["PresimDt"],
                                t_max=opt["PresimTMax"], workers=opt["Workers"], time_to_s=time_to_s, log=log,
-                               return_impacts=True)
+                               return_impacts=True, strong_contact=opt["PresimStrongContact"])
     t2 = time.time()
 
     # v0 = DROP_ATTITUDE 덱의 낙하 속도 √(2gh), 덱 단위 — 표를 쓰는 쪽이 자기 높이·속도와 맞는지 본다
     v0 = math.sqrt(2.0 * G * height_m) * time_to_s / length_to_m
+    # endtime_rule 이 없는 표는 v132 다(KCR 이 가른다). strong_contact 는 쓰인 때(중력 끔)만 적는다
     meta = {"deck": deck_path, "units": u["name"], "time_unit": "s" if time_to_s == 1.0 else "ms",
             "height": opt["Height"], "v0": v0, "restitution": ",".join(format(e, "g") for e in opt["Restitution"]),
-            "friction": opt["Friction"], "gravity": int(gravity_on), "margin_ms": opt["MarginMs"], "t_sep_ms": t_sep_ms,
-            "n_angles": len(angles)}
+            "friction": opt["Friction"], "gravity": int(gravity_on), "endtime_rule": rule,
+            **({} if gravity_on else {"strong_contact": opt["PresimStrongContact"]}),
+            "margin_ms": opt["MarginMs"], "t_sep_ms": t_sep_ms, "n_angles": len(angles)}
     table = table_rows(rows, length_to_m)
     T.write_endtime_table(paths["endtime"], table, meta)
     T.write_csv_table(paths["impacts"], impacts_to_deck(impacts, length_to_m, time_to_s), T.IMPACT_COLUMNS, meta,
@@ -276,7 +291,8 @@ def run_rigid_drop_endtime(options, dyna_importer, deck_path, out_dir, log=print
     excl = [f"{x['pid']}({x['name']}, {x['reason']}, mass {x.get('mass', 0.0):.4g}, {x.get('mass_fraction', 0.0):.2%})"
             for x in rb["excluded_parts"]]
     summary = {"params": {"height": opt["Height"], "height_m": height_m, "v0": v0, "restitution": list(opt["Restitution"]),
-                          "friction": opt["Friction"], "gravity": int(gravity_on), "margin_ms": opt["MarginMs"],
+                          "friction": opt["Friction"], "gravity": int(gravity_on), "endtime_rule": rule,
+                          "strong_contact": opt["PresimStrongContact"], "margin_ms": opt["MarginMs"],
                           "t_sep_ms": t_sep_ms, "dt_s": opt["PresimDt"], "t_max_s": opt["PresimTMax"],
                           "workers": opt["Workers"], "angle_source": src, "exclude_parts": list(opt["ExcludePart"])},
                "n_angles": len(rows), "n_impacts": len(impacts),
@@ -292,7 +308,7 @@ def run_rigid_drop_endtime(options, dyna_importer, deck_path, out_dir, log=print
     write_rigid_body_json(paths["rigidbody"], rb)
     for k in SUFFIXES:
         log(f"{_TAG} WROTE {paths[k]}")
-    log(f"{_TAG} DONE angles={len(rows)} impacts={len(impacts)} classes={summary['classes']} "
+    log(f"{_TAG} DONE angles={len(rows)} impacts={len(impacts)} rule={rule} classes={summary['classes']} "
         f"tfinal_ms={tf.min():.2f}/{np.median(tf):.2f}/{tf.max():.2f} (min/median/max) "
         f"endtim={ends.min():g}..{ends.max():g} {meta['time_unit']} reach_max={summary['reach_max']} "
         f"unresolved={summary['n_unresolved_total']} excluded=[{'; '.join(excl) or 'none'}] "
