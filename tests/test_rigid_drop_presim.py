@@ -336,6 +336,30 @@ def main():
         check("killed worker raises BrokenProcessPool (no hang)", type(exc).__name__ == "BrokenProcessPool"
               and time.time() - t < 60, f"{type(exc).__name__} after {time.time() - t:.1f}s")
 
+    print("[10] 작업자가 멈추면(SIGSTOP) 감시 시간 뒤 예외 + 작업자 정리")
+    stopped = []
+
+    def stopper():
+        time.sleep(0.8)
+        for kid in mp.active_children():
+            os.kill(kid.pid, signal.SIGSTOP)
+            stopped.append(kid.pid)
+    old_np = P.NO_PROGRESS_S
+    P.NO_PROGRESS_S = 3.0
+    threading.Thread(target=stopper, daemon=True).start()
+    t = time.time()
+    try:
+        P.run_presim(BOX, fibonacci_angles(300), H, ES, workers=2, log=lambda s: None)
+        check("hung workers raise RuntimeError", False, "finished without error")
+    except RuntimeError as exc:
+        time.sleep(1.0)
+        alive = [pid for pid in stopped if os.path.exists(f"/proc/{pid}") and
+                 open(f"/proc/{pid}/stat").read().split()[2] not in ("Z", "X")]
+        check("hung workers → RuntimeError within the watchdog, no worker left", "hung" in str(exc)
+              and time.time() - t < 20 and not alive, f"{exc} after {time.time() - t:.1f}s alive={alive}")
+    finally:
+        P.NO_PROGRESS_S = old_np
+
     print(f"\n{'PASS' if not FAILS else 'FAIL'} ({time.time() - t_all:.0f} s)")
     for f in FAILS:
         print("  -", f)

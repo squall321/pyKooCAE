@@ -43,7 +43,7 @@ import itertools
 import math
 import multiprocessing
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
 import numpy as np
 
@@ -59,6 +59,7 @@ J_EVENT_MIN = 0.02     # 합계 < J_EVENT_MIN·m·v0 인 이벤트는 스침으�
 # btMultiBody 속도 성분 상한(기본 100 rad/s·m/s)을 사실상 끔 — 기본값은 충돌 직후 ω 를 잘라 관성을 어긴다
 MAX_COORD_VELOCITY = 1e6
 MAX_HULL_VERTICES = 131072  # pybullet 이 한 번에 올리는 꼭짓점 수 상한(B3_MAX_NUM_VERTICES, 리눅스)
+NO_PROGRESS_S = 600.0  # 이 시간 동안 끝나는 경우가 하나도 없으면 작업자가 멈춘 것으로 본다 (한 경우는 길어야 수 초)
 CONTACT_TOL = 5e-5     # 충돌 직전 최저 꼭짓점에서 이 높이 안의 꼭짓점을 접촉 꼭짓점으로 봄 (m)
 CONTACT_SPAN = 0.04    # 접촉 꼭짓점 퍼짐이 CONTACT_SPAN·r_max 이하인 방향은 길이 없음으로 봄 (조밀한 둥근 모서리 대비)
 
@@ -429,19 +430,32 @@ def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.
     t_start = time.time()
     res, stops, imps = {}, {}, {}
     every = max(1, len(jobs) // 10)
-    # fork 프로세스 풀 — 작업자마다 자기 p.DIRECT 를 연다. 작업자가 죽으면(OOM 등) BrokenProcessPool 로 멈춘다(무한 대기 없음)
+    # fork 프로세스 풀 — 작업자마다 자기 p.DIRECT 를 연다. 작업자가 죽으면(OOM 등) BrokenProcessPool 로 멈춘다(무한 대기 없음).
+    # 작업자가 멈춘 채 남으면(네이티브 스레드가 많은 프로세스의 fork) NO_PROGRESS_S 동안 끝나는 경우가 없을 때 작업자를 죽이고 멈춘다.
     pool = ProcessPoolExecutor(nw, mp_context=multiprocessing.get_context("fork"),
                                initializer=_init_worker, initargs=(body,))
+    finished = False
     try:
-        futures = [pool.submit(_job, job) for job in jobs]
-        for n, fut in enumerate(as_completed(futures), start=1):
-            i, k, si, stop, rows_k = fut.result()
-            res[(i, k)], imps[(i, k)] = si, rows_k
-            stops[stop] = stops.get(stop, 0) + 1
-            if n % every == 0 or n == len(jobs):
-                log(f"[presim] {n}/{len(jobs)} 경우 완료 ({time.time() - t_start:.0f} s)")
+        pending = {pool.submit(_job, job) for job in jobs}
+        n = 0
+        while pending:
+            done, pending = wait(pending, timeout=NO_PROGRESS_S, return_when=FIRST_COMPLETED)
+            if not done:
+                raise RuntimeError(f"rigid drop presim: no case finished for {NO_PROGRESS_S:g} s "
+                                   f"({n}/{len(jobs)} done) — a worker may be hung")
+            for fut in done:
+                n += 1
+                i, k, si, stop, rows_k = fut.result()
+                res[(i, k)], imps[(i, k)] = si, rows_k
+                stops[stop] = stops.get(stop, 0) + 1
+                if n % every == 0 or n == len(jobs):
+                    log(f"[presim] {n}/{len(jobs)} 경우 완료 ({time.time() - t_start:.0f} s)")
+        finished = True
     finally:
-        pool.shutdown(wait=True, cancel_futures=True)
+        if not finished:  # 멈춘 작업자를 남기지 않는다 — shutdown(wait=True) 는 멈춘 작업자를 영영 기다린다
+            for proc in list((getattr(pool, "_processes", None) or {}).values()):
+                proc.kill()
+        pool.shutdown(wait=finished, cancel_futures=True)
 
     rows = []
     for i, (name, roll, pitch, yaw) in enumerate(angles):
