@@ -13,11 +13,15 @@
   [4] Fast DOE 강체벽 바닥: 같은 판정
   [5] 오류: 표에 없는 각도·숫자 아닌 endtim·endtim 칸 없음·dt 없음·없는 파일 → rc 1, 덱을 쓰지 않음
   [6] (있으면) Examples/MinimumModel.k Fast 세 각도: 키 없음 = 같은 값 표, 다른 값이면 세 줄만 다름
+  [7] 표 대조: 메타 v0(낙하 속도) 다름·순수 낙하 아님 → rc 1, tFinal 보다 긴 ENDTIM 경고, reach 가 바닥판 반폭보다 길면 경고
+  [8] RIGID_DROP_ENDTIME 옵션 함정: 다른 모드와 함께·두 번·끝줄 없음 → 종료 코드 1
+  [9] RIGID_DROP_ENDTIME 이 rc 3(리더가 요소를 버림)으로 끝날 때 표는 썼지만 빠진 파트를 알리는 줄 (pybullet 있을 때만)
 
 실행: venv312/bin/python tests/test_drop_endtime_table.py
 """
 import contextlib
 import io
+import math
 import shutil
 import subprocess
 import sys
@@ -86,15 +90,16 @@ def option(model, angles, height, tfinal, dt, surface, table=None, extra=()):
     return "\n".join(lines) + "\n"
 
 
-def table(path, rows):
-    """rows: [(roll, pitch, yaw, endtim)] — 표 형식은 계약 모듈 기록기 그대로."""
+def table(path, rows, meta=None, extra=None):
+    """rows: [(roll, pitch, yaw, endtim)] — 표 형식은 계약 모듈 기록기 그대로. meta 는 더할 '# key=value', extra 는 줄마다 더할 칸."""
     out = []
     for k, (r, p, y, e) in enumerate(rows):
         d = drop_direction(r, p, y)
-        out.append({"name": f"A{k + 1:03d}", "roll": float(r), "pitch": float(p), "yaw": float(y), "dx": float(d[0]),
-                    "dy": float(d[1]), "dz": float(d[2]), "class": "slapdown", "endtim": e, "governing_e": 0.3})
+        out.append(dict({"name": f"A{k + 1:03d}", "roll": float(r), "pitch": float(p), "yaw": float(y), "dx": float(d[0]),
+                         "dy": float(d[1]), "dz": float(d[2]), "class": "slapdown", "endtim": e, "governing_e": 0.3},
+                        **(extra or {})))
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    write_endtime_table(str(path), out, {"deck": "box", "units": "mm-t-s", "time_unit": "s"})
+    write_endtime_table(str(path), out, dict({"deck": "box", "units": "mm-t-s", "time_unit": "s"}, **(meta or {})))
 
 
 def run(wd, opt_text, model="box.k", src=None):
@@ -207,14 +212,17 @@ def test_parse(tmp):
     o2 = parse(d, base.replace("**DropAttitude,1\n", "**DropAttitude,1\nENDTIMETABLE, /abs/a,b.csv \n"))
     check("대소문자 무관·앞뒤 공백·경로 안 쉼표 유지·절대 경로 그대로",
           isinstance(o2, dict) and o2.get("EndTimeTable") == "/abs/a,b.csv", str(o2))
-    o3 = parse(d, base.replace("**DropAttitude,1\n", "**DropAttitude,1\nEndTimeTableX,/abs/t.csv\n"))
-    check("키 이름이 다르면(EndTimeTableX) 받지 않음", isinstance(o3, dict) and "EndTimeTable" not in o3 and o3 == o0)
-    try:
-        parse(d, base.replace("**DropAttitude,1\n", "**DropAttitude,1\nEndTimeTable,\n"))
-        code = None
-    except SystemExit as e:
-        code = e.code
-    check("값이 빈 EndTimeTable, → 종료 코드 1", code == 1, str(code))
+    for bad in ("EndTimeTable,", "EndTimeTableX,/abs/t.csv", "EndTimeTabel,/abs/t.csv", "EndTimeTable;/data/height/t.csv",
+                "EndTimeTable /abs/t.csv"):
+        # 비슷하지만 정확하지 않은 키는 부분 문자열 검사(height·tfinal…)에 걸리기 전에 멈춘다(리뷰 R2-7 — 예전엔 Height 를 비워 IndexError)
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                parse(d, base.replace("**DropAttitude,1\n", f"**DropAttitude,1\n{bad}\n"))
+            code = None
+        except SystemExit as e:
+            code = e.code
+        check(f"'{bad}' → 종료 코드 1 (빈 값·비슷한 키)", code == 1, f"{code} {out.getvalue()[-200:]}")
 
 
 def test_single(tmp):
@@ -346,6 +354,104 @@ def test_minimum_model(tmp):
             check(f"MinimumModel: 각도 {k} ENDTIM={e} — 세 줄만 다름", ok, why)
 
 
+def test_table_checks(tmp):
+    print("[7] 표 대조 — v0(낙하 속도)·순수 낙하·tFinal 넘는 ENDTIM 경고·바닥판 reach 경고")
+    v = math.sqrt(2 * 9810 * 50)
+
+    def case(tag, meta=None, extra=None, endtim=0.0051, surface="Plane,0,0,0,4,4,1", repl=None):
+        w = Path(tmp, f"tc_{tag}")
+        table(w / "t.csv", [(30, 20, 10, endtim)], meta=meta, extra=extra)
+        text = option("box.k", [(30, 20, 10)], 50, 0.002, 1e-4, surface, table="t.csv")
+        if repl:
+            text = text.replace(*repl)
+        rc, out = run(w, text)
+        return rc, out, decks(w, "box")
+
+    rc, out, ds = case("v0_ok", meta={"v0": f"{v:.10g}"})
+    check("v0 = √(2gh) → rc 0, 확인 줄", rc == 0 and "[EndTimeTable] v0=" in out and ds, out[-300:])
+    check("ENDTIM 0.0051 > tFinal 0.002 → WARNING 한 줄 (x2.55)",
+          out.count("[EndTimeTable] WARNING max ENDTIM=0.0051 (x2.55 of tFinal) — raise time limits") == 1, out[-400:])
+    rc, out, ds = case("v0_bad", meta={"v0": f"{math.sqrt(2 * 9810 * 1500):.10g}", "height": "1500"})
+    check("v0 = 높이 1500 의 속도 → rc 1 V0_MISMATCH, 덱 없음", rc == 1 and "V0_MISMATCH" in out and not ds, out[-300:])
+    check("V0_MISMATCH 줄에 양쪽 높이·g (표 height 1500·g 9810 / 이 낙하 Height 50·g 9810)",
+          "(height 1500, g 9810) vs this drop √(2gh) 990.454 (Height 50, g 9810)" in out, out[-400:])
+    rc, out, ds = case("not_pure", meta={"v0": f"{v:.10g}"}, repl=("InitialVelocityX,0", "InitialVelocityX,100"))
+    check("v0 + InitialVelocityX 100 → rc 1 NOT_PURE_DROP, 덱 없음", rc == 1 and "NOT_PURE_DROP" in out and not ds, out[-300:])
+    rc, out, ds = case("eq_tf", endtim=0.002)
+    check("ENDTIM = tFinal, v0 없음 → rc 0, 경고·v0 줄 없음", rc == 0 and "WARNING max ENDTIM" not in out and "v0=" not in out and ds,
+          out[-300:])
+    rc, out, ds = case("reach_far", extra={"reach": 20.0})
+    check("Plane(자동 한 변 15 → 반폭 7.5)·reach 20 → 각도 WARNING + 요약, rc 0",
+          rc == 0 and "WARNING plate reach" in out and "WARNING plate too small for 1/1 angles" in out and ds, out[-500:])
+    rc, out, ds = case("reach_ok", extra={"reach": 3.0})
+    check("reach 3 < 반폭 7.5 → 경고 없음", rc == 0 and "WARNING plate" not in out and ds, out[-300:])
+    rc, out, ds = case("reach_rw", extra={"reach": 20.0}, surface="RigidWall,0,0,0,0,0,0")
+    check("RigidWall(무한 평면)·reach 20 → 경고 없음", rc == 0 and "WARNING plate" not in out and ds, out[-300:])
+
+
+def parse_out(d, text):
+    """옵션 글을 KMM ImportOption 으로 읽는다 → (종료 코드 또는 None, stdout)."""
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            import KooMeshModifier as K
+            g = K.KooMeshModifier()
+            g.SetCurrentDirectory(str(d))
+            Path(d, "opt.txt").write_text(text)
+            g.ImportOption("opt.txt")
+        return None, out.getvalue()
+    except SystemExit as e:
+        return e.code, out.getvalue()
+
+
+def test_rde_option_traps(tmp):
+    print("[8] RIGID_DROP_ENDTIME 옵션 함정 — 다른 모드와 함께·두 번·끝줄 없음 → 종료 코드 1")
+    d = Path(tmp, "rde_traps")
+    d.mkdir()
+    full = option("box.k", [(0, 0, 0)], 50, 0.002, 1e-4, "Plane,0,0,0,4,4,1")
+    drop2 = full[full.index("**DropAttitude,1"):full.index("**EndDropAttitude")].replace("**DropAttitude,1", "**DropAttitude,2")
+    drop2 += "**EndDropAttitude\n"
+
+    def rde(i, end=True):
+        return f"**RigidDropEndtime,{i}\nHeight,1500\nFibonacci,10\n" + ("**EndRigidDropEndtime\n" if end else "")
+
+    head = "*Inputfile\nbox.k\n*Mode\n"
+    cases = [
+        ("DROP_ATTITUDE 와 함께", head + "RIGID_DROP_ENDTIME,1\nDROP_ATTITUDE,2\n" + rde(1) + drop2 + "*End\n", 1, "must run alone"),
+        ("두 번", head + "RIGID_DROP_ENDTIME,1\nRIGID_DROP_ENDTIME,2\n" + rde(1) + rde(2) + "*End\n", 1, "must run alone"),
+        ("끝줄 없이 *End", head + "RIGID_DROP_ENDTIME,1\n" + rde(1, end=False) + "*End\n", 1, "missing **EndRigidDropEndtime"),
+        ("끝줄 없이 다음 블록", head + "RIGID_DROP_ENDTIME,1\nDROP_ATTITUDE,2\n" + rde(1, end=False) + drop2 + "*End\n", 1,
+         "missing **EndRigidDropEndtime"),
+        ("혼자·끝줄 있음", head + "RIGID_DROP_ENDTIME,1\n" + rde(1) + "*End\n", None, ""),
+    ]
+    for tag, text, want, msg in cases:
+        code, out = parse_out(d, text)
+        check(f"{tag} → 종료 코드 {want}{(' ' + msg) if msg else ''}", code == want and msg in out, f"{code} {out[-300:]}")
+
+
+def test_rde_rc3(tmp):
+    print("[9] RIGID_DROP_ENDTIME 이 rc 3 으로 끝날 때 — 표는 썼지만 리더가 버린 파트를 알리는 줄")
+    import importlib.util
+    if importlib.util.find_spec("pybullet") is None:
+        print("  (pybullet 없음 — 건너뜀)")
+        return
+    w = Path(tmp, "rde_rc3")
+    w.mkdir()
+    box_model(w / "box.k")
+    f10 = lambda *v: "".join(f"{str(x):>10s}" for x in v)  # noqa: E731
+    text = (w / "box.k").read_text().replace("*NODE", "\n".join(   # *PART_INERTIA 파트 — 리더가 그 파트의 요소를 버린다
+        ["*PART_INERTIA", "INERTIA_BLOCK", f10(3, 1, 1), f10("6.25", "6.25", "1.5", "1.0e-6", 0, 0),
+         f10("1.0e-6", "0.0", "0.0", "1.0e-6", "0.0", "1.0e-6"), f10("0.0", "0.0", "0.0", "0.0", "0.0", "0.0")]) + "\n*NODE", 1)
+    lines = text.splitlines()
+    i = lines.index("*ELEMENT_SOLID") + 1
+    lines[i] = lines[i][:8] + f"{3:8d}" + lines[i][16:]
+    (w / "box.k").write_text("\n".join(lines) + "\n")
+    rc, out = run(w, "*Inputfile\nbox.k\n*Mode\nRIGID_DROP_ENDTIME,1\n**RigidDropEndtime,1\nHeight,50\nAngle,A,30,20,10\n"
+                     "Restitution,0.3\nWorkers,1\nPresimTMax,0.2\n**EndRigidDropEndtime\n*End\n")
+    check("rc 3, '[RIGID_DROP_ENDTIME] tables were written' 줄, 표는 있음",
+          rc == 3 and "[RIGID_DROP_ENDTIME] tables were written" in out and (w / "box_endtime.csv").exists(), f"rc={rc} {out[-500:]}")
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="drop_endtime_tbl_")
     test_parse(tmp)
@@ -353,6 +459,9 @@ def main():
     test_fast(tmp)
     test_errors(tmp)
     test_minimum_model(tmp)
+    test_table_checks(tmp)
+    test_rde_option_traps(tmp)
+    test_rde_rc3(tmp)
     print()
     if FAILS:
         print("FAIL %d 건 (작업 폴더 %s 를 남긴다)" % (len(FAILS), tmp))

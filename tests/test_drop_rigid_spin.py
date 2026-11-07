@@ -16,6 +16,8 @@
   [6] 재질 밀도로 단위계를 못 정하는 덱: 회전 중심은 그대로 무게중심, rc 0
   [7] EndTimeTable time_unit: 덱과 다르면 rc 1, 같으면 확인 줄, 판정이 안 되면 경고만, 메타가 없으면 예전 그대로
   [8] (있으면) Examples/MinimumModel.k Fast 세 각도: 중심 = 원점 이동 뒤 기기 무게중심, 절점 속도
+  [9] 원점에서 먼 기기 + *CONSTRAINED_NODAL_RIGID_BODY_INERTIA 질량: 중심 = 물리 무게중심(원점 이동 전에 잰다), *_INERTIA 경고,
+      v0 가 있는 표에 0 이 아닌 ω → rc 1(표는 순수 낙하)
 
 실행: venv312/bin/python tests/test_drop_rigid_spin.py
 """
@@ -265,9 +267,8 @@ def test_parse(tmp):
     base = option("box2.k", ANG3, "Plane,0,0,0,4,4,1")
     o2 = parse(d, base.replace("**DropAttitude,1\n", "**DropAttitude,1\nrigidangularvelocityz,1.0D2,0,-5\n"))
     check("대소문자 무관·D 지수", isinstance(o2, dict) and o2.get("RigidAngularVelocityZ") == [100.0, 0.0, -5.0], str(o2))
-    o3 = parse(d, base.replace("**DropAttitude,1\n", "**DropAttitude,1\nRigidAngularVelocityXY,1,2,3\nRigidAngularVelocity,1,2,3\n"))
-    check("키 이름이 다르면(…XY·축 없음) 받지 않음", isinstance(o3, dict) and o3 == o0, str(o3))
-    for bad in ("RigidAngularVelocityX,1,abc,3", "RigidAngularVelocityY,1,,3"):
+    # 비슷하지만 정확하지 않은 키(…XY·축 없음)·숫자 아닌 값은 종료 코드 1 — 예전엔 'RigidAngularVelocity,5' 가 KeyError 로 죽었다(리뷰 R2-7)
+    for bad in ("RigidAngularVelocityXY,1,2,3", "RigidAngularVelocity,5", "RigidAngularVelocityX,1,abc,3", "RigidAngularVelocityY,1,,3"):
         try:
             parse_text = base.replace("**DropAttitude,1\n", f"**DropAttitude,1\n{bad}\n")
             with contextlib.redirect_stdout(io.StringIO()):
@@ -279,7 +280,7 @@ def test_parse(tmp):
             code = None
         except SystemExit as e:
             code = e.code
-        check(f"숫자 아닌 값·빈 칸 '{bad}' → 종료 코드 1", code == 1, str(code))
+        check(f"비슷한 키·숫자 아닌 값·빈 칸 '{bad}' → 종료 코드 1", code == 1, str(code))
 
 
 def test_zero(tmp):
@@ -353,6 +354,8 @@ def test_errors(tmp):
         ("axis", option("box2.k", ANG3, "Plane,0,0,0,4,4,1", w=W3, wlines=["RigidAngularVelocityZ,1,2,3"]), {}, "X·Y·Z 셋 모두"),
         ("deck_iv", option("box2.k", ANG3, "Plane,0,0,0,4,4,1", w=W3),
          {"extra": ["*INITIAL_VELOCITY", "         0", "       1.0       0.0       0.0"]}, "이미 *INITIAL_VELOCITY"),
+        # 질량특성을 못 구하면(밀도 없는 파트 등) 회전 중심이 틀리므로 멈춘다 — 이유를 RigidAngularVelocity 문맥으로 알린다
+        ("no_density", option("box2.k", ANG3, "Plane,0,0,0,4,4,1", w=W3), {"rho2": "0.0"}, "CENTRE_FAILED"),
     ]
     for tag, text, kw, msg in cases:
         w = Path(tmp, f"err_{tag}")
@@ -428,6 +431,47 @@ def test_minimum_model(tmp):
         H = h0
 
 
+def test_inertia_centre(tmp):
+    print("[9] 원점에서 먼 기기 + CNRB_INERTIA 질량 — 회전 중심, *_INERTIA 경고, v0 표와 ω")
+    off, tm, cg = np.array([200.0, -100.0, 50.0]), 1.0e-6, np.array([208.0, -92.0, 51.5])
+    w = Path(tmp, "inertia")
+    w.mkdir()
+    box2_model(w / "box2.k")
+    lines = []
+    for ln in (w / "box2.k").read_text().splitlines():   # 절점을 원점에서 멀리(바운딩 박스 가운데가 (205, −95, 51))
+        if len(ln) >= 56 and ln[:8].strip().isdigit() and not ln.startswith("*"):
+            if len(ln) == 56:
+                x = np.array([float(ln[8:24]), float(ln[24:40]), float(ln[40:56])]) + off
+                ln = f"{ln[:8]}{x[0]:16.6f}{x[1]:16.6f}{x[2]:16.6f}"
+        lines.append(ln)
+    f10 = lambda *v: "".join(f"{str(x):>10s}" for x in v)  # noqa: E731
+    cnrb = ["*SET_NODE_LIST", f10(10), f10(*range(61, 66)), "*CONSTRAINED_NODAL_RIGID_BODY_INERTIA", f10(100, 0, 10),
+            f10(cg[0], cg[1], cg[2], tm, 0, 0), f10("1.0e-6", "0.0", "0.0", "1.0e-6", "0.0", "1.0e-6"), f10(*["0.0"] * 6)]
+    i = lines.index("*END")
+    (w / "box2.k").write_text("\n".join(lines[:i] + cnrb + lines[i:]) + "\n")
+    rc, out = run(w, option("box2.k", [(30, 20, 10)], "RigidWall,0,0,0,0,0,0", w=[(0.0, 0.0, 250.0)],
+                            extra=("DropContact.FS,0.3",)))
+    m_box = sum((3.0e-8 if heavy(i_, j_, k_) else 7.85e-9) * 6.25 for i_ in range(4) for j_ in range(4) for k_ in range(2))
+    expect = (m_box * box2_com() + tm * (cg - (off + np.array([5.0, 5.0, 1.0])))) / (m_box + tm)   # 이동 뒤 좌표
+    data = decks(w, "box2").get("box2_drop.k", b"")
+    card = gen_card(data) if data else None
+    check("rc 0, 중심 = 기기+CNRB_INERTIA 물리 무게중심(원점 이동 전에 재서 같은 만큼 옮김, 예전엔 수십 mm 어긋남)",
+          rc == 0 and card is not None and np.abs(card["C"] - expect).max() <= 6e-5, f"{card and card['C']} / {expect} {out[-300:]}")
+    check("*_INERTIA 경고(STYP 3 은 그 몸체 속도를 덮지 못한다)", "WARNING deck has *CONSTRAINED_NODAL_RIGID_BODY_INERTIA" in out,
+          out[-400:])
+    # v0 가 있는 표(순수 낙하)에 0 이 아닌 ω → rc 1
+    t = Path(tmp, "v0_spin")
+    d = drop_direction(30, 20, 10)
+    t.mkdir()
+    write_endtime_table(str(t / "t.csv"), [{"name": "A001", "roll": 30.0, "pitch": 20.0, "yaw": 10.0, "dx": float(d[0]),
+                                            "dy": float(d[1]), "dz": float(d[2]), "endtim": 0.0037}],
+                        {"units": "mm-t-s", "time_unit": "s", "v0": f"{math.sqrt(2 * G * H):.10g}"})
+    rc, out = run(t, option("box2.k", [(30, 20, 10)], "RigidWall,0,0,0,0,0,0", w=[(0.0, 0.0, 250.0)], table="t.csv",
+                            extra=("DropContact.FS,0.3",)))
+    check("v0 표 + RigidAngularVelocityZ 250 → rc 1 NOT_PURE_DROP, 덱 없음",
+          rc == 1 and "NOT_PURE_DROP" in out and not decks(t, "box2"), out[-300:])
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="drop_rigid_spin_")
     test_parse(tmp)
@@ -438,6 +482,7 @@ def main():
     test_units_unknown(tmp)
     test_time_unit(tmp)
     test_minimum_model(tmp)
+    test_inertia_centre(tmp)
     print()
     if FAILS:
         print("FAIL %d 건 (작업 폴더 %s 를 남긴다)" % (len(FAILS), tmp))

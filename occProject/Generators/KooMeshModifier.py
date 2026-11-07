@@ -1533,6 +1533,14 @@ class KooMeshModifier(KooSimulationGenerator):
                                 sys.exit(1)
                             curOptions[key] = values
                             continue
+                        # 새 키와 비슷하지만 이름이 정확하지 않은 줄(EndTimeTabel·'EndTimeTable;…'·쉼표 없는 'EndTimeTable /…'·축 없는
+                        # RigidAngularVelocity)은 아래 부분 문자열 검사에 걸리기 전에 멈춘다 — 'EndTimeTable;/data/height/t.csv' 가 경로의
+                        # height 로 Height 를 비워 IndexError, 'RigidAngularVelocity,5' 가 KeyError 로 죽었다(리뷰 R2-7)
+                        nearKey = "".join(ch for ch in line.split(",")[0].lower() if "a" <= ch <= "z")
+                        if "endtime" in nearKey or "rigidangular" in nearKey:
+                            print(f"🔴 [DROP_ATTITUDE] UNKNOWN_KEY '{line.split(',')[0].strip()}' — 새 키와 비슷하지만 이름이 다르다. "
+                                  f"EndTimeTable,<표.csv> 나 RigidAngularVelocityX/Y/Z,<목록> 을 이름 그대로(쉼표 뒤에 값) 쓸 것 (종료 코드 1)")
+                            sys.exit(1)
                         if "runid" in line.lower():
                             svector = line.split(",")
                             for i in range(1, len(svector)):
@@ -2826,6 +2834,12 @@ class KooMeshModifier(KooSimulationGenerator):
                         line = line.strip()
                         if "**end" in line.lower():
                             break
+                        # '*' 로 시작하는데 **End… 가 아닌 줄(다음 블록·*Mode·*End)은 끝줄이 빠진 것 — 그 줄을 이 블록 키로 삼키지
+                        # 않게 멈춘다(리뷰 R2-6)
+                        if line.startswith("*"):
+                            print(f"🔴 RIGID_DROP_ENDTIME option error: missing **EndRigidDropEndtime — 블록 끝줄 전에 '{line}' 이 "
+                                  f"나왔다. 블록을 **EndRigidDropEndtime 으로 닫을 것 (종료 코드 1)")
+                            sys.exit(1)
                         blockLines.append(line)
                     try:
                         self.modeIDOption[curModeID] = parse_option_lines(blockLines, self.curDir)
@@ -2847,6 +2861,13 @@ class KooMeshModifier(KooSimulationGenerator):
         if dup:
             print(f"🔴 옵션 블록: 모드 ID {', '.join(map(str, dup))} 의 옵션 블록이 두 번 이상 있다 — 뒤 블록이 앞 블록을 덮는다. "
                   f"블록마다 다른 ID 를 주고 *Mode 의 ID 와 맞출 것 (종료 코드 1)")
+            sys.exit(1)
+
+        # RIGID_DROP_ENDTIME 은 혼자만 돈다 — 기본 .k 쓰기를 끄므로(_skip_default_write) 같은 파일 다른 모드의 결과 .k 가 안 써지고,
+        # DROP_ATTITUDE 뒤면 KMM 이 만든 바닥판까지 기기 질량으로 센다(리뷰 R2-2). KCR 도 늘 혼자 돌린다
+        if "RIGID_DROP_ENDTIME" in self.modeList and len(self.modeList) > 1:
+            print(f"🔴 [RIGID_DROP_ENDTIME] must run alone — *Mode 에 {', '.join(self.modeList)} 가 함께 있다. "
+                  f"이 모드는 옵션 파일에 혼자 둘 것(다른 모드의 .k 가 안 써지고, 앞 모드가 만든 바닥판이 기기 질량에 든다) (종료 코드 1)")
             sys.exit(1)
 
         # *Recipe 로 펼친 글은 레시피의 모드 그대로 읽혀야 한다. *Recipe 앞의 *End 같은 줄로 모드가 빠지면 KMM 은 모드 0개로
@@ -3690,6 +3711,10 @@ if __name__ == "__main__":
                     print("   흔한 원인: 덱 *NODE 가 LS-DYNA 고정폭(NID 8칸·좌표 16칸)이 아니라 절점을 잘못 읽었다 — "
                           "요소가 읽히지 않은 절점을 가리킨다")
                 print("   출력 .k 를 해석에 쓰지 말 것 (종료 코드 3)")
+                if "RIGID_DROP_ENDTIME" in simGenerator.modeList:   # 이 모드는 .k 를 쓰지 않는다 — 무엇이 틀릴 수 있는지 알린다(리뷰 R2-4)
+                    print("   [RIGID_DROP_ENDTIME] tables were written, but the reader dropped elements — the mass properties, hull "
+                          "and end times may miss those parts (e.g. *PART_INERTIA parts). 표·JSON·OBJ 를 쓰기 전에 빠진 파트를 확인할 것 "
+                          "(종료 코드 3)")
                 sys.exit(3)
             print("Done")
         finally:

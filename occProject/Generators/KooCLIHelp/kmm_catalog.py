@@ -253,7 +253,7 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
          K("Gravity", "실수", "모델 재질 밀도로 판정", "자유낙하 g (모델 단위). 재질 밀도 중앙값 < 1e-7 → 9810, 100~1e5 → 9.81. 그 밖(kg-mm-ms·g-cm-s·g-mm-ms 등)은 WARNING 후 옛 추정 → 반드시 지정"),
          K("InitialVelocityX/Y/Z", "실수 리스트", "-", "추가 초기 속도 (각 케이스). Height 속도와 합산", True),
          K("InitialAngularVelocityX/Y/Z", "실수 리스트", "-", "초기 각속도 (각 케이스). *INITIAL_VELOCITY 의 절점 회전 속도(VXR~VZR)뿐이라 솔리드만인 기기는 돌지 않는다 — 기기 강체 회전은 RigidAngularVelocity 로 줄 것 (RigidAngularVelocity 를 쓰면 이 키는 뺀다)", True),
-         K("RigidAngularVelocityX/Y/Z", "실수 리스트", "없음 (강체 회전 없음)", "기기 강체 각속도 (바닥 좌표, rad/덱 시간, 각 케이스 — X·Y·Z 셋 모두 각도 수만큼). 각도마다 *INITIAL_VELOCITY 대신 *INITIAL_VELOCITY_GENERATION 을 쓴다: OMEGA = |RotMat·ω|, 축 = 단위(RotMat·ω), 중심 = 쓰는 덱 좌표의 기기 무게중심(SPC 로 묶인 파트·바닥판 제외), VX~VZ = 기존과 같은 병진 속도, 기기 절점 셋 전체(STYP 3·IVATN 1)에 v + ω×(x − c). InitialAngularVelocity 와 같이 오거나 덱에 *INITIAL_VELOCITY 가 이미 있으면 종료 코드 1 (R16 Remark 1 — 두 키워드는 한 덱에 못 쓴다). 키 이름 전체가 같아야 한다"),
+         K("RigidAngularVelocityX/Y/Z", "실수 리스트", "없음 (강체 회전 없음)", "기기 강체 각속도 (바닥 좌표, rad/덱 시간, 각 케이스 — X·Y·Z 셋 모두 각도 수만큼). 각도마다 *INITIAL_VELOCITY 대신 *INITIAL_VELOCITY_GENERATION 을 쓴다: OMEGA = |RotMat·ω|, 축 = 단위(RotMat·ω), 중심 = 쓰는 덱 좌표의 기기 무게중심(RIGID_DROP_ENDTIME 과 같은 질량특성 — SPC 로 묶인 파트·바닥판 제외, 원점 이동 전에 재서 같은 만큼 옮기므로 *PART_INERTIA·*CNRB_INERTIA 질량도 제자리), VX~VZ = 기존과 같은 병진 속도, 기기 절점 셋 전체(STYP 3·IVATN 1)에 v + ω×(x − c). InitialAngularVelocity 와 같이 오거나 덱에 *INITIAL_VELOCITY 가 이미 있으면 종료 코드 1 (R16 Remark 1 — 두 키워드는 한 덱에 못 쓴다). 질량특성을 못 구하면(밀도 없는 파트·바닥판 자동 제외가 기기와 절점 공유·요소 든 미해석 *INCLUDE) 회전 중심이 틀리므로 종료 코드 1 ('[RigidAngularVelocity] CENTRE_FAILED'). 덱에 *_INERTIA 몸체가 있으면 경고(STYP 3 은 그 몸체 속도를 덮지 못한다 — IRIGID 는 STYP 3 에 안 쓰인다). 키 이름 전체가 같아야 한다 — 'RigidAngularVelocity,5' 처럼 비슷한 키는 종료 코드 1"),
          K("OffsetDistance", "실수", "-", "바닥판과의 초기 간격", True),
          K("Density", "실수", "-", "바닥판 밀도 (RigidWall 이면 쓰지 않지만 키는 필요)", True),
          K("YoungsModulus", "실수", "-", "바닥판 탄성계수", True),
@@ -261,7 +261,7 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
          K("tFinal", "실수", "0 (필수로 줄 것)", "종료 시간. tFinal 과 dt 가 둘 다 0 이 아니어야 CONTROL/DATABASE 카드를 쓴다 (EndTimeTable 이 있으면 각도마다 표 값)"),
          K("dt", "실수", "0 (필수로 줄 것)", "d3plot 출력 간격 (키 이름 정확히 dt)"),
          K("DTMIN", "실수", "없음", "CONTROL_TERMINATION DTMIN — dt 붕괴 시 자동 종료 비율"),
-         K("EndTimeTable", "경로", "없음 (모든 각도가 tFinal 하나)", "각도별 종료 시간 표 csv (RIGID_DROP_ENDTIME 의 <base>_endtime.csv). 각도마다 낙하 방향이 0.01° 안으로 같은 줄의 endtim(덱 시간 단위)을 그 각도 덱의 ENDTIM 으로 쓰고 d3plot·INTFOR NPLTC = int(ENDTIM/dt) 를 다시 매긴다 — 한 각도·여러 각도 모두, 맞는 줄이 여럿이면 최대. 표에 없는 각도·잘못된 표·dt 없음은 덱을 쓰지 않고 종료 코드 1. 표 메타 time_unit(s·ms)이 덱 시간 단위(재질 밀도 중앙값 판정)와 다르면 종료 코드 1, 판정이 안 되면 경고만 한다. 키 이름 전체가 같아야 한다(대소문자 무관). 상대 경로는 작업폴더 기준"),
+         K("EndTimeTable", "경로", "없음 (모든 각도가 tFinal 하나)", "각도별 종료 시간 표 csv (RIGID_DROP_ENDTIME 의 <base>_endtime.csv). 각도마다 낙하 방향이 0.01° 안으로 같은 줄의 endtim(덱 시간 단위)을 그 각도 덱의 ENDTIM 으로 쓰고 d3plot·INTFOR NPLTC = int(ENDTIM/dt) 를 다시 매긴다 — 한 각도·여러 각도 모두, 맞는 줄이 여럿이면 최대. 표에 없는 각도·잘못된 표·dt 없음은 덱을 쓰지 않고 종료 코드 1. 표 메타 time_unit(s·ms)이 덱 시간 단위(재질 밀도 중앙값 판정)와 다르면 종료 코드 1, 판정이 안 되면 경고만 한다. 표 메타 v0(√(2gh), 덱 단위)가 이 낙하의 √(2gh) 와 상대 1e-3 넘게 다르면(다른 높이·다른 g) 종료 코드 1 'V0_MISMATCH' — 양쪽 높이·g 를 찍는다. v0 가 있는 표에 0 이 아닌 InitialVelocity·각속도가 오면 종료 코드 1 'NOT_PURE_DROP'(표는 정지 낙하). 표 값이 tFinal 보다 길면 '[EndTimeTable] WARNING max ENDTIM=… (x… of tFinal) — raise time limits' 한 줄. 표 reach(첫 접촉점에서 바닥 위 접촉점까지 가장 먼 거리)가 메시 바닥판(Plane·PlaneGraded·PlanewithRoughness)의 충돌점 둘레 반폭보다 길면 각도마다 'WARNING plate reach' 와 요약(판 한 변 = 2·reach 이상 권장, RigidWall 은 무관). 키 이름 전체가 같아야 한다(대소문자 무관) — EndTimeTabel·'EndTimeTable;…'·쉼표 없는 'EndTimeTable /…' 처럼 비슷한 키는 종료 코드 1 '[DROP_ATTITUDE] UNKNOWN_KEY'. 상대 경로는 작업폴더 기준"),
          K("DropSurface", "형식별", "Plane,0,0,0,10,10,10", "Plane,Lx,Ly,Lz,Nx,Ny,Nz | PlaneGraded,Lx,Ly,Lz,Nx,Ny,Nz[,외곽층수=5[,비율=1.5]] | RigidWall,0,0,0,0,0,0 | PlanewithRoughness,Lx,Ly,Lz,Nx,Ny,Nz,모드,Rmax,SF1[,SF2]"),
          K("DeformableToRigid", "True/False", "False", "DEFORMABLE_TO_RIGID_AUTOMATIC 쌍 스위치(SWSET 20 code 2: 접촉력 0→강체 / SWSET 10 code 4: 접촉력 비0→변형체 — 덱 D2R 이 20·10 을 쓰면 비는 번호로 옮긴다). 바닥판 접촉이 S2S 여야 켜진다(매뉴얼 Remark 1) — ConvertGeneralToSingleSurface=False 면 S2S 로 자동 선택"),
          K("D2RTime1/D2RTime2/D2RTime3", "실수", "0 / 1e20 / 0", "전환 검사 시작·종료 시각, 전환 간 최소 간격(TIME3, 0 이면 채터)"),
@@ -335,6 +335,8 @@ mode("DROP_ATTITUDE", "제품 낙하 해석 덱 생성 — 자세(오일러각)�
      ],
      notes=["Euler/Height/InitialVelocity/InitialAngularVelocity 10 개 리스트 키와 OffsetDistance·Density·YoungsModulus·PoissonRatio 는 빠지면 KeyError 로 멈춘다 (RigidAngularVelocity 를 쓰면 InitialAngularVelocity 3개 대신 그 3개).",
             "블록 안 빈 줄에서 블록이 끝난다 — 뒤 키는 무시된다.",
+            "새 키(EndTimeTable·RigidAngularVelocityX/Y/Z)와 비슷하지만 이름이 다른 키는 종료 코드 1 ('[DROP_ATTITUDE] UNKNOWN_KEY') — "
+            "예전엔 'EndTimeTable;…/height/…' 이 Height 를 비워 IndexError 로 죽었다. 그 밖의 모르는 키는 예전처럼 무시된다.",
             "오일러 회전 순서 R = Rz·Ry·Rx (롤 → 피치 → 요).",
             "누적 낙하·전각도 DOE 는 KooChainRun 시나리오로 돌리는 편이 낫다 (KooChainRun --help drop)."],
      related=["DROP_WEIGHT_IMPACT_TEST", "RIGIDIFY_SMALL_DT", "DYNAIN_TO_INITIAL", "PART_TRANSLATE"])
@@ -1199,7 +1201,7 @@ mode("RIGID_DROP_ENDTIME", "강체 낙하 사전 해석 — 질량특성·외곽
          K("Friction", "실수", "0.5", "마찰계수 μ"),
          K("PresimGravity", "0|1", "0", "0 = 중력 끔(DROP_ATTITUDE 덱과 같음 — 다시 닿는 충격을 모두 2차 충격으로 셈), 1 = 켬"),
          K("MarginMs", "실수", "1.0", "tFinal = (2차 충격 끝, 없으면 1차 충돌 끝) + 여유 ms"),
-         K("ExcludePart", "PID 목록", "없음", "강체에서 뺄 파트(바닥판 등). SPC·강체 구속 파트는 저절로 빠진다"),
+         K("ExcludePart", "PID 목록", "없음", "강체에서 뺄 파트(바닥판 등). 절점 10% 이상이 병진 SPC 로 묶인 파트·병진 구속 *MAT_RIGID 파트는 저절로 빠진다. 읽은 파트·*PART_INERTIA·CNRB 에 없는 PID 는 rc 1"),
          K("Units", "mm-t-s|mm-kg-ms|mm-g-ms|m-kg-s", "자동", "덱 단위계. 없으면 재질 밀도 중앙값으로 정하고, 못 정하면 rc 1"),
          K("Workers", "정수", "min(8, CPU)", "사전 해석 프로세스 수(fork)"),
          K("PresimDt", "실수(s)", "1e-5", "PyBullet 시간 간격"),
@@ -1238,21 +1240,31 @@ Workers,4
      ],
      notes=["산출은 모두 작업 폴더(KMM 둘째 인자, 없으면 현재 폴더)에 쓴다 — *Inputfile 이 다른 폴더의 절대 경로여도 덱 옆에는 "
             "리더의 _dump.k 만 생긴다. 기본 .k 는 쓰지 않는다.",
-            "<모델>_endtime.csv: 각도마다 class·t1_end·t2_start·t2_end·tfinal_ms·endtim(덱 시간 단위, 0.1 ms 올림)·e 별 세부. "
-            "DROP_ATTITUDE 의 EndTimeTable 이 그대로 읽는다.",
+            "<모델>_endtime.csv: 각도마다 class·t1_end·t2_start·t2_end·tfinal_ms·endtim(덱 시간 단위, 0.1 ms 올림)·reach(덱 길이 — 첫 "
+            "충돌의 바닥 위 접촉점에서 센 접촉들까지 가장 먼 거리)·n_unresolved·e 별 세부. 메타에 v0(√(2gh), 덱 단위)·t_sep_ms(1.0) 가 "
+            "있다. DROP_ATTITUDE 의 EndTimeTable 이 그대로 읽고 v0 를 자기 높이·g 와, reach 를 메시 바닥판 크기와 대조한다.",
+            "2차 충격: 1차 충돌 묶음 뒤 1 ms 이상 떨어졌다 다시 닿은 묶음(멈춤 규칙과 같은 1 ms).",
             "<모델>_impacts.csv: (각도, e, 충돌 묶음 k) 마다 충돌 직전 자세(att_*)·바닥 좌표 속도·각속도·첫 접촉점·접근 속도·"
             "tfinal_k_ms·endtim_k — 덱 단위(길이 · 길이/시간 · rad/시간).",
             "중력 기본값 0: DROP_ATTITUDE 덱은 초기 속도만 있고 중력이 없다. 그래서 다시 닿는 충격은 모두 회전으로 온 2차 충격으로 "
             "센다. PresimGravity,1 이면 무게중심이 1 mm 넘게 떴다 닿은 재착지는 2차 충격으로 세지 않는다.",
             "단위: Height 는 덱 길이 단위, endtim 은 덱 시간 단위(mm-t-s·m-kg-s 는 s, mm-kg-ms·mm-g-ms 는 ms). 사전 해석 안은 SI 다.",
-            "바닥판 자동 제외: 병진 자유도를 *BOUNDARY_SPC 로 묶은 절점이 하나라도 있는 파트, 병진 구속(CMO/CON1)이 있는 "
-            "*MAT_RIGID 파트 — 로그 [RigidBody] EXCLUDE 줄에 이유가 남는다.",
+            "바닥판 자동 제외: 절점의 10% 이상이 병진 *BOUNDARY_SPC 로 묶인 파트, 병진 구속(CMO/CON1)이 있는 *MAT_RIGID 파트. "
+            "10% 미만이면 기기 파트로 넣고 SPC_ON_DEVICE_PART 경고. 저절로 뺀 파트가 넣은 파트와 절점을 나누면 rc 1(ExcludePart 로 "
+            "직접 줄 것). 뺀 파트는 모두 EXCLUDED_PART 경고(이유·질량·몫)와 DONE 줄 excluded=[…] 에 남는다.",
             "볼록 껍질 꼭짓점은 131,072 개까지(pybullet 한도) — 넘으면 rc 1.",
             "Workers 만큼 fork 프로세스를 쓴다(작업자마다 PyBullet DIRECT). 2만 각도 × e 3 개는 8 프로세스로 약 5분이다.",
-            "이 모드 블록은 빈 줄·`$`·`#` 줄을 건너뛴다. 키는 이름 전체가 같을 때만 맞고 모르는 키는 Warning 을 찍는다. 틀린 값·"
-            "Height 없음·각도 출처 0 개 또는 2 개 이상·없는 AngleFile 은 덱을 읽기 전에 rc 1('RIGID_DROP_ENDTIME option error').",
-            "로그 표지: [RigidDropEndtime] START·WROTE·DONE, [RigidBody] UNITS·EXCLUDE·WARNING, [presim] 진행. "
-            "사전 해석 실패는 'RIGID_DROP_ENDTIME failed' (rc 1)."],
+            "이 모드 블록은 빈 줄·`$`·`#` 줄을 건너뛴다. 키는 이름 전체가 같을 때만 맞고 모르는 키는 rc 1(did you mean …). 틀린 값·"
+            "Height 없음·각도 출처 0 개 또는 2 개 이상·없는 AngleFile·블록 끝줄(**EndRigidDropEndtime) 전에 '*' 줄은 덱을 읽기 전에 "
+            "rc 1('RIGID_DROP_ENDTIME option error', 끝줄이 빠지면 'missing **EndRigidDropEndtime').",
+            "혼자만 돈다: *Mode 에 다른 모드가 있거나 이 모드가 두 번이면 rc 1('[RIGID_DROP_ENDTIME] must run alone') — 기본 .k 를 쓰지 "
+            "않으므로 다른 모드 결과가 사라지고, DROP_ATTITUDE 뒤면 그 바닥판까지 기기 질량으로 센다. KooChainRun 도 혼자 돌린다.",
+            "덱을 읽은 뒤 rc 1: 요소가 있는데 밀도가 없는 파트, 없는 ExcludePart PID, KMM 이 읽지 않고 남긴 *INCLUDE(*PreserveIncludes·IGA) "
+            "에 요소가 있음(PASSTHROUGH_INCLUDE_PARTS). 시작할 때 작업 폴더의 지난 <모델>_* 산출 다섯 개를 지운다.",
+            "리더가 요소를 버리면(예: *PART_INERTIA 파트) 표는 써도 rc 3 이다 — '[RIGID_DROP_ENDTIME] tables were written, but the "
+            "reader dropped elements' 줄: 질량특성·껍질·종료 시간에 그 파트가 빠졌을 수 있다.",
+            "로그 표지: [RigidDropEndtime] START·REMOVED·WROTE·DONE, [RigidBody] UNITS·EXCLUDE·WARNING(EXCLUDED_PART·SPC_ON_DEVICE_PART …), "
+            "[presim] 진행. 사전 해석 실패는 'RIGID_DROP_ENDTIME failed' (rc 1)."],
      related=["DROP_ATTITUDE"])
 
 

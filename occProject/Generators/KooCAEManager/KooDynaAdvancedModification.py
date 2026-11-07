@@ -2161,14 +2161,14 @@ class KooDynaAdvancedModification:
             meshSize = newMeshSize
         return meshSize
 
-    def _ResolveDropEndTimes(self, option, RxList, RyList, RzList):
-        """EndTimeTable 키(각도별 종료 시간 표)가 있으면 각도마다 표의 endtim 을 찾아 목록으로 돌려준다. 키가 없으면 None(기존 동작).
-        덱을 하나도 쓰기 전에 모든 각도를 찾아 본다 — dt 가 없거나, 표를 읽지 못하거나, 표에 없는 각도가 있으면 rc 1 로 멈춘다
-        (조용한 기본값 없음)."""
+    def _ResolveDropEndTimes(self, option, RxList, RyList, RzList, fall_g):
+        """EndTimeTable 키(각도별 종료 시간 표)가 있으면 각도마다 표의 (endtim 목록, reach 목록)을 돌려준다. 키가 없으면 (None, None)
+        (기존 동작). reach 는 표에 그 칸이 없으면 None 이다. 덱을 하나도 쓰기 전에 모든 각도를 찾아 본다 — dt 가 없거나, 표를 읽지
+        못하거나, 표 time_unit·v0 가 이 덱·낙하와 다르거나, 표에 없는 각도가 있으면 rc 1 로 멈춘다(조용한 기본값 없음)."""
         path = option.get("EndTimeTable")
         if path is None:
-            return None
-        from KooCAEManager.KooEndTimeTable import MATCH_TOL_DEG, EndTimeLookup, read_endtime_table
+            return None, None
+        from KooCAEManager.KooEndTimeTable import MATCH_TOL_DEG, EndTimeLookup, drop_direction, read_endtime_table
         if not option.get("DT"):
             print("🔴 [EndTimeTable] dt 가 없다(0) — 각도별 ENDTIM 으로 d3plot·INTFOR 출력 수(NPLTC = ENDTIM/dt)를 정하려면 "
                   "dt(출력 간격)가 있어야 한다 (종료 코드 1)")
@@ -2180,7 +2180,8 @@ class KooDynaAdvancedModification:
             sys.exit(1)
         lookup = EndTimeLookup(rows, path)
         self._CheckEndTimeTableUnit(meta, path)
-        endtims =[lookup.find(RxList[i], RyList[i], RzList[i]) for i in range(len(RxList))]
+        self._CheckEndTimeTableDrop(meta, path, option, fall_g)
+        endtims = [lookup.find(RxList[i], RyList[i], RzList[i]) for i in range(len(RxList))]
         missing = [i for i, e in enumerate(endtims) if e is None]
         if missing:
             for i in missing:
@@ -2190,7 +2191,69 @@ class KooDynaAdvancedModification:
             sys.exit(1)
         print(f"[EndTimeTable] {path}: 표 {len(lookup.rows)}줄에서 각도 {len(endtims)}개를 모두 찾았다 — "
               f"ENDTIM {min(endtims):g}~{max(endtims):g} 를 각도마다 쓴다(옵션 tFinal {option.get('TFinal', 0.0):g} 대신)")
-        return endtims
+        # 표 값이 tFinal 보다 길면 작업 시간 한도(sbatch --time·timeout_per_step_seconds)가 모자랄 수 있다(리뷰 R2-3)
+        tf = float(option.get("TFinal", 0.0) or 0.0)
+        if tf > 0.0 and max(endtims) > tf:
+            print(f"[EndTimeTable] WARNING max ENDTIM={max(endtims):g} (x{max(endtims) / tf:.3g} of tFinal) — raise time limits "
+                  f"(표에서 가장 긴 각도는 옵션 tFinal {tf:g} 보다 오래 돈다)")
+        # reach 칸(충돌점에서 판 면을 따라 기기가 닿는 거리) — 같은 낙하 방향 줄이 여럿이면 최대(endtim 과 같은 찾기)
+        reaches = None
+        if any(str(r["raw"].get("reach") or "").strip() for r in lookup.rows):
+            cos_tol = math.cos(math.radians(MATCH_TOL_DEG))
+            reaches = []
+            for i in range(len(RxList)):
+                hit = np.nonzero(lookup.dirs @ drop_direction(RxList[i], RyList[i], RzList[i]) >= cos_tol)[0]
+                vals = []
+                for j in hit:
+                    text = str(lookup.rows[j]["raw"].get("reach") or "").strip()
+                    if not text:
+                        continue
+                    try:
+                        vals.append(float(text))
+                    except ValueError:
+                        print(f"🔴 [EndTimeTable] {path}: reach 칸 '{text}' 이 숫자가 아니다 (종료 코드 1)")
+                        sys.exit(1)
+                reaches.append(max(vals) if vals else None)
+        return endtims, reaches
+
+    def _CheckEndTimeTableDrop(self, meta, path, option, fall_g):
+        """표 메타 v0(덱 단위 낙하 속도 √(2gh) — RIGID_DROP_ENDTIME 이 쓴다)가 있으면 이 DropAttitude 의 낙하 속도와 각도마다 대조한다
+        (상대 1e-3). 다르면 다른 높이·다른 g 로 만든 표(mm-kg-ms 덱의 옛 g 추정 1000배 등)라 rc 1. 표는 순수 낙하를 가정하므로 v0 가
+        있는데 InitialVelocity·InitialAngularVelocity·RigidAngularVelocity 에 0 이 아닌 값이 있어도 rc 1. v0 가 없는 표(KCR
+        impact_conditions 의 endtime.csv 등)는 대조하지 않는다(리뷰 M2)."""
+        text = str(meta.get("v0", "")).strip()
+        if not text:
+            return
+        try:
+            v0 = float(text)
+        except ValueError:
+            print(f"🔴 [EndTimeTable] V0_MISMATCH — 표 메타 v0='{text}' 가 숫자가 아니다: {path} (종료 코드 1)")
+            sys.exit(1)
+        moving = [k for k in ("InitialVelocityX", "InitialVelocityY", "InitialVelocityZ", "InitialAngularVelocityX",
+                              "InitialAngularVelocityY", "InitialAngularVelocityZ", "RigidAngularVelocityX",
+                              "RigidAngularVelocityY", "RigidAngularVelocityZ")
+                  if any(float(v) != 0.0 for v in option.get(k, []))]
+        if moving:
+            print(f"🔴 [EndTimeTable] NOT_PURE_DROP — the table (v0={v0:g}) is for a pure drop from rest, but "
+                  f"{', '.join(moving)} 에 0 이 아닌 값이 있다. 이 표의 종료 시간은 그 조건에 맞지 않는다 (종료 코드 1)")
+            sys.exit(1)
+        heights = option["Height"]
+        bad = [(i, h, math.sqrt(2.0 * fall_g(h) * h)) for i, h in enumerate(heights)]
+        bad = [b for b in bad if abs(b[2] - v0) > 1e-3 * abs(v0)]
+        if bad:
+            try:   # 표의 g = v0²/(2·height) — 높이가 다른지 g 가 다른지 사용자가 보게 둘 다 찍는다
+                h_t = float(meta.get("height", ""))
+                table_side = f"height {h_t:g}, g {v0 * v0 / (2.0 * h_t):.6g}" if h_t > 0.0 else "height ?"
+            except ValueError:
+                table_side = "height ?"
+            for i, h, v in bad[:5]:
+                print(f"🔴 [EndTimeTable] V0_MISMATCH — 각도 {i + 1}/{len(heights)}: table v0 {v0:.6g} ({table_side}) vs this drop "
+                      f"√(2gh) {v:.6g} (Height {h:g}, g {fall_g(h):g}) — 상대 차이 {abs(v - v0) / abs(v0):.2e}")
+            print(f"🔴 [EndTimeTable] V0_MISMATCH {len(bad)}/{len(heights)} angles — 표는 다른 높이나 다른 g 로 만들어졌다. 표 메타 "
+                  f"height={meta.get('height', '?')}·units={meta.get('units', '?')} 를 보고 Height·Gravity 를 맞추거나 표를 다시 만들 것 "
+                  f"(종료 코드 1)")
+            sys.exit(1)
+        print(f"[EndTimeTable] v0={v0:g} — 이 낙하의 속도 √(2gh) 와 같다(표 height {meta.get('height', '?')})")
 
     def _ApplyDropEndTime(self, option, endtim, dt, cached_base=None):
         """EndTimeTable 의 한 각도 ENDTIM 을 넣는다. SetControlandDatabaseExplicit 를 그 값으로 다시 불러 tFinal 에서 나오는 값
@@ -2280,18 +2343,30 @@ class KooDynaAdvancedModification:
             print(f"🔴 [RigidAngularVelocity] 덱에 이미 *INITIAL_VELOCITY 계열 카드가 있다({', '.join(clash)}) — "
                   f"*INITIAL_VELOCITY_GENERATION 과 한 덱에 같이 쓸 수 없다(R16 28-124 Remark 1). 덱에서 지우고 돌릴 것 (종료 코드 1)")
             sys.exit(1)
+        # *_INERTIA 몸체는 자기 카드의 초기 속도를 가진다 — STYP 3 에는 IRIGID 가 쓰이지 않아 덮어쓸 수 없다(R16 28-126, 리뷰 S1)
+        raw = getattr(self.dynaImporter.dynaManager, "_raw_keyword_dict", None) or {}
+        inertia = sorted(k for k in raw if k.startswith("PART_INERTIA")
+                         or (k.startswith("CONSTRAINED_NODAL_RIGID_BODY") and "INERTIA" in k.split("_")))
+        if inertia:
+            print(f"[RigidAngularVelocity] WARNING deck has {', '.join('*' + k for k in inertia)} — *INITIAL_VELOCITY_GENERATION "
+                  f"with STYP 3 cannot override the initial velocities of those *_INERTIA bodies (IRIGID does not apply to STYP 3, "
+                  f"R16 28-126). 그 몸체 카드의 초기 속도 칸을 확인할 것")
         return tuple(option[k] for k in keys)
 
-    def _DropSpinCentre(self):
+    def _DropSpinCentre(self, shift):
         """RigidAngularVelocity 의 회전 중심 = 쓰는 덱 좌표의 기기 무게중심(KooRigidBodyProperties — SPC 로 묶인 파트는 뺀다).
-        DropAttitude 가 기기를 원점으로 옮기고 강체화한 뒤·바닥판을 만들기 전에 한 번 부른다(바닥판은 들어가지 않는다).
+        DropAttitude 가 기기를 원점으로 옮기기 **전에** 재고 같은 이동(shift)을 더한다 — 원문 *PART_INERTIA·*CONSTRAINED_NODAL_RIGID_
+        BODY_INERTIA 의 무게중심 칸은 절점 이동을 따라가지 않아, 옮긴 뒤에 재면 그 질량이 옛 자리에 남는다(리뷰 M3: 50 g CNRB_INERTIA
+        에서 45.8 mm). 바닥판은 아직 없다. 강체화는 밀도·절점을 바꾸지 않아 무게중심이 같다.
         무게중심은 단위계와 무관하므로, 재질 밀도로 단위계를 정하지 못하면 단위 이름만 임시로 주고 다시 잰다."""
         from KooCAEManager.KooRigidBodyProperties import compute_rigid_body
         try:
             rb = compute_rigid_body(self.dynaImporter, log=print)
         except ValueError as e:
             if "cannot detect units" not in str(e):
-                print(f"🔴 [RigidAngularVelocity] 기기 무게중심을 구하지 못했다 — {e} (종료 코드 1)")
+                print(f"🔴 [RigidAngularVelocity] CENTRE_FAILED — the rotation centre is the device centre of mass and it could not "
+                      f"be computed: {e}. 질량특성이 틀리면 회전 중심도 틀리므로 덱을 쓰지 않고 멈춘다 — 재질 밀도·SPC 제외(ExcludePart 는 "
+                      f"DROP_ATTITUDE 에 없다)·*INCLUDE 로 남은 요소를 덱에서 고칠 것 (종료 코드 1)")
                 sys.exit(1)
             print("[RigidAngularVelocity] 재질 밀도로 단위계를 정하지 못했다 — 무게중심은 단위와 무관하므로 단위 이름(m-kg-s)만 "
                   "임시로 주고 다시 잰다")
@@ -2299,9 +2374,10 @@ class KooDynaAdvancedModification:
         if not rb["mass"] > 0.0:
             print("🔴 [RigidAngularVelocity] 기기 질량이 0 이다 — 회전 중심(무게중심)을 정할 수 없다 (종료 코드 1)")
             sys.exit(1)
-        centre = np.asarray(rb["com"], dtype=float)
+        centre = np.asarray(rb["com"], dtype=float) + np.asarray(shift, dtype=float)
         print(f"[RigidAngularVelocity] centre=({centre[0]:.6g}, {centre[1]:.6g}, {centre[2]:.6g}) mass={rb['mass']:.6g} "
-              f"excluded_parts={[p['pid'] for p in rb['excluded_parts']]} — 회전 중심 = 기기 무게중심(쓰는 덱 좌표, 바닥판 제외)")
+              f"excluded_parts={[p['pid'] for p in rb['excluded_parts']]} — 회전 중심 = 기기 무게중심(원점 이동 전에 재고 "
+              f"이동 ({shift[0]:.6g}, {shift[1]:.6g}, {shift[2]:.6g}) 을 더한 쓰는 덱 좌표, 바닥판 제외)")
         return centre
 
     def _CreateDropRigidSpin(self, nsid, velocity, omega, centre):
@@ -2317,6 +2393,15 @@ class KooDynaAdvancedModification:
         return self.dynaImporter.initialManager.CreateInitialVelocityGeneration(
             nsid, 3, w, velocity[0], velocity[1], velocity[2], 1, 0,
             centre[0], centre[1], centre[2], axis[0], axis[1], axis[2], 0, 0)
+
+    def _PlateHalfExtent(self, nodes, centre, z_direction, x_direction):
+        """충돌점이 가운데인 바닥판(CreateImpactBox*)의 판 면 반폭 — 판 절점을 판 X 축(x_direction)·Y 축(z × x)에 투영해 충돌점에서
+        네 방향 가운데 가장 가까운 끝까지의 거리."""
+        pts = np.array([[n.x, n.y, n.z] for n in nodes.values()], dtype=float) - np.asarray(centre, dtype=float)
+        xd = np.asarray(x_direction, dtype=float)
+        yd = np.cross(np.asarray(z_direction, dtype=float), xd)
+        ex, ey = pts @ xd, pts @ yd
+        return float(min(ex.max(), -ex.min(), ey.max(), -ey.min()))
 
     def DropAttitude(self, option, filePath):
         # 이전 열 스텝에서 이월된 열하중 처리 (THERM→DROP 방향). 열하중이 없으면 무동작
@@ -2352,10 +2437,11 @@ class KooDynaAdvancedModification:
 
         # EndTimeTable — 각도별 ENDTIM. 키가 없으면 None 이고 아래는 모두 예전 그대로다. 있으면 첫 각도 값으로 CONTROL·DATABASE 를
         # 쓰고(Fast DOE 캐시 판에도 그 값이 들어간다) 각도 루프에서 값이 바뀔 때마다 그 값으로 다시 쓴다
-        endtims = self._ResolveDropEndTimes(option, RxList, RyList, RzList)
+        endtims, reaches = self._ResolveDropEndTimes(option, RxList, RyList, RzList, fall_g)
         if endtims is not None:
             tFinal = endtims[0]
             appliedEndtim = tFinal
+        plateShort = []   # 표 reach 가 판 반폭보다 긴 각도의 reach (리뷰 L6)
 
         if dt != 0.0 and tFinal != 0.0:
             self.SetControlandDatabaseExplicit(
@@ -2389,7 +2475,12 @@ class KooDynaAdvancedModification:
 
         print("Bound Box ", boundingBox)
 
-        self.dynaImporter.nodeManager.MoveNodes(-boundingBox[0]-xLength/2.0, -boundingBox[1]-yLength/2.0, -boundingBox[2]-zLength/2.0) 
+        # RigidAngularVelocity 의 회전 중심 — 원문 *_INERTIA 무게중심 칸이 아래 이동을 따라가지 않으므로 옮기기 전에 재고 같은 이동을
+        # 더한다(리뷰 M3). 각도와 무관해 한 번, 바닥판은 아직 없다
+        spinCentre = self._DropSpinCentre((-boundingBox[0]-xLength/2.0, -boundingBox[1]-yLength/2.0, -boundingBox[2]-zLength/2.0)) \
+            if rigidOmega is not None else None
+
+        self.dynaImporter.nodeManager.MoveNodes(-boundingBox[0]-xLength/2.0, -boundingBox[1]-yLength/2.0, -boundingBox[2]-zLength/2.0)
         boundingBox = self.dynaImporter.nodeManager.GetBoundingBox()
         print("Bound Box ", boundingBox)
         xLength = max(xLength, yLength, zLength)*6.0
@@ -2474,8 +2565,6 @@ class KooDynaAdvancedModification:
                 element_ids=rigidify_eids
             )
 
-        # RigidAngularVelocity 의 회전 중심 — 기기를 원점으로 옮기고 강체화한 뒤, 바닥판을 만들기 전(각도와 무관해 한 번)
-        spinCentre = self._DropSpinCentre() if rigidOmega is not None else None
 
         # === FastDOE: 베이스 캐시 초기화 ===
         use_fast_mode = len(RxList) > 1
@@ -3135,6 +3224,16 @@ class KooDynaAdvancedModification:
                     nsFixed, bottomSegments, cornerNodes = part.elementManager.CreateImpactBoxwithRoughness(impactPoint,z_direction, x_direction,xLength,yLength,zLength,numX,numY,numZ, roughnessMode, RMax, ShapeFactor, ShapeFactor2)
                     nodeSetFixed.AddNodesfromDict(nsFixed)
 
+                # 표 reach(충돌점에서 판 면을 따라 기기가 닿는 거리)가 판 반폭보다 길면 기기가 판 밖으로 나간다 — 각도마다 경고(리뷰 L6).
+                # 판은 충돌점이 가운데다(CreateImpactBox·Graded·withRoughness) — 만든 판의 고정 절점에서 반폭을 잰다
+                if reaches is not None and reaches[i] is not None and dropSurface[0] in ("Plane", "PlaneGraded", "PlanewithRoughness"):
+                    half = self._PlateHalfExtent(nsFixed, impactPoint, z_direction, x_direction)
+                    if reaches[i] > half:
+                        plateShort.append(reaches[i])
+                        print(f"[EndTimeTable] WARNING plate reach — roll={RxOrigin:g} pitch={RyOrigin:g} yaw={RzOrigin:g}: reach "
+                              f"{reaches[i]:.4g} > plate half-extent {half:.4g} (각도 {i + 1}/{len(RxList)}) — 판 한 변을 적어도 "
+                              f"{2.0 * reaches[i]:.4g} 로 키울 것")
+
                 # NON_REFLECTING 경계 적용 (옵션)
                 nonReflecting = option.get("NonReflectingBoundary", False)
                 if nonReflecting and bottomSegments and cornerNodes:
@@ -3621,6 +3720,9 @@ class KooDynaAdvancedModification:
                     else:
                         self.WriteModifiedFile(filePath, modifiedKeyword)
                     print("Drop Attitude ", i+1, " is Created")
+        if plateShort:
+            print(f"[EndTimeTable] WARNING plate too small for {len(plateShort)}/{len(RxList)} angles — 가장 긴 reach "
+                  f"{max(plateShort):.4g}. DropSurface 판 한 변을 적어도 {2.0 * max(plateShort):.4g} 로 키울 것")
         if outPathListFile is not None:
             outPathListFile.close()
 
