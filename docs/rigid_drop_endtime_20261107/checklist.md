@@ -11,8 +11,10 @@
 - [x] D KCR 연결 — `simulation_params.endtime_presim`, 누적·대규모·배치, 옵션 없을 때 1128 파일 바이트 동일, 시험 75 (9980e10)
 - [x] 사용자 결정(2단계) — 연계 전체를 이번 판에, RigidAngularVelocity 계열 이름, 심각도 절반+고르게 절반, 2만 방향·대표 100, 각도별 위험 표까지(구면 지도는 Post 요청), 종료 시간은 중력 끔·충격 조건은 중력 켬
 - [x] 중력 끔 기본값 반영 — PresimGravity 0, endtime_presim.gravity false, 끄면 재접촉을 모두 2차 충격으로 셈
-- [ ] E KMM 모드 연결 — `RIGID_DROP_ENDTIME` 등록·카탈로그·`<base>_impacts.csv`·통합 시험(MinimumModel, KMM→KMM)
-- [ ] F KMM 강체 회전 — DROP_ATTITUDE `RigidAngularVelocityX/Y/Z` → *INITIAL_VELOCITY_GENERATION(무게중심), Fast DOE, 표 시간 단위 확인
+- [x] E KMM 모드 연결 — `RIGID_DROP_ENDTIME` 등록·카탈로그·`<base>_impacts.csv`·통합 시험 70(MinimumModel, KMM→KMM) (c8c4947)
+- [x] 사전 해석 무진행 감시(작업자 멈춤 600 초) (31bc924)
+- [x] F KMM 강체 회전 — `RigidAngularVelocityX/Y/Z` → *INITIAL_VELOCITY_GENERATION(STYP 3·IVATN 1·무게중심), Fast DOE, 표 time_unit 확인, 시험 95 (9d04533)
+- [x] 사용자 결정 — 심각도 지표 J × vn/v0 (1차 충격은 모두 vn = v0 라 vn 으로는 못 가름)
 - [ ] G KCR 충격 조건 — `angle_source impact_conditions`(고르기·DOE·index.json), `harvest --impact-map` → per_angle_risk.csv
 - [ ] H Post 계약서 — 구면 보고서가 per_angle_risk.csv·index.json 을 그리도록 KooD3plotReader 세션에 요청
 - [ ] 적대 리뷰 — 물리·KMM 회귀·KCR, 고친 것마다 회귀 시험

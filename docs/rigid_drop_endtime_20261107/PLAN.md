@@ -99,7 +99,7 @@ Fibonacci,100
 | `dx,dy,dz` | 덱 좌표계 낙하 방향 = Rz(-yaw)·Ry(-pitch)·Rx(-roll)·(0,0,-1) — KMM DropAttitude 규약 |
 | `class` | e 들 가운데 `slapdown` 이 하나라도 있으면 slapdown, 아니면 `rebound`/`none` |
 | `t1_end_ms,t2_start_ms,t2_end_ms` | 가장 긴 tFinal 을 낸 e 의 값(2차 충격 없으면 빈칸) |
-| `tfinal_ms` | 각 e 마다 (slapdown 이면 t2_end, 아니면 t1_end) + 여유. e 들 가운데 최대값이다 |
+| `tfinal_ms` | 각 e 마다 (slapdown 이면 t2_end, 아니면 t1_end) + 여유. e 들 가운데 최대값이다. **중력 끔(기본)이면 rebound 도 2차 충격으로 세어 t2_end 를 쓴다** |
 | `endtim` | `tfinal_ms` 를 덱 시간 단위로 바꾸고 0.1 ms 단위로 올림한 값 — **KMM 이 그대로 ENDTIM 에 넣는다** |
 | `governing_e` | 최대를 낸 e |
 | `class_e<e>`, `t1_end_ms_e<e>`, `t2_start_ms_e<e>`, `t2_end_ms_e<e>` | e 별 세부 |
@@ -195,7 +195,12 @@ Fibonacci,100
 - **고르기.**
   - 후보는 k ∈ impacts 인 줄이다.
   - 특징 f 는 [nx, ny, nz, vn_contact/v0, |(vx,vy)|/v0, (RotMat(att)·w)·L/v0] 다. L 은 기기 바운딩 박스 대각선의 절반이다.
-  - 심각도는 vn_contact 다. ceil(count·severity_fraction) 개는 심각도 상위에서, 나머지는 f 공간 최원점으로 고른다.
+  - 심각도는 **J_over_mv0 × vn_contact/v0** 다(사용자 결정 11-07, 처음의 vn_contact 에서 바꿈). 이유: 1차 충격은 모두 vn = v0 라 vn 으로는 가를 수 없다.
+  - ceil(count·severity_fraction) 개는 심각도 상위에서, 나머지는 f 공간 최원점으로 고른다.
+  - 상위 경계에서 0.1% 안으로 같은 값은 묶음으로 보고 그 안에서 최원점으로 채운다.
+  - **가까운 것 건너뛰기**(사용자 결정 11-07): 심각도 순서로 내려가며 이미 뽑은 심각도 대표와 f 거리가 `severity_min_distance`(기본 0.2 ≈ 자세 11° 또는 0.2·v0) 안이면 건너뛴다. 모자라면 남은 자리를 고르게 절반에 넘긴다.
+    - 이유: 실제 2만 방향에서 심각도 절반 50 가운데 49 가 거의 평평한 낙하의 꼭짓점 슬랩다운(약 2·v0, 원래 각도 1.4° 안팎) 한 꼴이었다.
+  - 같은 상태(1차는 e 가 달라도 충돌 직전 상태가 같다)는 하나로 합친다. 심각도·endtim 은 최대를 쓴다.
   - 모든 후보는 가장 가까운 대표에 묶는다.
 - **DOE.** 대표 하나가 DOE 하나다.
   - roll/pitch/yaw = att_*

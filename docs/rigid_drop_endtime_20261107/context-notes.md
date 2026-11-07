@@ -68,4 +68,31 @@
   - `*Inputfile` 은 템플릿 절대 경로다(복사하면 상대 *INCLUDE 를 잃는다). KMM 두 번째 인자로 작업 폴더를 주므로 **산출은 curDir 에 써야 한다**(E 계약).
   - 러너의 cleanup_after_exec(pkill squashfuse)는 부르지 않는다. 헤드에서 남의 컨테이너를 죽일 수 있다.
   - SIF 를 쓰면 apptainer_tmpdir 가 있어야 한다(기본 /opt/tmp 는 헤드에 없음).
+- **11-07 E KMM 모드 연결.**
+  - RIGID_DROP_ENDTIME 은 5 개 파일을 늘 작업 폴더(curDir, 파싱 때 절대 경로)에 쓴다. 덱 옆에는 리더의 _dump.k 만 생긴다.
+  - make_body 는 덱 좌표 절대 꼭짓점을 받아 무게중심을 스스로 뺀다.
+  - pybullet 빌드 시각 줄은 프로세스 stdout(KCR 에선 kmm_stdout.log)에 한 번 찍힌다. KMM `<opt>.log` 에는 안 남는다.
+  - fork 때 KMM 프로세스에는 OS 스레드가 63 개 있다(OCC·vtk·numpy). 20회·6000 경우에서 멈춤은 없었다. 그래도 무진행 600 초 감시를 넣었다(31bc924).
+  - 시험 70.
+- **11-07 F 강체 회전(9d04533).**
+  - `RigidAngularVelocityX/Y/Z` 가 있으면 각도마다 `*INITIAL_VELOCITY` 대신 `*INITIAL_VELOCITY_GENERATION` 을 쓴다.
+  - 카드 값은 STYP 3(기기 AllNodes 셋, 바닥 전)·IVATN 1·PHASE 0·IRIGID 0 이다.
+    - IVATN 1 로 CNRB·추가 절점도 받는다. Remark 5 는 INERTIA 없는 CNRB 를 STYP 1/2 가 못 알아본다고 한다.
+  - OMEGA·축·중심은 다음과 같다.
+    - OMEGA = \|R·ω\|, 축 = 단위(R·ω) 다.
+    - 중심은 쓰는 덱 좌표의 기기 무게중심(A 모듈, 원점 이동·강체화 뒤, 바닥 전)이다.
+  - 같은 초기조건 관리자를 쓰므로 Fast 캐시·되돌리기·차분을 그대로 탄다. DTI 의 ClearInitial 이 다음 단계에서 지운다.
+  - 오류(덱 쓰기 전 rc 1): InitialAngularVelocity 와 함께, 목록 길이 다름, 축 빠짐, 덱에 이미 *INITIAL_VELOCITY, 표 time_unit 과 덱 시간 단위 다름.
+  - 쓰는 함수 정밀도(그대로 둠): 축 10.3f(단위 길이 아님), 중심 10.4f, OMEGA·VX 유효 4자리. 회전 속도 최대 약 0.1% 다.
+  - LS-DYNA 로 돌려 보지 못했다(라이선스 만료). IVATN·STYP 동작은 매뉴얼 글이 근거다.
+- **11-07 G KCR 충격 조건.**
+  - 1차 충돌 직전 상태는 e 와 무관해 같은 후보가 셋씩 나온다. 그래서 같은 상태를 합친다.
+  - 1차는 모두 vn = v0 라 vn 심각도 상위가 파일 차례(한 극)로 몰렸다. 그래서 0.1% 묶음은 최원점으로 채운다.
+  - 사용자가 심각도를 J × vn/v0 로 바꿨다.
+  - 대표별 속도는 `scenario.doe_impact_state` 에 둔다. impact_conditions 는 한 단계 DROP 시나리오만 받는다(tolerance·part_doe·endtime_presim 함께 금지). 배치(Fast DOE) 경로도 지원한다.
+  - 2만 방향 × e 3 에서 후보 12만 줄(상태 8만) → 대표 100 고르기에 4.1 초, index.json 22.5 MB 다.
+  - **실제 2만 방향 체인**(MinimumModel, KooChainRun prepare + 소스 KMM): 14:13 이 걸렸고, 그 가운데 사전 해석이 840 s 였다.
+    - 840 s 는 31bc924 감시의 wait() 가 6만 future 를 매번 훑은 탓이었다. f8749c1 로 고쳤다(동시 4×작업자).
+    - 1차 충격은 모두 vn/v0 = 1.000181 이다(꼭짓점 58,725·모서리 1,275). J 는 0.159~1.5 로 가른다.
+    - 심각도 절반 50 은 모두 k=2 꼭짓점 슬랩다운이었고, 49 가 ±z 10° 안 한 꼴이었다. 사용자 결정은 가까운 것 건너뛰기(0.2)다.
 - **11-07 InitialAngularVelocity 확인.** R16 Vol I 28-121 에서 `*INITIAL_VELOCITY` 의 VXR/VYR/VZR 은 절점 회전 속도다. 솔리드 기기는 돌지 않는다. 강체 회전은 `*INITIAL_VELOCITY_GENERATION` 으로 준다(Remark 1: 둘은 함께 못 쓴다). 2단계 F 에서 새 키로 넣는다.
