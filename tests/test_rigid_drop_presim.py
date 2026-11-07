@@ -1,11 +1,17 @@
 # 강체 낙하 사전 해석 엔진(KooRigidDropPresim)의 껍질 충실도·프로토타입 수치·규약·표 줄·충돌 직전 상태를 검증하는 시험
 """
-실행: venv312/bin/python tests/test_rigid_drop_presim.py   (pybullet 필요, 약 1분, 프로세스 ≤ 4)
+실행: venv312/bin/python tests/test_rigid_drop_presim.py   (pybullet 필요, 약 2분, 프로세스 ≤ 4)
 
 기준값은 프로토타입 /home/koopark/kooOmniDropAnalyzer/fullangle_mbd (PyBullet GEOM_BOX 150×75×7.5 mm, 200 g, μ 0.5)의
 저장 결과(results_mu0.5, tilt45_sensitivity.csv, six_face_exact.csv)다. 전체 측정은 /data/koopark/Test_RigidDropEndtime/B 에 있다.
 프로토타입 대조는 프로토타입 규칙(2차 이격 0.3 ms)으로 하고, 엔진 기본(1 ms, 사용자 결정 11-07)은 [11] 에서 따로 본다.
+v133 중력 끔 규칙(마지막 강한 재접촉, strong_contact 0.3)은 [15] 에서 본다. v132 규칙을 보는 [7]·[11]·[12] 는
+strong_contact=None 으로 v132 규칙을 고정하고, v133 기대값을 옆에 둔다.
+[15] 의 v132 비트 동일 대조는 git 의 v132 엔진(V132_COMMIT)과 하고, 수용 대조 기준은 멈춤 없이 끝까지 돌린
+endtime_rule_check.csv(REF_V133, 칸 last>=0.3)다. 둘 다 없으면 그 대조만 SKIP 한다.
 """
+import csv
+import importlib.util
 import inspect
 import math
 import multiprocessing as mp
@@ -50,6 +56,12 @@ PROTO_REF = {50: [("slapdown", 3.17), ("slapdown", 3.23), ("slapdown", 3.29)],
              950: [("slapdown", 2.75), ("slapdown", 2.89), ("slapdown", 3.06)]}
 # 프로토타입 tilt45_sensitivity.csv (μ 0.5): 45° 짧은 모서리 t2_start ms, 2차 접촉 속도/v0
 PROTO_45 = {0.1: (17.44, 1.1718), 0.3: (16.76, 1.1708), 0.5: (16.17, 1.1334)}
+# v133: v132 엔진의 마지막 커밋(비트 동일 대조 기준), 멈춤 없이 끝까지 돌린 방향별 기준 tFinal(피보나치 1000, 중력 끔, μ 0.5)
+V132_COMMIT = "6504b11"
+REF_V133 = "/home/koopark/kooOmniDropAnalyzer/fullangle_mbd/results_v132_mu0.5/endtime_rule_check.csv"
+NEW_KEYS = ["strong_end_ms", "strong_vn_max"]
+# calm 건전성 표본(피보나치 1000 번호) — 거의 평평한 낙하는 calm 으로, 15 는 clear 로 멈춘다(0·1·440·457 은 강한 재접촉 없음)
+SOUND_IDX = (0, 1, 13, 15, 20, 37, 440, 457, 850)
 
 
 def check(name, cond, detail=""):
@@ -90,6 +102,65 @@ def _face_job(d):
         t2s, t2e, cls, t1e = P.second_impact(r["events"], 0.3)
         out.append((cls, P.tfinal_ms(t2e, cls, t1e)))
     return out
+
+
+def tf_strong(st, margin_ms=1.0):
+    """strong_from_events 결과 → v133 tFinal (마지막 강한 재접촉 묶음 끝, 없으면 1차 묶음 끝) + 여유."""
+    return (st[0] if math.isnan(st[1]) else st[1]) + margin_ms
+
+
+def _sound_job(args):
+    """calm 건전성: v133(calm 켬) 과 멈춤 규칙을 다 끈 실행(v132 경로에 T_SEP_MAX 10 s·이벤트 400)의 이벤트·tFinal."""
+    idx, e = args
+    d = proto_fibonacci(1000)[idx]
+    r = P.simulate_drop(BOX, d, e, MU, H, gravity_on=False, strong_vn=P.STRONG_CONTACT)
+    old = P.T_SEP_MAX, P.MAX_EVENTS
+    P.T_SEP_MAX, P.MAX_EVENTS = 10.0, 400  # fork 작업자 안에서만 바꾼다
+    try:
+        ref = P.simulate_drop(BOX, d, e, MU, H, gravity_on=False)
+    finally:
+        P.T_SEP_MAX, P.MAX_EVENTS = old
+    key = lambda evs: [(x["t_start_ms"], x["t_end_ms"], x["J"], x["vn_mps"]) for x in evs]  # noqa: E731
+    prefix = key(r["events"]) == key(ref["events"])[:len(r["events"])]
+    return (idx, e, r["stop"], ref["stop"], P.strong_from_events(r["events"], r["v0"], P.STRONG_CONTACT),
+            P.strong_from_events(ref["events"], ref["v0"], P.STRONG_CONTACT), prefix)
+
+
+def same_value(a, b):
+    """비트 동일 비교 — nan 은 nan 과 같다고 본다."""
+    if isinstance(a, float) and isinstance(b, float) and math.isnan(a) and math.isnan(b):
+        return True
+    return a == b
+
+
+def same_as_v132(new_rows, old_rows):
+    """v133 표 줄이 v132 줄과 같다: v132 칸은 차례·값이 비트까지 같고, 새 칸(strong_*)은 모두 nan."""
+    for a, b in zip(new_rows, old_rows):
+        if [k for k in a if k in b] != list(b) or not all(same_value(a[k], b[k]) for k in b):
+            return False
+        extra = [k for k in a if k not in b]
+        if sorted(extra) != sorted(NEW_KEYS + [f"strong_end_ms_e{e}" for e in ES]) or not all(math.isnan(a[k]) for k in extra):
+            return False
+    return len(new_rows) == len(old_rows)
+
+
+def load_v132():
+    """git 의 v132 엔진(V132_COMMIT)을 이름 있는 모듈로 읽는다(fork 작업자에 _job 을 넘기려면 이름으로 찾아져야 한다). 없으면 None."""
+    rel = "occProject/Generators/KooCAEManager/KooRigidDropPresim.py"
+    try:
+        src = subprocess.run(["git", "-C", str(ROOT), "show", f"{V132_COMMIT}:{rel}"], capture_output=True, text=True,
+                             check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "KooRigidDropPresim_v132.py")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(src)
+        spec = importlib.util.spec_from_file_location("KooRigidDropPresim_v132", path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+    return mod
 
 
 BOX = P.make_body(MASS, (0.0, 0.0, 0.0), box_inertia(), CORNERS)
@@ -235,14 +306,45 @@ def main():
           and P.tfinal_ms(float("nan"), "none", 0.2, count_rebound=True) == 1.2)
     check("endtim: ceil to 0.1 ms, deck units", P.endtim_from_ms(1.01, 1.0) == 0.0011 and P.endtim_from_ms(17.76, 1e-3) == 17.8
           and P.endtim_from_ms(1.0000000000000002, 1.0) == 0.001 and P.endtim_from_ms(2.0, 1e-3) == 2.0)
+    # v133 strong_from_events — 접근 속도 vn(÷ v0) 을 가진 이벤트, v_ref = 2
+    sv = lambda s, e_, vn: {"t_start_ms": s, "t_end_ms": e_, "rise_mm": 0.0, "vn_mps": -2.0 * vn}  # noqa: E731
+    evs = [sv(0, 0.4, 1.0), sv(0.9, 1.0, 0.1), sv(2.25, 2.25, 0.72), sv(3.92, 3.92, 1.86), sv(5.73, 5.8, 0.98),
+           sv(6.5, 6.6, 0.05), sv(30.0, 30.0, 0.06)]
+    check("strong_from_events: clusters as second_impact, last re-contact cluster with max vn >= thr, vn_max over re-contacts",
+          P.strong_from_events(evs, 2.0, 0.3) == (1.0, 6.6, 1.86) and P.second_impact(evs)[3] == 1.0)
+    check("strong_from_events: strength = cluster max (weak start, strong later in the cluster), >= thr counts",
+          P.strong_from_events([sv(0, 0, 1.0), sv(5.0, 5.0, 0.1), sv(5.5, 5.6, 0.3), sv(9.0, 9.0, 0.2)], 2.0, 0.3)
+          == (0.0, 5.6, 0.3))
+    t1, se, vm = P.strong_from_events([sv(0, 0.25, 1.0), sv(1.25, 1.25, 0.29), sv(400.0, 400.0, 0.06)], 2.0, 0.3)
+    check("strong_from_events: only weak re-contacts -> (t1_end, nan, max) ; gap exactly t_sep starts a new cluster",
+          t1 == 0.25 and math.isnan(se) and vm == 0.29)
+    t1, se, vm = P.strong_from_events([sv(0, 0.2, 1.0), sv(0.7, 0.9, 0.8)], 2.0, 0.3)
+    e0 = P.strong_from_events([], 2.0, 0.3)
+    check("strong_from_events: no re-contact -> (t1_end, nan, nan); no events -> all nan",
+          t1 == 0.9 and math.isnan(se) and math.isnan(vm) and all(math.isnan(x) for x in e0))
+    check("v133 defaults: STRONG_CONTACT 0.3 (run_presim default), MAX_EVENTS_FULL 200, strong_vn default None",
+          P.STRONG_CONTACT == 0.3 and P.MAX_EVENTS_FULL == 200
+          and inspect.signature(P.run_presim).parameters["strong_contact"].default == P.STRONG_CONTACT
+          and inspect.signature(P.simulate_drop).parameters["strong_vn"].default is None)
+    bad = []
+    for v in (0.0, -0.3, float("nan"), float("inf")):
+        try:
+            P.run_presim(BOX, [("A", 0.0, 0.0, 0.0)], H, gravity_on=False, strong_contact=v, log=lambda s: None)
+            bad.append(v)
+        except ValueError:
+            pass
+    check("run_presim rejects strong_contact 0, < 0, nan, inf (ValueError before any simulation)", not bad, f"{bad}")
 
     print("[6] run_presim 표 줄 (KooEndTimeTable) · 각도 규약 · 충돌 상태 줄")
     angles = fibonacci_angles(8) + [("Y1", 20.0, -35.0, 70.0)]
     rows, imps = P.run_presim(BOX, angles, H, ES, friction=MU, workers=4, time_to_s=1.0, log=lambda s: None,
                               return_impacts=True)
-    per_e = [f"{c}_e{e}" for e in ES for c in ("class", "t1_end_ms", "t2_start_ms", "t2_end_ms")]
-    check("columns = CORE_COLUMNS + n_unresolved, reach_m + per-e (class/t1/t2s/t2e _e<e>)",
-          list(rows[0]) == CORE_COLUMNS + ["n_unresolved", "reach_m"] + per_e, f"{list(rows[0])}")
+    # v133: strong_end_ms·strong_vn_max(지배 e)를 reach_m 뒤에, e 마다 strong_end_ms_e<e> 를 t2_end_ms_e<e> 뒤에 더한다
+    per_e = [f"{c}_e{e}" for e in ES for c in ("class", "t1_end_ms", "t2_start_ms", "t2_end_ms", "strong_end_ms")]
+    check("columns = CORE_COLUMNS + n_unresolved, reach_m, strong_end_ms, strong_vn_max + per-e (class/t1/t2s/t2e/strong)",
+          list(rows[0]) == CORE_COLUMNS + ["n_unresolved", "reach_m"] + NEW_KEYS + per_e, f"{list(rows[0])}")
+    check("gravity on: new columns strong_end_ms, strong_vn_max, strong_end_ms_e<e> are all nan (v132 rule)",
+          all(math.isnan(r_[k]) for r_ in rows for k in NEW_KEYS + [f"strong_end_ms_e{e}" for e in ES]))
     ok = True
     for row, (name, rr, pp, yy) in zip(rows, angles):
         tfs = []
@@ -299,15 +401,25 @@ def main():
     check("early stop 'clear' gives the same events as running to t_max", r_off["stop"] == "clear" and r_full["stop"] == "t_max"
           and [(e_["t_start_ms"], e_["J"]) for e_ in r_off["events"]] == [(e_["t_start_ms"], e_["J"]) for e_ in r_full["events"]],
           f"{r_off['stop']} {r_full['stop']}")
-    # 중력 끔 표: 회전으로 다시 닿는 'rebound' 도 tFinal 에 든다(사용자 결정 11-07). 실제 각도에서 확인한다.
+    # 중력 끔 표(v132 규칙): 회전으로 다시 닿는 'rebound' 도 tFinal 에 든다(사용자 결정 11-07). 실제 각도에서 확인한다.
+    # v133 기본 규칙은 같은 각도에서 다르다(약한 늦은 재접촉을 뺌) — strong_contact=None 으로 v132 규칙을 고정한다.
     rb_rows = P.run_presim(BOX, [("SLOW", -18.5, -68.4, 0.0)], H, restitutions=(0.1, 0.3, 0.5), friction=MU,
-                           gravity_on=False, workers=3, log=lambda *_: None)
+                           gravity_on=False, workers=3, log=lambda *_: None, strong_contact=None)
     rb = rb_rows[0]
     reb_es = [e_ for e_ in (0.1, 0.3, 0.5) if rb[f"class_e{e_}"] == "rebound"]
     want = max([rb[f"t2_end_ms_e{e_}"] + 1.0 for e_ in (0.1, 0.3, 0.5) if rb[f"class_e{e_}"] in ("slapdown", "rebound")]
                + [rb[f"t1_end_ms_e{e_}"] + 1.0 for e_ in (0.1, 0.3, 0.5)])
-    check("gravity-off table counts every re-contact (tfinal = max over e of t2_end + 1)",
+    check("gravity-off table, v132 rule (strong_contact=None): counts every re-contact (tfinal = max over e of t2_end + 1)",
           abs(rb["tfinal_ms"] - want) < 1e-9, f"tfinal={rb['tfinal_ms']} want={want} rebound_e={reb_es}")
+    rs = P.run_presim(BOX, [("SLOW", -18.5, -68.4, 0.0)], H, restitutions=(0.1, 0.3, 0.5), friction=MU,
+                      gravity_on=False, workers=3, log=lambda *_: None)[0]
+    want_s = max((rs[f"t1_end_ms_e{e_}"] if math.isnan(rs[f"strong_end_ms_e{e_}"]) else rs[f"strong_end_ms_e{e_}"]) + 1.0
+                 for e_ in (0.1, 0.3, 0.5))
+    check(f"gravity-off table, v133 rule: tfinal = max over e of (strong_end or t1_end) + 1; SLOW {rb['tfinal_ms']:.1f} -> "
+          f"{rs['tfinal_ms']:.2f} ms (weak re-contact excluded), class/t2 columns unchanged",
+          abs(rs["tfinal_ms"] - want_s) < 1e-12 and rs["tfinal_ms"] < 2.0 and math.isnan(rs["strong_end_ms"])
+          and all(same_value(rs[k], rb[k]) for k in rb if k.startswith(("class", "t1_end", "t2_"))),
+          f"{rs}")
 
     print("[8] 충돌 직전 상태 — 45° 짧은 모서리 2차, 에너지, 재시작")
     for e in (0.3,):
@@ -374,10 +486,13 @@ def main():
     finally:
         P.NO_PROGRESS_S = old_np
 
-    print("[11] 2차 이격 0.3 → 1 ms (H1): 상자 피보나치 1000 × e 3, 중력 끔 — 짧아지는 각도 없음")
+    print("[11] 2차 이격 0.3 → 1 ms (H1): 상자 피보나치 1000 × e 3, 중력 끔 — 짧아지는 각도 없음 (v132 규칙)")
+    # v132 규칙의 결정을 보는 시험이라 strong_contact=None 으로 고정한다(v133 규칙이면 P0005 는 0.3 ms 로도 2.09 ms 충격을 담는다)
     ang1000 = fibonacci_angles(1000)
-    old = P.run_presim(BOX, ang1000, H, ES, friction=MU, gravity_on=False, t_sep_ms=0.3, workers=4, log=lambda s: None)
-    new = P.run_presim(BOX, ang1000, H, ES, friction=MU, gravity_on=False, workers=4, log=lambda s: None)
+    old = P.run_presim(BOX, ang1000, H, ES, friction=MU, gravity_on=False, t_sep_ms=0.3, workers=4, log=lambda s: None,
+                       strong_contact=None)
+    new = P.run_presim(BOX, ang1000, H, ES, friction=MU, gravity_on=False, workers=4, log=lambda s: None,
+                       strong_contact=None)
     d = np.array([b["tfinal_ms"] - a["tfinal_ms"] for a, b in zip(old, new)])
     longer = d > 1e-9
     print(f"      longer {int(longer.sum())} angles, increase median {np.median(d[longer]):.2f} max {d.max():.2f} ms, "
@@ -389,15 +504,37 @@ def main():
           and abs(p5n["t2_start_ms_e0.5"] - 2.09) < 0.011, f"{p5o['tfinal_ms']} -> {p5n['tfinal_ms']}")
 
     print("[12] 중력 끔에서 t_max 까지 2차도 벗어남도 없음 → n_unresolved + WARNING (L1)")
+    # v132 규칙(strong_contact=None)의 미해결 뜻: 2차도 바닥 벗어남도 없이 t_max·이벤트 상한으로 끝난 e
     logs = []
     ru = P.run_presim(BOX, [("FACE", 0.0, 0.0, 0.0), ("S45", 0.0, 45.0, 0.0)], H, ES, friction=MU, gravity_on=False,
-                      t_max=0.002, workers=2, log=logs.append)
+                      t_max=0.002, workers=2, log=logs.append, strong_contact=None)
     warn = [x for x in logs if "WARNING" in x]
-    check("face drop stopped at t_max=2 ms: n_unresolved = 3, tfinal kept = t1_end + 1",
+    check("v132 rule: face drop stopped at t_max=2 ms: n_unresolved = 3, tfinal kept = t1_end + 1",
           ru[0]["n_unresolved"] == 3 and abs(ru[0]["tfinal_ms"] - (ru[0]["t1_end_ms"] + 1.0)) < 1e-12, f"{ru[0]}")
     check("one English WARNING line naming the angle; gravity on -> 0", len(warn) == 1 and "FACE" in warn[0]
           and all(r_["n_unresolved"] == 0 for r_ in P.run_presim(BOX, [("FACE", 0.0, 0.0, 0.0)], H, ES, t_max=0.002,
                                                                  workers=2, log=lambda s: None)), f"{warn}")
+    # v133 규칙의 미해결 뜻: 시뮬이 t_max·이벤트 상한(MAX_EVENTS_FULL)으로 끝난 e. 평판 낙하 e 0.1 은 1 ms 조용 뒤 calm 으로
+    # 풀리고, e 0.3·0.5 는 Bullet 면 접촉의 가짜 회전(ω·r_max ≈ 0.36·0.64·v0) 때문에 2 ms 안에 calm 이 못 된다
+    logs = []
+    ru = P.run_presim(BOX, [("FACE", 0.0, 0.0, 0.0), ("S45", 0.0, 45.0, 0.0)], H, ES, friction=MU, gravity_on=False,
+                      t_max=0.002, workers=2, log=logs.append)
+    warn = [x for x in logs if "WARNING" in x]
+    stops = {nm: [P.simulate_drop(BOX, drop_direction(*a), e, MU, H, gravity_on=False, t_max=0.002, strong_vn=0.3)["stop"]
+                  for e in ES] for nm, a in (("FACE", (0.0, 0.0)), ("S45", (0.0, 45.0)))}
+    check("v133 rule: n_unresolved = e count stopped on t_max/max_events (FACE: calm + t_max mix, S45: all t_max)",
+          [r_["n_unresolved"] for r_ in ru] == [sum(s in ("t_max", "max_events") for s in stops[nm]) for nm in ("FACE", "S45")]
+          and "calm" in stops["FACE"] and "t_max" in stops["FACE"] and stops["S45"] == ["t_max"] * 3, f"{stops}")
+    check("v133 rule: one WARNING line naming both angles (t_max or event cap, tfinal = last strong re-contact so far)",
+          len(warn) == 1 and "FACE" in warn[0] and "S45" in warn[0] and "200 events" in warn[0], f"{warn}")
+    old_cap = P.MAX_EVENTS_FULL
+    P.MAX_EVENTS_FULL = 3  # fork 작업자가 이어받는다 — idx 15 e 0.5 는 이벤트 5 개
+    try:
+        rcap = P.run_presim(BOX, [("I15", *euler_from_direction(proto_fibonacci(1000)[15], ndigits=10))], H, (0.5,),
+                            friction=MU, gravity_on=False, workers=1, log=lambda s: None)[0]
+    finally:
+        P.MAX_EVENTS_FULL = old_cap
+    check("v133 rule: event cap (MAX_EVENTS_FULL) counts as unresolved", rcap["n_unresolved"] == 1, f"{rcap}")
 
     print("[13] 바닥 위 접촉 거리 reach_m (L6)")
     sim = P.simulate_drop(BOX, d45, 0.3, MU, H)
@@ -454,6 +591,92 @@ def main():
     for k in kids:  # 실패했을 때 남은 것 정리
         if alive(k):
             os.kill(k, signal.SIGKILL)
+
+    print("[15] v133 마지막 강한 재접촉 규칙(중력 끔, strong_contact 0.3) — v132 동일 경로·calm 건전성·상자 예시·수용 대조")
+    # (a) 중력 켬, strong_contact=None 은 v132 엔진과 비트까지 같다 (표 줄의 v132 칸·충돌 상태 줄 전부)
+    V = load_v132()
+    if V is None:
+        print(f"  SKIP v132 bit-identity: git or commit {V132_COMMIT} not available")
+    else:
+        ang = fibonacci_angles(8) + [("Y1", 20.0, -35.0, 70.0), ("S45", 0.0, 45.0, 0.0)]
+        for label, kw in (("gravity on (default strong_contact ignored)", dict()),
+                          ("gravity on, strong_contact=None", dict(strong_contact=None)),
+                          ("gravity off, strong_contact=None", dict(gravity_on=False, strong_contact=None)),
+                          ("gravity off, strong_contact=None, t_sep 0.3 ms", dict(gravity_on=False, strong_contact=None,
+                                                                                 t_sep_ms=0.3))):
+            g_on = kw.get("gravity_on", True)
+            nr, ni = P.run_presim(BOX, ang, H, ES, friction=MU, workers=4, log=lambda s: None, return_impacts=True, **kw)
+            orow, oimp = V.run_presim(BOX, ang, H, ES, friction=MU, gravity_on=g_on, t_sep_ms=kw.get("t_sep_ms", 1.0),
+                                      workers=4, log=lambda s: None, return_impacts=True)
+            same_imp = len(ni) == len(oimp) and all(list(a) == list(b) and all(same_value(a[k], b[k]) for k in b)
+                                                    for a, b in zip(ni, oimp))
+            check(f"v132 ({V132_COMMIT}) bit-identical table rows + impact rows: {label}", same_as_v132(nr, orow) and same_imp)
+        sa = P.simulate_drop(BOX, d45, 0.3, MU, H, gravity_on=True, strong_vn=0.3)
+        sb = V.simulate_drop(BOX, d45, 0.3, MU, H)
+        check("simulate_drop gravity on ignores strong_vn: events and stop = v132",
+              sa["stop"] == sb["stop"] and [list(x.items()) for x in sa["events"]] == [list(x.items()) for x in sb["events"]])
+
+    # (b) calm 건전성: calm 으로 멈춘 실행의 이벤트는 멈춤 규칙을 다 끈 실행의 앞부분이고 tFinal·strong_end 가 같다
+    with mp.get_context("fork").Pool(4) as pool:
+        snd = pool.map(_sound_job, [(i, e) for i in SOUND_IDX for e in ES], chunksize=1)
+    n_calm = sum(x[2] == "calm" for x in snd)
+    bad = [(i, e, s, rs_, tf_strong(a), tf_strong(b)) for i, e, s, rs_, a, b, pre in snd
+           if not (pre and tf_strong(a) == tf_strong(b) and same_value(a[1], b[1]) and rs_ in ("clear", "t_max"))]
+    check(f"calm soundness on {len(snd)} cases ({n_calm} stopped calm): events = prefix of the no-stop run, same tFinal",
+          not bad and n_calm >= 15, f"calm {n_calm} bad {bad}")
+
+    # (c) 꼭짓점별로 갈라져 오는 슬랩다운 — 더 센 뒷묶음이 이제 담긴다 (피보나치 1000 idx 15, e 0.5)
+    d15 = proto_fibonacci(1000)[15]
+    r15 = P.simulate_drop(BOX, d15, 0.5, MU, H, gravity_on=False, strong_vn=P.STRONG_CONTACT)
+    imp15 = P.impact_rows(BOX, r15)
+    st15 = P.strong_from_events(r15["events"], r15["v0"], P.STRONG_CONTACT)
+    si15 = P.second_impact(P.simulate_drop(BOX, d15, 0.5, MU, H, gravity_on=False)["events"])
+    tf132 = P.tfinal_ms(si15[1], si15[2], si15[3], count_rebound=True)
+    check("idx 15 e 0.5: clusters 0 / 2.25 / 3.92 / 5.73 ms (gravity off now gives k=1..4 impact rows)",
+          [round(x["t_start_ms"], 2) for x in imp15] == [0.0, 2.25, 3.92, 5.73], f"{[x['t_start_ms'] for x in imp15]}")
+    check("idx 15 e 0.5: v132 tFinal 3.25 ms (2nd cluster 0.72·v0) -> v133 6.98 ms (last strong cluster, max 1.86·v0)",
+          abs(tf132 - 3.25) < 1e-9 and abs(tf_strong(st15) - 6.98) < 1e-9 and abs(st15[2] - 1.857) < 1e-3, f"{tf132} {st15}")
+    a15 = euler_from_direction(d15, ndigits=10)
+    row15 = P.run_presim(BOX, [("I15", *a15)], H, (0.5,), friction=MU, gravity_on=False, workers=1, log=lambda s: None)[0]
+    check("idx 15 e 0.5 table row: tfinal 6.98, strong_end 5.98, strong_vn_max 1.86, class/t2 = first re-contact (2.25 ms)",
+          abs(row15["tfinal_ms"] - 6.98) < 1e-9 and abs(row15["strong_end_ms"] - 5.98) < 1e-9
+          and row15["strong_end_ms_e0.5"] == row15["strong_end_ms"] and abs(row15["strong_vn_max"] - st15[2]) < 1e-9
+          and row15["class"] == "slapdown" and abs(row15["t2_end_ms"] - 2.25) < 1e-9 and row15["endtim"] == 0.007,
+          f"{row15}")
+
+    # (d) 거의 멈춰 돌다 수백 ms 뒤 스치는 약한 접촉은 이제 ENDTIM 을 늘리지 않는다 (e 0.1)
+    al, be = math.radians(2.0), math.radians(-13.0)
+    for label, d, want132, want133 in (
+            ("mirror (dx, dy, -dz) of idx 618", proto_fibonacci(1000)[618] * [1.0, 1.0, -1.0], 465.18, 1.69),
+            ("side alpha 2, beta -13", (math.sin(al) * math.cos(be), -math.cos(al) * math.cos(be), math.sin(be)), 520.91, 1.98)):
+        r_old = P.simulate_drop(BOX, d, 0.1, MU, H, gravity_on=False)
+        si = P.second_impact(r_old["events"])
+        r_new = P.simulate_drop(BOX, d, 0.1, MU, H, gravity_on=False, strong_vn=P.STRONG_CONTACT)
+        st = P.strong_from_events(r_new["events"], r_new["v0"], P.STRONG_CONTACT)
+        tf_old = P.tfinal_ms(si[1], si[2], si[3], count_rebound=True)
+        check(f"weak late graze, {label}: v132 {want132} ms -> v133 {want133} ms (graze {st[2]:.3f}·v0 < 0.3)",
+              abs(tf_old - want132) < 1e-9 and abs(tf_strong(st) - want133) < 1e-9 and st[2] < 0.1
+              and abs(si[0] - (want132 - 1.0)) < 1e-9, f"{tf_old} {st} {si}")
+
+    # (e) 수용 대조: 피보나치 1000(프로토타입 위상) × e 3 — 멈춤 없이 끝까지 돌린 기준(last>=0.3)과 방향마다 같다
+    ang_p = [(f"P{i + 1:04d}", *euler_from_direction(d_, ndigits=10)) for i, d_ in enumerate(proto_fibonacci(1000))]
+    logs = []
+    t = time.time()
+    acc = P.run_presim(BOX, ang_p, H, ES, friction=MU, gravity_on=False, strong_contact=0.3, workers=4, log=logs.append)
+    wall = time.time() - t
+    tf_acc = np.array([r_["tfinal_ms"] for r_ in acc])
+    print(f"      1000 x 3 cases {wall:.1f} s (4 workers): total {tf_acc.sum() / 1e3:.5f} s, max {tf_acc.max():.2f} ms, "
+          f"{[x for x in logs if '종료 이유' in x][0].split('종료 이유 ')[-1]}")
+    check("acceptance: total 19.48153 s, max 139.05 ms (= no-stop reference, rule last>=0.3)",
+          abs(tf_acc.sum() - 19481.53) < 1e-6 and abs(tf_acc.max() - 139.05) < 1e-9, f"{tf_acc.sum()} {tf_acc.max()}")
+    if os.path.exists(REF_V133):
+        with open(REF_V133, newline="") as f:
+            ref = np.array([float(x["last>=0.3"]) for x in csv.DictReader(f)])
+        mism = np.nonzero(tf_acc != ref)[0]
+        check("acceptance: tfinal per direction == no-stop reference (endtime_rule_check.csv, last>=0.3), 0 mismatches",
+              len(ref) == 1000 and len(mism) == 0, f"{len(mism)} mismatches, first {mism[:10]}")
+    else:
+        print(f"  SKIP per-direction acceptance: {REF_V133} not found")
 
     print(f"\n{'PASS' if not FAILS else 'FAIL'} ({time.time() - t_all:.0f} s)")
     for f in FAILS:
