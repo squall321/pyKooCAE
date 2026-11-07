@@ -1,11 +1,13 @@
 # KMM RIGID_DROP_ENDTIME 모드 — 덱 질량특성·외곽형상으로 강체 낙하 사전 해석을 돌려 각도별 종료 시간 표·충돌 상태 표를 쓰는 모듈
 """
 흐름 (KooMeshModifier 가 덱을 읽은 뒤 부른다 — 기본 .k 는 쓰지 않는다)
-  1. **RigidDropEndtime 블록 → parse_option_lines(키 이름 전체 일치, 틀리면 ValueError → KMM rc 1)
-  2. KooRigidBodyProperties.compute_rigid_body → <base>_rigidbody.json · <base>_surface.obj · <base>_hull.obj
-  3. KooRigidDropPresim.make_body(SI 값) → run_presim(각도 × 반발계수, return_impacts=True)
-  4. <base>_endtime.csv(KooEndTimeTable.write_endtime_table) · <base>_impacts.csv(덱 단위, PLAN §5)
-     rigidbody.json 에 사전 해석 요약("presim")을 더해 다시 쓴다.
+  1. **RigidDropEndtime 블록 → parse_option_lines(키 이름 전체 일치, 모르는 키·틀린 값은 ValueError → KMM rc 1)
+  2. 지난 실행의 산출 다섯 개를 지운다(실패한 실행 뒤에 옛 표가 남아 KCR 이 읽지 않게).
+  3. KooRigidBodyProperties.compute_rigid_body → <base>_rigidbody.json · <base>_surface.obj · <base>_hull.obj
+  4. KooRigidDropPresim.make_body(SI 값) → run_presim(각도 × 반발계수, return_impacts=True)
+  5. <base>_endtime.csv(KooEndTimeTable.write_endtime_table) · <base>_impacts.csv(덱 단위, PLAN §5)
+     메타: deck·units·time_unit·height·v0(√(2gh), 덱 단위)·restitution·friction·gravity·margin_ms·t_sep_ms·n_angles.
+     표 칸에 엔진이 주는 reach(덱 길이)·n_unresolved 를 더한다. rigidbody.json 에 사전 해석 요약("presim")을 더해 다시 쓴다.
   산출은 모두 out_dir(= KMM 작업 폴더)에 쓴다. KCR 은 *Inputfile 로 템플릿 절대 경로를, 둘째 인자로 작업 폴더를 주므로
   덱 옆에 쓰면 안 된다. base = 덱 파일 이름에서 확장자를 뺀 것.
 
@@ -14,6 +16,8 @@
 로그 줄머리는 영어 표지 [RigidDropEndtime] 다(컴파일본은 한글 글자를 찾기 어렵다).
 """
 import csv
+import difflib
+import inspect
 import math
 import os
 import time
@@ -92,10 +96,11 @@ def read_angle_file(path):
     return out
 
 
-def parse_option_lines(lines, cur_dir, log=print):
+def parse_option_lines(lines, cur_dir):
     """**RigidDropEndtime 블록의 줄들 → 옵션 dict(기본값 채움). 키는 대소문자 무관·이름 전체 일치, 빈 줄·'$'·'#' 줄은 건너뛴다.
-    모르는 키는 경고만 한다. Height 없음·0 이하, 각도 출처(AngleFile·Fibonacci·Angle 줄)가 없거나 둘 이상, 숫자 오류, 없는
-    AngleFile 은 ValueError. AngleFile 은 작업 폴더(cur_dir) 기준 절대 경로로 바꾼다(KMM 은 덱을 읽으며 chdir 한다)."""
+    모르는 키(가까운 키 이름을 알려 준다), Height 없음·0 이하, 각도 출처(AngleFile·Fibonacci·Angle 줄)가 없거나 둘 이상, 숫자
+    오류, 없는 AngleFile 은 ValueError — 새 블록이라 모르는 키를 넘겨 줄 까닭이 없다(오타가 기본값으로 조용히 돈다).
+    AngleFile 은 작업 폴더(cur_dir) 기준 절대 경로로 바꾼다(KMM 은 덱을 읽으며 chdir 한다)."""
     from KooCAEManager.KooRigidBodyProperties import UNIT_SYSTEMS
     opt, seen = default_options(cur_dir), set()
     for raw in lines:
@@ -105,8 +110,9 @@ def parse_option_lines(lines, cur_dir, log=print):
         key, _, rest = line.partition(",")
         name = KEYS.get(key.strip().lower())
         if name is None:
-            log(f"  Warning: {_TAG} unknown RigidDropEndtime option line (모르는 키 — 무시): {line}")
-            continue
+            near = difflib.get_close_matches(key.strip().lower(), list(KEYS), n=1, cutoff=0.6)
+            hint = f"did you mean '{KEYS[near[0]]}'?" if near else f"키: {', '.join(KEYS.values())}"
+            raise ValueError(f"모르는 키 '{key.strip()}' — {hint} (unknown key)")
         vals = [v.strip() for v in rest.split(",")] if rest.strip() else []
         if not vals or not any(vals):
             raise ValueError(f"{name}: 값이 없다 — {name},<값> (value missing)")
@@ -191,21 +197,41 @@ def impacts_to_deck(impacts, length_to_m, time_to_s):
     return out
 
 
+def table_rows(rows, length_to_m):
+    """run_presim 줄 → 표 줄: CORE 칸, 그다음 reach(엔진 reach_m 을 덱 길이로)·n_unresolved(엔진이 주면), 그다음 e 별 칸."""
+    from KooCAEManager.KooEndTimeTable import CORE_COLUMNS
+    out = []
+    for r in rows:
+        d = {k: r[k] for k in CORE_COLUMNS if k in r}
+        if "reach_m" in r:
+            d["reach"] = r["reach_m"] / length_to_m
+        if "n_unresolved" in r:
+            d["n_unresolved"] = r["n_unresolved"]
+        d.update({k: v for k, v in r.items() if k not in d and k != "reach_m"})
+        out.append(d)
+    return out
+
+
 def run_rigid_drop_endtime(options, dyna_importer, deck_path, out_dir, log=print):
     """KMM 이 읽은 덱 → 산출 다섯 개(out_dir/<base>_*). → {"paths": {종류: 경로}, "summary": 사전 해석 요약}.
     틀린 입력·사전 해석 실패는 ValueError·RuntimeError(KMM 이 rc 1 로 바꾼다), pybullet 이 없으면 ImportError."""
     from KooCAEManager import KooEndTimeTable as T
     from KooCAEManager.KooRigidBodyProperties import compute_rigid_body, write_obj, write_rigid_body_json
-    from KooCAEManager.KooRigidDropPresim import MAX_HULL_VERTICES, make_body, run_presim
+    from KooCAEManager.KooRigidDropPresim import G, MAX_HULL_VERTICES, make_body, run_presim
 
     t0 = time.time()
+    base = os.path.splitext(os.path.basename(deck_path))[0]
+    os.makedirs(out_dir, exist_ok=True)
+    paths = {k: os.path.join(out_dir, base + s) for k, s in SUFFIXES.items()}
+    for p in paths.values():   # 지난 실행의 산출을 먼저 지운다 — 이번 실행이 실패해도 옛 표를 KCR 이 읽지 않게
+        if os.path.exists(p):
+            os.remove(p)
+            log(f"{_TAG} REMOVED stale {p}")
     opt = dict(default_options(out_dir), **{k: v for k, v in options.items() if v is not None})
     angles, src = resolve_angles(opt)
     import pybullet   # 덱을 다 읽은 뒤 사전 해석에서 죽지 않게 먼저 확인 — 부모가 읽어 두면 작업자(fork)가 다시 읽지 않는다
     log(f"{_TAG} pybullet {getattr(pybullet, '__file__', '?')}")
-    base = os.path.splitext(os.path.basename(deck_path))[0]
-    os.makedirs(out_dir, exist_ok=True)
-    paths = {k: os.path.join(out_dir, base + s) for k, s in SUFFIXES.items()}
+    t_sep_ms = inspect.signature(run_presim).parameters["t_sep_ms"].default   # 엔진 기본값을 그대로 쓰고 메타에 남긴다
     log(f"{_TAG} START deck={deck_path} out_dir={out_dir} angles={len(angles)} ({src}) height={opt['Height']:g} "
         f"restitution={opt['Restitution']} friction={opt['Friction']:g} gravity={int(opt['PresimGravity'])} "
         f"margin_ms={opt['MarginMs']:g} workers={opt['Workers']}")
@@ -232,23 +258,34 @@ def run_rigid_drop_endtime(options, dyna_importer, deck_path, out_dir, log=print
                                return_impacts=True)
     t2 = time.time()
 
+    # v0 = DROP_ATTITUDE 덱의 낙하 속도 √(2gh), 덱 단위 — 표를 쓰는 쪽이 자기 높이·속도와 맞는지 본다
+    v0 = math.sqrt(2.0 * G * height_m) * time_to_s / length_to_m
     meta = {"deck": deck_path, "units": u["name"], "time_unit": "s" if time_to_s == 1.0 else "ms",
-            "height": opt["Height"], "restitution": ",".join(format(e, "g") for e in opt["Restitution"]),
-            "friction": opt["Friction"], "gravity": int(gravity_on), "margin_ms": opt["MarginMs"], "n_angles": len(angles)}
-    T.write_endtime_table(paths["endtime"], rows, meta)
+            "height": opt["Height"], "v0": v0, "restitution": ",".join(format(e, "g") for e in opt["Restitution"]),
+            "friction": opt["Friction"], "gravity": int(gravity_on), "margin_ms": opt["MarginMs"], "t_sep_ms": t_sep_ms,
+            "n_angles": len(angles)}
+    table = table_rows(rows, length_to_m)
+    T.write_endtime_table(paths["endtime"], table, meta)
     T.write_csv_table(paths["impacts"], impacts_to_deck(impacts, length_to_m, time_to_s), T.IMPACT_COLUMNS, meta,
                       T.IMPACTS_FORMAT)
 
     tf = np.array([r["tfinal_ms"] for r in rows])
     ends = np.array([r["endtim"] for r in rows])
-    summary = {"params": {"height": opt["Height"], "height_m": height_m, "restitution": list(opt["Restitution"]),
+    reach = [float(r["reach"]) for r in table if r.get("reach") is not None and math.isfinite(r["reach"])]
+    unresolved = [int(r["n_unresolved"]) for r in table if r.get("n_unresolved") is not None]
+    excl = [f"{x['pid']}({x['name']}, {x['reason']}, mass {x.get('mass', 0.0):.4g}, {x.get('mass_fraction', 0.0):.2%})"
+            for x in rb["excluded_parts"]]
+    summary = {"params": {"height": opt["Height"], "height_m": height_m, "v0": v0, "restitution": list(opt["Restitution"]),
                           "friction": opt["Friction"], "gravity": int(gravity_on), "margin_ms": opt["MarginMs"],
-                          "dt_s": opt["PresimDt"], "t_max_s": opt["PresimTMax"], "workers": opt["Workers"],
-                          "angle_source": src, "exclude_parts": list(opt["ExcludePart"])},
+                          "t_sep_ms": t_sep_ms, "dt_s": opt["PresimDt"], "t_max_s": opt["PresimTMax"],
+                          "workers": opt["Workers"], "angle_source": src, "exclude_parts": list(opt["ExcludePart"])},
                "n_angles": len(rows), "n_impacts": len(impacts),
                "classes": {c: sum(r["class"] == c for r in rows) for c in ("slapdown", "rebound", "none")},
                "tfinal_ms": {"min": float(tf.min()), "median": float(np.median(tf)), "max": float(tf.max())},
                "endtim": {"min": float(ends.min()), "max": float(ends.max()), "time_unit": meta["time_unit"]},
+               "reach_max": max(reach) if reach else None,
+               "n_unresolved_total": sum(unresolved) if unresolved else None,
+               "excluded_parts": excl,
                "wall_time_s": {"rigid_body": round(t1 - t0, 3), "presim": round(t2 - t1, 3),
                                "total": round(time.time() - t0, 3)}}
     rb["presim"] = summary
@@ -257,5 +294,7 @@ def run_rigid_drop_endtime(options, dyna_importer, deck_path, out_dir, log=print
         log(f"{_TAG} WROTE {paths[k]}")
     log(f"{_TAG} DONE angles={len(rows)} impacts={len(impacts)} classes={summary['classes']} "
         f"tfinal_ms={tf.min():.2f}/{np.median(tf):.2f}/{tf.max():.2f} (min/median/max) "
-        f"endtim={ends.min():g}..{ends.max():g} {meta['time_unit']} wall={summary['wall_time_s']['total']:.1f}s")
+        f"endtim={ends.min():g}..{ends.max():g} {meta['time_unit']} reach_max={summary['reach_max']} "
+        f"unresolved={summary['n_unresolved_total']} excluded=[{'; '.join(excl) or 'none'}] "
+        f"wall={summary['wall_time_s']['total']:.1f}s")
     return {"paths": paths, "summary": summary}

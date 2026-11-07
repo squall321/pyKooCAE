@@ -22,15 +22,21 @@
       *CONSTRAINED_NODAL_RIGID_BODY_INERTIA: TM·무게중심·관성을 더한다(이론 매뉴얼 29.1: 강체 질량은 물리 질량 + 절점 질량).
     관성 카드의 비대각 항은 텐서 성분이다(R16 *PART 비고 4: 관성곱과 부호가 반대).
     그 밖에 리더가 해석하지 않는 질량 요소 키워드(*ELEMENT_INERTIA·*ELEMENT_SEATBELT 등)는 세지 않고 경고한다.
-  - 밀도: 재질 GetRho(). 0 이거나 재질이 없으면(리더가 해석하지 않는 *MAT) 원문 *MAT 카드 1 의 RO, 그래도 0 이면 경고.
+  - 밀도: 재질 GetRho(). 0 이거나 재질이 없으면(리더가 해석하지 않는 *MAT) 원문 *MAT 카드 1 의 RO 다. 그래도 0 인데 요소가
+    있는 파트(MID 없음 등)는 질량이 조용히 빠지므로 ValueError 다 — 그 파트를 ExcludePart 로 빼면 넘어간다.
     *PART_COMPOSITE 는 층 두께 가중 평균(KooPartComposite.GetAverageDensity 와 같은 식, 층 밀도는 위 규칙)이다.
+  - KMM 이 읽지 않고 *INCLUDE 로 남긴 파일(*PreserveIncludes 패턴, IGA·*PARAMETER_LOCAL 자동 passthrough)은 질량·껍질에 들지
+    않는다. 그 안에 요소·질량 키워드가 있으면 ValueError(PASSTHROUGH_INCLUDE_PARTS), 없으면 경고만 한다.
   관성은 연속체(일관 질량) 값이라 격자와 무관하다(요소 하나짜리 상자도 정확). LS-DYNA d3hsp·Radioss 시작 출력은 절점 집중
   질량으로 재므로 그보다 크다 — 한 겹짜리 칩 파트는 수십 %, 기기 전체는 0.1~1%(MinimumModel·SimpleDrop 에서 잼).
 
 제외 (단위 판정보다 먼저 — 바닥판은 밀도 단위가 틀린 일이 있다)
-  - exclude_pids, 그리고 고정 지지물로 보이는 파트를 뺀다. 떨어지는 기기는 땅에 묶일 수 없기 때문이다.
-      병진 자유도를 묶는 *BOUNDARY_SPC_NODE/SET(_ID)(_BIRTH_DEATH) 절점이 하나라도 있는 파트(바닥 아랫면만 묶은 덱도 잡는다).
+  - exclude_pids(없는 PID 면 ValueError), 그리고 고정 지지물로 보이는 파트를 뺀다. 떨어지는 기기는 땅에 묶일 수 없기 때문이다.
+      병진 자유도를 묶는 *BOUNDARY_SPC_NODE/SET(_ID)(_BIRTH_DEATH) 절점이 그 파트 절점의 10% 이상인 파트(DropSet 바닥판
+      961/2883 = 33%). 10% 미만이면 기기 파트로 보고 넣고 SPC_ON_DEVICE_PART 경고를 남긴다(SPC 하나로 기기를 빼지 않게).
       병진 구속(CMO=1·CON1≠0, CMO=-1·CON2 병진 자리≠0)이 있는 *MAT_RIGID 파트.
+  - 자동으로 뺄 파트가 넣을 파트와 절점을 나누면 받침인지 기기인지 정할 수 없어 ValueError 다(ExcludePart 로 직접 주면 된다).
+  - 뺀 파트는 모두 EXCLUDED_PART 경고에 이유·질량·덱 질량 가운데 몫을 남긴다.
   - PID 가 없는 *ELEMENT_MASS 는 그 절점이 뺀 파트에만 있으면 함께 뺀다.
 
 단위: 넣은 파트 밀도의 중앙값이 1e-10~1e-7 이면 mm-t-s, 1e-7~1e-4 mm-kg-ms, 1e-4~0.1 mm-g-ms, 100~1e5 m-kg-s 다(모두 실제
@@ -52,6 +58,7 @@ UNIT_SYSTEMS = {
 }
 _RHO_BANDS = (("mm-t-s", 1e-10, 1e-7), ("mm-kg-ms", 1e-7, 1e-4), ("mm-g-ms", 1e-4, 0.1), ("m-kg-s", 100.0, 1e5))
 _TAG = "[RigidBody]"
+SPC_EXCLUDE_FRACTION = 0.10   # 파트 절점 가운데 이 몫 이상이 병진 SPC 면 고정 지지물로 보고 뺀다
 
 # 카드 1 둘째 칸이 RO 가 아닌 *MAT (스프링·댐퍼·안전띠·열·덧붙임 재질) — 원문 밀도표에서 뺀다
 _NO_RO = ("MAT_ADD_", "MAT_THERMAL_", "MAT_T0", "MAT_T1", "MAT_SPRING_", "MAT_DAMPER_", "MAT_S0", "MAT_S1",
@@ -405,6 +412,24 @@ def _cnrb_inertia(dk, warn):
     return out
 
 
+def _passthrough_includes(imp):
+    """KMM 이 읽지 않고 *INCLUDE 로 남긴 파일(*PreserveIncludes 패턴, IGA·*PARAMETER_LOCAL 자동) → [(파일, {질량 키워드: 수})].
+    질량 키워드 = 질량이 있는 *ELEMENT_*·*IGA_*·*PART_…INERTIA…·*CONSTRAINED_NODAL_RIGID_BODY_…INERTIA…"""
+    out = []
+    for entry in getattr(imp.dynaManager, "_include_passthrough_data", None) or []:
+        kws = {}
+        for line in str(entry.get("content", "")).splitlines():
+            m = re.match(r"\*([A-Za-z0-9_]+)", line)
+            if not m:
+                continue
+            k, tok = m.group(1).upper(), m.group(1).upper().split("_")
+            if ((k.startswith("ELEMENT_") and k not in _MASSLESS_ELEM) or k.startswith("IGA_")
+                    or (tok[0] == "PART" and "INERTIA" in tok) or (k.startswith("CONSTRAINED_NODAL_RIGID_BODY") and "INERTIA" in tok)):
+                kws[k] = kws.get(k, 0) + 1
+        out.append((str(entry.get("file", "?")), kws))
+    return out
+
+
 def _mass_part_cards(dk):
     """원문 *ELEMENT_MASS_PART(_SET)(ID ADDMASS FINMASS LCID MWD, 8·16·16·8·8칸) → ({PID: (ADD, FIN)} 마지막 줄, [(PSID, ADD, FIN, MWD)])."""
     single, sets = {}, []
@@ -636,7 +661,9 @@ def compute_rigid_body(dyna_importer, exclude_pids=(), units=None, log=print):
       hull         넣은 파트 요소 절점의 볼록 껍질(질량 요소 절점·빔 방향 절점 제외), faces 는 바깥을 향한 삼각형
       surface      파트마다의 외곽면 삼각형(사각형은 둘로), groups=[('PART_<pid>_<이름>', 면 번호 배열)] → write_obj
       parts        넣은 파트 — 파트마다 inertia_com 도 준다(계약에 더한 칸). 질량 0 인 파트의 com 은 None
-      excluded_parts  뺀 파트와 이유(reason), 질량(mass, 계약에 더한 칸)
+      excluded_parts  뺀 파트와 이유(reason), 질량(mass)·덱 질량 가운데 몫(mass_fraction) — 계약에 더한 칸
+    틀린 입력은 ValueError(영어 표지): unknown units · unknown ExcludePart · ambiguous auto-exclusion · density missing ·
+    PASSTHROUGH_INCLUDE_PARTS · total mass is 0 · cannot detect units.
     """
     imp = dyna_importer
     warnings = []
@@ -651,6 +678,15 @@ def compute_rigid_body(dyna_importer, exclude_pids=(), units=None, log=print):
     if units is not None and units not in UNIT_SYSTEMS:
         raise ValueError(f"{_TAG} unknown units '{units}' — {', '.join(UNIT_SYSTEMS)} 가운데 하나")
     dk = _Deck(imp)
+    hidden = _passthrough_includes(imp)
+    carry = [(f, kws) for f, kws in hidden if kws]
+    if carry:   # 그 요소의 질량·형상이 빠진 채로 표를 만들면 각도별 종료 시간이 조용히 틀린다
+        raise ValueError(f"{_TAG} PASSTHROUGH_INCLUDE_PARTS: KMM 이 읽지 않고 *INCLUDE 로 남긴 파일에 요소가 있다 — "
+                         + "; ".join(f"{f} {kws}" for f, kws in carry)
+                         + " — 질량·볼록 껍질에서 빠진다. 이 모드에서는 그 *PreserveIncludes 패턴을 빼거나 include 를 덱에 풀어 넣을 것"
+                           " (passthrough include carries elements)")
+    for f, _ in hidden:
+        warn("PASSTHROUGH_INCLUDE_PARTS", f"{f} 는 KMM 이 읽지 않고 *INCLUDE 로 남겼다 — 요소·질량 키워드가 없어 질량에는 영향이 없다")
     xyz, row, pdata, root = _collect(imp, dk, warn)
     if len(xyz) == 0:
         raise ValueError(f"{_TAG} no element nodes — 요소가 있는 파트가 없다")
@@ -662,15 +698,27 @@ def compute_rigid_body(dyna_importer, exclude_pids=(), units=None, log=print):
     name_of = {pid: nm for pid, nm, *_ in pin}
     name_of.update({pid: str(getattr(p, "name", "")).strip() for pid, p in parts_obj.items()})
 
+    cnrb = _cnrb_inertia(dk, warn)
+    for pid, *_ in cnrb:
+        name_of.setdefault(pid, "CNRB_INERTIA")
+
     # ── 제외 ────────────────────────────────────────────────────────────────
-    reasons = {}
-    for pid in exclude_pids or ():
-        reasons.setdefault(int(pid), []).append("user ExcludePart")
+    explicit = {int(p) for p in exclude_pids or ()}
+    unknown = sorted(explicit - set(name_of))
+    if unknown:
+        raise ValueError(f"{_TAG} unknown ExcludePart PID {unknown} — 읽은 파트·*PART_INERTIA·CNRB 가운데 없다 (unknown ExcludePart)")
+    reasons = {pid: ["user ExcludePart"] for pid in sorted(explicit)}
+    auto = {}
     spc = _spc_nodes(dk, warn)
     for pid, d in pdata.items():
         hit = len(d.nodes & spc)
-        if hit:
-            reasons.setdefault(pid, []).append(f"BOUNDARY_SPC {hit}/{len(d.nodes)} nodes")
+        if not hit:
+            continue
+        if hit >= SPC_EXCLUDE_FRACTION * len(d.nodes):
+            auto.setdefault(pid, []).append(f"BOUNDARY_SPC {hit}/{len(d.nodes)} nodes")
+        elif pid not in explicit:
+            warn("SPC_ON_DEVICE_PART", f"pid={pid} ({name_of.get(pid, '')}) {hit}/{len(d.nodes)} nodes 가 병진 SPC 로 묶였다 — "
+                                       f"{SPC_EXCLUDE_FRACTION:.0%} 미만이라 기기 파트로 보고 넣는다. 받침·고정구면 ExcludePart 로 뺄 것")
     mids = {pid: mid for pid, _, mid, *_ in pin}
     mids.update({pid: getattr(p, "mid", 0) for pid, p in parts_obj.items()})
     for pid, mid in sorted(mids.items()):
@@ -678,23 +726,29 @@ def compute_rigid_body(dyna_importer, exclude_pids=(), units=None, log=print):
             cmo, con1, con2 = raw_rigid[mid]
             trans, rot = _rigid_fixed(cmo, con1, con2)
             if trans:
-                reasons.setdefault(pid, []).append(f"MAT_RIGID CMO={cmo:g} CON1={con1} CON2={con2 or 0}")
-            elif rot and pid not in reasons:
+                auto.setdefault(pid, []).append(f"MAT_RIGID CMO={cmo:g} CON1={con1} CON2={con2 or 0}")
+            elif rot and pid not in auto and pid not in explicit:
                 warn("ROTATION_CONSTRAINT", f"PID {pid}: *MAT_RIGID 회전 구속(CMO={cmo:g} CON2={con2})은 무시하고 넣는다")
+    for pid, why in auto.items():
+        reasons.setdefault(pid, []).extend(why)
     out_pids = set(reasons)
+    keep_nodes = set().union(*[d.nodes for p, d in pdata.items() if p not in out_pids])
+    clash = {p: len(pdata[p].nodes & keep_nodes) for p in sorted(auto) if p not in explicit and p in pdata}
+    clash = {p: n for p, n in clash.items() if n}
+    if clash:   # 바닥판이 기기와 절점을 나누면(병합 절점) 받침인지 기기인지 이 규칙으로 정할 수 없다
+        raise ValueError(f"{_TAG} auto-excluded part shares nodes with included parts — "
+                         + ", ".join(f"PID {p} ({name_of.get(p, '')}, {'; '.join(auto[p])}) {n} nodes" for p, n in clash.items())
+                         + " — 받침인지 기기 파트인지 정할 수 없다. 뺄 파트를 ExcludePart 로 직접 줄 것 (ambiguous auto-exclusion)")
     excluded = []
     for pid in sorted(reasons):
         why = "; ".join(reasons[pid])
-        if pid not in name_of:
-            warn("EXCLUDE_UNKNOWN_PID", f"ExcludePart {pid}: 읽은 파트에 없다")
-            continue
         excluded.append({"pid": pid, "name": name_of[pid], "reason": why})
         log(f"{_TAG} EXCLUDE pid={pid} ({name_of[pid]}) reason={why} — 강체에서 뺀다")
     for pid in sorted(_prescribed_rigid_pids(dk) & (set(parts_obj) - out_pids)):
         warn("PRESCRIBED_MOTION", f"PID {pid}: *BOUNDARY_PRESCRIBED_MOTION_RIGID 가 걸린 파트를 넣었다 — 받침·충격체면 ExcludePart 로 뺄 것")
 
     # ── 파트별 모멘트 (뺀 파트도 잰다 — 셋 질량 분배·제외 목록 질량에 쓴다) ──────────
-    noted, recs, sg = set(), {}, {}
+    noted, recs, sg, no_rho = set(), {}, {}, []
     for pid, d in pdata.items():
         part, w_ = parts_obj[pid], (quiet if pid in out_pids else warn)
         rho, rsrc = _rho_of(part, imp, raw_ro, w_, noted)
@@ -726,8 +780,8 @@ def compute_rigid_body(dyna_importer, exclude_pids=(), units=None, log=print):
                 b = np.asarray(d.beam, int)
                 line = _seg_mom(xs[b[:, 0]], xs[b[:, 1]])
                 beam, bvol = line.scaled(rho * area + float(getattr(sec, "nsm", 0.0) or 0.0)), area * line.m
-        if rho <= 0 and (solid.m > 0 or svol.m > 0 or bvol > 0):
-            w_("DENSITY_ZERO", f"PID {pid} ({name_of.get(pid, '')}): 밀도를 찾지 못했다(MID {getattr(part, 'mid', 0)}) — 요소 질량 0")
+        if rho <= 0 and (solid.m > 0 or sgeo.m > 0 or d.beam) and pid not in out_pids:
+            no_rho.append(f"{pid} ({name_of.get(pid, '')}, MID {getattr(part, 'mid', 0)})")
         pts = _Mom()
         for rows, m in d.points:
             for r in rows:
@@ -737,6 +791,9 @@ def compute_rigid_body(dyna_importer, exclude_pids=(), units=None, log=print):
                      "points": pts, "add": _Mom(), "rho": rho, "rsrc": rsrc, "volume": solid.m + svol.m + bvol,
                      "tokens": tokens, "n": d.n_elem}
         sg[pid] = (sgt, sg10, sgh)
+    if no_rho:   # 요소가 있는데 밀도가 없으면 질량이 조용히 빠진다(MID 가 없거나 읽지 못한 재질)
+        raise ValueError(f"{_TAG} density missing for parts with elements: PID {', '.join(no_rho)} — 재질 밀도를 찾지 못했다. "
+                         f"재질(MID)을 고치거나 강체에서 뺄 파트면 ExcludePart 로 줄 것 (density missing)")
 
     # ── *ELEMENT_MASS_PART(_SET) ────────────────────────────────────────────
     single, sets = _mass_part_cards(dk)
@@ -801,8 +858,9 @@ def compute_rigid_body(dyna_importer, exclude_pids=(), units=None, log=print):
                           "rho": raw_ro.get(mid, (0.0, None))[0], "inertia_com": inertia, "mass_source": "PART_INERTIA"})
         warn("PART_INERTIA", f"PID {pid} ({nm}): 질량 TM={tm:g}·무게중심·관성은 카드 그대로 더했다. KMM 리더는 이 파트의 "
                              f"요소를 버리므로 껍질·외곽면에 형상이 없다")
-    for pid, tm, c, inertia in _cnrb_inertia(dk, warn):
+    for pid, tm, c, inertia in cnrb:
         if pid in out_pids:
+            excl_by_pid[pid]["mass"] = tm
             continue
         total.add(_body_mom(tm, c - x0, inertia))
         part_list.append({"pid": pid, "name": "CNRB_INERTIA", "n_elements": 0, "mass": tm, "com": c, "volume": 0.0, "rho": 0.0,
@@ -834,6 +892,12 @@ def compute_rigid_body(dyna_importer, exclude_pids=(), units=None, log=print):
 
     if total.m <= 0:
         raise ValueError(f"{_TAG} total mass is 0 — 넣은 파트에 질량이 없다(밀도·제외 확인)")
+    m_all = total.m + sum(x.get("mass", 0.0) for x in excluded)
+    for x in excluded:   # 뺀 파트는 모두(자동·직접) 질량과 몫을 경고로 남긴다 — 기기 파트를 잘못 뺐는지 보이게
+        x.setdefault("mass", 0.0)
+        x["mass_fraction"] = x["mass"] / m_all
+        warn("EXCLUDED_PART", f"pid={x['pid']} ({x['name']}) reason={x['reason']} mass={x['mass']:.6g} "
+                              f"({x['mass_fraction']:.2%} of deck mass) — 강체에서 뺐다")
 
     # ── 단위 (제외 뒤 넣은 파트 밀도의 중앙값) ─────────────────────────────────
     rhos = [p["rho"] for p in part_list if p["rho"] > 0 and p["volume"] > 0]   # 밀도로 질량을 낸 파트만

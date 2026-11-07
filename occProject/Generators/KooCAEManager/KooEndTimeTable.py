@@ -111,9 +111,9 @@ def write_csv_table(path, rows, columns, meta, fmt):
 
 
 def read_csv_table(path):
-    """write_csv_table 의 역 → (meta dict, rows: dict 목록, 값은 글 그대로)."""
+    """write_csv_table 의 역 → (meta dict, rows: dict 목록, 값은 글 그대로). 엑셀 'CSV UTF-8' 의 BOM 도 읽는다."""
     meta, body = {}, []
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         for line in f:
             if line.startswith("#"):
                 k, _, v = line[1:].strip().partition("=")
@@ -124,9 +124,10 @@ def read_csv_table(path):
 
 
 def read_endtime_table(path):
-    """→ (meta dict, rows). rows 는 name·roll·pitch·yaw·endtim(float) 과 원래 칸(raw)을 가진다."""
+    """→ (meta dict, rows). rows 는 name·roll·pitch·yaw·endtim(float) 과 원래 칸(raw)을 가진다.
+    엑셀 'CSV UTF-8' 로 저장해 BOM 이 붙은 표도 읽는다(BOM 이 첫 줄에 붙으면 메타·칸 이름을 못 읽었다)."""
     meta, body = {}, []
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         for line in f:
             if line.startswith("#"):
                 k, _, v = line[1:].strip().partition("=")

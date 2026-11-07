@@ -133,8 +133,9 @@ def point_body(m, x):
 KMM = None
 
 
-def load(name, text=None, src=None):
-    """덱을 작업 폴더에 두고 KMM 리더로 읽는다 → (dynaImporter, 리더 로그)."""
+def load(name, text=None, src=None, files=None, preserve=None):
+    """덱을 작업 폴더에 두고 KMM 리더로 읽는다 → (dynaImporter, 리더 로그).
+    files: 덱 옆에 둘 다른 파일 {이름: 글}(인클루드 등), preserve: *PreserveIncludes 패턴(KMM ImportOption 이 넣는 자리)."""
     global KMM
     with contextlib.redirect_stdout(io.StringIO()):
         if KMM is None:
@@ -146,6 +147,8 @@ def load(name, text=None, src=None):
     if d.exists():
         shutil.rmtree(d)
     d.mkdir(parents=True)
+    for fname, body_text in (files or {}).items():
+        (d / fname).write_text(body_text)
     if text is not None:
         fn = "model.k"
         (d / fn).write_text(text)
@@ -156,6 +159,8 @@ def load(name, text=None, src=None):
     try:
         with contextlib.redirect_stdout(buf):
             g = KMM.KooMeshModifier()
+            if preserve:
+                g.dynaImporter.dynaManager._preserve_include_patterns = list(preserve)
             g.SetCurrentDirectory(str(d))
             g.inputFileName = fn
             g.ImportBaseFile()
@@ -169,6 +174,15 @@ def compute(imp, **kw):
     logs = []
     rb = compute_rigid_body(imp, log=logs.append, **kw)
     return rb, logs
+
+
+def compute_error(imp, **kw):
+    """compute_rigid_body 가 ValueError 를 내면 그 글, 아니면 None."""
+    try:
+        compute(imp, **kw)
+    except ValueError as e:
+        return str(e)
+    return None
 
 
 def part_of(rb, pid):
@@ -469,17 +483,40 @@ def test_raw_keywords():
                  kw_mat(1, RHO), ["*PART_COMPOSITE", "laminate", f10(3, 2), f10(1, 0.1, 0.0, "", 2, 0.3, 0.0, "")],
                  kw_part(4, 1, 99), kw_nodes(nodes), kw_solids(elems), ["*ELEMENT_SHELL", f"{3:8d}{3:8d}{41:8d}{42:8d}{43:8d}{44:8d}"])
     imp, _ = load("raw_density", text)
-    rb, _ = compute(imp)
-    check("재질이 어디에도 없는 파트 4: 질량 0 + DENSITY_ZERO", part_of(rb, 4)["mass"] == 0 and has_warn(rb, "DENSITY_ZERO", "PID 4"),
+    err = compute_error(imp)
+    check("재질이 어디에도 없는 파트 4(요소 있음) → ValueError 'density missing' + PID 4", err is not None
+          and "density missing" in err and "PID 4 " in err, str(err))
+    rb, _ = compute(imp, exclude_pids=[4])
+    check("ExcludePart 4 로 빼면 넘어가고 EXCLUDED_PART 경고(질량 0)", 4 not in [p["pid"] for p in rb["parts"]]
+          and has_warn(rb, "EXCLUDED_PART", "pid=4 ") and "mass=0 " in next(w for w in rb["warnings"] if "pid=4 " in w),
           str(rb["warnings"]))
     check("*MAT_024 육면체 질량 = 2.7e-9 (원문 RO)", rel(part_of(rb, 1)["mass"], 2.7e-9) < 1e-12, str(part_of(rb, 1)))
     check("*MAT_GENERAL_VISCOELASTIC 육면체 질량 = 1.2e-9 (원문 RO)", rel(part_of(rb, 2)["mass"], 1.2e-9) < 1e-12, str(part_of(rb, 2)))
     check("*PART_COMPOSITE 셸 질량 = Σρᵢtᵢ·A", rel(part_of(rb, 3)["mass"], RHO * 0.1 + 2.7e-9 * 0.3) < 1e-12, str(part_of(rb, 3)))
     check("DENSITY_RAW 경고 MID 2·3", has_warn(rb, "DENSITY_RAW", "MID 2") and has_warn(rb, "DENSITY_RAW", "MID 3"), str(rb["warnings"]))
 
+    print("[2d] KMM 이 읽지 않고 남긴 인클루드(*PreserveIncludes·*PARAMETER_LOCAL 자동) — 요소가 있으면 ValueError, 없으면 경고")
+    nodes, conn = cube(1, (0, 0, 0))
+    n2, c2 = cube(11, (3, 0, 0))
+    sub = kdeck(solid_part(2, RHO), kw_nodes(n2), kw_solids([(2, 2, c2)]))
+    main = lambda inc: kdeck(solid_part(1, RHO), kw_nodes(nodes), kw_solids([(1, 1, conn)]), ["*INCLUDE", inc])  # noqa: E731
+    imp, _ = load("passthrough", main("sub.k"), files={"sub.k": sub}, preserve=["sub.k"])
+    err = compute_error(imp)
+    check("*PreserveIncludes 로 남긴 인클루드에 요소 → ValueError PASSTHROUGH_INCLUDE_PARTS(파일·키워드)", err is not None
+          and "PASSTHROUGH_INCLUDE_PARTS" in err and "sub.k" in err and "ELEMENT_SOLID" in err, str(err))
+    imp, _ = load("passthrough_mat", main("mats.k"), files={"mats.k": kdeck(kw_mat(9, RHO))}, preserve=["mats.k"])
+    rb, _ = compute(imp)
+    check("요소 없는 인클루드(재질만)는 경고만 — 질량은 육면체 하나", has_warn(rb, "PASSTHROUGH_INCLUDE_PARTS", "mats.k")
+          and rel(rb["mass"], RHO) < 1e-12, str(rb["warnings"]))
+    loc = kdeck(["*PARAMETER_LOCAL", f"{'R rr':<10s}{'7.85e-9':>10s}"], solid_part(2, RHO), kw_nodes(n2), kw_solids([(2, 2, c2)]))
+    imp, _ = load("passthrough_local", main("loc.k"), files={"loc.k": loc})
+    err = compute_error(imp)
+    check("*PARAMETER_LOCAL 인클루드(리더 자동 passthrough)에 요소 → ValueError", err is not None
+          and "PASSTHROUGH_INCLUDE_PARTS" in err and "loc.k" in err, str(err))
+
 
 def test_exclusion_units():
-    print("[3a] 제외: SPC 절점 하나·*MAT_RIGID CMO=1 CON1=7·ExcludePart, 회전 구속·회전 SPC 는 넣는다")
+    print("[3a] 제외: SPC 절점 10% 이상·*MAT_RIGID CMO=1 CON1=7·ExcludePart / SPC 10% 미만·회전 구속·회전 SPC 는 넣는다")
     si = 7850.0                                  # 바닥판에 SI 밀도 — 제외 전 중앙값이면 단위를 잘못 본다
     nodes, elems = {}, []
     spec = [(1, (0, 0, 10), RHO), (2, (0, 0, -2), si), (3, (3, 0, -2), si), (4, (3, 0, 10), RHO), (5, (6, 0, -2), si), (6, (6, 0, 10), RHO)]
@@ -487,31 +524,61 @@ def test_exclusion_units():
         nd, cn = cube(10 * pid + 1, o)
         nodes.update(nd)
         elems.append((pid, pid, cn))
+    # PID 7: 육면체 둘(절점 12) — 병진 SPC 절점 하나(1/12 = 8.3%)는 기기 파트로 보고 넣는다
+    nid7 = lambda i, j, k: 71 + i + 3 * j + 6 * k  # noqa: E731
+    nodes.update({nid7(i, j, k): (9.0 + i, float(j), 10.0 + k) for i in range(3) for j in range(2) for k in range(2)})
+    for e, i in ((7, 0), (8, 1)):
+        elems.append((e, 7, [nid7(i, 0, 0), nid7(i + 1, 0, 0), nid7(i + 1, 1, 0), nid7(i, 1, 0),
+                             nid7(i, 0, 1), nid7(i + 1, 0, 1), nid7(i + 1, 1, 1), nid7(i, 1, 1)]))
     secs = []
-    for pid, _, rho in spec:
+    for pid, _, rho in spec + [(7, None, RHO)]:
         secs += kw_part(pid, 1, pid) + (kw_mat(pid, rho) if pid not in (3, 4) else [])
     secs += ["*SECTION_SOLID", f10(1, 1)]
     secs += ["*MAT_RIGID", f10(3, f"{si:.4E}", "2.1E+11", "0.3"), f10(1.0, 7, 7), ""]
     secs += ["*MAT_RIGID", f10(4, f"{RHO:.4E}", "210000.0", "0.3"), f10(1.0, 0, 7), ""]
-    text = kdeck(secs, kw_nodes(nodes), kw_solids(elems), ["*BOUNDARY_SPC_NODE", f10(21, 0, 1, 1, 1, 0, 0, 0)],
+    text = kdeck(secs, kw_nodes(nodes), kw_solids(elems),
+                 ["*BOUNDARY_SPC_NODE", f10(21, 0, 1, 1, 1, 0, 0, 0), f10(71, 0, 0, 0, 1, 0, 0, 0)],
                  ["*SET_NODE_LIST", f10(60), f10(61, 62)], ["*BOUNDARY_SPC_SET_ID", f10(1, "rotonly"), f10(60, 0, 0, 0, 0, 1, 1, 1)],
                  ["*BOUNDARY_SPC_SET", f10(77, 0, 1, 1, 1)],
                  ["*BOUNDARY_PRESCRIBED_MOTION_RIGID", f10(4, 3, 0, 1)],
                  ["*ELEMENT_MASS", f"{901:8d}{22:8d}{1.0:16.6e}", f"{902:8d}{11:8d}{RHO:16.6e}"])
     imp, _ = load("exclusion", text)
-    rb, logs = compute(imp, exclude_pids=[5, 999])
-    ex = {x["pid"]: x["reason"] for x in rb["excluded_parts"]}
-    check("뺀 파트 2(SPC 1/8)·3(MAT_RIGID)·5(ExcludePart)", sorted(ex) == [2, 3, 5] and "BOUNDARY_SPC 1/8" in ex[2]
-          and "MAT_RIGID CMO=1 CON1=7" in ex[3] and "user ExcludePart" in ex[5], str(ex))
-    check("넣은 파트 1·4(회전 구속)·6(회전 SPC)", sorted(p["pid"] for p in rb["parts"]) == [1, 4, 6])
-    items = [cube_body(RHO, o) for pid, o, _ in spec if pid in (1, 4, 6)] + [point_body(RHO, nodes[11])]
-    check_body("남은 질량 = 육면체 셋 + 절점 질량(바닥 절점의 1.0 은 뺌)", rb, combine(items), 1e-11)
+    err = compute_error(imp, exclude_pids=[5, 999])
+    check("없는 ExcludePart 999 → ValueError 'unknown ExcludePart'", err is not None and "unknown ExcludePart" in err
+          and "999" in err, str(err))
+    rb, logs = compute(imp, exclude_pids=[5])
+    ex = {x["pid"]: x for x in rb["excluded_parts"]}
+    check("뺀 파트 2(SPC 1/8 = 12.5%)·3(MAT_RIGID)·5(ExcludePart)", sorted(ex) == [2, 3, 5]
+          and "BOUNDARY_SPC 1/8" in ex[2]["reason"] and "MAT_RIGID CMO=1 CON1=7" in ex[3]["reason"]
+          and "user ExcludePart" in ex[5]["reason"], str(ex))
+    check("넣은 파트 1·4(회전 구속)·6(회전 SPC)·7(SPC 1/12 < 10%)", sorted(p["pid"] for p in rb["parts"]) == [1, 4, 6, 7])
+    block7 = body(RHO, 2.0, (10.0, 0.5, 10.5), np.diag([8 / 12, 2 / 12, 2 / 12]))
+    items = [cube_body(RHO, o) for pid, o, _ in spec if pid in (1, 4, 6)] + [block7, point_body(RHO, nodes[11])]
+    check_body("남은 질량 = 육면체 셋 + 육면체 둘 블록 + 절점 질량(바닥 절점의 1.0 은 뺌)", rb, combine(items), 1e-11)
     check("단위는 제외 뒤 중앙값으로 mm-t-s", rb["units"]["name"] == "mm-t-s", str(rb["units"]))
-    check("경고: ROTATION_CONSTRAINT 4·PRESCRIBED_MOTION 4·EXCLUDE_UNKNOWN_PID 999·SPC_SET_MISSING 77",
-          has_warn(rb, "ROTATION_CONSTRAINT", "PID 4") and has_warn(rb, "PRESCRIBED_MOTION", "PID 4")
-          and has_warn(rb, "EXCLUDE_UNKNOWN_PID", "999") and has_warn(rb, "SPC_SET_MISSING", "77"), str(rb["warnings"]))
+    check("경고: SPC_ON_DEVICE_PART 7 (1/12)·ROTATION_CONSTRAINT 4·PRESCRIBED_MOTION 4·SPC_SET_MISSING 77",
+          has_warn(rb, "SPC_ON_DEVICE_PART", "pid=7 ") and has_warn(rb, "SPC_ON_DEVICE_PART", "1/12 nodes")
+          and has_warn(rb, "ROTATION_CONSTRAINT", "PID 4") and has_warn(rb, "PRESCRIBED_MOTION", "PID 4")
+          and has_warn(rb, "SPC_SET_MISSING", "77"), str(rb["warnings"]))
     check("로그 EXCLUDE 줄 셋 (영어 표지)", sum(x.startswith("[RigidBody] EXCLUDE pid=") for x in logs) == 3, "\n".join(logs))
-    check("excluded_parts 에 뺀 질량", abs(next(x for x in rb["excluded_parts"] if x["pid"] == 2)["mass"] - si) < 1e-6)
+    m_all = rb["mass"] + sum(x["mass"] for x in ex.values())
+    check("excluded_parts 에 뺀 질량·몫 (PID 2: 7850, 약 1/3)", abs(ex[2]["mass"] - si) < 1e-6
+          and abs(ex[2]["mass_fraction"] - si / m_all) < 1e-12 and abs(ex[2]["mass_fraction"] - 1 / 3) < 1e-6)
+    check("뺀 파트마다 EXCLUDED_PART 경고(이유·질량·몫)", all(has_warn(rb, "EXCLUDED_PART", f"pid={p} ") for p in (2, 3, 5))
+          and "% of deck mass" in next(w for w in rb["warnings"] if w.startswith("EXCLUDED_PART: pid=2 ")), str(rb["warnings"]))
+
+    print("[3a'] 자동으로 뺄 바닥판이 기기와 절점을 나누면 ValueError — ExcludePart 로 주면 넘어간다")
+    dev, dconn = cube(1, (0, 0, 1))                                  # 기기 z 1~2, 바닥 z 0~1 — 바닥 윗면 = 기기 아랫면 절점 1~4
+    floor_nodes = {9: (0, 0, 0), 10: (1, 0, 0), 11: (1, 1, 0), 12: (0, 1, 0)}
+    text = kdeck(solid_part(1, RHO), kw_part(2, 1, 1), kw_nodes({**dev, **floor_nodes}),
+                 kw_solids([(1, 1, dconn), (2, 2, [9, 10, 11, 12, 1, 2, 3, 4])]),
+                 ["*SET_NODE_LIST", f10(5), f10(9, 10, 11, 12)], ["*BOUNDARY_SPC_SET", f10(5, 0, 1, 1, 1, 1, 1, 1)])
+    imp, _ = load("exclusion_shared", text)
+    err = compute_error(imp)
+    check("바닥(SPC 4/8)이 기기와 절점 4개를 나눔 → ValueError 'ambiguous auto-exclusion'", err is not None
+          and "ambiguous auto-exclusion" in err and "PID 2" in err and "4 nodes" in err, str(err))
+    rb, _ = compute(imp, exclude_pids=[2])
+    check("ExcludePart 2 를 주면 기기 육면체 하나", rel(rb["mass"], RHO) < 1e-12 and [x["pid"] for x in rb["excluded_parts"]] == [2])
 
     print("[3b] 단위 판정 (밀도 중앙값) · Units 지정 · 판정 불가")
     from KooCAEManager.KooRigidBodyProperties import UNIT_SYSTEMS
@@ -646,7 +713,10 @@ def test_dropset(mini):
     imp, _ = load("dropset", src=DROPSET)
     rb, logs = compute(imp)
     ex = rb["excluded_parts"]
-    check("파트 23 만 빠짐(BOUNDARY_SPC, 절점 일부만 묶임)", [x["pid"] for x in ex] == [23] and "BOUNDARY_SPC" in ex[0]["reason"], str(ex))
+    check("파트 23 만 빠짐(BOUNDARY_SPC 961/2883 = 33% ≥ 10%)", [x["pid"] for x in ex] == [23]
+          and "BOUNDARY_SPC 961/2883" in ex[0]["reason"], str(ex))
+    check("EXCLUDED_PART 경고: 바닥 질량 1.413e+10(SI 밀도) — 덱 질량의 거의 전부", has_warn(rb, "EXCLUDED_PART", "pid=23 ")
+          and ex[0]["mass_fraction"] > 0.999999, str(rb["warnings"]))
     check("로그 '[RigidBody] EXCLUDE pid=23 … reason=BOUNDARY_SPC'", any(x.startswith("[RigidBody] EXCLUDE pid=23 ")
                                                                        and "reason=BOUNDARY_SPC" in x for x in logs), "\n".join(logs))
     check("단위 mm-t-s (제외 뒤 중앙값)", rb["units"]["name"] == "mm-t-s")

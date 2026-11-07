@@ -18,9 +18,10 @@ GEN = ROOT / "occProject" / "Generators"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(GEN))
 
-from KooCAEManager.KooEndTimeTable import (CORE_COLUMNS, EndTimeLookup, drop_direction, euler_from_direction,  # noqa: E402
-                                           euler_from_rotation, fibonacci_angles, load_lookup, read_endtime_table,
-                                           rotation_from_euler, write_endtime_table)
+from KooCAEManager.KooEndTimeTable import (CORE_COLUMNS, FORMAT, IMPACTS_FORMAT, EndTimeLookup, drop_direction,  # noqa: E402
+                                           euler_from_direction, euler_from_rotation, fibonacci_angles, load_lookup,
+                                           read_csv_table, read_endtime_table, rotation_from_euler, write_csv_table,
+                                           write_endtime_table)
 
 FAILS = []
 
@@ -135,6 +136,31 @@ def main():
             except ValueError:
                 ok = True
             check(f"ValueError — {label}", ok)
+
+        print("[7] BOM(엑셀 'CSV UTF-8') 표 · 일반 표 쓰기/읽기(impacts.csv 꼴)")
+        bom = os.path.join(td, "bom.csv")
+        with open(bom, "w", encoding="utf-8-sig") as f:
+            f.write("# format=rigid_drop_endtime/endtime v1\n# units=mm-t-s\nname,roll,pitch,yaw,endtim\nA,10,20,0,0.0042\n")
+        meta, rows = read_endtime_table(bom)
+        check("BOM 표: 메타 format·units, 줄 하나", meta.get("format") == FORMAT and meta.get("units") == "mm-t-s"
+              and len(rows) == 1 and rows[0]["endtim"] == 0.0042, str(meta))
+        check("BOM 표: load_lookup 이 각도를 찾음", load_lookup(bom).find(10, 20, 0) == 0.0042)
+        with open(bom, "w", encoding="utf-8-sig") as f:
+            f.write("name,roll,pitch,yaw,endtim\nB,0,0,0,0.001\n")
+        check("BOM 이 칸 이름 줄에 붙은 표(메타 없음)도 읽음", read_endtime_table(bom)[1][0]["name"] == "B")
+        imp = os.path.join(td, "imp.csv")
+        cols = ["name", "k", "v0"]
+        write_csv_table(imp, [{"name": "P1", "k": 1, "v0": 5424.94}, {"name": "P1", "k": 2, "v0": float("nan")}], cols,
+                        {"units": "mm-t-s", "t_sep_ms": 1.0}, IMPACTS_FORMAT)
+        m2, r2 = read_csv_table(imp)
+        check("write_csv_table → read_csv_table: format·메타·칸·NaN 은 빈칸", m2.get("format") == IMPACTS_FORMAT
+              and m2.get("t_sep_ms") == "1" and r2 == [{"name": "P1", "k": "1", "v0": "5424.94"}, {"name": "P1", "k": "2", "v0": ""}],
+              str((m2, r2)))
+        with open(imp, "r", encoding="utf-8") as f:
+            body = f.read()
+        with open(imp, "w", encoding="utf-8-sig") as f:
+            f.write(body)
+        check("read_csv_table 도 BOM 을 읽음", read_csv_table(imp)[0].get("format") == IMPACTS_FORMAT)
 
     print()
     if FAILS:
