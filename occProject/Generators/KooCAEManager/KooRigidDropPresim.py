@@ -3,7 +3,8 @@
 프로토타입 /home/koopark/kooOmniDropAnalyzer/fullangle_mbd/fullangle_drop_mbd.py 를 일반 강체로 옮긴 것이다.
   - 입력은 덱에서 구한 질량·무게중심·무게중심 기준 관성 텐서·볼록 껍질 꼭짓점이다(기기(덱) 좌표계, SI).
   - 접촉 설정, 충돌 이벤트 판정, 채터링 묶음(0.05 ms), 스침 버림(2%·m·v0), 시작 간격 0.5 mm,
-    종료 조건(1 ms 이상 떨어졌다 닿은 묶음 뒤 1 ms 조용), 재착지 판정(무게중심 상승 1 mm)은 프로토타입 그대로다.
+    종료 조건(1 ms 이상 떨어졌다 닿은 묶음 뒤 1 ms 조용 — 중력 켬·strong_vn 없음일 때. 중력 끔 v133 은 아래 절),
+    재착지 판정(무게중심 상승 1 mm)은 프로토타입 그대로다.
   - 2차 충격 이격 기준은 종료 조건과 같은 1 ms 다(사용자 결정 11-07 "1 ms 로 맞추기", 프로토타입은 0.3 ms).
     1 ms 안에 다시 닿는 것은 1차 묶음이다. 0.3 ms 로 끊으면 1 ms 안의 작은 재접촉이 '2차'가 되어, 그 뒤에 오는 더 센
     충격(예: 중력 끔 P0005 e 0.5, 2.09 ms 에 1.86·v0)이 표에서 빠졌다.
@@ -48,13 +49,26 @@
 중력 끔 ENDTIM 규칙 (v133, run_presim strong_contact)
   - v132 는 첫 재접촉 묶음 끝 + 여유였다. 슬랩다운이 꼭짓점별로 1 ms 넘게 갈라져 오면 더 센 뒷부분(상자 1000방향의 24% 에서
     ≥ 1.0·v0)을 놓쳤고, 수백 ms 뒤 약한 스침(0.03~0.06·v0)이 ENDTIM 을 늘렸다.
-  - 그래서 2차 묶음 뒤에도 이어 돌리고, 세기(묶음 안 최대 접근 속도 ÷ v0)가 strong_contact(기본 0.3) 이상인 마지막 재접촉
-    묶음 끝 + 여유를 쓴다(없으면 1차 묶음 끝 + 여유). 묶음은 1 ms 기준 그대로다(strong_from_events).
+  - 그래서 2차 묶음 뒤에도 이어 돌리고, 세기가 strong_contact(기본 0.3) 이상인 마지막 재접촉 묶음 끝 + 여유를 쓴다(없으면
+    1차 묶음 끝 + 여유). 묶음은 1 ms 기준 그대로다(strong_from_events).
+  - 세기 = 묶음 안 모든 충격 스텝·접촉점의 스텝 앞 접근 속도 최대 ÷ v0 (이벤트 approach_max_mps)다. 첫 접촉 스텝의 접근
+    속도(vn_mps)만 보면, 약하게 닿기 시작한 이벤트 안에서 T_CHATTER(0.05 ms) 안에 다른 꼭짓점이 세게 닿은 충격을 놓친다
+    (R4: 무게중심 치우친 폰 e 0.5, 0.27·v0 로 시작한 이벤트 안 1.215·v0 — ENDTIM 14.67 ms 가 1.0 ms 가 됐다).
   - 멈춤은 clear·calm·t_max·max_events(MAX_EVENTS_FULL) 다. calm = 마지막 묶음이 닫혔고(1 ms 조용) v_z ≥ 0 이며
-    CALM_SAFETY·ω_max·r_max < strong_contact·v0 일 때다(_simulate). 근거: 중력이 없으면 비행 중 v 가 일정하고, 바닥 법선
-    충격량은 v_z 를 늘리기만 하며, 마찰은 수평이고, 접촉은 에너지를 늘리지 않는다. 그래서 회전 에너지는 지금의
-    E − ½·m·v_z² 를 넘지 못하고, 앞으로 어느 접촉점의 접근 속도도 ω_max·r_max 를 넘지 못한다.
-  - 중력 켬이거나 strong_contact=None 이면 v132 와 비트까지 같다.
+    CALM_SAFETY·√(2·K)·rot_vn_k − v_z < strong_contact·v0 일 때다(_simulate). K = E − ½·m·v_z²(수평 병진 + 회전 에너지),
+    rot_vn_k 는 make_body 의 꼭짓점별 몸체 상수다.
+  - calm 근거 가운데 기구학은 엄밀하다. 중력이 없으면 비행 중 v 는 일정하다. 법선 충격량은 0 이상이고 마찰은 바닥 평면
+    안이라 v_z 는 줄지 않는다(측정 최대 감소 3e-15·v0). 회전 에너지가 T 이면 어느 꼭짓점의 접근 속도도 √(2T)·rot_vn_k − v_z
+    이하다. 따라서 앞으로의 회전 에너지가 지금 K 를 넘지 않으면 남은 묶음은 모두 약하다.
+  - 에너지 쪽은 측정에 기댄 가정이다. Bullet 순차 충격량은 충돌에서 에너지를 늘릴 수 있다(측정 최대 E 1.48 배, 치우친 폰
+    e 0.9 에서 v_z −0.40 → +0.90·v0). 측정에서 그런 충돌은 모두 무게중심 v_z 가 음수로 시작한 충돌이었고(24393 개 가운데 50),
+    v_z ≥ 0 에서 시작한 충돌 3379 개는 K 를 늘린 적이 없다(R6: 몸체 6종 × e 0~0.9 × μ 0.2~1.0 × 100 방향 = 9000 실행, R4 도 같다).
+    calm 은 v_z ≥ 0 일 때만 보고 v_z 는 줄지 않으므로 뒤의 충돌은 모두 v_z ≥ 0 에서 시작한다. 다만 비행 중 회전 에너지는
+    물리로는 보존되지만 Bullet 적분은 조금씩 늘린다(첫 calm 판정 뒤 K 증가 최대 — 가는 막대 160×10×10 mm 6.8%, 긴 막대 1.1%,
+    폰 0.2%, dt 1e-5 s). CALM_SAFETY 는 이 가정들의 여유로 √(2·K) 에 곱한다(K 가 1.56 배가 되어도 견딘다).
+  - 같은 측정에서 calm 으로 멈춘 tFinal 은 멈춤 없이 끝까지 돌린 tFinal 과 모두 같았다(문턱 0.1·0.3·1.0, 놓친 강한 묶음 0).
+    calm 판정 뒤 접근 속도는 여유를 뺀 한계 √(2K)·rot_vn_k − v_z 의 0.993 배까지 갔다.
+  - 중력 켬이거나 strong_contact=None 이면 v132 와 비트까지 같다(그 경로의 이벤트에는 approach_max_mps 가 없다).
 """
 import gc
 import itertools
@@ -72,12 +86,12 @@ from KooCAEManager.KooEndTimeTable import drop_direction, euler_from_rotation
 G = 9.81
 GAP = 5e-4             # 시작 시 최저점과 바닥 사이 간격 (m)
 T_CHATTER = 5e-5       # 이 간격 이내 충격 스텝은 같은 이벤트 (s)
-T_SEP_MAX = 1e-3       # 이만큼 떨어졌다 닿은 충돌 묶음이 이만큼 조용해지면 종료 (s)
+T_SEP_MAX = 1e-3       # 이만큼 떨어졌다 닿은 충돌 묶음이 이만큼 조용해지면 종료 (s, v132 규칙) — v133 calm 도 이만큼 조용을 본다
 T_SEP_MS = T_SEP_MAX * 1e3  # 2차 충격 이격 기준 (ms) = 종료 규칙 — 이보다 길면 2차 묶음을 다 못 담는다
 MAX_EVENTS = 30
 STRONG_CONTACT = 0.3   # 중력 끔 ENDTIM 문턱: 묶음 안 최대 접근 속도가 이 값·v0 이상인 마지막 재접촉 묶음 끝까지 담는다 (v133)
 MAX_EVENTS_FULL = 200  # 중력 끔 v133 규칙(2차 묶음 뒤에도 이어 돌림)의 이벤트 수 상한
-CALM_SAFETY = 1.25     # calm 멈춤 여유 배수 — Bullet 순차 충격량은 에너지를 아주 조금 늘릴 수 있다
+CALM_SAFETY = 1.25     # calm 한계의 에너지 항 √(2·K)·rot_vn_k 에 곱하는 여유 — K 쪽은 측정에 기댄 가정이다(모듈 설명)
 CALM_EVERY = 10        # calm 판정 간격(스텝) — 판정은 상태를 읽기만 하므로 결과(이벤트)는 그대로다
 J_STEP = 1e-3          # 스텝 충격량 > J_STEP·m·v0 이면 충돌 스텝
 J_EVENT_MIN = 0.02     # 합계 < J_EVENT_MIN·m·v0 인 이벤트는 스침으로 버림
@@ -120,7 +134,9 @@ def make_body(mass_kg, com_m, inertia_com_kgm2, hull_vertices_m):
     """기기 좌표 SI 입력 → 사전 해석용 강체 dict.
 
     mass_kg: 질량, com_m: 무게중심 (3,), inertia_com_kgm2: 무게중심 기준 관성 텐서 (3,3), hull_vertices_m: 껍질 꼭짓점 (N,3).
-    돌려주는 dict: mass, com, inertia, R(기기←주축), moments(주관성), verts(주축 좌표 꼭짓점), r_max.
+    돌려주는 dict: mass, com, inertia, R(기기←주축), moments(주관성), verts(주축 좌표 꼭짓점), r_max, rot_vn_k(calm 한계 상수).
+    rot_vn_k = 꼭짓점 최대 σ_max([r_i]× I^-½) 다(r_i·I 는 주축 좌표). 회전 에너지가 T 이면 어느 꼭짓점의 회전 속도 |ω × r_i| 도
+    √(2T)·rot_vn_k 를 넘지 못한다(ω = I^-½·u, T = ½|u|²). r_max/√I_min 이하이고 긴 몸체에서 훨씬 작다(막대 200×30×20 mm 는 0.25 배).
     """
     mass = float(mass_kg)
     com = np.asarray(com_m, dtype=float).reshape(3)
@@ -140,8 +156,12 @@ def make_body(mass_kg, com_m, inertia_com_kgm2, hull_vertices_m):
     if len(local) > MAX_HULL_VERTICES:
         raise ValueError(f"rigid drop presim: {len(local)} vertices exceed pybullet limit {MAX_HULL_VERTICES}; "
                          "pass convex hull vertices only")
+    X = np.zeros((len(local), 3, 3))  # 꼭짓점마다 [r_i]× (r_i × a = [r_i]× a)
+    X[:, 0, 1], X[:, 0, 2], X[:, 1, 2] = -local[:, 2], local[:, 1], -local[:, 0]
+    X -= X.transpose(0, 2, 1)
     return {"mass": mass, "com": com, "inertia": inertia, "R": R, "moments": moments, "verts": local,
-            "r_max": float(np.linalg.norm(local, axis=1).max())}
+            "r_max": float(np.linalg.norm(local, axis=1).max()),
+            "rot_vn_k": float(np.linalg.norm(X / np.sqrt(moments), ord=2, axis=(1, 2)).max())}
 
 
 def _contact_type(heights, pts_xy, r_max):
@@ -163,13 +183,16 @@ def _simulate(body, q, gap_m, v_init, w_init, e, mu, gravity_on, dt, t_max, trac
     """공통 적분 루프. q: 월드←주축 쿼터니언, gap_m: 최저 꼭짓점 높이, v_init·w_init: 바닥 좌표, v_ref: 문턱 기준 속도.
 
     strong_vn 이 숫자이고 중력 끔이면 v133 멈춤 규칙이다. 2차 묶음 뒤 1 ms 조용 멈춤('second')을 쓰지 않고
-    'clear'·'calm'·'t_max'·'max_events'(MAX_EVENTS_FULL) 로 멈춘다. 그 밖에는 v132 와 비트까지 같다.
+    'clear'·'calm'·'t_max'·'max_events'(MAX_EVENTS_FULL) 로 멈춘다. 이벤트에 approach_max_mps(묶음 세기용)가 더 있다.
+    그 밖에는 v132 와 비트까지 같다.
     calm 은 CALM_EVERY 스텝마다 보며, 다음이 모두 설 때다.
       - 접촉 중이 아니고 이벤트가 하나 이상이며, 마지막 이벤트 뒤 T_SEP_MS 이상 조용하다(마지막 묶음이 닫혔다).
         뒤에 올 약한 접촉이 1차 묶음이나 마지막 강한 묶음에 붙어 그 끝(tFinal)을 늘리는 일이 없게 한다.
       - v_z ≥ 0
-      - CALM_SAFETY·ω_max·r_max < strong_vn·v_ref. ω_max = √(2·(E − ½·m·v_z²)/I_min), E = ½·m·|v|² + ½·Σ I_k·ω_bk²
-        (ω_b = 주축 좌표 각속도)다. 앞으로 어느 접촉의 접근 속도도 ω_max·r_max 를 넘지 못하므로 남은 묶음은 모두 약하다.
+      - CALM_SAFETY·√(2·K)·rot_vn_k − v_z < strong_vn·v_ref. K = E − ½·m·v_z² = ½·m·(v_x² + v_y²) + ½·Σ I_k·ω_bk²
+        (ω_b = 주축 좌표 각속도), rot_vn_k 는 make_body 의 몸체 상수다. 앞으로 회전 에너지가 K 를 넘지 않고 v_z 가 줄지
+        않으면, 어느 꼭짓점의 접근 속도도 √(2·K)·rot_vn_k − v_z 를 넘지 못하므로 남은 묶음은 모두 약하다.
+        회전 에너지 쪽은 측정에 기댄 가정이다(근거와 한계는 모듈 설명 '중력 끔 ENDTIM 규칙').
     """
     import pybullet as p
 
@@ -209,7 +232,7 @@ def _simulate(body, q, gap_m, v_init, w_init, e, mu, gravity_on, dt, t_max, trac
         full = strong_vn is not None and not gravity_on
         max_events = MAX_EVENTS_FULL if full else MAX_EVENTS
         moments = np.asarray(body["moments"], dtype=float)
-        i_min = float(moments.min())
+        rot_vn_k = body["rot_vn_k"]
         t_quiet = T_SEP_MS * 1e-3
 
         events, cur = [], None
@@ -265,7 +288,7 @@ def _simulate(body, q, gap_m, v_init, w_init, e, mu, gravity_on, dt, t_max, trac
                                nb=R[2, :].copy(), pts=[],
                                pre=(np.array(p.getMatrixFromQuaternion(orn_prev)).reshape(3, 3), pos_prev, v_prev,
                                     w_prev, wsum / J - pos_prev),
-                               fw=np.zeros(3), fxy=[])
+                               fw=np.zeros(3), fxy=[], vmax=-math.inf)
                 cur["t_last"] = t
                 cur["J"] += J
                 cur["w"] += R.T @ (wsum - J * pos)  # 몸체 좌표 기준 충격량 가중 접촉 위치
@@ -274,6 +297,9 @@ def _simulate(body, q, gap_m, v_init, w_init, e, mu, gravity_on, dt, t_max, trac
                     b = com + Rp @ (R.T @ (np.array(c[5]) - pos))
                     cur["pts"].append((b[0], b[1], c[9] * dt))
                     cur["fxy"].append(c[5][:2])
+                    # 이 접촉점의 스텝 앞 접근 속도(vn 과 같은 잼, + = 접근) — 이벤트 안 최대가 묶음 세기다(v133).
+                    # 약한 첫 접촉 뒤 T_CHATTER 안에 다른 꼭짓점이 세게 닿아도 같은 이벤트라 vn 에는 안 잡힌다
+                    cur["vmax"] = max(cur["vmax"], -float((v_prev + np.cross(w_prev, np.array(c[5]) - pos_prev))[2]))
                 cur["z_last"] = cur["z_max"] = pos[2]
             else:
                 if cur is not None:
@@ -298,7 +324,7 @@ def _simulate(body, q, gap_m, v_init, w_init, e, mu, gravity_on, dt, t_max, trac
                 wb = np.array(p.getMatrixFromQuaternion(orn)).reshape(3, 3).T @ w_prev  # 월드 → 주축 좌표 각속도
                 # E − ½·m·v_z² = 수평 병진 + 회전 운동 에너지 (빼지 않고 더해서 반올림 음수를 피한다)
                 k_rest = 0.5 * mass * (v[0] * v[0] + v[1] * v[1]) + 0.5 * float(moments @ (wb * wb))
-                if CALM_SAFETY * math.sqrt(2.0 * k_rest / i_min) * r_max < strong_vn * v_ref:
+                if CALM_SAFETY * math.sqrt(2.0 * k_rest) * rot_vn_k - v[2] < strong_vn * v_ref:
                     stop = "calm"
                     break
         if cur is not None:
@@ -330,7 +356,8 @@ def _simulate(body, q, gap_m, v_init, w_init, e, mu, gravity_on, dt, t_max, trac
                         pre_pos=tuple(float(x) for x in pos0), pre_v=tuple(float(x) for x in v_0),
                         pre_w=tuple(float(x) for x in w_0), pre_gap_m=float(h.min()),
                         pre_contact=tuple(float(x) for x in c0), contact_type=ctype, contact_nverts=nlow,
-                        floor_x_m=float(fl[0]), floor_y_m=float(fl[1]), reach_m=reach))
+                        floor_x_m=float(fl[0]), floor_y_m=float(fl[1]), reach_m=reach,
+                        **({"approach_max_mps": ev["vmax"]} if full else {})))  # v132 경로의 이벤트 칸은 그대로
     out = {"v0": v_ref, "t0_s": t0 if events else math.nan, "stop": stop, "events": evs}
     if trace:
         out["trace"] = np.array(tl)
@@ -393,13 +420,15 @@ def strong_from_events(events, v_ref, strong_vn, t_sep_ms=T_SEP_MS):
     """중력 끔 v133 ENDTIM 규칙의 묶음 판정. → (t1_end_ms, strong_end_ms 또는 nan, strong_vn_max 또는 nan).
 
     묶음은 second_impact 와 같은 규칙이다. 이벤트 b 는 b 시작 − 앞 묶음 끝 ≥ t_sep(기본 1 ms) 이면 새 묶음을 연다.
-    묶음 세기 = 묶음 안 이벤트들의 접근 속도(−vn_mps) 최대 ÷ v_ref 다. 첫 접촉 속도만 보면 꼭짓점 → 모서리로 세지는 묶음을 놓친다.
+    묶음 세기 = 묶음 안 이벤트들의 approach_max_mps 최대 ÷ v_ref 다. approach_max_mps 는 이벤트의 모든 충격 스텝·접촉점에서
+    잰 스텝 앞 접근 속도의 최대다(_simulate, v133 경로의 이벤트에만 있다). 첫 접촉 스텝의 접근 속도(vn_mps)만 보면
+    꼭짓점 → 모서리로 세지는 묶음이나, 약한 첫 접촉 뒤 T_CHATTER 안에 다른 꼭짓점이 세게 닿아 한 이벤트로 붙은 충격을 놓친다.
     t1_end = 1차 묶음 끝, strong_end = 재접촉 묶음(2번째부터) 가운데 세기 ≥ strong_vn 인 마지막 묶음의 끝,
     strong_vn_max = 재접촉 묶음 세기의 최대(재접촉이 없으면 nan)다. 이벤트가 없으면 셋 다 nan 이다.
     """
     clusters = []  # [끝 ms, 세기]
     for ev in events:
-        s = -float(ev["vn_mps"]) / v_ref
+        s = float(ev["approach_max_mps"]) / v_ref
         if clusters and ev["t_start_ms"] - clusters[-1][0] < t_sep_ms:
             clusters[-1][0] = ev["t_end_ms"]
             clusters[-1][1] = max(clusters[-1][1], s)
@@ -535,8 +564,8 @@ def run_presim(body, angles, height_m, restitutions=(0.1, 0.3, 0.5), friction=0.
     if not time_to_s > 0.0:
         raise ValueError(f"rigid drop presim: time_to_s must be positive, got {time_to_s}")
     if not 0.0 < t_sep_ms <= T_SEP_MS:
-        raise ValueError(f"rigid drop presim: t_sep_ms must be in (0, {T_SEP_MS:g}] ms (the simulation stops "
-                         f"{T_SEP_MS:g} ms after the 2nd-impact cluster), got {t_sep_ms}")
+        raise ValueError(f"rigid drop presim: t_sep_ms must be in (0, {T_SEP_MS:g}] ms (the simulation waits "
+                         f"only {T_SEP_MS:g} ms of quiet before stopping), got {t_sep_ms}")
     if strong_contact is not None:
         strong_contact = float(strong_contact)
         if not (strong_contact > 0.0 and math.isfinite(strong_contact)):

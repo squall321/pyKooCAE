@@ -60,8 +60,11 @@ PROTO_45 = {0.1: (17.44, 1.1718), 0.3: (16.76, 1.1708), 0.5: (16.17, 1.1334)}
 V132_COMMIT = "6504b11"
 REF_V133 = "/home/koopark/kooOmniDropAnalyzer/fullangle_mbd/results_v132_mu0.5/endtime_rule_check.csv"
 NEW_KEYS = ["strong_end_ms", "strong_vn_max"]
-# calm 건전성 표본(피보나치 1000 번호) — 거의 평평한 낙하는 calm 으로, 15 는 clear 로 멈춘다(0·1·440·457 은 강한 재접촉 없음)
+# calm 건전성 표본(피보나치 1000 번호) — 상자는 440·457 의 e 0.5(clear)만 빼고 calm 으로 멈춘다(0·1·440·457 은 강한 재접촉 없음).
+# 여기에 e 0.9(강한 재접촉 뒤 calm — 상자·막대·치우친 폰)와, 옛 한계(ω_max·r_max)로는 t_max 까지 가던 긴 막대 e 0.1 을 더한다
 SOUND_IDX = (0, 1, 13, 15, 20, 37, 440, 457, 850)
+SOUND_E09 = (("box", 605), ("box", 905), ("rod", 155), ("rod", 855), ("offset", 305), ("offset", 805))
+SOUND_ROD = (55, 155, 380)
 
 
 def check(name, cond, detail=""):
@@ -89,6 +92,13 @@ def rotz(deg):
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
 
 
+def rot_axis(axis, deg):
+    """축 axis 둘레 deg 회전 (로드리게스)."""
+    a = np.asarray(axis, float) / np.linalg.norm(axis)
+    K = np.array([[0.0, -a[2], a[1]], [a[2], 0.0, -a[0]], [-a[1], a[0], 0.0]])
+    return np.eye(3) + math.sin(math.radians(deg)) * K + (1.0 - math.cos(math.radians(deg))) * K @ K
+
+
 def _ref_job(args):
     idx, e = args
     r = P.simulate_drop(BOX, proto_fibonacci(1000)[idx], e, MU, H)
@@ -110,19 +120,19 @@ def tf_strong(st, margin_ms=1.0):
 
 
 def _sound_job(args):
-    """calm 건전성: v133(calm 켬) 과 멈춤 규칙을 다 끈 실행(v132 경로에 T_SEP_MAX 10 s·이벤트 400)의 이벤트·tFinal."""
-    idx, e = args
-    d = proto_fibonacci(1000)[idx]
-    r = P.simulate_drop(BOX, d, e, MU, H, gravity_on=False, strong_vn=P.STRONG_CONTACT)
-    old = P.T_SEP_MAX, P.MAX_EVENTS
-    P.T_SEP_MAX, P.MAX_EVENTS = 10.0, 400  # fork 작업자 안에서만 바꾼다
+    """calm 건전성: v133(calm 켬) 과 calm 을 끈 v133 실행(멈춤은 clear·t_max·이벤트 400 만)의 이벤트·tFinal."""
+    bkey, idx, e = args
+    body, d = SOUND_BODIES[bkey], proto_fibonacci(1000)[idx]
+    r = P.simulate_drop(body, d, e, MU, H, gravity_on=False, strong_vn=P.STRONG_CONTACT)
+    old = P.CALM_EVERY, P.MAX_EVENTS_FULL
+    P.CALM_EVERY, P.MAX_EVENTS_FULL = 10 ** 9, 400  # calm 끔 — fork 작업자 안에서만 바꾸고 되돌린다
     try:
-        ref = P.simulate_drop(BOX, d, e, MU, H, gravity_on=False)
+        ref = P.simulate_drop(body, d, e, MU, H, gravity_on=False, strong_vn=P.STRONG_CONTACT)
     finally:
-        P.T_SEP_MAX, P.MAX_EVENTS = old
-    key = lambda evs: [(x["t_start_ms"], x["t_end_ms"], x["J"], x["vn_mps"]) for x in evs]  # noqa: E731
+        P.CALM_EVERY, P.MAX_EVENTS_FULL = old
+    key = lambda evs: [(x["t_start_ms"], x["t_end_ms"], x["J"], x["approach_max_mps"]) for x in evs]  # noqa: E731
     prefix = key(r["events"]) == key(ref["events"])[:len(r["events"])]
-    return (idx, e, r["stop"], ref["stop"], P.strong_from_events(r["events"], r["v0"], P.STRONG_CONTACT),
+    return (bkey, idx, e, r["stop"], ref["stop"], P.strong_from_events(r["events"], r["v0"], P.STRONG_CONTACT),
             P.strong_from_events(ref["events"], ref["v0"], P.STRONG_CONTACT), prefix)
 
 
@@ -164,6 +174,13 @@ def load_v132():
 
 
 BOX = P.make_body(MASS, (0.0, 0.0, 0.0), box_inertia(), CORNERS)
+# 긴 막대 200×30×20 mm, 150 g — calm 한계의 꼭짓점별 상수가 r_max/√I_min 의 0.25 배
+ROD_SIZE = (0.200, 0.030, 0.020)
+ROD = P.make_body(0.150, (0.0, 0.0, 0.0), box_inertia(0.150, ROD_SIZE), CORNERS / HALF * (np.array(ROD_SIZE) / 2.0))
+# 무게중심이 치우치고 관성 주축이 기기 축과 20° 어긋난 폰 (껍질은 같은 상자) — R4 F2 재현 몸체
+_RO = rot_axis((1, 2, 3), 20.0)
+OFFSET = P.make_body(MASS, (0.030, 0.010, 0.001), _RO @ (box_inertia() @ np.diag([1.0, 1.3, 0.9])) @ _RO.T, CORNERS)
+SOUND_BODIES = {"box": BOX, "rod": ROD, "offset": OFFSET}
 
 
 def main():
@@ -196,6 +213,22 @@ def main():
           and abs(np.linalg.det(bq["R"]) - 1) < 1e-12)
     check("rotated device: hull in principal frame = box (half extents)",
           np.allclose(np.sort(np.abs(bq["verts"]).max(axis=0)), np.sort(HALF), atol=1e-12))
+
+    def rot_vn_ref(b):  # 꼭짓점마다 √λ_max([r]× I⁻¹ [r]×ᵀ) — 엔진(σ_max 노름)과 다른 길로
+        best = 0.0
+        for r_ in b["verts"]:
+            X = np.array([[0.0, -r_[2], r_[1]], [r_[2], 0.0, -r_[0]], [-r_[1], r_[0], 0.0]])
+            best = max(best, float(np.linalg.eigvalsh(X @ np.diag(1.0 / b["moments"]) @ X.T).max()))
+        return math.sqrt(best)
+    wr = rng.normal(size=(2000, 3)) * 50.0  # 아무 각속도(주축 좌표): 꼭짓점 회전 속도 |ω × r| ≤ √(2T)·rot_vn_k
+    vmax_ratio = max(float((np.linalg.norm(np.cross(w_, b["verts"]), axis=1).max()
+                            / math.sqrt(w_ @ (b["moments"] * w_))) / b["rot_vn_k"]) for b in (BOX, bq, ROD) for w_ in wr)
+    check("calm constant rot_vn_k = max_i sigma_max([r_i]x I^-1/2) (box, rotated, rod); |w x r| <= sqrt(2T) rot_vn_k; "
+          "rod 0.25x, box 0.63x of r_max/sqrt(I_min)",
+          all(abs(b["rot_vn_k"] / rot_vn_ref(b) - 1.0) < 1e-12 for b in (BOX, bq, ROD)) and vmax_ratio <= 1.0 + 1e-12
+          and abs(ROD["rot_vn_k"] * math.sqrt(ROD["moments"].min()) / ROD["r_max"] - 0.250) < 1e-3
+          and abs(BOX["rot_vn_k"] * math.sqrt(BOX["moments"].min()) / BOX["r_max"] - 0.634) < 1e-3,
+          f"{[b['rot_vn_k'] / rot_vn_ref(b) for b in (BOX, bq, ROD)]} {vmax_ratio}")
     for label, args in (("mass 0", (0.0, (0, 0, 0), box_inertia(), CORNERS)),
                         ("non-PD inertia", (MASS, (0, 0, 0), np.diag([1e-4, -1e-4, 1e-4]), CORNERS)),
                         ("coplanar hull", (MASS, (0, 0, 0), box_inertia(), CORNERS * [1, 1, 0])),
@@ -306,8 +339,9 @@ def main():
           and P.tfinal_ms(float("nan"), "none", 0.2, count_rebound=True) == 1.2)
     check("endtim: ceil to 0.1 ms, deck units", P.endtim_from_ms(1.01, 1.0) == 0.0011 and P.endtim_from_ms(17.76, 1e-3) == 17.8
           and P.endtim_from_ms(1.0000000000000002, 1.0) == 0.001 and P.endtim_from_ms(2.0, 1e-3) == 2.0)
-    # v133 strong_from_events — 접근 속도 vn(÷ v0) 을 가진 이벤트, v_ref = 2
-    sv = lambda s, e_, vn: {"t_start_ms": s, "t_end_ms": e_, "rise_mm": 0.0, "vn_mps": -2.0 * vn}  # noqa: E731
+    # v133 strong_from_events — 첫 접촉 vn·이벤트 안 최대 접근 속도 peak(÷ v0, 안 주면 vn 과 같게)를 가진 이벤트, v_ref = 2
+    sv = lambda s, e_, vn, peak=None: {"t_start_ms": s, "t_end_ms": e_, "rise_mm": 0.0, "vn_mps": -2.0 * vn,  # noqa: E731
+                                       "approach_max_mps": 2.0 * (vn if peak is None else peak)}
     evs = [sv(0, 0.4, 1.0), sv(0.9, 1.0, 0.1), sv(2.25, 2.25, 0.72), sv(3.92, 3.92, 1.86), sv(5.73, 5.8, 0.98),
            sv(6.5, 6.6, 0.05), sv(30.0, 30.0, 0.06)]
     check("strong_from_events: clusters as second_impact, last re-contact cluster with max vn >= thr, vn_max over re-contacts",
@@ -322,6 +356,10 @@ def main():
     e0 = P.strong_from_events([], 2.0, 0.3)
     check("strong_from_events: no re-contact -> (t1_end, nan, nan); no events -> all nan",
           t1 == 0.9 and math.isnan(se) and math.isnan(vm) and all(math.isnan(x) for x in e0))
+    t1, se, vm = P.strong_from_events([sv(0, 0, 1.0), sv(5.0, 5.0, 0.9, 0.2)], 2.0, 0.3)  # vn_mps 는 세기에 안 쓴다
+    check("strong_from_events: strength = approach_max_mps (in-event peak), not first-contact vn_mps (F2: 0.27 -> 1.215)",
+          P.strong_from_events([sv(0, 0, 1.0), sv(13.64, 13.67, 0.27, 1.215)], 2.0, 0.3) == (0.0, 13.67, 1.215)
+          and t1 == 0.0 and math.isnan(se) and vm == 0.2)
     check("v133 defaults: STRONG_CONTACT 0.3 (run_presim default), MAX_EVENTS_FULL 200, strong_vn default None",
           P.STRONG_CONTACT == 0.3 and P.MAX_EVENTS_FULL == 200
           and inspect.signature(P.run_presim).parameters["strong_contact"].default == P.STRONG_CONTACT
@@ -514,19 +552,23 @@ def main():
     check("one English WARNING line naming the angle; gravity on -> 0", len(warn) == 1 and "FACE" in warn[0]
           and all(r_["n_unresolved"] == 0 for r_ in P.run_presim(BOX, [("FACE", 0.0, 0.0, 0.0)], H, ES, t_max=0.002,
                                                                  workers=2, log=lambda s: None)), f"{warn}")
-    # v133 규칙의 미해결 뜻: 시뮬이 t_max·이벤트 상한(MAX_EVENTS_FULL)으로 끝난 e. 평판 낙하 e 0.1 은 1 ms 조용 뒤 calm 으로
-    # 풀리고, e 0.3·0.5 는 Bullet 면 접촉의 가짜 회전(ω·r_max ≈ 0.36·0.64·v0) 때문에 2 ms 안에 calm 이 못 된다
+    # v133 규칙의 미해결 뜻: 시뮬이 t_max·이벤트 상한(MAX_EVENTS_FULL)으로 끝난 e. 2 ms 안에서 평판 낙하는 e 마다 1 ms 조용 뒤
+    # calm 으로 풀리고(꼭짓점별 한계에서 튀어 오르는 v_z 를 뺀다), 2° 기운 낙하는 e 0.1 만 풀리며, 45° 모서리는 2차(약 17 ms)
+    # 전이라 모두 t_max 다
     logs = []
-    ru = P.run_presim(BOX, [("FACE", 0.0, 0.0, 0.0), ("S45", 0.0, 45.0, 0.0)], H, ES, friction=MU, gravity_on=False,
+    three = (("FACE", (0.0, 0.0)), ("T2", (0.0, 2.0)), ("S45", (0.0, 45.0)))
+    ru = P.run_presim(BOX, [(nm, *a, 0.0) for nm, a in three], H, ES, friction=MU, gravity_on=False,
                       t_max=0.002, workers=2, log=logs.append)
     warn = [x for x in logs if "WARNING" in x]
     stops = {nm: [P.simulate_drop(BOX, drop_direction(*a), e, MU, H, gravity_on=False, t_max=0.002, strong_vn=0.3)["stop"]
-                  for e in ES] for nm, a in (("FACE", (0.0, 0.0)), ("S45", (0.0, 45.0)))}
-    check("v133 rule: n_unresolved = e count stopped on t_max/max_events (FACE: calm + t_max mix, S45: all t_max)",
-          [r_["n_unresolved"] for r_ in ru] == [sum(s in ("t_max", "max_events") for s in stops[nm]) for nm in ("FACE", "S45")]
-          and "calm" in stops["FACE"] and "t_max" in stops["FACE"] and stops["S45"] == ["t_max"] * 3, f"{stops}")
-    check("v133 rule: one WARNING line naming both angles (t_max or event cap, tfinal = last strong re-contact so far)",
-          len(warn) == 1 and "FACE" in warn[0] and "S45" in warn[0] and "200 events" in warn[0], f"{warn}")
+                  for e in ES] for nm, a in three}
+    check("v133 rule: n_unresolved = e count stopped on t_max/max_events (FACE all calm, T2 calm + t_max mix, S45 all t_max)",
+          [r_["n_unresolved"] for r_ in ru] == [sum(s in ("t_max", "max_events") for s in stops[nm]) for nm, _ in three]
+          and stops["FACE"] == ["calm"] * 3 and "calm" in stops["T2"] and "t_max" in stops["T2"]
+          and stops["S45"] == ["t_max"] * 3, f"{stops}")
+    check("v133 rule: one WARNING line naming T2 and S45, not FACE (t_max or event cap, tfinal = last strong re-contact so far)",
+          len(warn) == 1 and "T2" in warn[0] and "S45" in warn[0] and "FACE" not in warn[0] and "200 events" in warn[0],
+          f"{warn}")
     old_cap = P.MAX_EVENTS_FULL
     P.MAX_EVENTS_FULL = 3  # fork 작업자가 이어받는다 — idx 15 e 0.5 는 이벤트 5 개
     try:
@@ -615,15 +657,29 @@ def main():
         sb = V.simulate_drop(BOX, d45, 0.3, MU, H)
         check("simulate_drop gravity on ignores strong_vn: events and stop = v132",
               sa["stop"] == sb["stop"] and [list(x.items()) for x in sa["events"]] == [list(x.items()) for x in sb["events"]])
+        so = P.simulate_drop(BOX, d45, 0.3, MU, H, gravity_on=False)
+        sbo = V.simulate_drop(BOX, d45, 0.3, MU, H, gravity_on=False)
+        s3 = P.simulate_drop(BOX, d45, 0.3, MU, H, gravity_on=False, strong_vn=0.3)
+        check("simulate_drop gravity off, strong_vn=None: events and stop = v132; v133 path adds only approach_max_mps",
+              so["stop"] == sbo["stop"] and [list(x.items()) for x in so["events"]] == [list(x.items()) for x in sbo["events"]]
+              and all(list(x) == list(sbo["events"][0]) + ["approach_max_mps"] for x in s3["events"]))
 
-    # (b) calm 건전성: calm 으로 멈춘 실행의 이벤트는 멈춤 규칙을 다 끈 실행의 앞부분이고 tFinal·strong_end 가 같다
+    # (b) calm 건전성: calm 으로 멈춘 실행의 이벤트는 calm 을 끈 실행의 앞부분이고 tFinal·strong_end 가 같다
+    cases = ([("box", i, e) for i in SOUND_IDX for e in ES] + [(b, i, 0.9) for b, i in SOUND_E09]
+             + [("rod", i, 0.1) for i in SOUND_ROD])
     with mp.get_context("fork").Pool(4) as pool:
-        snd = pool.map(_sound_job, [(i, e) for i in SOUND_IDX for e in ES], chunksize=1)
-    n_calm = sum(x[2] == "calm" for x in snd)
-    bad = [(i, e, s, rs_, tf_strong(a), tf_strong(b)) for i, e, s, rs_, a, b, pre in snd
-           if not (pre and tf_strong(a) == tf_strong(b) and same_value(a[1], b[1]) and rs_ in ("clear", "t_max"))]
+        snd = pool.map(_sound_job, cases, chunksize=1)
+    n_calm = sum(x[3] == "calm" for x in snd)
+    bad = [(b, i, e, s, rs_, tf_strong(a), tf_strong(c)) for b, i, e, s, rs_, a, c, pre in snd
+           if not (pre and tf_strong(a) == tf_strong(c) and same_value(a[1], c[1]) and rs_ in ("clear", "t_max"))]
     check(f"calm soundness on {len(snd)} cases ({n_calm} stopped calm): events = prefix of the no-stop run, same tFinal",
-          not bad and n_calm >= 15, f"calm {n_calm} bad {bad}")
+          not bad and n_calm >= 30, f"calm {n_calm} bad {bad}")
+    e09 = [x for x in snd if x[2] == 0.9]
+    rod = [x for x in snd if x[0] == "rod" and x[2] == 0.1]
+    check("calm at e 0.9 after strong re-contacts (box, rod, offset-CoM phone): calm tFinal = no-stop tFinal",
+          len(e09) == 6 and all(x[3] == "calm" and not math.isnan(x[6][1]) for x in e09) and not bad, f"{e09}")
+    check("per-vertex bound: rod e 0.1 dirs that ran to t_max with the old bound now stop calm (no-stop run hits t_max)",
+          len(rod) == 3 and all(x[3] == "calm" and x[4] == "t_max" for x in rod) and not bad, f"{rod}")
 
     # (c) 꼭짓점별로 갈라져 오는 슬랩다운 — 더 센 뒷묶음이 이제 담긴다 (피보나치 1000 idx 15, e 0.5)
     d15 = proto_fibonacci(1000)[15]
@@ -644,6 +700,20 @@ def main():
           and row15["class"] == "slapdown" and abs(row15["t2_end_ms"] - 2.25) < 1e-9 and row15["endtim"] == 0.007,
           f"{row15}")
 
+    # (c2) R4 F2: 한 꼭짓점이 0.27·v0 로 약하게 닿고 0.03 ms 뒤 먼 꼭짓점이 1.215·v0 로 닿아 한 이벤트(T_CHATTER 0.05 ms)로
+    #      붙는다. 묶음 세기를 첫 접촉 스텝 vn 으로만 재면 v133 tFinal 이 1.0 ms 였다 — 이벤트 안 최대(approach_max_mps)로 14.67 ms
+    zf, gf = 1.0 - 2.0 * 270.5 / 300, math.pi * (3.0 - math.sqrt(5.0))  # R4 repro_strength 방향 (피보나치 300 중 270)
+    df = np.array([math.sqrt(1 - zf * zf) * math.cos(gf * 270), math.sqrt(1 - zf * zf) * math.sin(gf * 270), zf])
+    rf = P.simulate_drop(OFFSET, df, 0.5, MU, H, gravity_on=False, strong_vn=P.STRONG_CONTACT)
+    stf = P.strong_from_events(rf["events"], rf["v0"], P.STRONG_CONTACT)
+    ef = rf["events"][-1]
+    check("F2 merged hard hit (offset-CoM phone, e 0.5): 13.64 ms event starts 0.271·v0, peaks 1.215·v0 -> tFinal 14.67 ms "
+          "(was 1.0), stop clear (= no-stop run)",
+          rf["stop"] == "clear" and len(rf["events"]) == 2 and abs(ef["t_start_ms"] - 13.64) < 1e-6
+          and abs(-ef["vn_mps"] / rf["v0"] - 0.271) < 1e-3 and abs(ef["approach_max_mps"] / rf["v0"] - 1.215) < 1e-3
+          and abs(tf_strong(stf) - 14.67) < 1e-9 and abs(stf[2] - ef["approach_max_mps"] / rf["v0"]) < 1e-15,
+          f"{rf['stop']} {[(x['t_start_ms'], x['vn_mps'], x['approach_max_mps']) for x in rf['events']]} {stf}")
+
     # (d) 거의 멈춰 돌다 수백 ms 뒤 스치는 약한 접촉은 이제 ENDTIM 을 늘리지 않는다 (e 0.1)
     al, be = math.radians(2.0), math.radians(-13.0)
     for label, d, want132, want133 in (
@@ -658,7 +728,9 @@ def main():
               abs(tf_old - want132) < 1e-9 and abs(tf_strong(st) - want133) < 1e-9 and st[2] < 0.1
               and abs(si[0] - (want132 - 1.0)) < 1e-9, f"{tf_old} {st} {si}")
 
-    # (e) 수용 대조: 피보나치 1000(프로토타입 위상) × e 3 — 멈춤 없이 끝까지 돌린 기준(last>=0.3)과 방향마다 같다
+    # (e) 수용 대조: 피보나치 1000(프로토타입 위상) × e 3 — 멈춤 없이 끝까지 돌린 기준(last>=0.3)과 방향마다 같다.
+    #     기준 csv 는 첫 접촉 vn 세기로 만들었지만, 이벤트 안 최대 세기(approach_max_mps)로 다시 만들어도 1000 방향 모두 같다
+    #     (재접촉 묶음 5391 개 가운데 0.3 문턱을 넘나드는 것 0 — R6 검증)
     ang_p = [(f"P{i + 1:04d}", *euler_from_direction(d_, ndigits=10)) for i, d_ in enumerate(proto_fibonacci(1000))]
     logs = []
     t = time.time()
