@@ -8,7 +8,8 @@
 - [x] KMM 모드 — PresimStrongContact 키·메타 endtime_rule/strong_contact·요약·도움말 목록, 모드 시험 110 OK·도움말 527 OK
 - [x] KCR — strong_contact 옵션·블록 줄(중력 끔만)·--help RIGID_DROP_ENDTIME 키 확인·table 메타 확인·도움말·시나리오 문서, 시험 149·105 OK, 끔 1924/1924 바이트 동일
 - [x] 통합 — RDE 8종 + 도움말 + KMM 회귀 19종 = 28 모두 통과(encoding_guard 는 venv312), KCR 끔 바이트 동일 1924/1924
-- [ ] 적대 리뷰 — 물리·멈춤 건전성 / 회귀·패키징
+- [x] 적대 리뷰 — 물리(R4)·회귀(R5). R5 반영 8e2cf6c, 엔진 고침(세기·calm 한계, R6) 0e1c6fb
+- [x] 문턱 기본 0.3 → 0.2 (사용자 결정 11-08) 4d27569 — 엔진 94·모드 110·KCR 157·도움말 527·RDE 8종 모두 통과, 상자 0.2 1000/1000
 - [ ] 성능 — 2만 방향 × e 3 시간 (v132 289 s 대비)
 - [ ] e2e /data/koopark/Test_E2E_v133 — v132 아는 불량 먼저, 소스 기준값
 - [ ] 빌드·컴파일본 e2e (pykoocae-53 굽기 끝난 뒤)
