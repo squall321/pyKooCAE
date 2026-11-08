@@ -14,4 +14,4 @@
 - [x] e2e /data/koopark/Test_E2E_v133 — v132 아는 불량 먼저, 소스 기준값(문턱 0.2 로 golden 다시 씀, ALL PASS 92 OK · SKIP 8; 옛 golden 은 golden_thr0.3_20261107)
 - [x] 빌드·컴파일본 e2e — f38651d, build_without_automatedmodeller --clean 을 상한 24G scope 로(08:47~09:43, 최저 가용 22 GB, pybullet.so 들어감). 호스트 e2e 엄격 ALL PASS 101 OK · SKIP 0 (golden 을 f38651d 소스로 다시 만든 뒤 — 결과는 바이트 같고 소요 시간 칸만 다름)
 - [x] SIF v133·tar·Drive/메일, SIF e2e — 굽기 전 헤드·compute-node-images 18ed8a1e(v132)·마지막 tar v132 확인, KooRemapper 15d013ec 검증 통과. SIF a92c1080(compute-node-images 같음, 안의 KMM sha 54d0862d = 호스트 빌드), tar 20261108_v133 88131a65·Drive·메일. SIF e2e 엄격 ALL PASS 101 OK · SKIP 0
-- [ ] 커밋·푸시·알림·메모리, 헤드 /opt 교체는 사용자 확인
+- [x] 커밋·푸시(2c6506e..a269ff5)·알림(pykoocae-53·kooremapper-fd·smarttwinmcp-c8·4c)·메모리. 헤드 /opt 교체 — 사용자 승인(11-08): 10:55, v132 는 rename 백업 _backup_20261108_105504(18ed8a1e), 헤드 a92c1080, apptainer exec 로 PresimStrongContact 기본 0.2 확인. 노드(node001·002)는 VM 꺼짐 — 켤 때 사용자 확인 뒤 compute-node-images 로
