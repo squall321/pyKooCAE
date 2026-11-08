@@ -771,11 +771,16 @@ def test_apptainer():
 
 
 # ── [7] 시간 제한 배율 ──────────────────────────────────────────
-def submit_scripts(kcr, rc_path, sequential=False, time_limit="01:00:00"):
-    """_submit_cumulative 를 가짜 sinfo·sbatch 로 돌려 slurm 스크립트 글과 화면 출력을 돌려준다 (실제 제출 없음)."""
+def submit_scripts(kcr, rc_path, sequential=False, time_limit="01:00:00", schedule=None):
+    """_submit_cumulative 를 가짜 sinfo·sbatch 로 돌려 slurm 스크립트 글과 화면 출력을 돌려준다 (실제 제출 없음).
+    schedule 을 주면 environment.schedule 로 넣고(v134 — false 면 표가 있어도 라운드로빈), 없으면 그 키를 뺀다."""
     import argparse
     rc = json.load(open(rc_path, encoding="utf-8"))
     rc["environment"]["time_limit"] = time_limit
+    if schedule is None:
+        rc["environment"].pop("schedule", None)
+    else:
+        rc["environment"]["schedule"] = schedule
     json.dump(rc, open(rc_path, "w", encoding="utf-8"), indent=1)
     slurm = os.path.join(rc["project"]["output_dir"], "slurm_scripts")
     real = subprocess.run
@@ -834,12 +839,13 @@ def test_time_factor(kcr, on):
           f" (예전 식 step 배율 2 × 표 배율 {max(math.ceil(round(v / tf, 9)) for st in rc['scenario']['doe_endtim'].values() for v in st.values())} 이 아니다)",
           want > 2 and tl and all(l == f"#SBATCH --time={want}:00:00" for l in tl)
           and f"endtime factor {want}" in out, f"{set(tl)} {out[-300:]}")
-    texts, out = submit_scripts(kcr, rc_path, sequential=True)
+    # 라운드로빈 (d − 1) % 2 기대값은 schedule 끈 경우다 — 켜면 칸이 lpt_lanes 로 바뀐다(tests/test_kcr_doe_schedule.py)
+    texts, out = submit_scripts(kcr, rc_path, sequential=True, schedule=False)
     tl = {l for n, t in texts.items() if not n.startswith("run_doe_")   # DOE 별 스크립트도 미리 쓴다 — 슬롯 스크립트만 본다
           for l in t.splitlines() if l.startswith("#SBATCH --time=")}
     slot = max(sum(f for d, f in fd.items() if (d - 1) % 2 == n) for n in range(2))
-    check(f"submit --sequential: 01:00:00 × 슬롯마다 F_d 합의 최대 {slot} (노드 2)", tl == {f"#SBATCH --time={slot}:00:00"},
-          str(tl))
+    check(f"submit --sequential(schedule 끔): 01:00:00 × 슬롯마다 F_d 합의 최대 {slot} (노드 2)",
+          tl == {f"#SBATCH --time={slot}:00:00"}, str(tl))
     tmp0 = new_tmp("etp_tl_off_")
     rc0, _ = designer_prepare(tmp0, scen_faces2(tmp0))
     sdf = kcr._step_dr_time_factor(rc0)

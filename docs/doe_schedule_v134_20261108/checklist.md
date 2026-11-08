@@ -7,8 +7,8 @@
 - [x] 계획·계약 초안 (PLAN.md)
 - [x] 이름·기본 동작 사용자 확인 — environment.schedule, 표가 있으면 자동 켬(끄기 enabled false)
 - [ ] DoeSchedule.py + test_doe_schedule.py
-- [ ] KCR submit(기본·sequential)·rerun·schedule.json·prepare 미리보기, 가짜 sbatch 시험
-- [ ] 꺼짐 바이트 동일, 기존 KCR 시험 묶음
+- [x] KCR submit(기본·sequential)·rerun·schedule.json·prepare 미리보기, 가짜 sbatch 시험 (tests/test_kcr_doe_schedule.py 69 OK)
+- [x] 꺼짐 바이트 동일, 기존 KCR 시험 묶음 (GOLDEN 10 경우 + HEAD 사본과 화면까지 직접 비교)
 - [ ] 문서 — scenario_reference(environment.schedule), commands/submit.md, cli_help_kcr
 - [ ] 적대 리뷰
 - [ ] 빌드(KCR 만, pykoocae-53 과 순서 맞춤)·SIF·tar, 커밋·푸시·알림·메모리

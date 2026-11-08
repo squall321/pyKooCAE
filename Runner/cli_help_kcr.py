@@ -233,6 +233,16 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
            "나누면 종료 코드 1) · 프로세스 수"),
          K("simulation_params.endtime_presim.presim_timeout_seconds", "정수", "21600",
            "사전 해석 KMM 시간 제한(초, 기본 6 시간 — 러너 KMM 의 timeout 과 따로). 넘으면 KMM 프로세스 묶음째 멈추고 prepare 가 멈춘다"),
+         K("environment.schedule", "bool / 객체", "true",
+           "v134 — 사전 해석 ENDTIM 표(doe_endtim)가 있으면 submit 이 DOE 를 예상 시간이 긴 것부터 내고, --sequential 은 칸 수를 "
+           "무릎 대수(상한 안에서 완료 시각이 더 줄지 않는 가장 작은 칸 수)로 정해 긴 것부터 가장 덜 찬 칸에 넣는다. rerun 도 같다. "
+           "slurm_scripts/schedule.json 에 비용·순서·칸·대수별 예상 완료를 남긴다. DOE 번호·jobs.json 형식은 그대로다. false(또는 "
+           "enabled false)면 예전과 바이트 동일. impact_conditions 심각도 순서·progressive 피보나치 순서는 켜져 있으면 덮어쓴다"),
+         K("environment.schedule.licenses / licenses_per_job / max_concurrent", "정수", "null / 1 / null",
+           "동시 칸 상한 — --nodes·licenses ÷ licenses_per_job·max_concurrent·DOE 수 가운데 가장 작은 값"),
+         K("environment.schedule.overhead_seconds / seconds_per_ms / knee_tolerance", "실수", "300 / 20 / 0.05",
+           "예상 시간 = overhead_seconds + seconds_per_ms × Σ 스텝(ENDTIM ms + DR 스텝 tFinal). 가정값이라 보정 안 됨(Test_005 1 MPP "
+           "는 226 s/ms). D2R 이 켜지면 ENDTIM 비례 그대로 두고 'D2R 켬(보정 안 됨)' 만 적는다. knee_tolerance 는 무릎 판정 여유"),
          K("simulation_params.density / youngs_modulus / poisson_ratio", "실수", "7.85e-9 / 2e5 / 0.3", "바닥판 재질"),
          K("simulation_params.offset_distance", "실수", "0.05", "바닥판 초기 간격"),
          K("simulation_params.drop_surface", "객체", "Plane 300×300×20, 30×30×2", "type: Plane | PlaneGraded(num_outer_layers, ratio) | RigidWall | PlanewithRoughness"),

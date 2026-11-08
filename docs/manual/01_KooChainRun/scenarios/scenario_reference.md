@@ -55,6 +55,29 @@ cumulative 포맷의 최상위 키:
 | `timeout_per_step_seconds` | int | 604800 | step wall-clock 타임아웃(초). **발산(NaN·dt붕괴) 케이스의 최종 안전망** — 기본 7일은 사실상 무한이라 발산 시나리오는 반드시 짧게(예 낙하 1스텝 실 walltime의 2~3배) 설정 권장. 초과 시 kill+failed 후 러너가 다음 스텝 진행 | CumulativeDesigner.py:819 |
 | `timeout_koomeshmodifier_seconds` | int | 604800 | KooMeshModifier 타임아웃 | CumulativeDesigner.py:820 |
 | `timeout_dynain_seconds` | int | 604800 | dynain 생성 타임아웃 | CumulativeDesigner.py:821 |
+| `schedule` | bool / object | `true` | v134 — 사전 해석 ENDTIM 표가 있으면 DOE 실행 순서(긴 것부터)·`--sequential` 칸 수를 정한다. 아래 절 | Runner/DoeSchedule.py |
+
+#### `environment.schedule` (v134 — DOE 실행 순서·칸 수)
+
+사전 해석(`simulation_params.endtime_presim` 또는 `angle_source.impact_conditions`)이 각도별 ENDTIM 표(`scenario.doe_endtim`)를 만들면 submit 이 다음처럼 한다. 표가 없거나 `"schedule": false`(또는 `{"enabled": false}`)면 예전과 같다(바이트 동일). DOE 번호·표·Run 이름은 바꾸지 않고 제출 순서와 칸 배정만 바꾼다.
+
+- **비용(초).** DOE 마다 `overhead_seconds + seconds_per_ms × Σ_스텝(ENDTIM + DR 켠 둘째 스텝부터 tFinal)` 이다. 표에 없는 스텝은 tFinal 이고, 표 메타 `time_unit` 으로 ms 로 바꾼다. 가정값이라 '보정 안 됨' 이다.
+- **기본 제출.** 비용이 큰 DOE 부터 sbatch 한다. 노드당 1잡(`exclusive`)이라 빈 노드를 Slurm 이 차례로 채운다. 피보나치 각도는 이미 길고 짧은 것이 섞여 있어 효과가 작다(2만 방향 0~0.5%). 긴 잡이 끝 무렵에 몰리는 경우를 막는다.
+- **`--sequential`.** 칸 수 = 무릎 대수(상한 안에서 완료 시각이 `(1 + knee_tolerance)`·상한일 때 완료 이하가 되는 가장 작은 칸 수)다. 상한은 `--nodes`·`licenses ÷ licenses_per_job`·`max_concurrent`·DOE 수 가운데 가장 작은 값이다. 긴 것부터 가장 덜 찬 칸에 넣는다. 라운드로빈보다 2만 방향 칸 100 에서 4%, 100 방향 칸 10~50 에서 19~38% 짧았다.
+- **rerun.** 같은 순서이고, `--sequential` rerun 도 같은 칸 배정이다.
+- **기록.** `slurm_scripts/schedule.json` 에 비용·순서·칸·상한·무릎·대수별 예상 완료 시각·가정을 남긴다. prepare 는 표가 있으면 미리보기 한 줄을 찍는다.
+- **D2R.** `drop_surface.deformable_to_rigid` 로 카드가 실제로 생기면 비용은 ENDTIM 비례 그대로 두고 'D2R 켬(보정 안 됨)' 만 적는다. KCR D2R 은 비행 중 강체·접촉 중 변형체라 실제는 더 짧을 수 있다.
+- impact_conditions 의 심각도 순서·`progressive` 피보나치 순서는 켜져 있으면 덮어쓴다. 그 순서가 필요하면 끈다.
+
+| 키 | 기본값 | 뜻 |
+|---|---|---|
+| `enabled` | `true` | `false` 면 예전 동작 |
+| `licenses` | `null` | LS-DYNA 동시 라이선스 수. 칸 상한 = `licenses ÷ licenses_per_job` |
+| `licenses_per_job` | `1` | 잡 하나가 쓰는 라이선스 수 |
+| `max_concurrent` | `null` | 그 밖의 동시 실행 상한 |
+| `overhead_seconds` | `300` | 잡당 고정비(KMM·Apptainer 기동·stagger 평균·리포트) |
+| `seconds_per_ms` | `20` | 해석 1 ms 당 시간. 보정 안 됨 — Test_005(1 MPP)는 226 s/ms 였다 |
+| `knee_tolerance` | `0.05` | 무릎 판정 여유 |
 
 #### 라이선스 관련 env (`lsdyna_apptainer_env` 내부)
 

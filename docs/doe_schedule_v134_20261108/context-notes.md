@@ -20,3 +20,14 @@
   - 기본 제출(Slurm 동적): 2만 개는 N 2~1000 에서 0~0.5%, 100 개는 −1.2~0.7% 다. 피보나치 순서가 이미 섞여 있어 하한에 붙는다.
   - `--sequential` 고정 칸: 2만 개는 N 50·100·300·1000 에서 2.9·4.2·11·26%, 100 개는 N 4·10·25·50 에서 15·19·37·38% 다.
   - 무릎(Σ ÷ 최장)은 100 개 21~29, 2만 개 3000~4300 이다. 큰 집합은 라이선스·노드 상한이 먼저 걸린다.
+
+## KCR 연결 (11-08, 서브에이전트)
+- 계획은 KooChainRun `_doe_schedule` 한 곳에서 짠다. 요약 한 줄을 찍고 `slurm_scripts/schedule.json` 을 쓴다. 틀린 값은 ❌ 뒤 종료 1 이고, 부르는 곳은 모두 sbatch·jobs.json 전이다.
+- 기본 제출·batch 폴링은 `_doe_order`(표가 있으면 order, 없으면 1..N)를 돈다. batch 는 같은 폴링에 함께 보인 .done 만 긴 것부터라 효과는 작다(KMM 생성 순서가 먼저다).
+- `--sequential` 칸 `--time` 은 지금 식 그대로다(칸 F_d 합의 최대를 모든 칸에). 칸마다 다르게 하지 않았다.
+- rerun 은 대상만으로 계획을 짠다(`build_schedule(does=)`). 표 밖 DOE 가 섞이면 None 이라 지금 동작이다. `--sequential` rerun 칸 수도 무릎이다(상한 = 노드 수(--nodes 또는 자동 감지)·licenses·max_concurrent·대상 수).
+- rerun 도 schedule.json 을 덮어쓴다(mode rerun). submit 계획은 runner_config 로 다시 셀 수 있다.
+- prepare 에서 틀린 값은 ❌ 한 줄만 찍고 prepare 는 마친다. runner_config 를 쓴 뒤라 멈추면 반쯤 된 상태가 남고, submit·rerun 이 sbatch 전에 멈춘다.
+- jobs.json 은 형식·필드 그대로이고 키 순서만 제출 순서다. 읽는 곳(JobManager·AdaptiveReprioritize)은 모두 DOE 키로 찾는다.
+- 바이트 동일은 test_kcr_doe_schedule [0] 의 GOLDEN(ddd1a4c 코드로 뽑음)과, HEAD 사본과 화면 출력까지 직접 비교(PID·rerun 시각 빼고)로 봤다. scratch_run 도 직접 비교로 같다.
+- test_kcr_endtime_presim 의 라운드로빈 기대값(:840)은 schedule false 로 남겼다. 기본 제출 --time(:835)은 순서와 무관해 켠 채로 둔다.

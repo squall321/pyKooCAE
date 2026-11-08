@@ -21,6 +21,7 @@ DEFAULTS = {"enabled": True, "licenses": None, "licenses_per_job": 1, "max_concu
             "overhead_seconds": 300.0, "seconds_per_ms": 20.0, "knee_tolerance": 0.05}
 FORMAT = "kcr_doe_schedule v1"
 SCHEDULE_FILE = "schedule.json"
+RERUN_SCHEDULE_FILE = "schedule_rerun.json"   # rerun 계획 — submit 의 schedule.json 을 덮지 않는다
 _TO_MS = {"s": 1000.0, "ms": 1.0}
 
 
@@ -214,12 +215,18 @@ def _by_n(costs, cap, knee):
             for n in sorted(x for x in ns if 1 <= x <= cap)]
 
 
-def build_schedule(config, opts, mode, nodes=None, lanes=False):
+def build_schedule(config, opts, mode, nodes=None, lanes=False, does=None):
     """스케줄 dict(schedule.json 내용) — 표가 없거나 꺼졌으면 None. mode: 'submit'·'sequential'·'rerun'·'prepare'.
-    nodes 는 칸 상한에 넣을 노드 수(--sequential 의 --nodes). lanes=True 면 무릎 칸 수로 칸 배정을 넣는다."""
+    nodes 는 칸 상한에 넣을 노드 수(--sequential 의 --nodes). lanes=True 면 무릎 칸 수로 칸 배정을 넣는다.
+    does 를 주면 그 DOE 만으로 짠다(rerun 대상). 비었거나 표 밖 DOE 가 있으면 None 이라 호출 쪽은 지금 동작 그대로다."""
     costs, notes = doe_costs(config, opts)
     if costs is None:
         return None
+    if does is not None:
+        does = set(does)
+        if not does or not does <= set(costs):
+            return None
+        costs = {d: c for d, c in costs.items() if d in does}
     cap, cap_from = concurrency_cap(opts, nodes, len(costs))
     knee = knee_n(costs, cap, opts["knee_tolerance"])
     d2r = d2r_active(config)
@@ -253,11 +260,11 @@ def summary_line(plan):
             f"{a['seconds_per_ms']:g} s, 보정 안 됨{tail}")
 
 
-def write_schedule(plan, directory):
-    """plan 을 directory/schedule.json 으로 쓴다 → 경로."""
+def write_schedule(plan, directory, name=SCHEDULE_FILE):
+    """plan 을 directory/name(기본 schedule.json) 으로 쓴다 → 경로."""
     import json
     os.makedirs(directory, exist_ok=True)
-    path = os.path.join(directory, SCHEDULE_FILE)
+    path = os.path.join(directory, name)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(plan, f, ensure_ascii=False, indent=1)
         f.write("\n")

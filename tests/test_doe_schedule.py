@@ -7,7 +7,7 @@
   [3] lpt_order·lpt_lanes·makespan·lower_bound — 같은 값 처리, 작은 집합 전수 탐색 대조(LPT 4/3 보장), 칸 분할
   [4] knee_n·concurrency_cap — 균일·꼬리 분포, 여유, 상한 출처
   [5] d2r_active — 켬·dict·RigidWall·include_wall_in_general·drop_contact Type General
-  [6] build_schedule·summary_line·write_schedule — 표 없음 None, 칸 배정, D2R 알림
+  [6] build_schedule·summary_line·write_schedule — 표 없음 None, 칸 배정, D2R 알림, does(rerun 대상만·표 밖이면 None)
   [7] 성능 — 2만 DOE build_schedule(상한 2만), 실제 2만 방향 표가 있으면 라운드로빈 대비 이득
 """
 import contextlib
@@ -200,6 +200,13 @@ def test_build(tmp):
     check("요약 줄 — DOE 수·무릎·상한·가정", "DOE 20" in line and f"무릎 {p2['knee']} 칸" in line and "보정 안 됨" in line, line)
     path = S.write_schedule(p, os.path.join(tmp, "slurm_scripts"))
     check("schedule.json 쓰기·읽기 같음", json.load(open(path, encoding="utf-8")) == json.loads(json.dumps(p)), path)
+    p3 = S.build_schedule(cfg, opts, "rerun", nodes=4, lanes=True, does=[3, 20, 7, 3])
+    check("does(rerun 대상) — 그 DOE 만(중복 한 번): DOE 3·순서 [20, 7, 3]·상한 3(doe_count)·칸 = lpt_lanes(대상 비용)",
+          p3["doe_count"] == 3 and p3["order"] == [20, 7, 3] and set(p3["costs_seconds"]) == {"3", "7", "20"}
+          and p3["cap_from"] == {"nodes": 4, "doe_count": 3}
+          and p3["lanes"] == S.lpt_lanes({20: 700.0, 7: 440.0, 3: 360.0}, p3["knee"]), json.dumps(p3)[:300])
+    check("does 가 비었거나 표 밖 DOE(21) 가 있으면 None — 호출 쪽은 지금 동작",
+          S.build_schedule(cfg, opts, "rerun", does=[]) is None and S.build_schedule(cfg, opts, "rerun", does=[1, 21]) is None)
 
 
 def test_perf():
