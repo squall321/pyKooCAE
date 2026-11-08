@@ -101,7 +101,8 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         '--nodes',
         type=int,
         default=2,
-        help='Number of nodes to use (default: 2)'
+        help='Number of nodes to use (default: 2). --sequential 에서는 칸(잡) 수 상한 — v134: ENDTIM 표가 있으면 '
+             '예상 완료가 더 줄지 않는 가장 작은 칸 수(무릎)만 쓰고, 줄이면 한 줄 알린다 (environment.schedule)'
     )
     submit_parser.add_argument(
         '--jobs-per-node',
@@ -277,7 +278,8 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         '--nodes',
         type=int,
         default=None,
-        help='--sequential 모드에서 사용할 노드 수 (기본: 살아있는 노드 자동 감지)'
+        help='--sequential 모드에서 사용할 노드 수 (기본: 살아있는 노드 자동 감지). v134: ENDTIM 표가 있으면 '
+             '그 안에서 무릎 칸 수만 쓰고, 줄이면 한 줄 알린다 (environment.schedule)'
     )
     rerun_parser.add_argument(
         '--cleanup-stale',
@@ -569,12 +571,14 @@ def _step_dr_time_factor(runner_config: dict) -> int:
     return max(1, 1 + (total_steps - 1) * per_later_step)
 
 
-def _doe_schedule(runner_config, mode, nodes=None, lanes=False, does=None, slurm_dir=None, file_name=None):
+def _doe_schedule(runner_config, mode, nodes=None, lanes=False, does=None, slurm_dir=None):
     """v134 environment.schedule — ENDTIM 표(scenario.doe_endtim)가 있으면 실행 계획(order 긴 것부터, lanes=True 면 무릎 칸
-    수의 lanes)을 짜 요약 한 줄을 찍고 slurm_dir/schedule.json 에 남긴다. 표가 없거나 꺼졌으면 None 이라 부르는 쪽은 지금
-    동작 그대로다. 값이 틀리면 ❌ 후 종료 1 — 부르는 곳은 모두 sbatch 전이다. 계약은 Runner/DoeSchedule.py."""
-    from Runner.DoeSchedule import (SCHEDULE_FILE, DoeScheduleError, build_schedule, schedule_options, summary_line,
-                                    write_schedule)
+    수의 lanes)을 짜 요약 한 줄과 알림(시간 단위 짐작·D2R·표 밖 DOE)을 찍고 slurm_dir/schedule.json 에 남긴다. 표가 없으면
+    값도 보지 않고 None, 꺼졌으면 None 이라 부르는 쪽은 지금 동작 그대로다. 값이 틀리면 ❌ 후 종료 1 — 부르는 곳은 모두
+    sbatch 전이다. 계약은 Runner/DoeSchedule.py."""
+    if not (runner_config.get("scenario") or {}).get("doe_endtim"):
+        return None
+    from Runner.DoeSchedule import DoeScheduleError, build_schedule, schedule_options, summary_line, write_schedule
     try:
         plan = build_schedule(runner_config, schedule_options(runner_config.get("environment")), mode,
                               nodes=nodes, lanes=lanes, does=does)
@@ -583,8 +587,10 @@ def _doe_schedule(runner_config, mode, nodes=None, lanes=False, does=None, slurm
         sys.exit(1)
     if plan is not None:
         print(summary_line(plan))
+        for note in plan["notes"]:
+            print(f"    · {note}")
         if slurm_dir is not None:
-            print(f"  Schedule:   {write_schedule(plan, str(slurm_dir), file_name or SCHEDULE_FILE)}")
+            print(f"  Schedule:   {write_schedule(plan, str(slurm_dir))}")
     return plan
 
 
@@ -645,16 +651,19 @@ def cmd_prepare(args):
             _slurm_dir.mkdir(parents=True, exist_ok=True)
             print(f"  Output dir: {_output_dir}")
 
-        # v134 environment.schedule — ENDTIM 표가 있으면 실행 순서·칸 수 미리보기 한 줄. 상한은 licenses·max_concurrent·DOE
-        # 수만이다(노드 수는 submit --sequential --nodes 에서 더한다). runner_config 는 바꾸지 않는다
-        from Runner.DoeSchedule import DoeScheduleError, build_schedule, schedule_options, summary_line
-        try:
-            _plan = build_schedule(_rc, schedule_options(_rc.get("environment")), "prepare")
-        except DoeScheduleError as e:
-            _plan = None
-            print(f"❌ {e} — prepare 는 마치지만 submit·rerun 은 sbatch 전에 멈춘다. 값을 고친 뒤 다시 prepare 할 것")
-        if _plan is not None:
-            print(summary_line(_plan))
+        # v134 environment.schedule — ENDTIM 표가 있으면 실행 순서·칸 수 미리보기 한 줄과 알림. 상한은 licenses·max_concurrent·
+        # DOE 수만이다(노드 수는 submit --sequential --nodes 에서 더한다). 표가 없으면 값도 보지 않는다. runner_config 는 그대로다
+        if (_rc.get("scenario") or {}).get("doe_endtim"):
+            from Runner.DoeSchedule import DoeScheduleError, build_schedule, schedule_options, summary_line
+            try:
+                _plan = build_schedule(_rc, schedule_options(_rc.get("environment")), "prepare")
+            except DoeScheduleError as e:
+                _plan = None
+                print(f"❌ {e} — prepare 는 마치지만 submit·rerun 은 sbatch 전에 멈춘다. 값을 고친 뒤 다시 prepare 할 것")
+            if _plan is not None:
+                print(summary_line(_plan))
+                for _note in _plan["notes"]:
+                    print(f"    · {_note}")
 
         print(f"✅ Successfully generated: {output_path}")
 
@@ -1888,11 +1897,17 @@ def _submit_cumulative(args, config_path):
                   f"ceil(endtim / tFinal) + DR) = {time_limit} (per DOE)")
 
     # v134 environment.schedule — 표가 있으면 sbatch 를 긴 것부터(LPT), --sequential 은 상한(--nodes·라이선스·max_concurrent·
-    # DOE 수) 안 무릎 칸 수에 긴 것부터 가장 덜 찬 칸으로. 표가 없거나 꺼지면 None 이라 아래는 지금 그대로(DOE 번호 순서)다
-    _seq = bool(getattr(args, 'sequential', False))
+    # DOE 수) 안 무릎 칸 수에 긴 것부터 가장 덜 찬 칸으로. 표가 없거나 꺼지면 None 이라 아래는 지금 그대로(DOE 번호 순서)다.
+    # batch_koomeshmodifier 와 --sequential 을 함께 주면 아래에서 batch 가 이기므로 칸 없이 submit 으로 적는다
+    _seq = bool(getattr(args, 'sequential', False)) and not runner_config.get("scenario", {}).get("batch_koomeshmodifier", False)
     _sched = _doe_schedule(runner_config, "sequential" if _seq else "submit", nodes=args.nodes if _seq else None,
                            lanes=_seq, slurm_dir=Path(output_dir) / "slurm_scripts")
     _doe_order = _sched["order"] if _sched is not None else list(range(1, doe_count + 1))
+    if _seq and _sched is not None:   # 무릎·상한 때문에 --nodes 보다 적은 칸을 쓰면 한 줄 알린다
+        from Runner.DoeSchedule import fewer_slots_line
+        _line = fewer_slots_line(_sched, args.nodes, "--sequential: --nodes")
+        if _line:
+            print(_line)
 
     # 파티션 최대 시간 확인 → time_limit 자동 cap
     try:
@@ -2518,6 +2533,9 @@ exit $EXIT_CODE
             job_name = f"{project_name}_SEQ{node_idx:03d}"
             script_path = slurm_dir / f"run_seq_{node_idx:03d}.sh"
             log_path = slurm_dir / f"seq_{node_idx:03d}_%j.log"
+            # v134 — 켜면 칸 안 DOE 는 긴 것부터라 범위가 아니다 — 앞 몇 개를 적는다
+            doe_label = (f"{doe_list[0]}~{doe_list[-1]}" if _sched is None
+                         else ", ".join(map(str, doe_list[:6])) + (" …" if len(doe_list) > 6 else ""))
 
             seq_mem = "0" if exclusive else memory  # exclusive 시 전체 메모리
 
@@ -2566,7 +2584,7 @@ echo ""
 echo "========================================"
 echo "Sequential Job: {job_name}"
 echo "Node: $(hostname)"
-echo "DOEs: {doe_list[0]}~{doe_list[-1]} ({len(doe_list)}ea)"
+echo "DOEs: {doe_label} ({len(doe_list)}ea)"
 echo "Start: $(date)"
 echo "========================================"
 
@@ -2604,7 +2622,7 @@ echo "========================================"
                 if result.returncode == 0:
                     job_id = result.stdout.strip().split()[-1]
                     submitted_jobs.append((node_idx, job_id))
-                    print(f"  Slot {node_idx:2d}: submitted (job {job_id}) — DOE {doe_list[0]}~{doe_list[-1]}")
+                    print(f"  Slot {node_idx:2d}: submitted (job {job_id}) — DOE {doe_label}")
                     # jobs.json에 각 DOE 기록
                     for doe_idx in doe_list:
                         jobs_data["jobs"][str(doe_idx)] = {
@@ -2642,7 +2660,7 @@ echo "========================================"
     print("=" * 80)
     if seq_mode:
         print(f"Submitted {len(submitted_jobs)} sequential jobs ({doe_count} DOEs across "
-              f"{args.nodes if _sched is None else _sched['knee']} nodes)")
+              f"{_sched['knee'] if _sched is not None and 'lanes' in _sched else args.nodes} nodes)")
     else:
         print(f"Submitted {len(submitted_jobs)}/{doe_count} DOE jobs")
     if scratch_enabled:
@@ -2832,7 +2850,7 @@ def cmd_stop(args):
     print(f"취소: {cancelled}개 / 이미 종료: {already}개 / 실패: {errors}개")
 
 
-def _rerun_sequential(manager, target_does, exclude_list, args):
+def _rerun_sequential(manager, target_does, exclude_list, args, plan=None):
     """남은 DOE를 노드에 분배하여 sequential 배치 잡으로 재제출"""
     import json
     import subprocess
@@ -2897,12 +2915,18 @@ def _rerun_sequential(manager, target_does, exclude_list, args):
     if num_nodes > len(target_does):
         num_nodes = len(target_does)
 
-    # v134 — 표가 있으면 대상 DOE 만으로 짠 무릎 칸 수(상한 = 위 노드 수·licenses·max_concurrent·대상 수)에 긴 것부터
-    # 가장 덜 찬 칸으로. 표가 없거나 꺼지면 None 이라 아래 round-robin 그대로다
-    from Runner.DoeSchedule import RERUN_SCHEDULE_FILE
-    _sched = _doe_schedule(runner_config, "rerun", nodes=num_nodes, lanes=True, does=target_does,
-                           slurm_dir=Path(output_dir) / "slurm_scripts", file_name=RERUN_SCHEDULE_FILE)
+    # v134 — cmd_rerun 이 대상 DOE 만으로 짠 계획(plan)의 무릎 칸 수(상한 = 위 노드 수·licenses·max_concurrent·대상 수)에
+    # 긴 것부터 가장 덜 찬 칸으로 넣는다. 그 상한의 노드 수가 위 노드 수와 다르면(--nodes 없이 자동 감지) 다시 짠다.
+    # 표가 없거나 꺼지면 None 이라 아래 round-robin 그대로다
+    _sched = plan
+    if _sched is not None and _sched["cap_from"].get("nodes") != max(1, num_nodes):
+        _sched = _doe_schedule(runner_config, "rerun", nodes=num_nodes, lanes=True, does=target_does)
     if _sched is not None:
+        from Runner.DoeSchedule import RERUN_SCHEDULE_FILE, fewer_slots_line, write_schedule
+        print(f"  Schedule:   {write_schedule(_sched, str(Path(output_dir) / 'slurm_scripts'), RERUN_SCHEDULE_FILE)}")
+        _line = fewer_slots_line(_sched, num_nodes, "rerun --sequential: 노드")
+        if _line:
+            print(_line)
         num_nodes = _sched["knee"]
 
     print(f"Sequential rerun: {len(target_does)} DOE를 {num_nodes}개 노드에 분배")
@@ -2912,14 +2936,15 @@ def _rerun_sequential(manager, target_does, exclude_list, args):
         node_doe_map = {n: [] for n in range(num_nodes)}
         for i, doe_idx in enumerate(sorted(target_does)):
             node_doe_map[i % num_nodes].append(doe_idx)
-    else:
-        node_doe_map = dict(enumerate(_sched["lanes"]))
+    else:   # 표 밖 DOE(--does 의 doe_count 밖)는 예전처럼 그대로 낸다 — 마지막 칸 맨 뒤(그 DOE 만 실패한다)
+        node_doe_map = {i: list(lane) for i, lane in enumerate(_sched["lanes"])}
+        node_doe_map[len(node_doe_map) - 1] += [d for d in target_does if str(d) not in _sched["costs_seconds"]]
 
     for node_idx, doe_list in node_doe_map.items():
         if _sched is None:
             print(f"  Slot {node_idx}: {len(doe_list)} DOEs (DOE {doe_list[0]}~{doe_list[-1]})")
         else:   # v134 — 칸 안은 긴 것부터라 범위가 아니다
-            _h = sum(_sched["costs_seconds"][str(d)] for d in doe_list) / 3600
+            _h = sum(_sched["costs_seconds"].get(str(d), 0.0) for d in doe_list) / 3600
             print(f"  Slot {node_idx}: {len(doe_list)} DOEs (DOE {', '.join(map(str, doe_list[:6]))}"
                   f"{' …' if len(doe_list) > 6 else ''}, 예상 {_h:.2f} h)")
 
@@ -3190,6 +3215,13 @@ def cmd_rerun(args):
 
     print(f"재실행 대상: {len(target_does)}개 - DOE {target_does}")
 
+    # v134 environment.schedule — 표가 있으면 대상이 정해진 바로 뒤에 계획을 짠다. 틀린 값이면 확인·--cleanup-stale 지우기
+    # 전에 멈추고, --dry-run 도 [schedule] 줄을 찍는다. --sequential 은 노드 수가 정해진 뒤 _rerun_sequential 이 이 계획을 쓴다
+    # (--nodes 없이 자동 감지하면 다시 짠다). 표가 없거나 꺼지면 None 이라 아래는 지금 그대로다
+    _seq = bool(getattr(args, 'sequential', False))
+    _sched = _doe_schedule(manager.load_runner_config(), "rerun", lanes=_seq, does=target_does,
+                           nodes=min(args.nodes, len(target_does)) if _seq and args.nodes is not None else None)
+
     # 실패 노드 제외 처리
     exclude_nodes_arg = getattr(args, 'exclude_nodes', None)
     exclude_nodes = set()
@@ -3293,14 +3325,17 @@ def cmd_rerun(args):
     # --sequential 모드: submit의 sequential 로직 재사용
     if getattr(args, 'sequential', False):
         from Runner.JobManager import JobManager as _JM  # noqa: F401
-        _rerun_sequential(manager, target_does, exclude_list, args)
+        _rerun_sequential(manager, target_does, exclude_list, args, _sched)
     else:
-        # v134 — 표가 있으면 대상 DOE 만으로 짠 계획의 긴 것부터 다시 낸다 (표가 없거나 꺼지면 지금 순서)
-        _rc = manager.load_runner_config()
-        from Runner.DoeSchedule import RERUN_SCHEDULE_FILE
-        _sched = _doe_schedule(_rc, "rerun", does=target_does,
-                               slurm_dir=Path(_rc["project"]["output_dir"]) / "slurm_scripts", file_name=RERUN_SCHEDULE_FILE)
-        results = manager.resubmit_does(target_does if _sched is None else _sched["order"], exclude_nodes=exclude_list)
+        # v134 — 표가 있으면 위 계획의 긴 것부터 다시 내고, 표 밖 DOE 는 맨 뒤에 받은 순서 그대로 낸다(예전처럼 그 DOE 만
+        # 실패한다). 표가 없거나 꺼지면 지금 순서
+        _order = target_does
+        if _sched is not None:
+            from Runner.DoeSchedule import RERUN_SCHEDULE_FILE, write_schedule
+            _slurm = Path(manager.load_runner_config()["project"]["output_dir"]) / "slurm_scripts"
+            print(f"  Schedule:   {write_schedule(_sched, str(_slurm), RERUN_SCHEDULE_FILE)}")
+            _order = _sched["order"] + [d for d in target_does if str(d) not in _sched["costs_seconds"]]
+        results = manager.resubmit_does(_order, exclude_nodes=exclude_list)
         print(f"재제출 완료: {len(results)}개")
         if exclude_list:
             print(f"제외 노드: {exclude_list}")

@@ -29,7 +29,7 @@ CLI add_parser 의 help/description (`KooChainRun:236-237`):
 | `--does` | 문자열 | `None` | 특정 DOE만 재실행 (콤마 구분, 예: `1,3,7`). 지정 시 자동 대상 선정 무시 | `KooChainRun:255-260` |
 | `--exclude-nodes` | 문자열 | `None` | 제외할 노드 (콤마 구분, 예: `node07,node12`). `auto` 로 설정하면 이전 실패 노드를 자동 감지·제외 | `KooChainRun:261-267` |
 | `--sequential` | 플래그 (`store_true`) | `False` | 남은 DOE 를 노드에 분배해 배치 잡으로 실행 (`submit --sequential` 과 동일) | `KooChainRun:268-272` |
-| `--nodes` | 정수 | `None` | `--sequential` 모드에서 사용할 노드 수 (기본: 살아있는 노드 자동 감지) | `KooChainRun:273-278` |
+| `--nodes` | 정수 | `None` | `--sequential` 모드에서 사용할 노드 수 (기본: 살아있는 노드 자동 감지). v134: ENDTIM 표가 있으면 그 안에서 무릎 칸 수만 쓰고 줄이면 ⚠️ 한 줄 | `KooChainRun:273-278` |
 | `--cleanup-stale` | 플래그 (`store_true`) | `False` | 재실행 전 중단된 DOE 의 이전 Run 디렉토리 자동 삭제 (기본: 안 함) | `KooChainRun:279-283` |
 
 추가로 argparse 가 자동 제공하는 `-h` / `--help` 가 사용 가능합니다 (별도 add 정의는 없으나 argparse 기본 동작).
@@ -167,6 +167,12 @@ KooChainRun - DOE 상태 확인
      - 노드당 DOE 수에 비례해 time_limit 확장(+파티션 최대 cap) — `KooChainRun:2161-2200`.
      - 슬롯별 `rerun_seq_<HHMMSS>_<NNN>.sh` 스크립트를 생성, 각 DOE 에 대해 `{koochainrun_path} run {config} --doe {N}` 을 순차 실행하는 배치 잡으로 `sbatch` 제출 — `KooChainRun:2239-2342`.
      - 제출된 슬롯의 모든 DOE 를 `jobs.json` 에 `status: resubmitted`, `rerun: true`, `sequential_slot` 으로 기록(atomic write) — `KooChainRun:2328-2353`.
+
+9. **v134 실행 순서·칸 수 (`environment.schedule`)** — 사전 해석 ENDTIM 표(`scenario.doe_endtim`)가 있고 꺼지지 않았으면 submit 과 같은 규칙을 대상 DOE 에만 쓴다(`commands/submit.md` 4-5, `Runner/DoeSchedule.py`).
+   - 계획은 재실행 대상이 정해진 바로 뒤에 짠다. 틀린 값이면 확인 묻기·`--cleanup-stale` 삭제 전에 `❌` 후 종료 1 이고, `--dry-run` 도 `[schedule]` 요약 줄을 찍는다.
+   - 일반 모드는 대상을 예상 시간이 긴 것부터 다시 낸다. `--does` 의 표 밖 DOE(doe_count 밖)는 계획에서 빼고 맨 뒤에 받은 순서 그대로 낸다(예전처럼 그 DOE 만 실패한다).
+   - sequential 모드는 칸 수가 무릎 대수다(상한 = 노드 수·licenses·max_concurrent·대상 수). 긴 것부터 가장 덜 찬 칸에 넣고, 표 밖 DOE 는 마지막 칸 맨 뒤에 둔다. `--nodes` 없이 자동 감지하면 감지한 노드 수로 다시 짠다(요약 줄이 두 번 나온다). 노드 수보다 적게 쓰면 ⚠️ 한 줄로 알린다.
+   - 계획은 `slurm_scripts/schedule_rerun.json` 에 남긴다(submit 의 `schedule.json` 은 그대로). 표가 없거나 꺼지면 예전과 같다.
 
 ---
 

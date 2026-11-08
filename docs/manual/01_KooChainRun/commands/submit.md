@@ -32,14 +32,14 @@
 |---|---|---|---|---|---|
 | `config` | 위치 인자 (문자열) | 예 | — | `runner_config.json` 파일 경로 | `KooChainRun:86-89` |
 | `--mode` | `choices=[large-scale, cumulative]` | 아니오 | `cumulative` | 제출 방식. `cumulative`=DOE별 개별 잡, `large-scale`=`LargeScaleDOEManager` 배열 잡 | `KooChainRun:90-96` |
-| `--nodes` | `int` | 아니오 | `2` | 사용할 노드 수 (sequential 모드에서는 생성할 잡 수) | `KooChainRun:97-102` |
+| `--nodes` | `int` | 아니오 | `2` | 사용할 노드 수 (sequential 모드에서는 생성할 잡 수 — v134: ENDTIM 표가 있으면 그 안에서 무릎 칸 수만 쓰고 줄이면 ⚠️ 한 줄, 4-5) | `KooChainRun:97-102` |
 | `--jobs-per-node` | `int` | 아니오 | `4` | 노드당 동시 잡 수 | `KooChainRun:103-108` |
 | `--ncpu-per-job` | `int` | 아니오 | `None` → `environment.ncpu`, 없으면 `16` | 잡당 CPU 수 | `KooChainRun:109-114`, 적용 `KooChainRun:929,1218` |
 | `--partition` | 문자열 | 아니오 | `normal` | Slurm 파티션 | `KooChainRun:115-119` |
 | `--memory` | 문자열 | 아니오 | `None` → `environment.memory`, 없으면 `64G` | DOE 잡당 메모리 | `KooChainRun:120-124`, 적용 `KooChainRun:1191` |
 | `--time-limit` | 문자열 | 아니오 | `24:00:00` | DOE 잡당 시간 제한 | `KooChainRun:125-129` |
 | `--data-root` | 문자열 | 아니오 | `/data` | 실행 루트 디렉토리 (large-scale 모드에서 사용) | `KooChainRun:130-134`, 적용 `KooChainRun:944` |
-| `--sequential` | 플래그 (`store_true`) | 아니오 | `False` | 노드당 1잡, 잡 안에서 여러 DOE 순차 실행. `--nodes` 수만큼 잡 생성 | `KooChainRun:135-140` |
+| `--sequential` | 플래그 (`store_true`) | 아니오 | `False` | 노드당 1잡, 잡 안에서 여러 DOE 순차 실행. `--nodes` 수만큼 잡 생성 (v134: ENDTIM 표가 있으면 무릎 칸 수·긴 것부터 가장 덜 찬 칸, 4-5) | `KooChainRun:135-140` |
 
 호출 디스패치: `args.command == 'submit'` → `cmd_submit(args)` (`KooChainRun:326-327`).
 
@@ -168,12 +168,13 @@
 11. 요약 출력 + Next steps 안내(status/logs/stop/rerun/diagnose/collect) (`KooChainRun:1918-1938`).
 
 ### 4-5. 실행 순서·칸 수 (v134, `environment.schedule`)
-사전 해석 ENDTIM 표(`scenario.doe_endtim`)가 있고 `environment.schedule` 이 꺼지지 않았으면 `Runner/DoeSchedule.py` 로 DOE 마다 예상 시간을 셈하고 다음을 한다. DOE 번호·스크립트 이름·`jobs.json` 형식은 그대로다.
-- 일반 모드는 sbatch 를 긴 것부터 낸다. 빈 노드는 Slurm 이 차례로 채운다.
-- `--sequential` 은 칸 수를 무릎 대수로 정한다(상한 = `--nodes`·라이선스·`max_concurrent`·DOE 수). DOE 는 긴 것부터 가장 덜 찬 칸에 넣는다. 칸별 `--time` 은 예전처럼 칸 DOE 배율 합이다.
-- rerun 도 같은 순서·칸 배정이다.
-- `slurm_scripts/schedule.json` 과 요약 한 줄(`[schedule] DOE … · 무릎 … 칸 · 예상 완료 …`)을 남긴다. 예상 시간은 가정값(`overhead_seconds`·`seconds_per_ms`)이라 보정 안 됨이다.
-- 표가 없거나 꺼지면 예전과 바이트까지 같다.
+사전 해석 ENDTIM 표(`scenario.doe_endtim`)가 있고 `environment.schedule` 이 꺼지지 않았으면(없음·`true`·`null` 은 켬) `Runner/DoeSchedule.py` 로 DOE 마다 예상 시간을 셈하고 다음을 한다. DOE 번호·스크립트 이름·`jobs.json` 형식은 그대로다(`jobs.json` 키 순서만 제출 순서).
+- 일반 모드는 sbatch 를 긴 것부터 낸다. 동시 상한은 두지 않고 순서만 바꾼다 — 빈 노드는 Slurm 이 차례로 채운다. 이득은 사실상 0 이다(−1.2 ~ +0.5%). batch 모드도 함께 보인 `.done` 을 긴 것부터 낸다.
+- `--sequential` 은 칸 수를 무릎 대수로 정한다(상한 = `--nodes`·라이선스·`max_concurrent`·DOE 수, 기본 `knee_tolerance` 0 이면 예상 완료가 더 줄지 않는 가장 작은 칸 수). `--nodes` 보다 적게 쓰면 `⚠️  --sequential: --nodes N 가운데 K 칸만 쓴다 — …` 한 줄로 알린다. DOE 는 긴 것부터 가장 덜 찬 칸에 넣는다. 슬롯 `--time` 은 예전 식 그대로 칸마다 DOE 배율 F_d 합을 셈해 그 최대를 모든 칸에 같게 준다. 슬롯 스크립트의 `DOEs:` 줄은 범위가 아니라 DOE 목록(앞 6 개 + …)이다. `licenses`·`max_concurrent` 는 이 칸 수에만 걸린다. batch 와 함께 주면 batch 가 이겨 칸 없이 기록한다.
+- rerun 도 대상 DOE 만으로 같은 순서·칸 배정이다(`commands/rerun.md`).
+- 요약 한 줄(`[schedule] DOE … · 무릎 … 칸 · 예상 완료 …`)과 그 아래 알림(시간 단위 짐작·D2R·표 밖 DOE)을 찍고 `slurm_scripts/schedule.json`(rerun 은 `schedule_rerun.json`)을 남긴다. 예상 시간은 가정값(`overhead_seconds`·`seconds_per_ms`)이라 보정 안 됨이다.
+- 틀린 값이면 sbatch·`jobs.json` 전에 `❌` 후 종료 1 이다.
+- 표가 없거나 꺼지면 예전과 바이트까지 같다. 이때는 다른 키를 검사하지 않고 경고도 없다.
 
 ### 4-3. large-scale 경로 — `_submit_large_scale` (`KooChainRun:921`)
 `LargeScaleDOEManager(runner_config_path, data_root, nodes, jobs_per_node, ncpu_per_job)`를 생성하고 `manager.run()`을 호출하는 배열 잡 방식입니다 (`KooChainRun:942-949`). `--data-root`는 이 경로에서만 사용됩니다.

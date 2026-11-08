@@ -11,4 +11,5 @@
 - [x] 꺼짐 바이트 동일, 기존 KCR 시험 묶음 (GOLDEN 10 경우 + HEAD 사본과 화면까지 직접 비교)
 - [ ] 문서 — scenario_reference(environment.schedule), commands/submit.md, cli_help_kcr
 - [ ] 적대 리뷰
+  - [x] 2차 반영(서브에이전트) — knee_tolerance 0·칸 줄면 ⚠️·시간 단위 짐작·끔/표 없음 무검사·rerun 검사 순서·표 밖 DOE·슬롯 echo·batch+seq·돌연변이 M1·M3·M4·문서·이득 수치
 - [ ] 빌드(KCR 만, pykoocae-53 과 순서 맞춤)·SIF·tar, 커밋·푸시·알림·메모리

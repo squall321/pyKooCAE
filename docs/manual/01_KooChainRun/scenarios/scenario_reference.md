@@ -59,25 +59,25 @@ cumulative 포맷의 최상위 키:
 
 #### `environment.schedule` (v134 — DOE 실행 순서·칸 수)
 
-사전 해석(`simulation_params.endtime_presim` 또는 `angle_source.impact_conditions`)이 각도별 ENDTIM 표(`scenario.doe_endtim`)를 만들면 submit 이 다음처럼 한다. 표가 없거나 `"schedule": false`(또는 `{"enabled": false}`)면 예전과 같다(바이트 동일). DOE 번호·표·Run 이름은 바꾸지 않고 제출 순서와 칸 배정만 바꾼다.
+사전 해석(`simulation_params.endtime_presim` 또는 `angle_source.impact_conditions`)이 각도별 ENDTIM 표(`scenario.doe_endtim`)를 만들면 submit 이 다음처럼 한다. `schedule` 이 없거나 `true`·`null` 이면 켬이다. 표가 없거나 `"schedule": false`(또는 `{"enabled": false}`)면 예전과 같다(바이트 동일) — 이때는 다른 키를 검사하지 않고 경고도 없다. DOE 번호·표·Run 이름은 바꾸지 않고 제출 순서와 칸 배정만 바꾼다.
 
-- **비용(초).** DOE 마다 `overhead_seconds + seconds_per_ms × Σ_스텝(ENDTIM + DR 켠 둘째 스텝부터 tFinal)` 이다. 표에 없는 스텝은 tFinal 이고, 표 메타 `time_unit` 으로 ms 로 바꾼다. 가정값이라 '보정 안 됨' 이다.
-- **기본 제출.** 비용이 큰 DOE 부터 sbatch 한다. 노드당 1잡(`exclusive`)이라 빈 노드를 Slurm 이 차례로 채운다. 피보나치 각도는 이미 길고 짧은 것이 섞여 있어 효과가 작다(2만 방향 0~0.5%). 긴 잡이 끝 무렵에 몰리는 경우를 막는다.
-- **`--sequential`.** 칸 수 = 무릎 대수(상한 안에서 완료 시각이 `(1 + knee_tolerance)`·상한일 때 완료 이하가 되는 가장 작은 칸 수)다. 상한은 `--nodes`·`licenses ÷ licenses_per_job`·`max_concurrent`·DOE 수 가운데 가장 작은 값이다. 긴 것부터 가장 덜 찬 칸에 넣는다. 라운드로빈보다 2만 방향 칸 100 에서 4%, 100 방향 칸 10~50 에서 19~38% 짧았다.
-- **rerun.** 같은 순서이고, `--sequential` rerun 도 같은 칸 배정이다.
-- **기록.** `slurm_scripts/schedule.json` 에 비용·순서·칸·상한·무릎·대수별 예상 완료 시각·가정을 남긴다. prepare 는 표가 있으면 미리보기 한 줄을 찍는다.
+- **비용(초).** DOE 마다 `overhead_seconds + seconds_per_ms × Σ_스텝(ENDTIM + DR 켠 둘째 스텝부터 tFinal)` 이다. 표에 없는 스텝은 tFinal 이다. 덱 시간 단위는 표 메타 `time_unit` → `units` 의 끝(`mm-t-s` → s, `mm-kg-ms` → ms) → tFinal 짐작(0.5 이상이면 ms) 차례로 정하고, 짐작하면 요약 줄 아래에 알린다. 가정값이라 '보정 안 됨' 이다.
+- **기본 제출.** 비용이 큰 DOE 부터 sbatch 한다. 동시 상한은 두지 않고 순서만 바꾼다 — 노드당 1잡(`exclusive`)이라 빈 노드를 Slurm 이 차례로 채운다. 피보나치 각도는 이미 길고 짧은 것이 섞여 있어 이득은 사실상 0 이다(−1.2 ~ +0.5%). 긴 잡이 끝 무렵에 몰리는 경우를 막는다.
+- **`--sequential`.** 칸 수 = 무릎 대수다. 상한 안에서 완료 시각이 `(1 + knee_tolerance)`·상한일 때 완료 이하가 되는 가장 작은 칸 수이고, 기본 `knee_tolerance` 0 이면 완료 시각이 더 줄지 않는 가장 작은 칸 수다. 상한은 `--nodes`·`licenses ÷ licenses_per_job`·`max_concurrent`·DOE 수 가운데 가장 작은 값이다(`licenses`·`max_concurrent` 는 이 칸 수에만 걸린다). 긴 것부터 가장 덜 찬 칸에 넣고, `--nodes` 보다 적은 칸을 쓰면 ⚠️ 한 줄로 알린다. 슬롯 `--time` 은 칸마다 DOE 배율 F_d 합을 셈해 그 최대를 모든 칸에 같게 준다(칸마다 다르지 않다). 실제 표·기본 가정으로 라운드로빈보다 2만 방향 칸 100 에서 4.2%(무릎 100), 100 방향 칸 10·25·50 에서 18.6·36.8·37.8%(무릎 10·25·31) 짧았다. 드물게 라운드로빈이 우연히 더 빠를 수 있다(2만 표 앞 100·1000 개의 칸 7·37 에서 0.3·0.5%) — 무릎이 아니라 LPT 의 한계다.
+- **rerun.** 대상 DOE 만으로 같은 순서·칸 배정을 짠다. 대상이 정해진 바로 뒤에 짜서 틀린 값이면 확인 묻기·`--cleanup-stale` 전에 멈추고, `--dry-run` 도 요약 줄을 찍는다. `--does` 의 표 밖 DOE(doe_count 밖)는 계획에서 빼고 맨 뒤에 받은 순서 그대로 낸다(예전처럼 그 DOE 만 실패한다).
+- **기록.** submit 은 `slurm_scripts/schedule.json`, rerun 은 `slurm_scripts/schedule_rerun.json`(submit 계획을 덮지 않는다)에 비용·순서·칸·상한·무릎·대수별 예상 완료 시각·가정·알림을 남긴다. prepare 는 표가 있으면 미리보기 한 줄(상한은 licenses·max_concurrent·DOE 수)과 알림을 찍는다.
 - **D2R.** `drop_surface.deformable_to_rigid` 로 카드가 실제로 생기면 비용은 ENDTIM 비례 그대로 두고 'D2R 켬(보정 안 됨)' 만 적는다. KCR D2R 은 비행 중 강체·접촉 중 변형체라 실제는 더 짧을 수 있다.
 - impact_conditions 의 심각도 순서·`progressive` 피보나치 순서는 켜져 있으면 덮어쓴다. 그 순서가 필요하면 끈다.
 
 | 키 | 기본값 | 뜻 |
 |---|---|---|
-| `enabled` | `true` | `false` 면 예전 동작 |
-| `licenses` | `null` | LS-DYNA 동시 라이선스 수. 칸 상한 = `licenses ÷ licenses_per_job` |
+| `enabled` | `true` | `false` 면 예전 동작(다른 키를 보지 않는다) |
+| `licenses` | `null` | LS-DYNA 동시 라이선스 수. `--sequential` 칸 상한 = `licenses ÷ licenses_per_job`(기본 제출에는 걸지 않는다) |
 | `licenses_per_job` | `1` | 잡 하나가 쓰는 라이선스 수 |
-| `max_concurrent` | `null` | 그 밖의 동시 실행 상한 |
+| `max_concurrent` | `null` | 그 밖의 동시 실행 상한(`--sequential` 칸만) |
 | `overhead_seconds` | `300` | 잡당 고정비(KMM·Apptainer 기동·stagger 평균·리포트) |
 | `seconds_per_ms` | `20` | 해석 1 ms 당 시간. 보정 안 됨 — Test_005(1 MPP)는 226 s/ms 였다 |
-| `knee_tolerance` | `0.05` | 무릎 판정 여유 |
+| `knee_tolerance` | `0` | 무릎 판정 여유. 0.05 는 실제 2만 표 앞 500 개·`--nodes 19` 에서 18 칸을 골라 라운드로빈보다 3.6% 늦었다 |
 
 #### 라이선스 관련 env (`lsdyna_apptainer_env` 내부)
 

@@ -8,7 +8,8 @@ docs/doe_schedule_v134_20261108/PLAN.md 다.
     (시간 상한 배율 F_d)와 같고, 올림 없이 연속값이다.
   순서 = 비용 내림차순(LPT). 같으면 DOE 번호 오름차순이다 — 비용이 모두 같으면 지금(DOE 번호) 순서 그대로다.
   칸 배정 = 긴 것부터 지금 가장 덜 찬 칸으로(같으면 낮은 칸 번호). 칸 안 순서도 긴 것부터다.
-  무릎 = 상한 cap 안에서 완료 시각이 (1 + knee_tolerance)·완료(cap) 이하가 되는 가장 작은 칸 수다.
+  무릎 = 상한 cap 안에서 완료 시각이 (1 + knee_tolerance)·완료(cap) 이하가 되는 가장 작은 칸 수다. 기본 knee_tolerance 0 이면
+    완료 시각이 더 줄지 않는 가장 작은 칸 수다(0.05 는 실제 2만 표 앞 500 개·칸 19 에서 라운드로빈보다 3.6% 늦었다, 11-08).
 
 D2R(drop_surface.deformable_to_rigid)이 실제로 켜지면(카드가 생기는 조건까지) 비용은 그대로 ENDTIM 비례이고, '보정 안 됨'
 표시만 한다. KCR D2R 은 비행 중 강체·접촉 중 변형체라 실제 비용은 다를 수 있지만 실행 시간 자료가 없다(사용자 결정 11-08).
@@ -18,7 +19,7 @@ import math
 import os
 
 DEFAULTS = {"enabled": True, "licenses": None, "licenses_per_job": 1, "max_concurrent": None,
-            "overhead_seconds": 300.0, "seconds_per_ms": 20.0, "knee_tolerance": 0.05}
+            "overhead_seconds": 300.0, "seconds_per_ms": 20.0, "knee_tolerance": 0.0}
 FORMAT = "kcr_doe_schedule v1"
 SCHEDULE_FILE = "schedule.json"
 RERUN_SCHEDULE_FILE = "schedule_rerun.json"   # rerun 계획 — submit 의 schedule.json 을 덮지 않는다
@@ -34,12 +35,12 @@ def _is_num(v):
 
 
 def schedule_options(environment):
-    """environment.schedule → 기본값을 채운 dict, 꺼졌으면 None. 없으면(또는 true) 기본값으로 켠다.
-    모르는 키는 경고 한 줄, 틀린 값은 DoeScheduleError 다."""
+    """environment.schedule → 기본값을 채운 dict, 꺼졌으면 None. 없으면(또는 true·null) 기본값으로 켠다.
+    모르는 키는 경고 한 줄, 틀린 값은 DoeScheduleError 다. false·{"enabled": false} 는 다른 키를 보지 않고 바로 None 이다."""
     raw = (environment or {}).get("schedule", None)
     if raw is None or raw is True:
         raw = {}
-    if raw is False:
+    if raw is False or (isinstance(raw, dict) and raw.get("enabled", True) is False):
         return None
     if not isinstance(raw, dict):
         raise DoeScheduleError(f"environment.schedule 는 true/false 또는 객체여야 한다: {raw!r} (bad value)")
@@ -87,17 +88,27 @@ def _table_meta(path):
 
 
 def time_unit_to_ms(config):
-    """scenario.endtime_tables 의 표 메타 time_unit(s·ms) → (덱 시간 1 단위의 ms, 알림 목록).
-    메타가 없으면 s 로 보고(mm-t-s 덱) 알린다. 표마다 다르면 첫 표 값을 쓰고 알린다."""
+    """덱 시간 1 단위의 ms → (값, 알림 목록). scenario.endtime_tables 의 표 메타 time_unit(s·ms)이 먼저이고, 없으면 units 메타의
+    끝(mm-t-s → s, mm-kg-ms → ms)이다. 둘 다 없으면 tFinal 로 짐작한다(0.5 이상이면 ms, 아니면 s). 짐작하면 알린다.
+    표마다 다르면 첫 표 값을 쓰고 알린다."""
     tables = ((config or {}).get("scenario") or {}).get("endtime_tables") or []
-    units = []
+    units, notes = [], []
     for t in tables:
-        tu = _table_meta(str((t or {}).get("table") or "")).get("time_unit", "").strip().lower()
+        meta = _table_meta(str((t or {}).get("table") or ""))
+        tu = meta.get("time_unit", "").strip().lower()
+        if tu not in _TO_MS:
+            tu = meta.get("units", "").strip().lower().rsplit("-", 1)[-1]
+            note = f"표 메타 time_unit 이 없어 units {meta.get('units', '').strip()} 의 끝 {tu} 를 덱 시간 단위로 본다"
+            if tu in _TO_MS and note not in notes:
+                notes.append(note)
         if tu in _TO_MS:
             units.append(tu)
     if not units:
-        return _TO_MS["s"], ["표 메타 time_unit 이 없어 덱 시간 단위를 s 로 본다"]
-    notes = [] if len(set(units)) == 1 else [f"표마다 time_unit 이 다르다 {sorted(set(units))} — 첫 표 {units[0]} 를 쓴다"]
+        tf = float(((config or {}).get("simulation_params") or {}).get("tFinal", 0.005))
+        tu = "ms" if tf >= 0.5 else "s"
+        return _TO_MS[tu], [f"표 메타 time_unit·units 가 없어 tFinal {tf:g} 로 덱 시간 단위를 {tu} 로 짐작한다(0.5 이상이면 ms)"]
+    if len(set(units)) > 1:
+        notes.append(f"표마다 time_unit 이 다르다 {sorted(set(units))} — 첫 표 {units[0]} 를 쓴다")
     return _TO_MS[units[0]], notes
 
 
@@ -218,15 +229,18 @@ def _by_n(costs, cap, knee):
 def build_schedule(config, opts, mode, nodes=None, lanes=False, does=None):
     """스케줄 dict(schedule.json 내용) — 표가 없거나 꺼졌으면 None. mode: 'submit'·'sequential'·'rerun'·'prepare'.
     nodes 는 칸 상한에 넣을 노드 수(--sequential 의 --nodes). lanes=True 면 무릎 칸 수로 칸 배정을 넣는다.
-    does 를 주면 그 DOE 만으로 짠다(rerun 대상). 비었거나 표 밖 DOE 가 있으면 None 이라 호출 쪽은 지금 동작 그대로다."""
+    does 를 주면 그 DOE 만으로 짠다(rerun 대상). 표 밖 DOE(doe_count 밖)는 빼고 알림을 남긴다 — 부르는 쪽이 맨 뒤에 그대로
+    낸다. 표 안 DOE 가 하나도 없으면 None 이라 호출 쪽은 지금 동작 그대로다."""
     costs, notes = doe_costs(config, opts)
     if costs is None:
         return None
     if does is not None:
-        does = set(does)
-        if not does or not does <= set(costs):
+        outside, keep = [d for d in does if d not in costs], set(does)
+        costs = {d: c for d, c in costs.items() if d in keep}
+        if not costs:
             return None
-        costs = {d: c for d, c in costs.items() if d in does}
+        if outside:
+            notes = notes + [f"표 밖 DOE {outside} 는 계획에서 빼고 맨 뒤에 그대로 낸다(예전처럼 그 DOE 만 실패한다)"]
     cap, cap_from = concurrency_cap(opts, nodes, len(costs))
     knee = knee_n(costs, cap, opts["knee_tolerance"])
     d2r = d2r_active(config)
@@ -258,6 +272,22 @@ def summary_line(plan):
             f"무릎 {plan['knee']} 칸(상한 {plan['cap']}: {caps}) · 예상 완료 {_h(plan['makespan_seconds'])} "
             f"(하한 {_h(plan['lower_bound_seconds'])}) — 가정 고정비 {a['overhead_seconds']:g} s · 해석 1 ms 당 "
             f"{a['seconds_per_ms']:g} s, 보정 안 됨{tail}")
+
+
+def fewer_slots_line(plan, nodes, label):
+    """칸 배정(lanes)이 노드 nodes 개보다 적은 칸을 쓰면 알림 한 줄, 아니면 None. 상한(licenses·max_concurrent·DOE 수)에 걸렸는지,
+    무릎(나머지를 써도 예상 완료가 줄지 않는다)인지를 적고 무릎 칸·상한 칸의 예상 완료를 함께 적는다."""
+    if plan is None or "lanes" not in plan or nodes is None or plan["knee"] >= nodes:
+        return None
+    why = []
+    if plan["cap"] < nodes:
+        caps = ", ".join(f"{k} {v}" for k, v in plan["cap_from"].items() if k != "nodes" and v == plan["cap"])
+        why.append(f"상한 {plan['cap']}({caps})")
+    if plan["knee"] < plan["cap"]:
+        why.append(f"나머지를 써도 예상 완료가 줄지 않는다(무릎, knee_tolerance {plan['assumptions']['knee_tolerance']:g})")
+    at_cap = next(x["makespan_seconds"] for x in plan["by_n"] if x["n"] == plan["cap"])
+    return (f"⚠️  {label} {nodes} 가운데 {plan['knee']} 칸만 쓴다 — {' · '.join(why)} · 예상 완료 "
+            f"{_h(plan['makespan_seconds'])} ({plan['cap']} 칸 {_h(at_cap)})")
 
 
 def write_schedule(plan, directory, name=SCHEDULE_FILE):
