@@ -82,9 +82,9 @@ def set_parts(t):
 
 
 def generals(t):
-    """*CONTACT_AUTOMATIC_GENERAL(_ID) → [(CID, SSID, SSTYP)]."""
+    """*CONTACT_AUTOMATIC_GENERAL(_ID)·SINGLE_SURFACE(_ID) → [(CID, SSID, SSTYP)] — DROP 은 기본으로 GENERAL 을 SINGLE_SURFACE 로 바꾼다."""
     out = []
-    for kw, rows in blocks_like(t, "*CONTACT_AUTOMATIC_GENERAL"):
+    for kw, rows in blocks_like(t, "*CONTACT_AUTOMATIC_GENERAL") + blocks_like(t, "*CONTACT_AUTOMATIC_SINGLE_SURFACE"):
         k = 1 if kw.endswith("_ID") else 0
         cid = R.try_(lambda: int(rows[0][:10]), -1) if k else 0
         f = R.try_(lambda: R.ints(rows[k][:40], 10), [])
@@ -188,6 +188,17 @@ def c3():
     g3, s3 = generals(deck3), set_parts(deck3)
     covered = [g for g in g3 if (g[2] == 2 and plate3 and plate3[0] in s3.get(g[1], [])) or g[2] == 5]
     check("C3 2단계: 새 바닥판이 전체 접촉 범위에 든다", rc3 == 0 and len(plate3) == 1 and len(covered) >= 1, f"rc={rc3} plate={plate3} {g3} {s3}")
+    # 한 단계 — 모델에 GENERAL(모든 파트 묶음)이 처음부터 있으면 DROP 이 그것을 SINGLE_SURFACE 로 바꾼다. 바닥판이 그 범위에 들어야 한다
+    gen = ("*SET_PART_LIST\n" + f10(9) + f10(1) + "*CONTACT_AUTOMATIC_GENERAL_ID\n" + f"{5:10d}usergen\n" + f10(9, 0, 2, 0)
+           + f10(0.2, 0.1) + f10(1.0, 1.0))
+    d4, rc4, log4 = R.run("c3_usergen", {"model.k": R.cube_deck(gen)}, R.drop([0], "IncludeWallInGeneral,True\n"))
+    rs4 = runs_of(d4, "DropSet.k")
+    deck4 = rs4[0][1] if rs4 else ""
+    plate4 = sorted(set(R.part_cards(deck4)) - {1})
+    g4, s4 = generals(deck4), set_parts(deck4)
+    cov4 = [g for g in g4 if (g[2] == 2 and plate4 and plate4[0] in s4.get(g[1], [])) or g[2] == 5]
+    check("C3 한 단계(모델에 GENERAL): 바닥판이 바뀐 접촉 범위에 든다", rc4 == 0 and len(plate4) == 1 and len(cov4) >= 1,
+          f"rc={rc4} plate={plate4} {g4} {s4} " + log4[-300:])
 
 
 # ── C2·S1·S2 충격 ───────────────────────────────────────────────────────────────────────────────────────────

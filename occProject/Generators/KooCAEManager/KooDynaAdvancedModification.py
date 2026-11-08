@@ -3274,7 +3274,30 @@ class KooDynaAdvancedModification:
                 # 바닥판 파트를 기존 AUTOMATIC_GENERAL에 포함 — 별도 접촉 생성하지 않음
                 # GENERAL이 없으면 전체 파트(모델+바닥판)로 GENERAL 생성
                 if general_cids:
-                    print(f"DROP_ATTITUDE: IncludeWallInGeneral — 바닥판(PID={part.id})이 기존 GENERAL에 자동 포함")
+                    # 바닥판을 실제로 넣는다 — 예전엔 「자동 포함」 이라고만 찍었는데, ConvertGeneralToSingleSurface(기본)가 GENERAL 을 이미
+                    # 「모델 파트만」 SINGLE_SURFACE 로 바꿔 바닥판은 어느 접촉에도 없었다(한 단계 낙하와 누적 체인 둘째 낙하, 2026-11-08)
+                    _i = lambda v: int(float(str(v).strip() or 0))
+                    pm_, cm_ = self.dynaImporter.partManager, self.dynaImporter.contactManager
+                    scopes = []
+                    for cid_g in general_cids:
+                        c_g = cm_.contacts.get(cid_g) or next(
+                            (x for x in cm_.contacts.values() if getattr(x, "name", "") == "SS_from_GENERAL_CID{0}".format(cid_g)), None)
+                        if c_g is None:
+                            continue
+                        styp, sid = _i(getattr(c_g, "SSTYP", 0)), _i(getattr(c_g, "SSID", 0))
+                        if styp == 2 and sid in pm_.partSets:
+                            if all(_i(p) != part.id for p in pm_.partSets[sid].pids):
+                                pm_.partSets[sid].AddPart(part.id)
+                            scopes.append(f"CID {c_g.cid}(파트 묶음 {sid})")
+                        elif styp == 5 or (styp == 6 and sid in pm_.partSets
+                                           and all(_i(p) != part.id for p in pm_.partSets[sid].pids)):
+                            scopes.append(f"CID {c_g.cid}(모든 파트)")
+                    if not scopes:
+                        print(f"🔴 DROP_ATTITUDE: IncludeWallInGeneral — 바닥판(PID={part.id})을 넣을 GENERAL 이 없다(GENERAL {general_cids} 이 "
+                              f"분해됐거나 파트 묶음·모든 파트가 아닌 범위다). DecomposeGeneralContact 를 끄거나 IncludeWallInGeneral 없이 "
+                              f"바닥판 접촉을 따로 만들 것 (종료 코드 1)")
+                        sys.exit(1)
+                    print(f"DROP_ATTITUDE: IncludeWallInGeneral — 바닥판(PID={part.id})을 {', '.join(scopes)} 범위에 넣었다")
                 else:
                     allPIDs = [pid for pid, p in self.dynaImporter.partManager.parts.items()
                                if p.elementManager.elements]
