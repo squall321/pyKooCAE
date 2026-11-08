@@ -14,7 +14,7 @@
   덱 옆에 쓰면 안 된다. base = 덱 파일 이름에서 확장자를 뺀 것.
 
 중력: PresimGravity 기본 0 — DROP_ATTITUDE 덱(초기 속도만, 중력 없음)과 같은 조건이다(사용자 결정 11-07). 이때 사전 해석은
-2차 묶음 뒤에도 이어 돌고, ENDTIM 은 접근 속도가 PresimStrongContact·v0(기본 0.3) 이상인 마지막 재접촉 묶음의 끝 + MarginMs 다.
+2차 묶음 뒤에도 이어 돌고, ENDTIM 은 접근 속도가 PresimStrongContact·v0(기본 0.2) 이상인 마지막 재접촉 묶음의 끝 + MarginMs 다.
 그런 묶음이 없으면 1차 묶음 끝 + MarginMs 다(v133, 메타 endtime_rule=last_strong). 꼭짓점마다 갈라져 오는 슬랩다운 뒷부분을
 담고, 오래 돈 뒤의 약한 스침은 뺀다. 1 이면 중력을 켜고 v132 규칙(첫 재접촉 묶음 끝, endtime_rule=first_recontact)을 쓴다.
 무게중심이 1 mm 넘게 떴다 닿은 재착지는 2차 충격으로 세지 않고, PresimStrongContact 는 무시한다(직접 주면 경고 한 줄).
@@ -56,7 +56,7 @@ def default_options(cur_dir="."):
     """옵션 기본값. GivenKeys 는 블록에 직접 준 키 이름이다(parse_option_lines 가 채운다 — 중력 켬 + PresimStrongContact 경고)."""
     return {"Height": None, "AngleFile": None, "Fibonacci": None, "Angle": [], "Restitution": [0.1, 0.3, 0.5],
             "Friction": 0.5, "PresimGravity": 0, "MarginMs": 1.0, "ExcludePart": [], "Units": None,
-            "Workers": default_workers(), "PresimDt": 1e-5, "PresimTMax": 1.0, "PresimStrongContact": 0.3,
+            "Workers": default_workers(), "PresimDt": 1e-5, "PresimTMax": 1.0, "PresimStrongContact": 0.2,
             "OutDir": os.path.abspath(cur_dir), "GivenKeys": []}
 
 

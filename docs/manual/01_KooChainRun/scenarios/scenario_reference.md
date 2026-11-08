@@ -206,7 +206,7 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 
 ```json
 "endtime_presim": {"enabled": true, "table": null, "restitution": [0.1, 0.3, 0.5],
-                   "friction": 0.5, "gravity": false, "strong_contact": 0.3, "margin_ms": 1.0,
+                   "friction": 0.5, "gravity": false, "strong_contact": 0.2, "margin_ms": 1.0,
                    "exclude_parts": [], "workers": 8, "presim_timeout_seconds": 21600}
 ```
 
@@ -217,7 +217,7 @@ LS-DYNA 라이선스는 SIF 컨테이너 내부 환경변수로 전달된다. �
 | `restitution` | [0.1, 0.3, 0.5] | 반발계수 목록. 가장 긴 종료 시간을 쓴다 |
 | `friction` | 0.5 | 바닥 마찰계수 |
 | `gravity` | false | 사전 해석 중력. 낙하 덱에는 중력이 없어(초기 속도만) 기본은 끔이다. 끄면 접근 속도가 `strong_contact`·v0 이상인 마지막 재접촉 묶음 끝까지 본다. 켜면 리포트와 같은 조건(재착지는 뺀다)이고 1차 뒤 첫 재접촉 묶음 끝까지 본다(v132 규칙, `strong_contact` 는 쓰지 않는다) |
-| `strong_contact` | 0.3 | 중력 끔 규칙의 문턱(접근 속도 ÷ v0, 0 보다 큰 실수). 묶음은 1 ms 간격으로 나누고 묶음 세기는 묶음 안 최대 접근 속도다. 낮추면 약한 늦은 스침까지 기다려 `endtim` 이 길어지고, 높이면 짧아진다. KMM 옵션 파일에 `PresimStrongContact,<값>` 줄로 넘긴다(v133 이상 KMM). `gravity` 가 true 이면 쓰지 않고 경고만 한다. KCR v133 이상에서만 읽는다(v132 KCR 은 모르는 키로 무시하고 KMM 기본 0.3 을 쓴다) |
+| `strong_contact` | 0.2 | 중력 끔 규칙의 문턱(접근 속도 ÷ v0, 0 보다 큰 실수). 묶음은 1 ms 간격으로 나누고 묶음 세기는 묶음 안 최대 접근 속도다. 낮추면 약한 늦은 스침까지 기다려 `endtim` 이 길어지고, 높이면 짧아진다. 기본 0.2 — 0.3 이면 사전 해석 마찰이 FEM 과 어긋날 때(0.5 표·실제 0.2) 1차 충돌만큼 센 재접촉을 놓쳐 0.2 로 낮췄다. KMM 옵션 파일에 `PresimStrongContact,<값>` 줄로 넘긴다(v133 이상 KMM). `gravity` 가 true 이면 쓰지 않고 경고만 한다. KCR v133 이상에서만 읽는다(v132 KCR 은 모르는 키로 무시하고 KMM 기본값(v133 0.2)을 쓴다) |
 | `margin_ms` | 1.0 | 종료 시간을 정한 묶음(중력 끔은 마지막 강한 재접촉, 켬은 첫 재접촉, 없으면 1차 충돌) 끝 뒤 여유(ms) |
 | `exclude_parts` | [] | 사전 해석에서 뺄 PID(받침·고정구 등). 병진 SPC 가 파트 절점의 10% 이상인 파트(바닥판 등)와 병진이 묶인 `*MAT_RIGID` 파트는 KMM 이 자동으로 뺀다. 10% 미만이면 기기 파트로 넣고 `SPC_ON_DEVICE_PART` 경고를 남기고, 뺄 파트가 기기 파트와 절점을 나누면 종료 코드 1 이다 |
 | `workers` | 8 | 사전 해석 프로세스 수 |

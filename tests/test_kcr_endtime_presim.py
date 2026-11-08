@@ -73,7 +73,7 @@ if sys.argv[1:2] == ["--help"]:   # 러너 KMM 버전 확인 — 부를 때마�
     if sys.argv[2:3] == ["RIGID_DROP_ENDTIME"]:   # 사전 해석 KMM 의 v133 키 확인 — v132help·oldhelp 는 그 키를 모른다
         print("RIGID_DROP_ENDTIME — 가짜 도움말\n  Height  [실수 · 필수]\n  PresimGravity  [0|1 · 기본 0]")
         if MODE not in ("v132help", "oldhelp"):
-            print("  PresimStrongContact  [실수 · 기본 0.3]")
+            print("  PresimStrongContact  [실수 · 기본 0.2]")
         sys.exit(0)
     print("DROP_ATTITUDE — 가짜 도움말\n  Height  [실수]\n  tFinal  [실수]")
     if MODE != "oldhelp":
@@ -125,7 +125,7 @@ if MODE not in ("v132help", "v132table"):   # v133 KMM 의 규칙 메타 — 중
         meta["endtime_rule"] = "first_recontact"
     else:
         meta.update(endtime_rule="last_strong",
-                    strong_contact="0.5" if MODE == "badstrong" else kv.get("PresimStrongContact", "0.3"))
+                    strong_contact="0.5" if MODE == "badstrong" else kv.get("PresimStrongContact", "0.2"))
 write_endtime_table(os.path.join(work, base + "_endtime.csv"), rows, meta)
 '''
 
@@ -370,7 +370,7 @@ def test_pure():
     check(f"잘못된 값 {len(bad)}가지 → 표식 붙은 오류", nbad == len(bad), f"{nbad}/{len(bad)}")
 
     o = EP.presim_options({"endtime_presim": {"enabled": True}})
-    check("strong_contact 기본 0.3", o["strong_contact"] == 0.3 == EP.DEFAULTS["strong_contact"], str(o))
+    check("strong_contact 기본 0.2", o["strong_contact"] == 0.2 == EP.DEFAULTS["strong_contact"], str(o))
     good_sc = [0.5, 1, 2.0, 1e-6]
     check("strong_contact 0.5·1·2.0·1e-6 → 그대로", all(
         EP.presim_options({"endtime_presim": {"enabled": True, "strong_contact": v}})["strong_contact"] == v for v in good_sc))
@@ -459,12 +459,12 @@ def test_enabled(kcr):
     opt = Path(work, "rigid_drop_endtime.txt").read_text(encoding="utf-8")
     want = (f"*Inputfile\n{os.path.join(tmp, 'model.k')}\n*Mode\nRIGID_DROP_ENDTIME,1\n**RigidDropEndtime,1\n"
             f"Height,1000\nAngleFile,{os.path.join(work, 'angles.csv')}\nRestitution,0.1,0.3,0.5\nFriction,0.5\n"
-            f"PresimGravity,0\nPresimStrongContact,0.3\nMarginMs,1.0\nExcludePart,99\nWorkers,8\n**EndRigidDropEndtime\n*End\n")
-    check("옵션 파일: 템플릿 절대 경로·높이·AngleFile·기본값(PresimStrongContact,0.3 — 중력 끔)·ExcludePart", opt == want,
+            f"PresimGravity,0\nPresimStrongContact,0.2\nMarginMs,1.0\nExcludePart,99\nWorkers,8\n**EndRigidDropEndtime\n*End\n")
+    check("옵션 파일: 템플릿 절대 경로·높이·AngleFile·기본값(PresimStrongContact,0.2 — 중력 끔)·ExcludePart", opt == want,
           repr(opt))
     check("KMM 에 묻기: --help DROP_ATTITUDE(표 줄) → --help RIGID_DROP_ENDTIME(PresimStrongContact) 각 한 번",
           help_calls(tmp) == ["--help DROP_ATTITUDE", "--help RIGID_DROP_ENDTIME"], str(help_calls(tmp)))
-    check("v133 표(endtime_rule=last_strong·strong_contact=0.3) → v132 표 경고·strong_contact 오류 없음",
+    check("v133 표(endtime_rule=last_strong·strong_contact=0.2) → v132 표 경고·strong_contact 오류 없음",
           "v132 first-recontact table" not in out and "strong_contact" not in out, out[-400:])
     call = json.load(open(os.path.join(work, "fake_kmm_call.json"), encoding="utf-8"))
     check("호출: [KMM, 옵션 이름, 작업 폴더 절대 경로] (apptainer 없음)",
@@ -652,8 +652,8 @@ def test_failures():
     check("  … 사전 해석을 돌리기 전에 멈춘다 (KMM 호출 기록 없음) · 물은 것 DROP_ATTITUDE → RIGID_DROP_ENDTIME",
           not os.path.exists(os.path.join(t_old, "output", "endtime_presim", "1", "fake_kmm_call.json"))
           and help_calls(t_old) == ["--help DROP_ATTITUDE", "--help RIGID_DROP_ENDTIME"], str(help_calls(t_old)))
-    run_case("사전 해석 표 strong_contact(0.5) ≠ 옵션(기본 0.3)", "badstrong", on,
-             ["strong_contact mismatch", "strong_contact=0.5", "strong_contact 0.3 와 다르다"])
+    run_case("사전 해석 표 strong_contact(0.5) ≠ 옵션(기본 0.2)", "badstrong", on,
+             ["strong_contact mismatch", "strong_contact=0.5", "strong_contact 0.2 와 다르다"])
 
     tmp = new_tmp("etp_stale_")
     code, out = cli_prepare(tmp, with_presim(scen_faces2(tmp), on, koomeshmodifier_path=write_fake(tmp, "ok")))
@@ -1140,7 +1140,7 @@ def test_v133(kcr, rc_off):
     v0 = math.sqrt(2 * 9810.0 * 1000)
     base = {"format": "rigid_drop_endtime/endtime v1", "units": "mm-t-s", "time_unit": "s", "height": 1000, "v0": v0,
             "gravity": 0, "t_sep_ms": 1.0}
-    strong = {**base, "endtime_rule": "last_strong", "strong_contact": 0.3}
+    strong = {**base, "endtime_rule": "last_strong", "strong_contact": 0.2}
     W132, MIS = "v132 first-recontact table", "strong_contact mismatch"
 
     def tbl(meta, presim_extra=None):
@@ -1155,17 +1155,17 @@ def test_v133(kcr, rc_off):
     check("table 지름길은 --help RIGID_DROP_ENDTIME 을 묻지 않는다 (DROP_ATTITUDE 만)", calls == ["--help DROP_ATTITUDE"],
           str(calls))
     rc, out, err, _ = tbl(strong)
-    check("table: last_strong·strong_contact 0.3 = 옵션 기본 → 경고·오류 없음",
+    check("table: last_strong·strong_contact 0.2 = 옵션 기본 → 경고·오류 없음",
           rc is not None and W132 not in out and "strong_contact" not in out, err or out[-400:])
-    rc, out, err, _ = tbl({**strong, "strong_contact": "0.3000000001"})
+    rc, out, err, _ = tbl({**strong, "strong_contact": "0.2000000001"})
     check("table: strong_contact 차 1e-10 (≤ 1e-9) → 받는다", rc is not None, err)
-    rc, out, err, _ = tbl({**strong, "strong_contact": "0.300001"})
-    check("table: strong_contact 차 1e-6 → 멈춘다 (두 값을 찍는다)", rc is None and MIS in err and "strong_contact=0.300001" in err
-          and "strong_contact 0.3 와 다르다" in err, err)
+    rc, out, err, _ = tbl({**strong, "strong_contact": "0.200001"})
+    check("table: strong_contact 차 1e-6 → 멈춘다 (두 값을 찍는다)", rc is None and MIS in err and "strong_contact=0.200001" in err
+          and "strong_contact 0.2 와 다르다" in err, err)
     rc, out, err, _ = tbl({**strong, "strong_contact": 0.5}, {"strong_contact": 0.5})
     check("table: 옵션 strong_contact 0.5 = 표 0.5 → 받는다", rc is not None, err)
     rc, out, err, _ = tbl(strong, {"strong_contact": 0.5})
-    check("table: 옵션 0.5 ≠ 표 0.3 → 멈춘다", rc is None and MIS in err, err)
+    check("table: 옵션 0.5 ≠ 표 0.2 → 멈춘다", rc is None and MIS in err, err)
     rc, out, err, _ = tbl({**base, "gravity": 1, "endtime_rule": "first_recontact", "strong_contact": 9}, {"gravity": True})
     check("table: first_recontact(중력 켬) 표는 strong_contact 를 보지 않는다 (메타 9 여도 받는다, 경고 없음)",
           rc is not None and W132 not in out and "strong_contact" not in out, err or out[-400:])
@@ -1185,7 +1185,7 @@ def test_v133(kcr, rc_off):
     check("table: endtime_rule 대소문자·공백 무관 (' Last_Strong ') → 경고 없음",
           rc is not None and "unknown endtime_rule" not in out and W132 not in out, err or out[-400:])
     rc, out, err, _ = tbl({**strong, "endtime_rule": "LAST_STRONG"}, {"strong_contact": 0.5})
-    check("table: LAST_STRONG 도 문턱을 본다 (옵션 0.5 ≠ 표 0.3 → 멈춘다)", rc is None and MIS in err, err)
+    check("table: LAST_STRONG 도 문턱을 본다 (옵션 0.5 ≠ 표 0.2 → 멈춘다)", rc is None and MIS in err, err)
     rc, out, err, _ = tbl({**base, "endtime_rule": "first_recontact"})
     check("table: 중력 끔 표인데 endtime_rule=first_recontact → 경고 한 줄 + 받는다",
           rc is not None and out.count(W132) == 1 and "first_recontact 인 표" in out, err or out[-400:])

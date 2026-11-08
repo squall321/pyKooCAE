@@ -5,7 +5,7 @@
 기준값은 프로토타입 /home/koopark/kooOmniDropAnalyzer/fullangle_mbd (PyBullet GEOM_BOX 150×75×7.5 mm, 200 g, μ 0.5)의
 저장 결과(results_mu0.5, tilt45_sensitivity.csv, six_face_exact.csv)다. 전체 측정은 /data/koopark/Test_RigidDropEndtime/B 에 있다.
 프로토타입 대조는 프로토타입 규칙(2차 이격 0.3 ms)으로 하고, 엔진 기본(1 ms, 사용자 결정 11-07)은 [11] 에서 따로 본다.
-v133 중력 끔 규칙(마지막 강한 재접촉, strong_contact 0.3)은 [15] 에서 본다. v132 규칙을 보는 [7]·[11]·[12] 는
+v133 중력 끔 규칙(마지막 강한 재접촉, strong_contact 기본 0.2 — 상자 수용 대조는 기준 csv 가 있는 0.3)은 [15] 에서 본다. v132 규칙을 보는 [7]·[11]·[12] 는
 strong_contact=None 으로 v132 규칙을 고정하고, v133 기대값을 옆에 둔다.
 [15] 의 v132 비트 동일 대조는 git 의 v132 엔진(V132_COMMIT)과 하고, 수용 대조 기준은 멈춤 없이 끝까지 돌린
 endtime_rule_check.csv(REF_V133, 칸 last>=0.3)다. 둘 다 없으면 그 대조만 SKIP 한다.
@@ -61,7 +61,8 @@ V132_COMMIT = "6504b11"
 REF_V133 = "/home/koopark/kooOmniDropAnalyzer/fullangle_mbd/results_v132_mu0.5/endtime_rule_check.csv"
 NEW_KEYS = ["strong_end_ms", "strong_vn_max"]
 # calm 건전성 표본(피보나치 1000 번호) — 상자는 440·457 의 e 0.5(clear)만 빼고 calm 으로 멈춘다(0·1·440·457 은 강한 재접촉 없음).
-# 여기에 e 0.9(강한 재접촉 뒤 calm — 상자·막대·치우친 폰)와, 옛 한계(ω_max·r_max)로는 t_max 까지 가던 긴 막대 e 0.1 을 더한다
+# 여기에 e 0.9(강한 재접촉 뒤 calm — 상자·막대·치우친 폰)와, 옛 한계(ω_max·r_max)로는 t_max 까지 가던 긴 막대 e 0.1 을 더한다.
+# 긴 막대는 문턱 0.3 으로 본다 — 기본 0.2 에서는 55·155 의 남은 회전이 0.2·v0 아래로 못 내려가 꼭짓점별 한계로도 t_max 다
 SOUND_IDX = (0, 1, 13, 15, 20, 37, 440, 457, 850)
 SOUND_E09 = (("box", 605), ("box", 905), ("rod", 155), ("rod", 855), ("offset", 305), ("offset", 805))
 SOUND_ROD = (55, 155, 380)
@@ -121,19 +122,19 @@ def tf_strong(st, margin_ms=1.0):
 
 def _sound_job(args):
     """calm 건전성: v133(calm 켬) 과 calm 을 끈 v133 실행(멈춤은 clear·t_max·이벤트 400 만)의 이벤트·tFinal."""
-    bkey, idx, e = args
+    bkey, idx, e, thr = args
     body, d = SOUND_BODIES[bkey], proto_fibonacci(1000)[idx]
-    r = P.simulate_drop(body, d, e, MU, H, gravity_on=False, strong_vn=P.STRONG_CONTACT)
+    r = P.simulate_drop(body, d, e, MU, H, gravity_on=False, strong_vn=thr)
     old = P.CALM_EVERY, P.MAX_EVENTS_FULL
     P.CALM_EVERY, P.MAX_EVENTS_FULL = 10 ** 9, 400  # calm 끔 — fork 작업자 안에서만 바꾸고 되돌린다
     try:
-        ref = P.simulate_drop(body, d, e, MU, H, gravity_on=False, strong_vn=P.STRONG_CONTACT)
+        ref = P.simulate_drop(body, d, e, MU, H, gravity_on=False, strong_vn=thr)
     finally:
         P.CALM_EVERY, P.MAX_EVENTS_FULL = old
     key = lambda evs: [(x["t_start_ms"], x["t_end_ms"], x["J"], x["approach_max_mps"]) for x in evs]  # noqa: E731
     prefix = key(r["events"]) == key(ref["events"])[:len(r["events"])]
-    return (bkey, idx, e, r["stop"], ref["stop"], P.strong_from_events(r["events"], r["v0"], P.STRONG_CONTACT),
-            P.strong_from_events(ref["events"], ref["v0"], P.STRONG_CONTACT), prefix)
+    return (bkey, idx, e, r["stop"], ref["stop"], P.strong_from_events(r["events"], r["v0"], thr),
+            P.strong_from_events(ref["events"], ref["v0"], thr), prefix)
 
 
 def same_value(a, b):
@@ -360,8 +361,8 @@ def main():
     check("strong_from_events: strength = approach_max_mps (in-event peak), not first-contact vn_mps (F2: 0.27 -> 1.215)",
           P.strong_from_events([sv(0, 0, 1.0), sv(13.64, 13.67, 0.27, 1.215)], 2.0, 0.3) == (0.0, 13.67, 1.215)
           and t1 == 0.0 and math.isnan(se) and vm == 0.2)
-    check("v133 defaults: STRONG_CONTACT 0.3 (run_presim default), MAX_EVENTS_FULL 200, strong_vn default None",
-          P.STRONG_CONTACT == 0.3 and P.MAX_EVENTS_FULL == 200
+    check("v133 defaults: STRONG_CONTACT 0.2 (run_presim default), MAX_EVENTS_FULL 200, strong_vn default None",
+          P.STRONG_CONTACT == 0.2 and P.MAX_EVENTS_FULL == 200
           and inspect.signature(P.run_presim).parameters["strong_contact"].default == P.STRONG_CONTACT
           and inspect.signature(P.simulate_drop).parameters["strong_vn"].default is None)
     bad = []
@@ -560,8 +561,8 @@ def main():
     ru = P.run_presim(BOX, [(nm, *a, 0.0) for nm, a in three], H, ES, friction=MU, gravity_on=False,
                       t_max=0.002, workers=2, log=logs.append)
     warn = [x for x in logs if "WARNING" in x]
-    stops = {nm: [P.simulate_drop(BOX, drop_direction(*a), e, MU, H, gravity_on=False, t_max=0.002, strong_vn=0.3)["stop"]
-                  for e in ES] for nm, a in three}
+    stops = {nm: [P.simulate_drop(BOX, drop_direction(*a), e, MU, H, gravity_on=False, t_max=0.002,
+                                  strong_vn=P.STRONG_CONTACT)["stop"] for e in ES] for nm, a in three}
     check("v133 rule: n_unresolved = e count stopped on t_max/max_events (FACE all calm, T2 calm + t_max mix, S45 all t_max)",
           [r_["n_unresolved"] for r_ in ru] == [sum(s in ("t_max", "max_events") for s in stops[nm]) for nm, _ in three]
           and stops["FACE"] == ["calm"] * 3 and "calm" in stops["T2"] and "t_max" in stops["T2"]
@@ -634,7 +635,7 @@ def main():
         if alive(k):
             os.kill(k, signal.SIGKILL)
 
-    print("[15] v133 마지막 강한 재접촉 규칙(중력 끔, strong_contact 0.3) — v132 동일 경로·calm 건전성·상자 예시·수용 대조")
+    print("[15] v133 마지막 강한 재접촉 규칙(중력 끔, 기본 0.2·수용 대조 0.3) — v132 동일 경로·calm 건전성·상자 예시·수용 대조")
     # (a) 중력 켬, strong_contact=None 은 v132 엔진과 비트까지 같다 (표 줄의 v132 칸·충돌 상태 줄 전부)
     V = load_v132()
     if V is None:
@@ -665,8 +666,9 @@ def main():
               and all(list(x) == list(sbo["events"][0]) + ["approach_max_mps"] for x in s3["events"]))
 
     # (b) calm 건전성: calm 으로 멈춘 실행의 이벤트는 calm 을 끈 실행의 앞부분이고 tFinal·strong_end 가 같다
-    cases = ([("box", i, e) for i in SOUND_IDX for e in ES] + [(b, i, 0.9) for b, i in SOUND_E09]
-             + [("rod", i, 0.1) for i in SOUND_ROD])
+    sc = P.STRONG_CONTACT
+    cases = ([("box", i, e, sc) for i in SOUND_IDX for e in ES] + [(b, i, 0.9, sc) for b, i in SOUND_E09]
+             + [("rod", i, 0.1, 0.3) for i in SOUND_ROD])
     with mp.get_context("fork").Pool(4) as pool:
         snd = pool.map(_sound_job, cases, chunksize=1)
     n_calm = sum(x[3] == "calm" for x in snd)
@@ -678,7 +680,7 @@ def main():
     rod = [x for x in snd if x[0] == "rod" and x[2] == 0.1]
     check("calm at e 0.9 after strong re-contacts (box, rod, offset-CoM phone): calm tFinal = no-stop tFinal",
           len(e09) == 6 and all(x[3] == "calm" and not math.isnan(x[6][1]) for x in e09) and not bad, f"{e09}")
-    check("per-vertex bound: rod e 0.1 dirs that ran to t_max with the old bound now stop calm (no-stop run hits t_max)",
+    check("per-vertex bound (thr 0.3): rod e 0.1 dirs that ran to t_max with the old bound now stop calm (no-stop: t_max)",
           len(rod) == 3 and all(x[3] == "calm" and x[4] == "t_max" for x in rod) and not bad, f"{rod}")
 
     # (c) 꼭짓점별로 갈라져 오는 슬랩다운 — 더 센 뒷묶음이 이제 담긴다 (피보나치 1000 idx 15, e 0.5)

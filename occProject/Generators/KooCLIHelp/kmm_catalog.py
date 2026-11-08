@@ -1202,9 +1202,10 @@ mode("RIGID_DROP_ENDTIME", "강체 낙하 사전 해석 — 질량특성·외곽
          K("PresimGravity", "0|1", "0", "0 = 중력 끔(DROP_ATTITUDE 덱과 같음 — 2차 묶음 뒤에도 이어 돌려, 접근 속도가 "
            "PresimStrongContact·v0 이상인 마지막 재접촉 묶음까지 ENDTIM 에 담는다), 1 = 켬(v132 규칙 — 첫 재접촉 묶음까지, 무게중심이 "
            "1 mm 넘게 떴다 닿은 재착지는 2차 충격으로 세지 않는다)"),
-         K("PresimStrongContact", "실수(v0 배수)", "0.3", "중력 끔(PresimGravity 0)의 ENDTIM 문턱. 사전 해석은 2차 묶음 뒤에도 이어 "
+         K("PresimStrongContact", "실수(v0 배수)", "0.2", "중력 끔(PresimGravity 0)의 ENDTIM 문턱. 사전 해석은 2차 묶음 뒤에도 이어 "
            "돌고, ENDTIM = 접근 속도가 이 값·v0 이상인 마지막 재접촉 묶음의 끝 + MarginMs 다(그런 묶음이 없으면 1차 묶음 끝 + MarginMs). "
-           "묶음 세기는 묶음 안 접촉점 접근 속도의 최대 ÷ v0 다. 낮추면 더 약한 재접촉까지 담는다. 0 이하·숫자 아님은 rc 1. "
+           "묶음 세기는 묶음 안 접촉점 접근 속도의 최대 ÷ v0 다. 낮추면 더 약한 재접촉까지 담는다. 기본 0.2 — 0.3 이면 사전 해석 마찰이 FEM 과 어긋날 때(0.5 표·실제 0.2) 1차 충돌만큼 센 재접촉을 놓쳐 0.2 로 낮췄다. "
+           "0 이하·숫자 아님은 rc 1. "
            "PresimGravity 1 이면 무시한다(첫 재접촉 규칙 — 직접 주면 '[RigidDropEndtime] WARNING PresimStrongContact ignored with "
            "PresimGravity 1' 한 줄)"),
          K("MarginMs", "실수", "1.0", "tFinal = (중력 끔은 PresimStrongContact 문턱을 넘는 마지막 재접촉 묶음 끝, 중력 켬은 2차 충격 끝 — "
@@ -1226,7 +1227,7 @@ Fibonacci,100
                  verify={"mode": "RIGID_DROP_ENDTIME", "id": 1, "expect": {
                      "Height": 1500.0, "Fibonacci": 100, "Restitution": [0.1, 0.3, 0.5], "Friction": 0.5,
                      "PresimGravity": 0, "MarginMs": 1.0, "Units": None, "PresimDt": 1e-05, "PresimTMax": 1.0,
-                     "PresimStrongContact": 0.3, "ExcludePart": [], "AngleFile": None}}),
+                     "PresimStrongContact": 0.2, "ExcludePart": [], "AngleFile": None}}),
          Example("각도 직접, 중력 켬·바닥판 제외·단위 지정", _opt("drop_model.k", "RIGID_DROP_ENDTIME,2", """**RigidDropEndtime,2
 Height,1000
 Angle,FACE,0,0,0
@@ -1259,7 +1260,7 @@ Workers,4
             "<모델>_impacts.csv: (각도, e, 충돌 묶음 k) 마다 충돌 직전 자세(att_*)·바닥 좌표 속도·각속도·첫 접촉점·접근 속도·"
             "tfinal_k_ms·endtim_k — 덱 단위(길이 · 길이/시간 · rad/시간). 중력 끔은 2차 묶음 뒤에도 이어 돌므로 k ≥ 3 줄도 나온다.",
             "중력 기본값 0: DROP_ATTITUDE 덱은 초기 속도만 있고 중력이 없다. 그래서 다시 닿는 충격은 모두 회전으로 온 것이다. 사전 해석은 "
-            "2차 묶음 뒤에도 이어 돌고, ENDTIM 은 접근 속도가 PresimStrongContact·v0(기본 0.3) 이상인 마지막 재접촉 묶음의 끝 + MarginMs "
+            "2차 묶음 뒤에도 이어 돌고, ENDTIM 은 접근 속도가 PresimStrongContact·v0(기본 0.2) 이상인 마지막 재접촉 묶음의 끝 + MarginMs "
             "다 — 꼭짓점마다 갈라져 오는 슬랩다운 뒷부분을 담고, 오래 돈 뒤의 약한 스침은 뺀다(v133). PresimGravity,1 이면 v132 규칙(첫 "
             "재접촉 묶음 끝)이고, 무게중심이 1 mm 넘게 떴다 닿은 재착지는 2차 충격으로 세지 않는다.",
             "단위: Height 는 덱 길이 단위, endtim 은 덱 시간 단위(mm-t-s·m-kg-s 는 s, mm-kg-ms·mm-g-ms 는 ms). 사전 해석 안은 SI 다.",

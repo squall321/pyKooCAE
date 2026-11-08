@@ -220,13 +220,13 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
            "사전 해석 중력(기본 끔 — 낙하 덱에 중력이 없어 같은 조건이다. 끄면 접근 속도가 strong_contact·v0 이상인 마지막 재접촉 "
            "묶음 끝까지 보고, 켜면 1차 뒤 첫 재접촉 묶음 끝(v132 규칙, strong_contact 는 안 쓴다)) · 종료 시간을 정한 묶음(없으면 "
            "1차 충돌) 끝 뒤 여유(ms)"),
-         K("simulation_params.endtime_presim.strong_contact", "실수", "0.3",
+         K("simulation_params.endtime_presim.strong_contact", "실수", "0.2",
            "중력 끔 종료 시간 규칙의 문턱(접근 속도 ÷ v0, 0 보다 큰 실수). 각도마다 ENDTIM = 1차 묶음 뒤 접근 속도가 strong_contact·v0 "
            "이상인 마지막 재접촉 묶음의 끝 + margin_ms 이고, 그런 묶음이 없으면 1차 충돌 끝 + margin_ms 다(묶음은 1 ms 간격, 세기는 "
-           "묶음 안 최대 접근 속도). 낮추면 약한 늦은 스침까지 기다려 길어지고 높이면 짧아진다. KMM 옵션 파일에 "
+           "묶음 안 최대 접근 속도). 낮추면 약한 늦은 스침까지 기다려 길어지고 높이면 짧아진다. 기본 0.2 — 0.3 이면 사전 해석 마찰이 FEM 과 어긋날 때(0.5 표·실제 0.2) 1차 충돌만큼 센 재접촉을 놓쳐 0.2 로 낮췄다. KMM 옵션 파일에 "
            "PresimStrongContact,<값> 줄로 넘긴다(v133 이상 KMM). gravity=true 면 쓰지 않는다(경고). 표(사전 해석·table 지름길 모두)의 "
            "메타 strong_contact 가 이 값과 상대 1e-9 넘게 다르면 멈춘다. KCR v133 이상에서만 읽는다 — v132 KCR 은 모르는 키로 "
-           "무시하고 KMM 기본 0.3 을 쓴다"),
+           "무시하고 KMM 기본값(v133 0.2)을 쓴다"),
          K("simulation_params.endtime_presim.exclude_parts / workers", "정수 목록 / 정수", "[] / 8",
            "사전 해석에서 뺄 파트(받침·고정구 등. 병진 SPC 가 파트 절점의 10% 이상인 파트(바닥판 등)와 병진이 묶인 *MAT_RIGID "
            "파트는 KMM 이 자동으로 뺀다 — 10% 미만이면 기기 파트로 넣고 SPC_ON_DEVICE_PART 경고, 뺄 파트가 기기 파트와 절점을 "

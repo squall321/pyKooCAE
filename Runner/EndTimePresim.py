@@ -37,7 +37,7 @@ STDOUT_FILE = "kmm_stdout.log"
 MATCH_TOL_DEG = 0.01
 PRESIM_TIMEOUT = 21600   # 사전 해석 KMM 시간 제한 기본 6 시간 (presim_timeout_seconds) — 러너 KMM 의 7 일과 따로
 DEFAULTS = {"enabled": False, "table": None, "restitution": [0.1, 0.3, 0.5], "friction": 0.5,
-            "gravity": False, "strong_contact": 0.3, "margin_ms": 1.0, "exclude_parts": [], "workers": 8,
+            "gravity": False, "strong_contact": 0.2, "margin_ms": 1.0, "exclude_parts": [], "workers": 8,
             "presim_timeout_seconds": PRESIM_TIMEOUT}
 STRONG_CONTACT_TOL = 1e-9   # 표 메타 strong_contact 와 옵션의 상대 차가 이보다 크면 멈춘다 (메타는 유효 10자리 — 상대 5e-10 안)
 
