@@ -1268,8 +1268,8 @@ Workers,4
             "10% 미만이면 기기 파트로 넣고 SPC_ON_DEVICE_PART 경고. 저절로 뺀 파트가 넣은 파트와 절점을 나누면 rc 1(ExcludePart 로 "
             "직접 줄 것). 뺀 파트는 모두 EXCLUDED_PART 경고(이유·질량·몫)와 DONE 줄 excluded=[…] 에 남는다.",
             "볼록 껍질 꼭짓점은 131,072 개까지(pybullet 한도) — 넘으면 rc 1.",
-            "Workers 만큼 fork 프로세스를 쓴다(작업자마다 PyBullet DIRECT). 2만 각도 × e 3 개는 8 프로세스로 약 5분이다(v132 규칙에서 "
-            "잰 값 — 중력 끔 v133 규칙은 2차 묶음 뒤에도 돌아 더 걸릴 수 있다).",
+            "Workers 만큼 fork 프로세스를 쓴다(작업자마다 PyBullet DIRECT). 2만 각도 × e 3 개는 8 프로세스로 약 6분이다(MinimumModel, "
+            "중력 끔 v133 규칙·문턱 0.2 — 2차 묶음 뒤에도 이어 돌아 v132 규칙의 약 5분보다 20% 남짓 길다).",
             "이 모드 블록은 빈 줄·`$`·`#` 줄을 건너뛴다. 키는 이름 전체가 같을 때만 맞고 모르는 키는 rc 1(did you mean …). 틀린 값·"
             "Height 없음·각도 출처 0 개 또는 2 개 이상·없는 AngleFile·블록 끝줄(**EndRigidDropEndtime) 전에 '*' 줄은 덱을 읽기 전에 "
             "rc 1('RIGID_DROP_ENDTIME option error', 끝줄이 빠지면 'missing **EndRigidDropEndtime').",

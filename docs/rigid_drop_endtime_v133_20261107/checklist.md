@@ -10,8 +10,8 @@
 - [x] 통합 — RDE 8종 + 도움말 + KMM 회귀 19종 = 28 모두 통과(encoding_guard 는 venv312), KCR 끔 바이트 동일 1924/1924
 - [x] 적대 리뷰 — 물리(R4)·회귀(R5). R5 반영 8e2cf6c, 엔진 고침(세기·calm 한계, R6) 0e1c6fb
 - [x] 문턱 기본 0.3 → 0.2 (사용자 결정 11-08) 4d27569 — 엔진 94·모드 110·KCR 157·도움말 527·RDE 8종 모두 통과, 상자 0.2 1000/1000
-- [ ] 성능 — 2만 방향 × e 3 시간 (v132 289 s 대비)
-- [ ] e2e /data/koopark/Test_E2E_v133 — v132 아는 불량 먼저, 소스 기준값
+- [x] 성능 — 2만 방향 × e 3, 작업자 8, MinimumModel, 문턱 0.2: 354 s (v132 289 s, +22%). calm 18131 · clear 41114 · t_max 755, 미해결 각도 755(3.8%), tFinal 1.00~171.53 ms(중앙값 20.95)
+- [x] e2e /data/koopark/Test_E2E_v133 — v132 아는 불량 먼저, 소스 기준값(문턱 0.2 로 golden 다시 씀, ALL PASS 92 OK · SKIP 8; 옛 golden 은 golden_thr0.3_20261107)
 - [ ] 빌드·컴파일본 e2e (pykoocae-53 굽기 끝난 뒤)
 - [ ] SIF v133·tar·Drive/메일, SIF e2e
 - [ ] 커밋·푸시·알림·메모리, 헤드 /opt 교체는 사용자 확인
