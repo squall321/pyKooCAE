@@ -510,6 +510,8 @@ class KooMeshModifier(KooSimulationGenerator):
                     curOptions["DynamicRelaxationFctr"] = 0.0
                     curOptions["DynamicRelaxationTerm"] = 0.0
                     curOptions["RemoveContactIDList"] = []
+                    curOptions["RemoveRigidWallIDList"] = []   # 앞 단계 DROP 이 만든 바닥 강체벽(누적 체인)
+                    curOptions["SpecimenModified"] = ""        # 앞 단계 충격이 시편을 바꿨으면 그 까닭 — DTI 가 멈춘다
 
                     while True:
                         line = f.readline().strip()
@@ -574,6 +576,11 @@ class KooMeshModifier(KooSimulationGenerator):
                         elif "removecontactbyid" in line.lower():
                             svector = line.split(",")
                             curOptions["RemoveContactIDList"] = [int(x) for x in svector[1:]]
+                        elif "removerigidwallbyid" in line.lower():
+                            svector = line.split(",")
+                            curOptions["RemoveRigidWallIDList"] = [int(x) for x in svector[1:] if x.strip()]
+                        elif "specimenmodified" in line.lower():
+                            curOptions["SpecimenModified"] = (line.split(",", 1)[1].strip() if "," in line else "") or "시편이 바뀌었다"
 
                     self.modeIDOption[curModeID] = curOptions
 

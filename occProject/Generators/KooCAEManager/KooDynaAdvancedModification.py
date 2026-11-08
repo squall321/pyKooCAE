@@ -3137,7 +3137,9 @@ class KooDynaAdvancedModification:
                 # RigidWall은 파트/접촉 불필요 → 바닥판 접촉 생성 skip
                 part = None
                 dropContactCID = None
+                dropRigidWallID = rw.ID   # 다음 단계 DTI 가 지울 바닥 벽(누적 체인)
             else:
+                dropRigidWallID = None
                 part = self.dynaImporter.partManager.AddSolidPart(self.dynaImporter.nodeManager, None, section, material)
                 if not use_fast_mode:
                     self.dynaImporter.SyncronizeMaxID()
@@ -3679,6 +3681,8 @@ class KooDynaAdvancedModification:
                             f.write("*RemoveContactbyID,")
                             f.write(str(dropContactCID))
                             f.write("\n")
+                        if dropRigidWallID is not None:
+                            f.write("*RemoveRigidWallbyID," + str(dropRigidWallID) + "\n")
                         f.write("**EndDynainToInitial\n")
                         f.write("*End\n")
 
@@ -7207,6 +7211,14 @@ class KooDynaAdvancedModification:
 
 
     def DynaintoInitial(self, option, folderPath, filePath):
+        # 앞 단계 충격이 시편 바깥을 잘라 냈거나 강체로 바꿨으면 그 시편은 다음 단계로 이어 갈 수 없다(사용자 결정 2026-11-08) — DWI 는
+        # 덱을 그대로 만들고(이어서 하지 않는 충격은 막지 않는다) dynaintoinitial.txt 에 까닭을 적는다. 여기서 멈춘다
+        reason = option.get("SpecimenModified", "")
+        if reason:
+            print(f"🔴 DYNAIN_TO_INITIAL: 앞 단계 충격이 시편을 바꿨다({reason}) — 바뀐 시편은 다음 단계로 이어 갈 수 없다. 이어서 하려면 "
+                  f"시편을 자르거나 강체로 바꾸지 않게(BoundaryDistance 0, StressWaveVelocity·DistanceMargin 없이) 앞 단계를 다시 돌릴 것 "
+                  f"(종료 코드 1)")
+            sys.exit(1)
         dynainpath = option["DynainPath"]
         if dynainpath == "dynain":
             dynainpath = filePath
@@ -7336,6 +7348,16 @@ class KooDynaAdvancedModification:
                 self.dynaImporter.contactManager.RemoveContactbyID(cid)
         # 실제로 없어진 접촉(전·후 차집합)을 가리키는 덱 D2R 만 지운다 — 지우지 못한 원문 접촉의 D2R 까지 지웠다(v131 리뷰 R6)
         self._DropRawD2RofContacts(cids_before - set(self.dynaImporter.contactManager.contacts), removeContactIDList)
+        # 앞 단계 DROP 이 만든 바닥 강체벽 — 예전엔 지울 길이 없어 다음 낙하에 앞 단계 바닥이 남았다(누적 체인, 2026-11-08)
+        removeRigidWallIDList = option.get("RemoveRigidWallIDList", [])
+        if removeRigidWallIDList:
+            am = self.dynaImporter.additionalManager
+            gone = [r for r in removeRigidWallIDList if am.rigidwalls.pop(r, None) is not None]
+            left = sorted(set(removeRigidWallIDList) - set(gone))
+            if gone:
+                print(f"  DTI: 앞 단계 바닥 강체벽 {gone} 을 지운다")
+            if left:
+                print(f"  ⚠ DTI: *RemoveRigidWallbyID {left} — 덱에 그 번호의 강체벽이 없다")
 
     def _DropRawD2RofContacts(self, removed, requested=()):
         """없어진 접촉을 ENTNO 로 가리키는 덱 원문 *DEFORMABLE_TO_RIGID_AUTOMATIC 을 짝 스위치(RELSW)까지 함께 지운다. R16 CODE 2·4

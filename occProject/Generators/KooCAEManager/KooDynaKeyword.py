@@ -10682,7 +10682,7 @@ class RigidWallPlanarMovingForcesID(DynaKeyword):
         for i in range(len(self.parameters)):
             curRPMFList = [] 
             parameter = self.parameters[i]
-            curRPMFList.append("*RIGIDWALL_PLANAR_MOVING_FORCES")
+            curRPMFList.append("*RIGIDWALL_PLANAR_MOVING_FORCES_ID")   # 카드 다섯 장(ID 카드 포함) — _ID 없이 넘기면 받는 쪽이 ID 카드를 카드 1 로 읽었다
             curRPMFList.append(parameter[0])
             curRPMFList.append(parameter[1])
             curRPMFList.append(parameter[2])
