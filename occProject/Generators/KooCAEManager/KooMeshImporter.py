@@ -3267,6 +3267,35 @@ class KooDynaImporter():
             if removeContact == True:
                 self.contactManager.RemoveContactbyPartID(pid)
             self.partManager.RemovePart(pid)
+            self._DropPartReferences(pid)
+
+    def _DropPartReferences(self, pid):
+        """지운 파트를 가리키는 카드 — 강체 처방 운동(*BOUNDARY_PRESCRIBED_MOTION_RIGID), 파트 초기 속도(*INITIAL_VELOCITY_GENERATION
+        STYP 2), *SET_PART 의 번호. 예전엔 남아 다음 단계 덱이 없는 파트를 가리켰다(누적 체인 2026-11-08 — 충격 받침 벽의 처방 운동,
+        IncludeWallInGeneral 의 「모든 파트」 묶음). 번호를 빼서 빈 묶음은 지운다 — 그 묶음을 아직 가리키는 접촉이 있으면 알린다."""
+        from KooCAEManager.KooBoundaryNode import KooBoundaryPrescribedMotionRigid
+        from KooCAEManager.KooInitial import KooInitialVelocityGeneration
+        bm = self.boundaryNodeManager
+        for bid in [b for b, x in bm.boundaries.items()
+                    if isinstance(x, KooBoundaryPrescribedMotionRigid) and getattr(x.node, "id", x.node) == pid]:
+            bm.RemoveBoundary(bid)
+        im = self.initialManager
+        for k in [k for k, x in im.inits.items()
+                  if isinstance(x, KooInitialVelocityGeneration) and str(x.STYP).strip() == "2" and str(x.ID).strip() == str(pid)]:
+            im.RemoveInitial(k)
+        emptied = []
+        for sid, ps in list(self.partManager.partSets.items()):
+            if any(str(p).strip() == str(pid) for p in ps.pids):
+                ps.pids = [p for p in ps.pids if str(p).strip() != str(pid)]
+                if not ps.pids:
+                    del self.partManager.partSets[sid]
+                    emptied.append(sid)
+        for sid in emptied:
+            users = [cid for cid, c in self.contactManager.contacts.items()
+                     if (getattr(c, "SSTYP", None) == 2 and getattr(c, "SSID", None) == sid)
+                     or (getattr(c, "MSTYP", None) == 2 and getattr(c, "MSID", None) == sid)]
+            if users:
+                print(f"  ⚠ 파트 {pid} 를 지워 파트 묶음 {sid} 가 비었다 — 그 묶음을 가리키는 접촉 {users} 이 남는다")
             
                 
             

@@ -3931,6 +3931,9 @@ class KooDynaAdvancedModification:
         print("       모델이 ton-mm-s 라면 단위가 10^12 배 어긋납니다. 옵션 파일에 명시하세요.")
 
     def DropWeightImpactTestwithPartialRigid(self, option, filePath):
+        # 시편 파트 — 이 DWI 가 만드는 나머지 파트(충격체·받침 벽·앞·가운데 단·댐퍼 등)는 다음 단계 DTI 가 모두 지운다(누적 체인 2026-11-08)
+        self._dwiSpecPIDs = set(self.dynaImporter.partManager.parts)
+        self._dwiSpecimenModified = ""
         fall_g = self._ResolveFallGravity(option, "DROP_WEIGHT_IMPACT_TEST")
         if "TFinal" in option:
             tfinal = option["TFinal"]
@@ -4104,12 +4107,16 @@ class KooDynaAdvancedModification:
         FSF = ""
         VSF = ""  
         
+        # 다음 단계(누적 체인)가 쓸 dynain 요청 카드 — 예전엔 이 경로만 빠져 dynain 이 안 나왔다(DampingSpring 과 같게)
+        self._EnsureSpringbackCard("Dynamic Relaxation Set", "DROP/IMPACT")
         if stressWaveDistance == 0.0:
             if "StressWaveVelocity" in option:
                 stressWaveVelocity = option["StressWaveVelocity"]
                 if "DistanceMargin" in option:
                     distanceMargin = option["DistanceMargin"]
                     stressWaveDistance = stressWaveVelocity*tfinal*distanceMargin   
+        if stressWaveDistance != 0.0:   # 시편 바깥을 강체로 바꾼다 — 이 결과는 다음 단계로 이어 갈 수 없다(DTI 가 멈춘다)
+            self._dwiSpecimenModified = f"{mode} 가 충격점 둘레 {stressWaveDistance:g} 밖의 시편을 강체로 바꿨다"
             
         nodeMan = self.dynaImporter.nodeManager
         nodeSetMan = self.dynaImporter.nodeSetManager              
@@ -4370,6 +4377,13 @@ class KooDynaAdvancedModification:
         # 다음 단계 DTI 가 지울 DWI 접촉 — DWI 파트(임팩터·벽·앞·가운데 단)를 가리키는 접촉. 예전엔 RemoveContactbyPartID 의 'or'
         # 결함이 MSTYP 3 접촉을 모두 지워 우연히 사라졌다. 그 결함을 고친 뒤 벽 접촉이 다음 낙하에 남았다(v131 리뷰 R7)
         dwi_pids = {p.id for p in (impactorPart, *dwiParts) if p is not None}
+        # 시편 밖 파트는 모두 이 DWI 의 장치다 — 예전엔 충격체 하나만 지워 받침 벽·댐퍼·빈 강체 파트와 벽 처방 운동이 다음 단계에 남았다
+        spec = getattr(self, "_dwiSpecPIDs", None)
+        if spec is not None:
+            pm = self.dynaImporter.partManager
+            dwi_pids |= {pid for pid in pm.parts if pid not in spec}
+            # OutsideRigid* 의 강체 짝 파트(partsRigid) — 파트 목록 밖에 있지만 덱에 *PART 로 나가 다음 단계에서는 보통 파트가 된다
+            dwi_pids |= {p.id for p in getattr(pm, "partsRigid", {}).values()}
         dwi_cids = sorted(cid for cid, c in self.dynaImporter.contactManager.contacts.items()
                           if (getattr(c, "SSTYP", None) == 3 and getattr(c, "SSID", None) in dwi_pids)
                           or (getattr(c, "MSTYP", None) == 3 and getattr(c, "MSID", None) in dwi_pids))
@@ -4439,9 +4453,9 @@ class KooDynaAdvancedModification:
                 if drTerm and drTerm > 0.0:
                     f.write("*DynamicRelaxationTerm," + str(drTerm) + "\n")
             f.write("*MovetoOriginAutomatic,True\n")
-            f.write("*RemovePartbyID,")
-            f.write(str(impactorPart.id))
-            f.write("\n")
+            f.write("*RemovePartbyID," + ",".join(str(p) for p in sorted(dwi_pids)) + "\n")
+            if getattr(self, "_dwiSpecimenModified", ""):
+                f.write("*SpecimenModified," + self._dwiSpecimenModified + "\n")
             if dwi_cids:
                 f.write("*RemoveContactbyID," + ",".join(str(c) for c in dwi_cids) + "\n")
             f.write("**EndDynainToInitial\n")
@@ -4454,6 +4468,9 @@ class KooDynaAdvancedModification:
             df.write("done")
 
     def DropWeightImpactTest(self, option, filePath):
+        # 시편 파트 — 이 DWI 가 만드는 나머지 파트(충격체·받침 벽·앞·가운데 단·댐퍼 등)는 다음 단계 DTI 가 모두 지운다(누적 체인 2026-11-08)
+        self._dwiSpecPIDs = set(self.dynaImporter.partManager.parts)
+        self._dwiSpecimenModified = ""
         # 이전 열 스텝에서 이월된 열하중 처리 (THERM→DROP 방향). 열하중이 없으면 무동작
         self._ApplyThermalCarryPolicy(option, "DROP_WEIGHT_IMPACT_TEST")
         fall_g = self._ResolveFallGravity(option, "DROP_WEIGHT_IMPACT_TEST")
@@ -4674,6 +4691,8 @@ class KooDynaAdvancedModification:
                 if "DistanceMargin" in option:
                     distanceMargin = option["DistanceMargin"]
                     stressWaveDistance = stressWaveVelocity*tfinal*distanceMargin   
+        if stressWaveDistance != 0.0:   # 시편 바깥 요소를 지운다 — 이 결과는 다음 단계로 이어 갈 수 없다(DTI 가 멈춘다)
+            self._dwiSpecimenModified = f"DampingSpring 이 충격점 둘레 {stressWaveDistance:g} 밖의 시편 요소를 지웠다"
             
         nodeMan = self.dynaImporter.nodeManager
         nodeSetMan = self.dynaImporter.nodeSetManager              
@@ -5233,6 +5252,9 @@ class KooDynaAdvancedModification:
                         self.WriteModifiedFile(filePath, modifiedKeyword)
 
     def DropWeightImpactTestbyPart(self, option, filePath):
+        # 시편 파트 — 이 DWI 가 만드는 나머지 파트(충격체·받침 벽·앞·가운데 단·댐퍼 등)는 다음 단계 DTI 가 모두 지운다(누적 체인 2026-11-08)
+        self._dwiSpecPIDs = set(self.dynaImporter.partManager.parts)
+        self._dwiSpecimenModified = ""
         fall_g = self._ResolveFallGravity(option, "DROP_WEIGHT_IMPACT_TEST")
         # 3단 실린더(dimension 7값)는 byPart(GenerationMode=Part) 경로 미지원.
         # 주 경로(DampingSpring/OutsideRigid)를 사용하거나 2단으로 입력할 것.
@@ -5357,6 +5379,8 @@ class KooDynaAdvancedModification:
         FSF = ""
         VSF = ""
        
+        # 다음 단계(누적 체인)가 쓸 dynain 요청 카드 — 장치 파트를 만들기 전(시편 파트만)
+        self._EnsureSpringbackCard("Dynamic Relaxation Set", "DROP/IMPACT")
         self.SetControlandDatabaseExplicit(tfinal, dt, dtmin=option.get("DTMIN"))
         
         nodeMan = self.dynaImporter.nodeManager
