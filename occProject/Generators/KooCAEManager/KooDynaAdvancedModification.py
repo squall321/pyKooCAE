@@ -2480,7 +2480,16 @@ class KooDynaAdvancedModification:
         spinCentre = self._DropSpinCentre((-boundingBox[0]-xLength/2.0, -boundingBox[1]-yLength/2.0, -boundingBox[2]-zLength/2.0)) \
             if rigidOmega is not None else None
 
-        self.dynaImporter.nodeManager.MoveNodes(-boundingBox[0]-xLength/2.0, -boundingBox[1]-yLength/2.0, -boundingBox[2]-zLength/2.0)
+        _shift = (-boundingBox[0]-xLength/2.0, -boundingBox[1]-yLength/2.0, -boundingBox[2]-zLength/2.0)
+        self.dynaImporter.nodeManager.MoveNodes(*_shift)
+        # 덱 강체벽도 모델과 같이 옮긴다 — 예전엔 절점만 옮겨 고정 벽 같은 사용자 벽이 모델과 어긋났다(누적 체인 둘째 낙하에서 쌓인다,
+        # 누적 체인 묶음 W3, 2026-11-08). 점(XT·YT·ZT, XH·YH·ZH)만 옮기고 방향 벡터(기하 벽의 모서리 XHEV…)는 그대로다
+        for _rw in self.dynaImporter.additionalManager.rigidwalls.values():
+            for _ax, _d in zip(("X", "Y", "Z"), _shift):
+                for _pt in ("T", "H"):
+                    _a = _ax + _pt
+                    if hasattr(_rw, _a):
+                        setattr(_rw, _a, float(getattr(_rw, _a)) + _d)
         boundingBox = self.dynaImporter.nodeManager.GetBoundingBox()
         print("Bound Box ", boundingBox)
         xLength = max(xLength, yLength, zLength)*6.0

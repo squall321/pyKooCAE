@@ -341,8 +341,20 @@ def w2():
         check(f"W2 DROP {name}: 바닥 벽이 덱 사용자 벽(5) 뒤", ok, f"rc={rc} {orders}")
 
 
+def w3():
+    print("[W3] DROP 이 모델을 원점 가운데로 옮길 때 덱 사용자 강체벽도 같이 옮긴다")
+    user = "*RIGIDWALL_PLANAR_ID\n" + f"{5:10d}user\n" + f10(0, 0, 0, 0.0, 0.0, "1.0E+20", 1.0) + f10(0.0, 0.0, -9.0, 0.0, 0.0, -8.0, 0.0, 0.0)
+    d, rc, log = R.run("w3_drop", {"model.k": R.cube_deck(user)}, R.drop([0], "DropSurface,RigidWall\n"))
+    rs = runs_of(d, "DropSet.k")
+    w = [x for x in walls(rs[0][1]) if x[1] == 5] if rs else []
+    # 정육면체 0..1 → 가운데 (0.5, 0.5, 0.5) 를 원점으로: 사용자 벽 (0,0,-9)→(-0.5,-0.5,-9.5), (0,0,-8)→(-0.5,-0.5,-8.5)
+    check("W3 DROP: 사용자 벽 5 의 두 점이 모델과 같이 (-0.5, -0.5, -0.5) 만큼 옮겨진다",
+          rc == 0 and len(w) == 1 and w[0][2] is not None and all(R.near(a, b) for a, b in zip(w[0][2], (-0.5, -0.5, -9.5, -0.5, -0.5, -8.5))),
+          f"rc={rc} {w}")
+
+
 if __name__ == "__main__":
-    for f in (c1, c1_fast, c3, c2, s1, s2, w1, w2):
+    for f in (c1, c1_fast, c3, c2, s1, s2, w1, w2, w3):
         f()
     print(f"\n판정 {'모두 통과' if not FAILS else str(len(FAILS)) + '건 실패'}")
     for x in FAILS:
