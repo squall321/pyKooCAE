@@ -1050,27 +1050,26 @@ def r6():
     walls = rw + "*RIGIDWALL_PLANAR\n" + f10(0, 0, 0, 0.0, 0.0, "1.0E+20", 1.0) + f10(0.0, 0.0, -0.2, 0.0, 0.0, 1.0, 0.2, 0.0)
     d, rc, log = run("rigidwall_ids", {"model.k": cube_deck(walls)})
     t = read(d, "model_trans.k")
-    got = sorted((try_(lambda: int(rows[0][:10]), -1), try_(lambda: round(floats(rows[2], 10)[2], 4)))
-                 for kw in sorted({ln.split()[0].upper() for ln in t.splitlines() if ln.startswith("*RIGIDWALL")}) for _, rows in kw_blocks(t, kw))
-    check("R6 *RIGIDWALL_PLANAR(번호 없음) + *RIGIDWALL_PLANAR_ID 1: 벽 둘(번호가 다르고 ZT -0.1·-0.2)이 남는다",
-          rc == 0 and len(got) == 2 and len({g[0] for g in got}) == 2 and sorted(g[1] for g in got) == [-0.2, -0.1], f"rc={rc} {got}")
+    # 누적 체인 묶음 W1(2026-11-08) 뒤로 KMM 은 읽은 종류 그대로 쓴다 — 번호 없는 벽은 번호 없이(LS-DYNA 가 정의 차례로 번호를 준다) 나간다
+    got = [(kw, rid, round(c[2], 4) if c else None) for kw, rid, c in rigidwalls(t)]
+    check("R6 *RIGIDWALL_PLANAR(번호 없음) + *RIGIDWALL_PLANAR_ID 1: 벽 둘(번호 없는 벽 ZT -0.2·_ID 1 ZT -0.1)이 남는다",
+          rc == 0 and len(got) == 2 and sorted(g[2] for g in got if g[2] is not None) == [-0.2, -0.1]
+          and ("*RIGIDWALL_PLANAR", None, -0.2) in got and ("*RIGIDWALL_PLANAR_ID", 1, -0.1) in got, f"rc={rc} {got}")
 
 
 def r7():
     print("[R7] DWI 다음 단계 DTI 의 DWI 접촉, 강체벽 차례, 재질 숫자 별칭, 침식 끝 빈 카드, D2R PAIRED 0 닫힘, long D2R SWSET, Fast DROP 강체벽")
 
     def walls_of(t):
-        """출력 강체벽 [(번호, XT·YT·ZT, 법선)] — 덱 차례대로(KMM 은 *RIGIDWALL_PLANAR_MOVING_FORCES_ID 로 쓴다)."""
+        """출력 강체벽 [(번호 또는 None, XT·YT·ZT, 법선)] — 덱 차례대로(번호 없는 벽은 None — W1 뒤로 읽은 종류 그대로 나간다)."""
         out = []
-        for ln_i, ln in enumerate(t.splitlines()):
-            if ln.startswith("*RIGIDWALL"):
-                rows = [r for r in t.splitlines()[ln_i + 1:ln_i + 8] if r.strip() and not r.startswith("$")]
-                c = try_(lambda: floats(rows[2], 10), [0.0] * 6) + [0.0] * 6
-                out.append((try_(lambda: int(rows[0][:10]), -1), tuple(round(x, 4) for x in c[:3]),
-                            tuple(round(c[k + 3] - c[k], 4) for k in range(3))))
+        for kw, rid, c in rigidwalls(t):
+            c = list(c or [0.0] * 6) + [0.0] * 6
+            out.append((rid, tuple(round(x, 4) for x in c[:3]), tuple(round(c[k + 3] - c[k], 4) for k in range(3))))
         return out
 
     # ── DWI 다음 단계 DTI: DWI 가 만든 접촉(벽·임팩터·단 사이 TIED)은 지우고 사용자 접촉은 남긴다 ─────────────────────────────
+    # BoundaryDistance 를 주지 않는다 — 시편 바깥을 강체로 바꾼 충격은 이제 다음 단계 DTI 가 멈춘다(누적 체인 묶음 S2, test_cumulative_chain s2)
     grid = {i * 4 + j + 1: (float(j), float(i), 0.0) for i in range(4) for j in range(4)}
     quads = "".join(f"{3 * i + j + 1:8d}{1:8d}" + "".join(f"{n:8d}" for n in (4 * i + j + 1, 4 * i + j + 2, 4 * i + j + 6, 4 * i + j + 5)) + "\n"
                     for i in range(3) for j in range(3))
@@ -1080,7 +1079,7 @@ def r7():
     dwi = ("*Inputfile\nmodel.k\n*RunDirectoryMode,True,runs\n*Mode\nDROP_WEIGHT_IMPACT_TEST,1\n**DropWeightImpactTest,1\nTFinal,0.0001\n"
            "DT,1e-05\nLocationX,1.5\nLocationY,1.5\nHeight,100\nInitialVelocityX,0\nInitialVelocityY,0\nInitialVelocityZ,0\nGravity,9810\n"
            "@IMP@MeshSize,0.25\nDensityImpactor,7.85e-09\nYoungsModulusImpactor,200000.0\nPoissonRatioImpactor,0.3\n"
-           "GenerationMode,OutsideRigidElement\nBoundaryDistance,0.6\nOffsetDistance,0.05\nYoungsModulusWall,10000.0\nPoissonRatioWall,0.3\n"
+           "GenerationMode,OutsideRigidElement\nOffsetDistance,0.05\nYoungsModulusWall,10000.0\nPoissonRatioWall,0.3\n"
            "DensityWall,1e-09\n**EndDropWeightImpactTest\n*End\n")
     dyn = "*KEYWORD\n" + node_block({k: (x, y, z + 0.01) for k, (x, y, z) in grid.items()}) + "*END\n"
     for name, imp in (("sphere", "ImpactorType,Sphere\nImpactorDimension,0.5\n"),
@@ -1103,8 +1102,8 @@ def r7():
     d, rc, log = run("rigidwall_order", {"model.k": cube_deck("*RIGIDWALL_PLANAR\n" + pl(-0.1) + "*RIGIDWALL_PLANAR\n" + pl(-0.2)
                                                               + "*RIGIDWALL_PLANAR_ID\n" + f"{1:10d}w1\n" + pl(-0.3))})
     got = walls_of(read(d, "model_trans.k"))
-    check("R7 번호 없는 벽 둘(ZT -0.1·-0.2) + _ID 1(-0.3): 출력도 덱 차례 -0.1·-0.2·-0.3 이고 번호가 모두 다르다",
-          rc == 0 and [g[1][2] for g in got] == [-0.1, -0.2, -0.3] and len({g[0] for g in got}) == 3, f"rc={rc} {got}")
+    check("R7 번호 없는 벽 둘(ZT -0.1·-0.2) + _ID 1(-0.3): 출력도 덱 차례 -0.1·-0.2·-0.3, 번호 없는 벽은 번호 없이·_ID 1 은 1",
+          rc == 0 and [g[1][2] for g in got] == [-0.1, -0.2, -0.3] and [g[0] for g in got] == [None, None, 1], f"rc={rc} {got}")
 
     # ── IMPORT_MERGE_K: 숫자 별칭 *MAT_084_REINF(첫 칸 EID1)·*MAT_T01(TMID)은 재질 MID 가 아니다, 침식 끝 빈 카드 ─────────────────
     one = lambda pid, mid, name: ("*KEYWORD\n" + node_block(cubes(1)) + "*ELEMENT_SOLID\n" + hex_row(1, pid, 1) + part(pid, 1, mid, name)
@@ -1158,6 +1157,25 @@ def r7():
           rc == 0 and len(ws) == 2 and all(len(w) == 1 for w in ws) and ws[0][0][2] != ws[1][0][2], f"rc={rc} {ws}")
 
 
+def rigidwalls(t):
+    """출력 강체벽 [(키워드, 번호 또는 None, (XT, YT, ZT, XH, YH, ZH))] — 덱 차례대로. _ID 꼴만 ID 카드가 있다."""
+    out, lines = [], t.splitlines()
+    for i, ln in enumerate(lines):
+        if ln.startswith("*RIGIDWALL"):
+            kw = ln.split()[0].upper()
+            rows = []
+            for r in lines[i + 1:]:
+                if r.startswith("*"):
+                    break
+                if r.strip() and not r.startswith("$"):
+                    rows.append(r)
+            off = 1 if kw.endswith("_ID") else 0
+            rid = try_(lambda: int(rows[0][:10]), -1) if off else None
+            c = try_(lambda: floats(rows[off + 1], 10)[:6], None)
+            out.append((kw, rid, tuple(c) if c and len(c) == 6 else None))
+    return out
+
+
 def cons_of(t):
     """출력 접촉 CID 목록(_ID 꼴 첫 카드)."""
     out = []
@@ -1200,7 +1218,7 @@ def r8():
     dwi = ("*Inputfile\nmodel.k\n*RunDirectoryMode,True,runs\n*Mode\nDROP_WEIGHT_IMPACT_TEST,1\n**DropWeightImpactTest,1\nTFinal,0.0001\n"
            "DT,1e-05\nLocationX,1.5\nLocationY,1.5\nHeight,100\nInitialVelocityX,0\nInitialVelocityY,0\nInitialVelocityZ,0\nGravity,9810\n"
            "ImpactorType,Sphere\nImpactorDimension,0.5\nMeshSize,0.25\nDensityImpactor,7.85e-09\nYoungsModulusImpactor,200000.0\n"
-           "PoissonRatioImpactor,0.3\nGenerationMode,OutsideRigidElement\nBoundaryDistance,0.6\nOffsetDistance,0.05\n"
+           "PoissonRatioImpactor,0.3\nGenerationMode,OutsideRigidElement\nOffsetDistance,0.05\n"
            "YoungsModulusWall,10000.0\nPoissonRatioWall,0.3\nDensityWall,1e-09\n**EndDropWeightImpactTest\n*End\n")
     d, rc, log = run("dwi_raw_n2s", {"model.k": plate}, dwi)
     runs = sorted(Path(d).glob("runs/Run_*"))
