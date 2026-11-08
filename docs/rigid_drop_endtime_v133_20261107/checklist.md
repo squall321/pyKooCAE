@@ -12,6 +12,6 @@
 - [x] 문턱 기본 0.3 → 0.2 (사용자 결정 11-08) 4d27569 — 엔진 94·모드 110·KCR 157·도움말 527·RDE 8종 모두 통과, 상자 0.2 1000/1000
 - [x] 성능 — 2만 방향 × e 3, 작업자 8, MinimumModel, 문턱 0.2: 354 s (v132 289 s, +22%). calm 18131 · clear 41114 · t_max 755, 미해결 각도 755(3.8%), tFinal 1.00~171.53 ms(중앙값 20.95)
 - [x] e2e /data/koopark/Test_E2E_v133 — v132 아는 불량 먼저, 소스 기준값(문턱 0.2 로 golden 다시 씀, ALL PASS 92 OK · SKIP 8; 옛 golden 은 golden_thr0.3_20261107)
-- [ ] 빌드·컴파일본 e2e (pykoocae-53 굽기 끝난 뒤)
+- [x] 빌드·컴파일본 e2e — f38651d, build_without_automatedmodeller --clean 을 상한 24G scope 로(08:47~09:43, 최저 가용 22 GB, pybullet.so 들어감). 호스트 e2e 엄격 ALL PASS 101 OK · SKIP 0 (golden 을 f38651d 소스로 다시 만든 뒤 — 결과는 바이트 같고 소요 시간 칸만 다름)
 - [ ] SIF v133·tar·Drive/메일, SIF e2e
 - [ ] 커밋·푸시·알림·메모리, 헤드 /opt 교체는 사용자 확인

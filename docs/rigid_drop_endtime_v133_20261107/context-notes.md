@@ -82,3 +82,6 @@
   - tFinal 은 1.00~171.53 ms(중앙값 20.95)다. 강한 재접촉으로 정한 각도는 15760 이고, impacts 줄은 167263(45 MB)이다.
 - **e2e 소스(11-08).** 문턱 0.2·엔진 고침 뒤 ALL PASS(92 OK · SKIP 8)이고 golden 을 다시 썼다. 옛 golden 은 golden_thr0.3_20261107 이다. g(상자)는 기준 csv 가 0.3 이라 PresimStrongContact,0.3 을 직접 준다.
   - MinimumModel 100 방향은 0.3 → 0.2 에서 합 2.19 → 2.55 s, 길어진 각도 31, 짧아진 각도 0, 최대 126 ms 그대로다.
+- **빌드·컴파일본 e2e(11-08).** f38651d 를 빌드했다(56 분, RC 0). 호스트 e2e(엄격)는 처음에 '기준 신선도' 하나가 FAIL 이었다. golden 을 만든 뒤 도움말 글(kmm_catalog)을 고쳤기 때문이다.
+  - f38651d 소스로 golden 을 다시 만들었다(옛 것은 golden_thr02_0218937). 출력 폴더 경로와 rigidbody.json 의 소요 시간 칸 말고는 같았다.
+  - 다시 판정해 ALL PASS 101 OK · FAIL 0 · SKIP 0 이다.
