@@ -39,7 +39,7 @@ PRESIM_TIMEOUT = 21600   # 사전 해석 KMM 시간 제한 기본 6 시간 (pres
 DEFAULTS = {"enabled": False, "table": None, "restitution": [0.1, 0.3, 0.5], "friction": 0.5,
             "gravity": False, "strong_contact": 0.3, "margin_ms": 1.0, "exclude_parts": [], "workers": 8,
             "presim_timeout_seconds": PRESIM_TIMEOUT}
-STRONG_CONTACT_TOL = 1e-9   # 표 메타 strong_contact 와 옵션이 이보다 더 다르면 멈춘다 (메타는 유효 10자리)
+STRONG_CONTACT_TOL = 1e-9   # 표 메타 strong_contact 와 옵션의 상대 차가 이보다 크면 멈춘다 (메타는 유효 10자리 — 상대 5e-10 안)
 
 
 class EndTimePresimError(RuntimeError):
@@ -83,6 +83,9 @@ def presim_options(sim_params):
     _number("friction", opts["friction"], 0.0)
     _number("margin_ms", opts["margin_ms"], 0.0)
     _number("strong_contact", opts["strong_contact"], 0.0, above=True)
+    if not math.isfinite(opts["strong_contact"]):   # KMM 은 무한대·NaN 을 종료 코드 1 로 막는다 — 그 전에 까닭을 알린다
+        raise EndTimePresimError(f"simulation_params.endtime_presim.strong_contact 는 유한한 수여야 한다: "
+                                 f"{opts['strong_contact']!r} (bad value)")
     _number("presim_timeout_seconds", opts["presim_timeout_seconds"], 1)
     if not isinstance(opts["gravity"], bool):
         raise EndTimePresimError(f"simulation_params.endtime_presim.gravity 는 true/false 여야 한다: {opts['gravity']!r} (bad value)")
@@ -430,7 +433,7 @@ def prepare_endtime_tables(sim_params, environment, model_file, output_dir, scen
     meta, rows = read_endtime_csv(table)
     check_table_drop(meta, sim_params, table, EndTimePresimError, "endtime_presim", gravity=opts["gravity"],
                      template=template)
-    check_table_rule(meta, table, opts["strong_contact"])
+    check_table_rule(meta, table, opts["strong_contact"], gravity=opts["gravity"])
     per_angle = _endtims_for(rows, angles, table, by_name=(source == "presim"))
     report_reach(rows, sim_params, "endtime_presim")
     drop = _drop_steps(runner_steps)
@@ -510,8 +513,9 @@ def check_kmm_strong_contact(environment, work_dir, batch=False):
         raise EndTimePresimError(f"사전 해석 KMM({where})이 RIGID_DROP_ENDTIME 키 PresimStrongContact 를 모른다. strong_contact"
                                  f"(중력 끔 종료 시간 규칙의 문턱)를 넘기려면 v133 이상 KMM 이 필요하다 — 이 KMM(v132 이하)은 그 줄에서 "
                                  f"종료 코드 1 로 멈춘다. environment.apptainer_sif 를 v133 이상 SmartTwinPreprocessor SIF 로 바꿀 것 — "
-                                 f"SIF 없이 쓰면 koomeshmodifier_path 를 v133 이상 KMM 으로. --help 종료 코드 {rc}: {tail} "
-                                 f"(KMM too old for strong_contact)")
+                                 f"SIF 없이 쓰면 koomeshmodifier_path 를 v133 이상 KMM 으로(SIF 를 쓰면서 koomeshmodifier_path 가 호스트 KMM 을 "
+                                 f"가리키면 그 KMM 도). 당장 돌려야 하면 gravity=true(v132 규칙)나 미리 만든 table 을 쓸 수 있다. "
+                                 f"--help 종료 코드 {rc}: {tail} (KMM too old for strong_contact)")
 
 
 G_SI = 9.81
@@ -585,23 +589,27 @@ def check_table_drop(meta, sim_params, path, err, label, gravity=None, template=
                   f"(9.81 m/s² 를 {units} 로)를 줄 것 (gravity required for {units})")
 
 
-def check_table_rule(meta, path, strong_contact):
+def check_table_rule(meta, path, strong_contact, gravity=False):
     """표 메타의 종료 시간 규칙(v133)을 본다 — endtime_presim(사전 해석·table 지름길)만 부른다. impact_conditions 는 v132 그대로.
 
       endtime_rule 없음 : v132 표(1차 뒤 첫 재접촉 묶음 끝 + 여유)라 경고 한 줄. 메타 gravity 가 켬이면 경고하지 않는다 —
-                          중력 켬은 v133 도 같은 규칙이다
-      last_strong       : 중력 끔 표. 메타 strong_contact 가 옵션 strong_contact 와 1e-9 넘게 다르면 멈춘다
+                          중력 켬은 v133 도 같은 규칙이다. first_recontact 인데 메타 gravity 가 켬이 아니어도 같은 경고다
+      last_strong       : 중력 끔 표. 옵션 gravity 가 켬이면 멈춘다(메타 gravity 가 없어 check_table_drop 이 못 본 경우).
+                          메타 strong_contact 가 옵션 strong_contact 와 상대 1e-9 넘게 다르면 멈춘다
       first_recontact   : 중력 켬 표 — strong_contact 를 보지 않는다
+    규칙 이름은 대소문자를 가리지 않는다.
     """
-    rule = str(meta.get("endtime_rule") or "").strip()
-    if not rule:
+    rule = str(meta.get("endtime_rule") or "").strip().lower()
+    if rule == "last_strong" and gravity:
+        raise EndTimePresimError(f"표 {path} 는 중력 끔 규칙(endtime_rule=last_strong) 표인데 simulation_params.endtime_presim."
+                                 f"gravity 가 true 다 — 같은 중력 조건으로 표를 다시 만들 것 (gravity mismatch)")
+    if not rule or rule == "first_recontact":
         grav = {"1": True, "true": True, "0": False, "false": False}.get(str(meta.get("gravity") or "").strip().lower())
-        if grav is not True:
-            print(f"⚠️  endtime_presim: 표 {path} — endtime_rule 메타가 없는 v132 표다(1차 뒤 첫 재접촉 묶음 끝 + 여유). 슬랩다운이 "
+        if grav is not True and not gravity:
+            what = "endtime_rule 메타가 없는 v132 표" if not rule else "중력 끔인데 endtime_rule=first_recontact 인 표"
+            print(f"⚠️  endtime_presim: 표 {path} — {what}다(1차 뒤 첫 재접촉 묶음 끝 + 여유). 슬랩다운이 "
                   f"꼭짓점마다 갈라져 오면 더 센 뒷부분을 놓칠 수 있다. v133 이상 KMM 으로 표를 다시 만들 것 "
                   f"(v132 first-recontact table)")
-        return
-    if rule == "first_recontact":
         return
     if rule != "last_strong":
         print(f"⚠️  endtime_presim: 표 {path} — 모르는 endtime_rule={rule} 라 strong_contact 를 확인하지 못했다 (unknown endtime_rule)")
@@ -612,7 +620,7 @@ def check_table_rule(meta, path, strong_contact):
         print(f"⚠️  endtime_presim: 표 {path} — endtime_rule=last_strong 인데 strong_contact 메타 {meta.get('strong_contact')!r} 를 "
               f"읽지 못해 문턱을 확인하지 못했다 (strong_contact unreadable)")
         return
-    if not abs(got - float(strong_contact)) <= STRONG_CONTACT_TOL:
+    if not abs(got - float(strong_contact)) <= STRONG_CONTACT_TOL * max(1.0, abs(float(strong_contact))):
         raise EndTimePresimError(f"표 {path} 의 문턱 strong_contact={meta['strong_contact']}(endtime_rule=last_strong)가 옵션 "
                                  f"simulation_params.endtime_presim.strong_contact {strong_contact!r} 와 다르다 — 이 문턱으로 표를 "
                                  f"다시 만들거나 옵션을 표에 맞출 것 (strong_contact mismatch)")

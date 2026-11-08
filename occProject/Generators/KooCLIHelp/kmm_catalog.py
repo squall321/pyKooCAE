@@ -1185,8 +1185,8 @@ mode("RIGID_DROP_ENDTIME", "강체 낙하 사전 해석 — 질량특성·외곽
      category="낙하·충격",
      aliases=["endtime", "종료시간", "엔드타임", "presim", "사전해석", "pybullet", "slapdown", "슬랩다운", "2차충격",
               "강체낙하", "질량특성", "관성", "impacts"],
-     when=["전각도 낙하 DOE 에서 각도마다 2차 충격(슬랩다운)이 끝나는 때에 맞춰 ENDTIM 을 다르게 줄 때 — 하나로 짧게 잡으면 "
-           "2차 충격을 놓치고 길게 잡으면 d3plot 이 쌓인다",
+     when=["전각도 낙하 DOE 에서 각도마다 강한 재접촉(슬랩다운)이 끝나는 때에 맞춰 ENDTIM 을 다르게 줄 때 — 하나로 짧게 잡으면 "
+           "뒤 충격을 놓치고 길게 잡으면 d3plot 이 쌓인다",
            "덱의 질량·무게중심·관성 텐서·주축·외곽면(OBJ)·볼록 껍질이 필요할 때",
            "충돌마다 직전 자세·속도·각속도(충격 조건 DOE 후보)를 뽑을 때"],
      syntax=["**RigidDropEndtime,<ID>", "Height,<낙하 높이 — 덱 길이 단위>",
@@ -1251,7 +1251,7 @@ Workers,4
             "<모델>_endtime.csv: 각도마다 class·t1_end·t2_start·t2_end·tfinal_ms·endtim(덱 시간 단위, 0.1 ms 올림)·reach(덱 길이 — 첫 "
             "충돌의 바닥 위 접촉점에서 센 접촉들까지 가장 먼 거리)·n_unresolved·strong_end_ms(ENDTIM 을 정한 마지막 강한 재접촉 묶음의 "
             "끝, ms — 그런 묶음이 없거나 중력 켬이면 빈칸)·strong_vn_max(재접촉 묶음 세기의 최대, v0 배수 — 재접촉이 없거나 중력 켬이면 "
-            "빈칸)·e 별 세부(strong_end_ms_e<e> 포함). 메타에 v0(√(2gh), 덱 단위)·t_sep_ms(1.0)·endtime_rule(중력 끔 last_strong, "
+            "빈칸)·governing_e(ENDTIM 을 정한 e — e 별 칸이 없는 위 칸들은 이 e 의 값)·e 별 세부(strong_end_ms_e<e> 포함). 메타에 v0(√(2gh), 덱 단위)·t_sep_ms(1.0)·endtime_rule(중력 끔 last_strong, "
             "켬 first_recontact)·strong_contact(중력 끔만) 가 있다. DROP_ATTITUDE 의 EndTimeTable 이 그대로 읽고 v0 를 자기 높이·g 와, "
             "reach 를 메시 바닥판 크기와 대조한다.",
             "2차 충격(class·t2_* 칸): 1차 충돌 묶음 뒤 1 ms 이상 떨어졌다 다시 닿은 첫 묶음. 묶음은 모두 1 ms(t_sep_ms) 간격으로 끊는다. "

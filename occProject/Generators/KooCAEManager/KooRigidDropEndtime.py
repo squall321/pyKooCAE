@@ -246,7 +246,8 @@ def run_rigid_drop_endtime(options, dyna_importer, deck_path, out_dir, log=print
     rule = "first_recontact" if gravity_on else "last_strong"
     log(f"{_TAG} START deck={deck_path} out_dir={out_dir} angles={len(angles)} ({src}) height={opt['Height']:g} "
         f"restitution={opt['Restitution']} friction={opt['Friction']:g} gravity={int(opt['PresimGravity'])} "
-        f"strong_contact={opt['PresimStrongContact']:g} margin_ms={opt['MarginMs']:g} workers={opt['Workers']}")
+        f"strong_contact={'-' if gravity_on else format(opt['PresimStrongContact'], 'g')} "   # 중력 켬은 쓰지 않는다
+        f"margin_ms={opt['MarginMs']:g} workers={opt['Workers']}")
     if gravity_on and "PresimStrongContact" in opt["GivenKeys"]:
         log(f"{_TAG} WARNING PresimStrongContact ignored with PresimGravity 1 (first re-contact rule)")
 

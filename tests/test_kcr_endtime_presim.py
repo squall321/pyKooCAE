@@ -19,8 +19,8 @@
   [9] 수정 묶음 — BOM 표, 표 메타 gravity·deck·mm-kg-ms g, numpy 찾기(옛 식과 같고 2만×2만 < 30 초), presim_timeout_seconds,
       batch_koomeshmodifier 의 호스트 KMM 묻기, 러너 노드 표식 확인, 대규모 배열 --time·스크립트 grep, deep report 배율,
       DOE 배율 F_d(짧은 표 = 예전 step/DR), _hms_scale Slurm 형식
-  [10] v133 strong_contact — table 메타 endtime_rule(없음 → v132 경고, 중력 켬 표는 빼고)·last_strong strong_contact(1e-9 넘게
-      다르면 멈춤)·first_recontact(안 봄)·모르는 규칙, 사전 해석 중력 켬은 v132 와 같은 옵션 파일(줄·RIGID_DROP_ENDTIME 확인 없음)
+  [10] v133 strong_contact — table 메타 endtime_rule(없음 → v132 경고, 중력 켬 표는 빼고, 대소문자 무관)·last_strong
+      strong_contact(상대 1e-9 넘게 다르면 멈춤, 옵션 중력 켬이면 멈춤)·first_recontact(중력 켬은 안 봄, 끔이면 경고)·모르는 규칙, 사전 해석 중력 켬은 v132 와 같은 옵션 파일(줄·RIGID_DROP_ENDTIME 확인 없음)
   ([5] 에 러너 KMM 버전(v131 도움말·도움말 없는 옛 바이너리·table 지름길), KMM rc 3, 표 v0 다름, 시간 초과면 묶음째 죽임,
    사전 해석 KMM 이 PresimStrongContact 를 모름(v132 도움말 — 사전 해석 전에 멈춤)·표 strong_contact 다름,
    [4] 에 표 높이 다름 → 멈춤, [1] 에 strong_contact 옵션 값·PresimStrongContact 줄, [6] 에 --help RIGID_DROP_ENDTIME 감싸기·
@@ -383,6 +383,12 @@ def test_pure():
             nbad += (MARK in str(e) and "strong_contact 는 0.0 보다 큰 숫자여야 한다" in str(e) and "bad value" in str(e))
     check(f"strong_contact 0·음수·bool·글자·None·nan·목록 {len(bad_sc)}가지 → 값 오류 (0 보다 커야 한다)", nbad == len(bad_sc),
           f"{nbad}/{len(bad_sc)}")
+    try:
+        EP.presim_options({"endtime_presim": {"enabled": True, "strong_contact": float("inf")}})
+        msg = ""
+    except EP.EndTimePresimError as e:
+        msg = str(e)
+    check("strong_contact inf → 값 오류 (유한한 수)", MARK in msg and "유한한 수여야 한다" in msg and "bad value" in msg, msg)
     warn = []
     for extra in ({"strong_contact": 0.5}, {}):
         buf = io.StringIO()
@@ -641,7 +647,8 @@ def test_failures():
              ["요소를 버렸다", "model_rigidbody.json", "table 로", "KMM rc=3 element loss"])
     run_case("사전 해석 표 v0 가 이 낙하 √(2gh) 와 다름", "badv0", on, ["v0", "table drop mismatch"])
     t_old = run_case("사전 해석 KMM 이 PresimStrongContact 를 모름 (v132 도움말, 중력 끔)", "v132help", on,
-                     ["KMM too old for strong_contact", "PresimStrongContact", "v133", "apptainer_sif"])
+                     ["KMM too old for strong_contact", "PresimStrongContact", "v133", "apptainer_sif",
+                      "koomeshmodifier_path", "gravity=true(v132 규칙)", "미리 만든 table"])
     check("  … 사전 해석을 돌리기 전에 멈춘다 (KMM 호출 기록 없음) · 물은 것 DROP_ATTITUDE → RIGID_DROP_ENDTIME",
           not os.path.exists(os.path.join(t_old, "output", "endtime_presim", "1", "fake_kmm_call.json"))
           and help_calls(t_old) == ["--help DROP_ATTITUDE", "--help RIGID_DROP_ENDTIME"], str(help_calls(t_old)))
@@ -1170,6 +1177,25 @@ def test_v133(kcr, rc_off):
     rc, out, err, _ = tbl({**base, "endtime_rule": "last_strong"})
     check("table: last_strong 인데 strong_contact 메타 없음 → 경고만", rc is not None and "strong_contact unreadable" in out,
           err or out[-400:])
+    rc, out, err, _ = tbl({**strong, "strong_contact": "1000.0000005"}, {"strong_contact": 1000.0})
+    check("table: 문턱 1000 · 표 1000.0000005 (상대 5e-10) → 받는다 (상대 허용차)", rc is not None, err)
+    rc, out, err, _ = tbl({**strong, "strong_contact": "1000.00001"}, {"strong_contact": 1000.0})
+    check("table: 문턱 1000 · 표 1000.00001 (상대 1e-8) → 멈춘다", rc is None and MIS in err, err)
+    rc, out, err, _ = tbl({**strong, "endtime_rule": " Last_Strong "})
+    check("table: endtime_rule 대소문자·공백 무관 (' Last_Strong ') → 경고 없음",
+          rc is not None and "unknown endtime_rule" not in out and W132 not in out, err or out[-400:])
+    rc, out, err, _ = tbl({**strong, "endtime_rule": "LAST_STRONG"}, {"strong_contact": 0.5})
+    check("table: LAST_STRONG 도 문턱을 본다 (옵션 0.5 ≠ 표 0.3 → 멈춘다)", rc is None and MIS in err, err)
+    rc, out, err, _ = tbl({**base, "endtime_rule": "first_recontact"})
+    check("table: 중력 끔 표인데 endtime_rule=first_recontact → 경고 한 줄 + 받는다",
+          rc is not None and out.count(W132) == 1 and "first_recontact 인 표" in out, err or out[-400:])
+    nograv = {k: v for k, v in strong.items() if k != "gravity"}
+    rc, out, err, _ = tbl(nograv, {"gravity": True})
+    check("table: last_strong 표 · 메타 gravity 없음 · 옵션 gravity=true → 멈춘다 (중력 다름)",
+          rc is None and "gravity mismatch" in err and "endtime_rule=last_strong" in err, err)
+    rc, out, err, _ = tbl({k: v for k, v in base.items() if k != "gravity"}, {"gravity": True})
+    check("table: 규칙·gravity 메타 없는 v132 표 · 옵션 gravity=true → 경고 없음 (같은 첫 재접촉 규칙)",
+          rc is not None and W132 not in out, err or out[-400:])
 
     def presim(opts, mode):
         tmp = new_tmp("etp_v133_")

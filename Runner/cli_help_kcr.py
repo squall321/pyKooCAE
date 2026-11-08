@@ -168,7 +168,8 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
            "결과는 harvest --impact-map 으로(항복강도를 주면 σ/항복 비가 가장 큰 파트가 지배, 다시 prepare 한 뒤 남은 지난 Run 은 "
            "step_config 대조로 뺀다)"),
          K("angle_source.impact_conditions.num_directions / restitution / friction / gravity", "정수 / 실수 목록 / 실수 / bool",
-           "20000 / [0.1, 0.3, 0.5] / 0.5 / true", "사전 해석 방향 수(실제 낙하 방향 균일)·반발계수·마찰계수·중력(충격 조건은 켬)"),
+           "20000 / [0.1, 0.3, 0.5] / 0.5 / true", "사전 해석 방향 수(실제 낙하 방향 균일)·반발계수·마찰계수·중력(충격 조건은 켬). 끄면(v133 KMM) 2차 묶음 뒤에도 "
+           "이어 돌려 k ≥ 3 충돌 줄이 더 생긴다 — k=1·2 줄과 endtim_k 는 같다"),
          K("angle_source.impact_conditions.margin_ms / workers", "실수 / 정수", "1.0 / 8",
            "충돌 묶음 끝 뒤 여유(ms) · 프로세스 수. exclude_parts 는 쓸 수 없다(FEM 의 강체 회전 중심이 그 파트를 빼지 못한다 — "
            "템플릿에서 지울 것. 병진 SPC 가 파트 절점의 10% 이상인 파트(바닥판 등)와 병진이 묶인 *MAT_RIGID 파트는 양쪽 모두 "
@@ -224,7 +225,8 @@ mode("DROP", "낙하 시나리오 — 자세 DOE(피보나치·육면체·스윕
            "이상인 마지막 재접촉 묶음의 끝 + margin_ms 이고, 그런 묶음이 없으면 1차 충돌 끝 + margin_ms 다(묶음은 1 ms 간격, 세기는 "
            "묶음 안 최대 접근 속도). 낮추면 약한 늦은 스침까지 기다려 길어지고 높이면 짧아진다. KMM 옵션 파일에 "
            "PresimStrongContact,<값> 줄로 넘긴다(v133 이상 KMM). gravity=true 면 쓰지 않는다(경고). 표(사전 해석·table 지름길 모두)의 "
-           "메타 strong_contact 가 이 값과 1e-9 넘게 다르면 멈춘다"),
+           "메타 strong_contact 가 이 값과 상대 1e-9 넘게 다르면 멈춘다. KCR v133 이상에서만 읽는다 — v132 KCR 은 모르는 키로 "
+           "무시하고 KMM 기본 0.3 을 쓴다"),
          K("simulation_params.endtime_presim.exclude_parts / workers", "정수 목록 / 정수", "[] / 8",
            "사전 해석에서 뺄 파트(받침·고정구 등. 병진 SPC 가 파트 절점의 10% 이상인 파트(바닥판 등)와 병진이 묶인 *MAT_RIGID "
            "파트는 KMM 이 자동으로 뺀다 — 10% 미만이면 기기 파트로 넣고 SPC_ON_DEVICE_PART 경고, 뺄 파트가 기기 파트와 절점을 "

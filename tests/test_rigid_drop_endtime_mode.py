@@ -208,9 +208,9 @@ def test_parser():
         except Halt:
             pass
         start = log_line("\n".join(logs), "[RigidDropEndtime] START ")
-        want = 1 if grav and given else 0
+        want, shown = (1 if given else 0, "-") if grav else (0, f"{sc:g}")   # 중력 켬은 문턱을 쓰지 않아 '-'
         check(f"중력 {'켬' if grav else '끔'} · PresimStrongContact {'직접 0.5' if given else '기본'} → 경고 {want}줄, "
-              f"START strong_contact={sc:g}", logs.count(WARN_STRONG) == want and f" strong_contact={sc:g} " in start,
+              f"START strong_contact={shown}", logs.count(WARN_STRONG) == want and f" strong_contact={shown} " in start,
               "\n".join(logs))
 
 
