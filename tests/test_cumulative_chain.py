@@ -276,8 +276,73 @@ def s2():
         check(f"S2 {tag} DTI: rc 1, _dti.k 없음, 까닭(시편)을 알린다", rc2 == 1 and not t2 and "시편" in log2, f"rc={rc2} " + log2[-300:])
 
 
+# ── W1·W2 강체벽 쓰기·차례 ──────────────────────────────────────────────────────────────────────────────────────
+def rw_blocks(t):
+    """[(키워드, 카드 목록)] — 덱 차례대로."""
+    return blocks_like(t, "*RIGIDWALL")
+
+
+def w1():
+    print("[W1] 강체벽을 읽은 종류·제목·값 그대로 쓴다 — 기하 벽 BIRTH·DISPLAY 카드, 번호 없는 기하 벽")
+    walls_deck = ("*RIGIDWALL_PLANAR\n" + f10(0, 0, 0, 0.01, 0.0, 0.5, 0.8) + f10(0.0, 0.0, -0.123456, 0.0, 0.0, 1.0, 0.25, 0.0)
+                  + "*RIGIDWALL_PLANAR_ID\n" + f"{7:10d}floorA\n" + f10(0, 0, 0, 0.0, 0.0, "1.0E+20", 1.0) + f10(0.0, 0.0, -0.2, 0.0, 0.0, 1.0, 0.1, 0.0)
+                  + "*RIGIDWALL_PLANAR_MOVING_FORCES_ID\n" + f"{8:10d}mover\n" + f10(0, 0, 0, 0.0, 0.0, "1.0E+20", 1.0)
+                  + f10(0.0, 0.0, -0.3, 0.0, 0.0, 1.0, 0.0, 0.0) + f10(2.5, 1.5) + f10(0, 0, 0, 0, 0, 0)
+                  + "*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY_ID\n" + f"{9:10d}flat\n" + f10(0, 0, 0, 0.0, "1.0E+20")
+                  + f10(0.0, 0.0, -0.4, 0.0, 0.0, 1.0, 0.0) + f10(1.0, 0.0, 0.0, 5.0, 6.0) + f10(99, "7.85E-09", 210000.0, 0.3)
+                  + "*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY\n" + f10(0, 0, 0, 0.0, "1.0E+20") + f10(0.0, 0.0, -0.5, 0.0, 0.0, 1.0, 0.0)
+                  + f10(1.0, 0.0, 0.0, 3.0, 4.0))
+    d, rc, log = R.run("w1_rw", {"model.k": R.cube_deck(walls_deck)})
+    t = R.read(d, "model_trans.k")
+    bl = rw_blocks(t)
+    kinds = [k for k, _ in bl]
+    check("W1 rc 0·Traceback 없음, 벽 다섯이 덱 차례·종류 그대로", rc == 0 and R.no_tb(log) and kinds == [
+        "*RIGIDWALL_PLANAR", "*RIGIDWALL_PLANAR_ID", "*RIGIDWALL_PLANAR_MOVING_FORCES_ID", "*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY_ID",
+        "*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY"], f"rc={rc} {kinds} " + log[-300:])
+    get = lambda k: next((rows for kk, rows in bl if kk == k), [])
+    p = get("*RIGIDWALL_PLANAR")
+    c1 = R.try_(lambda: R.floats(p[0], 10), [])
+    c2 = R.try_(lambda: R.floats(p[1], 10), [])
+    check("W1 PLANAR: OFFSET 0.01·DEATH 0.5·RWKSF 0.8 와 ZT -0.123456·FRIC 0.25 가 그대로",
+          len(c1) >= 7 and R.near(c1[3], 0.01) and R.near(c1[5], 0.5) and R.near(c1[6], 0.8) and len(c2) >= 7
+          and R.near(c2[2], -0.123456) and R.near(c2[6], 0.25), f"{p}")
+    q = get("*RIGIDWALL_PLANAR_ID")
+    check("W1 PLANAR_ID: 번호 7·제목 floorA", bool(q) and q[0][:10].strip() == "7" and q[0][10:].strip() == "floorA", f"{q}")
+    m = get("*RIGIDWALL_PLANAR_MOVING_FORCES_ID")
+    mv = R.try_(lambda: R.floats(m[3], 10), [])
+    check("W1 MOVING_FORCES_ID: 제목 mover·MASS 2.5·V0 1.5", bool(m) and m[0][10:].strip() == "mover" and len(mv) >= 2
+          and R.near(mv[0], 2.5) and R.near(mv[1], 1.5), f"{m}")
+    g = get("*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY_ID")
+    g1 = R.try_(lambda: R.floats(g[1], 10), [])
+    g4 = R.try_(lambda: R.floats(g[4], 10), [])
+    check("W1 FLAT_DISPLAY_ID: BIRTH 0·DEATH 1E20(예전엔 BIRTH 1E20 — 켜지지 않음), DISPLAY 카드 PID 99·E 210000",
+          len(g1) >= 5 and g1[3] == 0.0 and R.near(g1[4], 1.0e20) and len(g4) >= 4 and int(g4[0]) == 99 and R.near(g4[2], 210000.0), f"{g}")
+    u = get("*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY")
+    u1 = R.try_(lambda: R.floats(u[0], 10), [])
+    u3 = R.try_(lambda: R.floats(u[2], 10), [])
+    check("W1 번호 없는 FLAT_DISPLAY: 죽지 않고 BIRTH 0·LENL 3·LENM 4", len(u1) >= 5 and u1[3] == 0.0 and len(u3) >= 5
+          and R.near(u3[3], 3.0) and R.near(u3[4], 4.0), f"{u}")
+
+
+def w2():
+    print("[W2] 강체벽 정의 차례 — 종류가 섞여도 덱 차례, 낙하 바닥 벽은 단일 각도·여러 각도 모두 덱 벽 뒤")
+    pl = lambda zt: f10(0, 0, 0, 0.0, 0.0, "1.0E+20", 1.0) + f10(0.0, 0.0, zt, 0.0, 0.0, 1.0, 0.0, 0.0)
+    deck = ("*RIGIDWALL_PLANAR_ID\n" + f"{1:10d}first\n" + pl(-0.1) + "*RIGIDWALL_PLANAR\n" + pl(-0.2)
+            + "*RIGIDWALL_PLANAR_MOVING_FORCES_ID\n" + f"{3:10d}third\n" + pl(-0.3) + f10(0.0, 0.0) + f10(0, 0, 0, 0, 0, 0))
+    d, rc, log = R.run("w2_order", {"model.k": R.cube_deck(deck)})
+    got = [w[2][2] if w[2] else None for w in walls(R.read(d, "model_trans.k"))]
+    check("W2 _ID 1(-0.1)·번호 없음(-0.2)·MOVING_FORCES_ID 3(-0.3): 출력도 -0.1·-0.2·-0.3", rc == 0 and got == [-0.1, -0.2, -0.3], f"rc={rc} {got}")
+    user = "*RIGIDWALL_PLANAR_ID\n" + f"{5:10d}user\n" + f10(0, 0, 0, 0.0, 0.0, "1.0E+20", 1.0) + f10(0.0, 0.0, -9.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    for name, rolls in (("single", [0]), ("fast", [0, 30])):
+        d, rc, log = R.run(f"w2_drop_{name}", {"model.k": R.cube_deck(user)}, R.drop(rolls, "DropSurface,RigidWall\n"))
+        rs = runs_of(d, "DropSet.k")
+        orders = [[w[1] for w in walls(deck_)] for _, deck_, _ in rs]
+        ok = rc == 0 and len(rs) == len(rolls) and all(len(o) == 2 and o[0] == 5 for o in orders)
+        check(f"W2 DROP {name}: 바닥 벽이 덱 사용자 벽(5) 뒤", ok, f"rc={rc} {orders}")
+
+
 if __name__ == "__main__":
-    for f in (c1, c1_fast, c3, c2, s1, s2):
+    for f in (c1, c1_fast, c3, c2, s1, s2, w1, w2):
         f()
     print(f"\n판정 {'모두 통과' if not FAILS else str(len(FAILS)) + '건 실패'}")
     for x in FAILS:

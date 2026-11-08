@@ -39,3 +39,12 @@
   DEATH(1E20)를 넣는다 — 벽이 켜지지 않는다. 평면 벽 기록기는 카드 1 의 OFFSET·BIRTH·DEATH·RWKSF 와 카드 2 의 WVEL 을 쓰지 않는다(덱 값이 기본값으로
   바뀜). KMM 이 만드는 바닥 벽(MOVING_FORCES_ID, MASS 0)은 그대로 둔다 — 매니저 판단 근거(매뉴얼·실행)가 없고 기존 낙하를 바꾸지 않기 위해서다.
   덱에서 읽은 벽만 읽은 종류·제목·값 그대로 쓴다.
+
+## 고친 뒤 판정·발견(11-08 저녁)
+- **W2 바닥 벽 자리.** v131 노트의 「단일 각도 RigidWall 은 바닥 벽을 원문 강체벽 앞에 쓴다(Fast 는 뒤)」 는 고치기 전 트리(gen_f3a49d9)에서도
+  재현되지 않았다 — 사용자 벽 _ID 5 덱에서 단일·Fast 모두 바닥 벽이 뒤다. 회귀 시험(W2 DROP single·fast)으로만 남긴다. 실제 W2 결함은 종류가
+  섞인 덱의 차례(종류별로 읽음)였고, 읽기가 lines_with_asterisk 에서 강체벽 덱 차례(dynaKeywordMan.rigidwall_order)를 남겨 그 차례로 만든다.
+- **아는 불량 트리.** /data/koopark/Test_cumchain_20261108/gen_f3a49d9(고치기 전 main 의 occProject/Generators) — KMM_GEN 으로 같은 시험을
+  돌린다. W1 다섯·W2 차례·C3 셋이 그 트리에서 실패한다(새 판정은 모두 고치기 전 판에서 실패 확인).
+- **W1 의 바이트 변화.** 덱에서 읽은 벽은 읽은 종류·제목·값 그대로 나간다. KMM 이 만드는 바닥 벽(MOVING_FORCES_ID)도 이제 카드 1 의
+  OFFSET·BIRTH·DEATH·RWKSF 와 카드 2 의 WVEL 을 쓰고 실수는 _real10 이다 — DROP 의 DropContact RW_BIRTH·RW_DEATH·RWKSF 를 처음으로 출력에 싣는다.

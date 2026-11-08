@@ -58,6 +58,12 @@ class KooHourglass:
         stream.write("\n")
         
     
+def _rw_num(v):
+    """강체벽 기록기의 실수 칸 — 덱 값 그대로(10칸 최대 정밀도). 예전엔 10.4f·10.3e 로 잘랐다(누적 체인 묶음 W1, 2026-11-08)."""
+    from KooCAEManager.KooDefine import _real10
+    return _real10(float(v) if not isinstance(v, str) else KooDynaFloat(v, 0.0))
+
+
 class KooRigidWallGeometricFlatDisplay:
     def __init__(self, ID=0, name = "",NSID=0,NSIDEX=0,BOXID=0,BIRTH=0.0,DEATH=1.0E20,XT=0.0,YT=0.0,ZT=0.0,XH=0.0,YH=0.0,ZH=0.0,FRIC=0.0,XHEV=0.0,YHEV=0.0,ZHEV=0.0,LENL=0.0,LENM=0.0):
         self.ID = ID
@@ -79,61 +85,31 @@ class KooRigidWallGeometricFlatDisplay:
         self.ZHEV = ZHEV
         self.LENL = LENL
         self.LENM = LENM
+        self.kw = "*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY_ID"   # 읽은 종류(번호 없는 꼴은 _ID 없이 쓴다)
+        self.display = None   # DISPLAY 카드(PID, RO, E, PR) — 덱에 있었으면 그대로 쓴다
         pass
     
+    def _keyword_text(self):
+        """읽은 종류·제목 그대로, DISPLAY 카드까지 쓴다 — 예전엔 늘 _ID 로 썼고 DISPLAY 카드를 버렸으며 실수를 10.3e(유효숫자 4자리)로
+        잘랐다(누적 체인 묶음 W1)."""
+        n = lambda v: format(v, ">10")
+        out = [self.kw]
+        if self.kw.endswith("_ID"):
+            out.append(n(self.ID) + str(self.name or "").strip()[:70])
+        out.append(n(self.NSID) + n(self.NSIDEX) + n(self.BOXID) + _rw_num(self.BIRTH) + _rw_num(self.DEATH))
+        out.append("".join(_rw_num(v) for v in (self.XT, self.YT, self.ZT, self.XH, self.YH, self.ZH, self.FRIC)))
+        out.append("".join(_rw_num(v) for v in (self.XHEV, self.YHEV, self.ZHEV, self.LENL, self.LENM)))
+        if "_DISPLAY" in self.kw and self.display is not None:
+            pid, ro, e, pr = self.display
+            out.append(n(pid) + _rw_num(ro) + _rw_num(e) + _rw_num(pr))
+        return "\n".join(out) + "\n"
+
     def WriteDynaKeyword(self):
-        keyword = ""
-        keyword += "*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY_ID\n"
-        keyword += format(self.ID, ">10")
-        keyword += format(self.name, ">70")
-        keyword += "\n"
-        keyword += format(self.NSID, ">10")
-        keyword += format(self.NSIDEX, ">10")
-        keyword += format(self.BOXID, ">10")
-        keyword += format(self.BIRTH, ">10.3e")
-        keyword += format(self.DEATH, ">10.3e")
-        keyword += "\n"
-        keyword += format(self.XT, ">10.3e")
-        keyword += format(self.YT, ">10.3e")
-        keyword += format(self.ZT, ">10.3e")
-        keyword += format(self.XH, ">10.3e")
-        keyword += format(self.YH, ">10.3e")
-        keyword += format(self.ZH, ">10.3e")
-        keyword += format(self.FRIC, ">10.3e")
-        keyword += "\n"
-        keyword += format(self.XHEV, ">10.3e")
-        keyword += format(self.YHEV, ">10.3e")
-        keyword += format(self.ZHEV, ">10.3e")
-        keyword += format(self.LENL, ">10.3e")
-        keyword += format(self.LENM, ">10.3e")
-        keyword += "\n"
-        return keyword
-    
+        return self._keyword_text()
+
     def WriteStreamDynaKeyword(self, stream):
-        stream.write("*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY_ID\n")
-        stream.write(format(self.ID, ">10"))
-        stream.write(format(self.name, ">70"))
-        stream.write("\n")
-        stream.write(format(self.NSID, ">10"))
-        stream.write(format(self.NSIDEX, ">10"))
-        stream.write(format(self.BOXID, ">10"))
-        stream.write(format(self.BIRTH, ">10.3e"))
-        stream.write(format(self.DEATH, ">10.3e"))
-        stream.write("\n")
-        stream.write(format(self.XT, ">10.3e"))
-        stream.write(format(self.YT, ">10.3e"))
-        stream.write(format(self.ZT, ">10.3e"))
-        stream.write(format(self.XH, ">10.3e"))
-        stream.write(format(self.YH, ">10.3e"))
-        stream.write(format(self.ZH, ">10.3e"))
-        stream.write(format(self.FRIC, ">10.3e"))
-        stream.write("\n")
-        stream.write(format(self.XHEV, ">10.3e"))
-        stream.write(format(self.YHEV, ">10.3e"))
-        stream.write(format(self.ZHEV, ">10.3e"))
-        stream.write(format(self.LENL, ">10.3e"))
-        stream.write(format(self.LENM, ">10.3e"))
-        stream.write("\n")
+        stream.write(self._keyword_text())
+
 
 class KooRigidwallPlanarMovingForces:
     def __init__(self, ID=0, NSID=0, NSIDEX=0, BOXID=0,OFFSET=0.0,BIRTH=0.0,DEATH=1.0e20,RWKSF=1.0,XT=0.0,YT=0.0,ZT=0.0,XH=0.0,YH=0.0,ZH=0.0,FRIC=0.0,WVEL=0.0,MASS=0.0,V0=0.0,SOFT=0,SSID=0,N1=0,N2=0,N3=0,N4=0):
@@ -161,83 +137,35 @@ class KooRigidwallPlanarMovingForces:
         self.N2 = N2
         self.N3 = N3
         self.N4 = N4
+        self.kw = "*RIGIDWALL_PLANAR_MOVING_FORCES_ID"   # 읽은 종류 — KMM 이 만드는 벽(DROP 바닥 등)은 이 꼴
+        self.title = ""
         pass 
     
+    def _keyword_text(self):
+        """읽은 종류·제목 그대로 쓴다(KMM 이 만드는 벽은 MOVING_FORCES_ID). 예전엔 모든 평면 벽을 MOVING_FORCES_ID(MASS 0)로 바꾸고
+        제목을 버렸고, 카드 1 의 OFFSET·BIRTH·DEATH·RWKSF 와 카드 2 의 WVEL 을 쓰지 않아 덱 값이 기본값이 됐으며(DROP 의 RW_BIRTH·RW_DEATH·
+        RWKSF 도 출력에 없었다) 실수를 10.4f 로 잘랐다(누적 체인 묶음 W1, 2026-11-08)."""
+        n = lambda v: format(v, ">10")
+        kw = self.kw
+        out = [kw]
+        if kw.endswith("_ID"):
+            out.append(n(self.ID) + str(self.title or "").strip()[:70])
+        out.append(n(self.NSID) + n(self.NSIDEX) + n(self.BOXID)
+                   + "".join(_rw_num(v) for v in (self.OFFSET, self.BIRTH, self.DEATH, self.RWKSF)))
+        out.append("".join(_rw_num(v) for v in (self.XT, self.YT, self.ZT, self.XH, self.YH, self.ZH, self.FRIC, self.WVEL)))
+        if "_MOVING" in kw:
+            out.append(_rw_num(self.MASS) + _rw_num(self.V0))
+        if "_FORCES" in kw:
+            out.append(n(self.SOFT) + n(self.SSID) + n(self.N1) + n(self.N2) + n(self.N3) + n(self.N4))
+        return "\n".join(out) + "\n"
+
     def WriteDynaKeyword(self):
-        _f = self._fmt_rw
-        keyword = ""
-        keyword += "*RIGIDWALL_PLANAR_MOVING_FORCES_ID\n"
-        keyword += format(self.ID, ">10")
-        keyword += "\n"
-        keyword += format(self.NSID, ">10")
-        keyword += format(self.NSIDEX, ">10")
-        keyword += format(self.BOXID, ">10")
-        keyword += "\n"
-        keyword += _f(self.XT)
-        keyword += _f(self.YT)
-        keyword += _f(self.ZT)
-        keyword += _f(self.XH)
-        keyword += _f(self.YH)
-        keyword += _f(self.ZH)
-        keyword += _f(self.FRIC)
-        keyword += "\n"
-        keyword += _f(self.MASS)
-        keyword += _f(self.V0)
-        keyword += "\n"
-        keyword += format(self.SOFT, ">10")
-        keyword += format(self.SSID, ">10")
-        keyword += format(self.N1, ">10")
-        keyword += format(self.N2, ">10")
-        keyword += format(self.N3, ">10")
-        keyword += format(self.N4, ">10")
-        keyword += "\n"
-        return keyword  
-    
-    @staticmethod
-    def _fmt_rw(val, width=10):
-        """RigidWall용 실수 포맷. LS-DYNA 호환."""
-        s = f"{val:>{width}.4f}"
-        if len(s) > width:
-            s = f"{val:>{width}.3e}"
-        if len(s) > width:
-            s = f"{val:>{width}.2e}"
-        return s
+        return self._keyword_text()
 
     def WriteStreamDynaKeyword(self, stream):
-        # 필드 너비: 모델의 포맷에 맞춤 (standard=10)
-        W = 10
-        _f = lambda v: self._fmt_rw(v, W)
-        stream.write("*RIGIDWALL_PLANAR_MOVING_FORCES_ID\n")
-        # ID card
-        stream.write(format(self.ID, f">{W}"))
-        stream.write("\n")
-        # Card 1: NSID, NSIDEX, BOXID
-        stream.write(format(self.NSID, f">{W}"))
-        stream.write(format(self.NSIDEX, f">{W}"))
-        stream.write(format(self.BOXID, f">{W}"))
-        stream.write("\n")
-        # Card 2: XT, YT, ZT, XH, YH, ZH, FRIC
-        stream.write(_f(self.XT))
-        stream.write(_f(self.YT))
-        stream.write(_f(self.ZT))
-        stream.write(_f(self.XH))
-        stream.write(_f(self.YH))
-        stream.write(_f(self.ZH))
-        stream.write(_f(self.FRIC))
-        stream.write("\n")
-        # Card 6 (MOVING): MASS, V0
-        stream.write(_f(self.MASS))
-        stream.write(_f(self.V0))
-        stream.write("\n")
-        # Card 7 (FORCES): SOFT, SSID, N1, N2, N3, N4
-        stream.write(format(self.SOFT, f">{W}"))
-        stream.write(format(self.SSID, f">{W}"))
-        stream.write(format(self.N1, f">{W}"))
-        stream.write(format(self.N2, f">{W}"))
-        stream.write(format(self.N3, f">{W}"))
-        stream.write(format(self.N4, f">{W}"))
-        stream.write("\n")              
-        
+        stream.write(self._keyword_text())
+
+
 class KooInterfaceSpringbackLSDyna:
     def __init__(self,ID, PSID=1,NSHV=0,FTYPE=0,FTENSR=0,NTHHSV=0,RFLAG=0,INTSTRN=0, OPTC1="0", SLDO=0, NCYC="",FSPLIT=0,NGFLAG=0,CFLAG=0,HFLAG="",OPTC2="",DTWRT="",OPTC3="",NMWRT="",IVFLG=0):
         self.ID = ID 
@@ -461,7 +389,7 @@ class KooDynaAdditionalManager:
     
     def CreateRigidwallGeometricFlatDisplay(self, NSID=0,NSIDEX=0,BOXID=0,BIRTH=0.0,DEATH=1.0E20,XT=0.0,YT=0.0,ZT=0.0,XH=0.0,YH=0.0,ZH=0.0,FRIC=0.0,XHEV=0.0,YHEV=0.0,ZHEV=0.0,LENL=0.0,LENM=0.0): 
         self.maxRWID = self.maxRWID + 1
-        rigidwall = KooRigidWallGeometricFlatDisplay(self.maxRWID, NSID,NSIDEX,BOXID,BIRTH,DEATH,XT,YT,ZT,XH,YH,ZH,FRIC,XHEV,YHEV,ZHEV,LENL,LENM)
+        rigidwall = KooRigidWallGeometricFlatDisplay(self.maxRWID, "", NSID,NSIDEX,BOXID,BIRTH,DEATH,XT,YT,ZT,XH,YH,ZH,FRIC,XHEV,YHEV,ZHEV,LENL,LENM)   # 이름 칸을 비워 넘긴다 — 예전엔 NSID 가 이름 자리로 밀렸다
         self.rigidwalls[self.maxRWID] = rigidwall
         return rigidwall
     
@@ -600,6 +528,7 @@ class KooDynaAdditionalManager:
                 XT, YT, ZT, XH, YH, ZH, FRIC, WVEL,
                 0.0, 0.0, 0, 0, 0, 0, 0, 0
             )
+            rigidWall.kw = "*RIGIDWALL_PLANAR"   # 읽은 종류 그대로 쓴다(예전엔 MOVING_FORCES_ID MASS 0 으로 바꿨다)
             return rigidWall
         elif additionalKeyword[0] == "*RIGIDWALL_PLANAR_ID":
             # *RIGIDWALL_PLANAR_ID — ID/name 카드 + Card 1/2 (MOVING_FORCES 없음)
@@ -631,6 +560,8 @@ class KooDynaAdditionalManager:
                 XT, YT, ZT, XH, YH, ZH, FRIC, WVEL,
                 0.0, 0.0, 0, 0, 0, 0, 0, 0
             )
+            rigidWall.kw = "*RIGIDWALL_PLANAR_ID"
+            rigidWall.title = str(zeroLine[1]).strip() if len(zeroLine) > 1 else ""
             return rigidWall
         elif additionalKeyword[0] == "*RIGIDWALL_PLANAR_MOVING_FORCES":
             firstLine = additionalKeyword[1]
@@ -673,6 +604,7 @@ class KooDynaAdditionalManager:
             N4 = KooDynaInt(fourthLine[5],0)
 
             rigidWall = self.CreateRigidwallPlanarMovingForces(NSID, NSIDEX, BOXID,OFFSET,BIRTH,DEATH,RWKSF,XT,YT,ZT,XH,YH,ZH,FRIC,WVEL,MASS,V0, SOFT,SSID,N1,N2,N3,N4)    
+            rigidWall.kw = "*RIGIDWALL_PLANAR_MOVING_FORCES"
              
             return rigidWall
         elif additionalKeyword[0] == "*RIGIDWALL_PLANAR_MOVING_FORCES_ID":
@@ -717,77 +649,35 @@ class KooDynaAdditionalManager:
             N3 = KooDynaInt(fourthLine[4],0)
             N4 = KooDynaInt(fourthLine[5],0)
             rigidWall = self.CreateRigidwallPlanarMovingForceswithID(ID,NSID, NSIDEX, BOXID,OFFSET,BIRTH,DEATH,RWKSF,XT,YT,ZT,XH,YH,ZH,FRIC,WVEL,MASS,V0, SOFT,SSID,N1,N2,N3,N4)    
+            rigidWall.kw = "*RIGIDWALL_PLANAR_MOVING_FORCES_ID"
+            rigidWall.title = str(zeroLine[1]).strip() if len(zeroLine) > 1 else ""
             return rigidWall
-        elif additionalKeyword[0] == "*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY":
-            firstLine = additionalKeyword[1]            
-            secondLine = additionalKeyword[2]           
-            thirdLine = additionalKeyword[3]
-            fourthLine = additionalKeyword[4]
-            if len(firstLine)<7:
-                firstLine += [""]*(7-len(firstLine))
-            if len(secondLine)<8:
-                secondLine += [""]*(8-len(secondLine))
-            if len(thirdLine)<2:
-                thirdLine += [""]*(2-len(thirdLine))
-            if len(fourthLine)<6:
-                fourthLine += [""]*(6-len(fourthLine))
-            NSID = KooDynaInt(firstLine[0],0)
-            NSIDEX = KooDynaInt(firstLine[1],0)
-            BOXID = KooDynaInt(firstLine[2],0)
-            OFFSET = KooDynaFloat(firstLine[3],0.0)
-            BIRTH = KooDynaFloat(firstLine[4],0.0)
-            DEATH = KooDynaFloat(firstLine[5],1.0e20)
-            XT = KooDynaFloat(secondLine[0],0.0)
-            YT = KooDynaFloat(secondLine[1],0.0)
-            ZT = KooDynaFloat(secondLine[2],0.0)
-            XH = KooDynaFloat(secondLine[3],0.0)
-            YH = KooDynaFloat(secondLine[4],0.0)
-            ZH = KooDynaFloat(secondLine[5],0.0)
-            FRIC = KooDynaFloat(secondLine[6],0.0)
-            XHEV = KooDynaFloat(thirdLine[0],0.0)
-            YHEV = KooDynaFloat(thirdLine[1],0.0)
-            ZHEV = KooDynaFloat(thirdLine[2],0.0)
-            LENL = KooDynaFloat(thirdLine[3],0.0)
-            LENM = KooDynaFloat(thirdLine[4],0.0)
-            
-            rigidWall = self.CreateRigidwallGeometricFlatDisplay(NSID,NSIDEX,BOXID,BIRTH,DEATH,XT,YT,ZT,XH,YH,ZH,FRIC,XHEV,YHEV,ZHEV,LENL,LENM)
-            return rigidWall
-        elif additionalKeyword[0] == "*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY_ID":
-            zeroLine = additionalKeyword[1]
-            ID = int(zeroLine[0])
-            name = zeroLine[1]
-            firstLine = additionalKeyword[2]            
-            secondLine = additionalKeyword[3]           
-            thirdLine = additionalKeyword[4]
-            #fourthLine = additionalKeyword[5]
-            if len(firstLine)<7:
-                firstLine += [""]*(7-len(firstLine))
-            if len(secondLine)<8:
-                secondLine += [""]*(8-len(secondLine))
-            if len(thirdLine)<2:
-                thirdLine += [""]*(2-len(thirdLine))
-            #if len(fourthLine)<6:
-            #    fourthLine += [""]*(6-len(fourthLine))
-            NSID = KooDynaInt(firstLine[0],0)
-            NSIDEX = KooDynaInt(firstLine[1],0)
-            BOXID = KooDynaInt(firstLine[2],0)
-            OFFSET = KooDynaFloat(firstLine[3],0.0)
-            BIRTH = KooDynaFloat(firstLine[4],0.0)
-            DEATH = KooDynaFloat(firstLine[5],1.0e20)
-            XT = KooDynaFloat(secondLine[0],0.0)
-            YT = KooDynaFloat(secondLine[1],0.0)
-            ZT = KooDynaFloat(secondLine[2],0.0)
-            XH = KooDynaFloat(secondLine[3],0.0)
-            YH = KooDynaFloat(secondLine[4],0.0)
-            ZH = KooDynaFloat(secondLine[5],0.0)
-            FRIC = KooDynaFloat(secondLine[6],0.0)
-            XHEV = KooDynaFloat(thirdLine[0],0.0)
-            YHEV = KooDynaFloat(thirdLine[1],0.0)
-            ZHEV = KooDynaFloat(thirdLine[2],0.0)
-            LENL = KooDynaFloat(thirdLine[3],0.0)
-            LENM = KooDynaFloat(thirdLine[4],0.0)
-            
-            rigidWall = self.CreateRigidwallGeometricFlatDisplaywithID(ID,name,NSID,NSIDEX,BOXID,BIRTH,DEATH,XT,YT,ZT,XH,YH,ZH,FRIC,XHEV,YHEV,ZHEV,LENL,LENM)
+        elif additionalKeyword[0] in ("*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY", "*RIGIDWALL_GEOMETRIC_FLAT_DISPLAY_ID"):
+            # R16 카드 1 = NSID·NSIDEX·BOXID·BIRTH·DEATH(OFFSET 칸 없음) — 예전엔 OFFSET 이 있다고 읽어 BIRTH 자리에 DEATH(1E20)가 들어가
+            # 벽이 켜지지 않았다. 번호 없는 꼴은 DISPLAY 카드가 없으면 IndexError, DISPLAY 카드(PID·RO·E·PR)는 버렸다(누적 체인 묶음 W1)
+            kw = additionalKeyword[0]
+            cards = list(additionalKeyword[1:])
+            ID, name = None, ""
+            if kw.endswith("_ID"):
+                zeroLine = cards.pop(0) if cards else ["0"]
+                ID = KooDynaInt(zeroLine[0], 0)
+                name = str(zeroLine[1]).strip() if len(zeroLine) > 1 else ""
+            card = lambda c, w: (list(cards[c]) if c < len(cards) else []) + [""] * w
+            c1, c2, c3 = card(0, 5), card(1, 7), card(2, 5)
+            NSID, NSIDEX, BOXID = KooDynaInt(c1[0], 0), KooDynaInt(c1[1], 0), KooDynaInt(c1[2], 0)
+            BIRTH, DEATH = KooDynaFloat(c1[3], 0.0), KooDynaFloat(c1[4], 1.0e20)
+            XT, YT, ZT, XH, YH, ZH, FRIC = (KooDynaFloat(c2[q], 0.0) for q in range(7))
+            XHEV, YHEV, ZHEV, LENL, LENM = (KooDynaFloat(c3[q], 0.0) for q in range(5))
+            if ID is None:
+                rigidWall = self.CreateRigidwallGeometricFlatDisplay(NSID, NSIDEX, BOXID, BIRTH, DEATH, XT, YT, ZT, XH, YH, ZH, FRIC,
+                                                                     XHEV, YHEV, ZHEV, LENL, LENM)
+            else:
+                rigidWall = self.CreateRigidwallGeometricFlatDisplaywithID(ID, name, NSID, NSIDEX, BOXID, BIRTH, DEATH, XT, YT, ZT, XH, YH, ZH,
+                                                                           FRIC, XHEV, YHEV, ZHEV, LENL, LENM)
+            rigidWall.kw = kw
+            if len(cards) > 3 and any(str(x).strip() for x in cards[3]):
+                c4 = card(3, 4)
+                rigidWall.display = (KooDynaInt(c4[0], 0), KooDynaFloat(c4[1], 0.0), KooDynaFloat(c4[2], 0.0), KooDynaFloat(c4[3], 0.0))
             return rigidWall
         elif additionalKeyword[0] == "*DEFORMABLE_TO_RIGID_AUTOMATIC":
             # Card 1: SWSET, CODE, TIME1, TIME2, TIME3, ENTNO, RELSW, PAIRED

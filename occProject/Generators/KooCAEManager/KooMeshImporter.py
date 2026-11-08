@@ -2354,7 +2354,7 @@ class KooDynaImporter():
         dynaKeyword = self.dynaManager.dynaKeywordMan.keywords
         if "TITLE" in dynaKeyword:
             self.keywordInterpreted["TITLE"] = True
-        # 단순 *RIGIDWALL_PLANAR / _ID — additionalManager로 통합 (출력 시 _MOVING_FORCES_ID 형식으로 변환됨, 의미 동일)
+        # *RIGIDWALL_PLANAR(_ID)·MOVING_FORCES(_ID)·GEOMETRIC_FLAT_DISPLAY(_ID) — additionalManager 로 읽고 읽은 종류 그대로 쓴다
         if "RIGIDWALL_PLANAR" in dynaKeyword:
             self.keywordInterpreted["RIGIDWALL_PLANAR"] = True
         if "RIGIDWALL_PLANAR_ID" in dynaKeyword:
@@ -2383,41 +2383,21 @@ class KooDynaImporter():
             for additional in additionals:
                 self.additionalManager.SetAdditionalfromDyna(additional)
                 
-        if "RIGIDWALL_PLANAR" in dynaKeyword:
-            rwPlanarKeyword : RigidWallPlanar = dynaKeyword["RIGIDWALL_PLANAR"]
-            additionals = rwPlanarKeyword.getRigidWallPlanar()
-            for additional in additionals:
+        # 강체벽 — 덱 차례로 만든다(종류가 섞여도). 예전엔 종류별 차례(PLANAR → PLANAR_ID → MOVING_FORCES → … )로 만들어 덱 차례가
+        # 바뀌었다 — D2R CODE 1·3 의 ENTNO·RWFORC 는 정의 차례다(누적 체인 묶음 W2, 2026-11-08). 차례를 모르는 벽(덧붙인 덱 등)은 뒤에 종류별로
+        _rw_get = {"RIGIDWALL_PLANAR": "getRigidWallPlanar", "RIGIDWALL_PLANAR_ID": "getRigidWallPlanarID",
+                   "RIGIDWALL_PLANAR_MOVING_FORCES": "getRigidWallPlanarMovingForces",
+                   "RIGIDWALL_PLANAR_MOVING_FORCES_ID": "getRigidWallPlanarMovingForcesID",
+                   "RIGIDWALL_GEOMETRIC_FLAT_DISPLAY": "getRigidWallGeometricFlatDisplay",
+                   "RIGIDWALL_GEOMETRIC_FLAT_DISPLAY_ID": "getRigidWallGeometricFlatDisplayID"}
+        _rw_q = {k: list(getattr(dynaKeyword[k], g)()) for k, g in _rw_get.items() if k in dynaKeyword}
+        for k in getattr(self.dynaManager.dynaKeywordMan, "rigidwall_order", None) or []:
+            if _rw_q.get(k):
+                self.additionalManager.SetAdditionalfromDyna(_rw_q[k].pop(0))
+        for k in _rw_get:
+            for additional in _rw_q.get(k, []):
                 self.additionalManager.SetAdditionalfromDyna(additional)
 
-        if "RIGIDWALL_PLANAR_ID" in dynaKeyword:
-            rwPlanarIDKeyword : RigidWallPlanarID = dynaKeyword["RIGIDWALL_PLANAR_ID"]
-            additionals = rwPlanarIDKeyword.getRigidWallPlanarID()
-            for additional in additionals:
-                self.additionalManager.SetAdditionalfromDyna(additional)
-
-        if "RIGIDWALL_PLANAR_MOVING_FORCES" in dynaKeyword:
-            rigidWallPlanarMovingForcesKeyword : RigidWallPlanarMovingForces = dynaKeyword["RIGIDWALL_PLANAR_MOVING_FORCES"]
-            additionals = rigidWallPlanarMovingForcesKeyword.getRigidWallPlanarMovingForces()
-            for additional in additionals:
-                self.additionalManager.SetAdditionalfromDyna(additional)
-            
-        if "RIGIDWALL_PLANAR_MOVING_FORCES_ID" in dynaKeyword:
-            rigidWallPlanarMovingForcesIDKeyword : RigidWallPlanarMovingForcesID = dynaKeyword["RIGIDWALL_PLANAR_MOVING_FORCES_ID"]
-            additionals = rigidWallPlanarMovingForcesIDKeyword.getRigidWallPlanarMovingForcesID()
-            for additional in additionals:
-                self.additionalManager.SetAdditionalfromDyna(additional)
-        
-        if "RIGIDWALL_GEOMETRIC_FLAT_DISPLAY" in dynaKeyword:
-            rigidWallGeometricFlatDisplayKeyword : RigidWallGeometricFlatDisplay = dynaKeyword["RIGIDWALL_GEOMETRIC_FLAT_DISPLAY"]
-            additionals = rigidWallGeometricFlatDisplayKeyword.getRigidWallGeometricFlatDisplay()
-            for additional in additionals:
-                self.additionalManager.SetAdditionalfromDyna(additional)
-                
-        if "RIGIDWALL_GEOMETRIC_FLAT_DISPLAY_ID" in dynaKeyword:
-            rigidWallGeometricFlatDisplayIDKeyword : RigidWallGeometricFlatDisplayID = dynaKeyword["RIGIDWALL_GEOMETRIC_FLAT_DISPLAY_ID"]
-            additionals = rigidWallGeometricFlatDisplayIDKeyword.getRigidWallGeometricFlatDisplayID()
-            for additional in additionals:
-                self.additionalManager.SetAdditionalfromDyna(additional)
         if "INTERFACE_SPRINGBACK_LSDYNA" in dynaKeyword:
             interfaceSpringbackKeyword : InterfaceSpringbackLSDYNA = dynaKeyword["INTERFACE_SPRINGBACK_LSDYNA"]
             additionals = interfaceSpringbackKeyword.getInterfaceSpringbackLSDYNA()

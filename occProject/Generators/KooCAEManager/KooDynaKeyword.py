@@ -10526,7 +10526,7 @@ class RigidWallPlanarID(DynaKeyword):
     def parse(self, rigidwall_keywords):
         for i in range(len(rigidwall_keywords)):            
             parameterList = [] 
-            parameters = self.parse_whole(rigidwall_keywords[i][0], [10])
+            parameters = self.parse_whole(rigidwall_keywords[i][0], [10, 70])   # ID 카드 = RWID·HEADING — 예전엔 제목을 버렸다
             parameterList.append(parameters)
             parameters = self.parse_whole(rigidwall_keywords[i][1], [10, 10, 10, 10, 10, 10, 10])
             parameterList.append(parameters)
@@ -10665,7 +10665,7 @@ class RigidWallPlanarMovingForcesID(DynaKeyword):
     def parse(self, rigidwall_keywords):
         for i in range(len(rigidwall_keywords)):
             parameterList = [] 
-            parameter = self.parse_whole(rigidwall_keywords[i][0], [10])
+            parameter = self.parse_whole(rigidwall_keywords[i][0], [10, 70])   # ID 카드 = RWID·HEADING — 예전엔 제목을 버렸다
             parameterList.append(parameter)
             parameter = self.parse_whole(rigidwall_keywords[i][1], [10, 10, 10, 10, 10, 10, 10])
             parameterList.append(parameter)
@@ -15917,6 +15917,9 @@ class DynaManager():
                 while "PART_CONTACT" in lines_with_asterisk:
                     lines_with_asterisk.remove("PART_CONTACT")
             print("Part Keywords Read Complete")
+            # 강체벽 덱 차례(종류가 섞여도) — 가져오기가 이 차례로 벽을 만든다. 예전엔 종류별로 읽어 덱 차례가 바뀌었다(D2R CODE 1·3 ENTNO·
+            # RWFORC 는 정의 차례 — 누적 체인 묶음 W2)
+            dynaKeywordMan.rigidwall_order = [k for k in lines_with_asterisk if k.startswith("RIGIDWALL_")]
             if "RIGIDWALL_GEOMETRIC_FLAT_DISPLAY" in lines_with_asterisk:
                 rigidwall_geometric_flat_display = keyword_dict["RIGIDWALL_GEOMETRIC_FLAT_DISPLAY"]
                 rgeometric_flat_display = RigidWallGeometricFlatDisplay()
