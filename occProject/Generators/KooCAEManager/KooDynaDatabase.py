@@ -859,30 +859,33 @@ class KooDatabaseManager:
         self.database["NODAL_FORCE_GROUP"] = databaseNodalForceGroup
             
     def SetDatabasefromDyna(self, databaseKeyword):
-        if databaseKeyword[0] == "DATABASE_RBDOUT" or databaseKeyword[0] == "*DATABASE_BNDOUT" or databaseKeyword[0] == "*DATABASE_SPCFORC" or databaseKeyword[0] == "*DATABASE_RCFORC" or databaseKeyword[0] == "*DATABASE_RWFORC" or databaseKeyword[0] == "*DATABASE_NODFOR" or databaseKeyword[0] == "*DATABASE_NODOUT" or databaseKeyword[0] == "*DATABASE_GLSTAT" or databaseKeyword[0] == "*DATABASE_MATSUM" or databaseKeyword[0] == "*DATABASE_SLEOUT" or databaseKeyword[0] == "*DATABASE_ELOUT":
+        # 실수·정수 칸은 KooDynaFloat·KooDynaInt — E 없는 Fortran 지수('1.0000-06')·정수값 실수('1.0')에서 float()·int() 로 죽었다
+        # (웹 자동화 taylor_A.k). 빈 칸은 아래에서 먼저 기본값으로 바꾼다. 첫 조건의 RBDOUT 은 '*' 가 빠져 *DATABASE_RBDOUT 이 이 갈래에
+        # 들지 못했고, 해석 표시 때문에 원문으로도 나가지 않아 출력에서 조용히 빠졌다(2026-11-09)
+        if databaseKeyword[0] == "*DATABASE_RBDOUT" or databaseKeyword[0] == "*DATABASE_BNDOUT" or databaseKeyword[0] == "*DATABASE_SPCFORC" or databaseKeyword[0] == "*DATABASE_RCFORC" or databaseKeyword[0] == "*DATABASE_RWFORC" or databaseKeyword[0] == "*DATABASE_NODFOR" or databaseKeyword[0] == "*DATABASE_NODOUT" or databaseKeyword[0] == "*DATABASE_GLSTAT" or databaseKeyword[0] == "*DATABASE_MATSUM" or databaseKeyword[0] == "*DATABASE_SLEOUT" or databaseKeyword[0] == "*DATABASE_ELOUT":
             keyword = databaseKeyword[1]
             if len(keyword[0].strip()) == 0:
                 keyword[0] = 0.0
             else:
-                keyword[0] = float(keyword[0])
+                keyword[0] = KooDynaFloat(keyword[0])
             if len(keyword[1].strip()) == 0:
                 keyword[1] = 1
             else:
-                keyword[1] = int(keyword[1])
+                keyword[1] = KooDynaInt(keyword[1])
             if len(keyword[2].strip()) == 0:
                 keyword[2] = 0
             else:
-                keyword[2] = int(keyword[2])
+                keyword[2] = KooDynaInt(keyword[2])
             if len(keyword[3].strip()) == 0:
                 keyword[3] = 0
             else:
-                keyword[3] = int(keyword[3])
+                keyword[3] = KooDynaInt(keyword[3])
             if databaseKeyword[0] == "*DATABASE_NODOUT":
                 if len(keyword) >4:
                     if len(keyword[4].strip()) == 0:
                         keyword[4] = ""
                     else:
-                        keyword[4] = float(keyword[4])                    
+                        keyword[4] = KooDynaFloat(keyword[4])                    
                 else:
                     keyword.append("")
             else:
@@ -891,28 +894,28 @@ class KooDatabaseManager:
                     if len(keyword[4].strip()) == 0:
                         keyword[4] = ""
                     else:
-                        keyword[4] = int(keyword[4])                    
+                        keyword[4] = KooDynaInt(keyword[4])                    
                 else:
                     keyword.append("")
             if len(keyword) >5:
                 if len(keyword[5].strip()) == 0:
                     keyword[5] = ""
                 else:
-                    keyword[5] = int(keyword[5])
+                    keyword[5] = KooDynaInt(keyword[5])
             else:
                 keyword.append("")
             if len(keyword) >6:
                 if len(keyword[6].strip()) == 0:
                     keyword[6] = ""
                 else:
-                    keyword[6] = int(keyword[6])
+                    keyword[6] = KooDynaInt(keyword[6])
             else:
                 keyword.append("")
             if len(keyword) >7:                                    
                 if len(keyword[7].strip()) == 0:
                     keyword[7] = ""
                 else:
-                    keyword[7] = int(keyword[7])
+                    keyword[7] = KooDynaInt(keyword[7])
             else:
                 keyword.append("")
             if databaseKeyword[0] == "*DATABASE_RBDOUT":
@@ -956,14 +959,14 @@ class KooDatabaseManager:
                 keyword[6] = "1"
             if len(keyword[7].strip()) == 0:
                 keyword[7] = "1"
-            NEIPH = int(keyword[0])
-            NEIPS = int(keyword[1])
-            MAXINT = int(keyword[2])
-            STRFLG = int(keyword[3])
-            SIGFLG = int(keyword[4])
-            EPSFLG = int(keyword[5])
-            RLTFLG = int(keyword[6])
-            ENGFLG = int(keyword[7])
+            NEIPH = KooDynaInt(keyword[0])
+            NEIPS = KooDynaInt(keyword[1])
+            MAXINT = KooDynaInt(keyword[2])
+            STRFLG = KooDynaInt(keyword[3])
+            SIGFLG = KooDynaInt(keyword[4])
+            EPSFLG = KooDynaInt(keyword[5])
+            RLTFLG = KooDynaInt(keyword[6])
+            ENGFLG = KooDynaInt(keyword[7])
             
                 
             keyword = databaseKeyword[2]
@@ -984,14 +987,14 @@ class KooDatabaseManager:
             if len(keyword[7].strip()) == 0:
                 keyword[7] = "1"
             
-            CMPFLG = int(keyword[0])
-            IEVERP = int(keyword[1])
-            BEAMIP = int(keyword[2])
-            DCOMP = int(keyword[3])
-            SHGE = int(keyword[4])
-            STSSZ = int(keyword[5])
-            N3THDT = int(keyword[6])
-            IALEMAT = int(keyword[7])
+            CMPFLG = KooDynaInt(keyword[0])
+            IEVERP = KooDynaInt(keyword[1])
+            BEAMIP = KooDynaInt(keyword[2])
+            DCOMP = KooDynaInt(keyword[3])
+            SHGE = KooDynaInt(keyword[4])
+            STSSZ = KooDynaInt(keyword[5])
+            N3THDT = KooDynaInt(keyword[6])
+            IALEMAT = KooDynaInt(keyword[7])
             self.SetDatabaseExtentBinary(NEIPH,NEIPS,MAXINT,STRFLG,SIGFLG,EPSFLG,RLTFLG,ENGFLG,CMPFLG,IEVERP,BEAMIP,DCOMP,SHGE,STSSZ,N3THDT,IALEMAT)                
         elif databaseKeyword[0] == "*DATABASE_EXTENT_INTFOR":
             keyword = databaseKeyword[1]
@@ -1025,20 +1028,20 @@ class KooDatabaseManager:
             if len(keyword2[5].strip()) == 0:
                 keyword2[5] = "0"
 
-            nglbv = int(keyword[0])
-            nvelo = int(keyword[1])
-            npresu = int(keyword[2])
-            nshear = int(keyword[3])
-            nforc = int(keyword[4])
-            ngapc = int(keyword[5])
-            nfail = int(keyword[6])
-            ieverf = int(keyword[7])
-            nwear = int(keyword2[0])
-            nwusr = int(keyword2[1])
-            nhuf = int(keyword2[2])
-            ntied = int(keyword2[3])
-            neng = int(keyword2[4])
-            npen = int(keyword2[5])
+            nglbv = KooDynaInt(keyword[0])
+            nvelo = KooDynaInt(keyword[1])
+            npresu = KooDynaInt(keyword[2])
+            nshear = KooDynaInt(keyword[3])
+            nforc = KooDynaInt(keyword[4])
+            ngapc = KooDynaInt(keyword[5])
+            nfail = KooDynaInt(keyword[6])
+            ieverf = KooDynaInt(keyword[7])
+            nwear = KooDynaInt(keyword2[0])
+            nwusr = KooDynaInt(keyword2[1])
+            nhuf = KooDynaInt(keyword2[2])
+            ntied = KooDynaInt(keyword2[3])
+            neng = KooDynaInt(keyword2[4])
+            npen = KooDynaInt(keyword2[5])
             self.SetDatabaseExtentIntfor(nglbv, nvelo, npresu, nshear, nforc, ngapc, nfail, ieverf, nwear, nwusr, nhuf, ntied, neng, npen)                         
                 
         elif databaseKeyword[0] == "*DATABASE_BINARY_D3PLOT" or databaseKeyword[0] == "*DATABASE_BINARY_D3THDT" or databaseKeyword[0] == "*DATABASE_BINARY_D3DUMP" or databaseKeyword[0] == "*DATABASE_BINARY_INTFOR" or databaseKeyword[0] == "*DATABASE_BINARY_INTFOR_FILE":
@@ -1065,13 +1068,13 @@ class KooDatabaseManager:
                 
             # check keyword[0] can be changed as float
             
-            DTCYCL = float(keyword[0])
+            DTCYCL = KooDynaFloat(keyword[0])
 
-            LCDT = int(keyword[1])
-            BEAM = int(keyword[2])
-            NPLTC = int(keyword[3])
-            PSETID = int(keyword[4])
-            CID = int(keyword[5])                        
+            LCDT = KooDynaInt(keyword[1])
+            BEAM = KooDynaInt(keyword[2])
+            NPLTC = KooDynaInt(keyword[3])
+            PSETID = KooDynaInt(keyword[4])
+            CID = KooDynaInt(keyword[5])                        
             
             if databaseKeyword[0] == "*DATABASE_BINARY_D3PLOT":
                 self.SetDatabaseBinaryD3plot(DTCYCL, LCDT, BEAM, NPLTC, PSETID, CID)
@@ -1095,7 +1098,7 @@ class KooDatabaseManager:
                 keyword = databaseKeyword[3]
                 if len(keyword[0].strip()) == 0:
                     keyword[0] = "0"
-                IOOPT = int(keyword[0])
+                IOOPT = KooDynaInt(keyword[0])
                 self.SetDatabaseBinaryIntfor(DTCYCL, LCDT, BEAM, NPLTC, PSETID, CID, IOOPT, name)
                 
         elif databaseKeyword[0] == "*DATABASE_HISTORY_NODE" or databaseKeyword[0] == "*DATABASE_HISTORY_BEAM" or databaseKeyword[0] == "*DATABASE_HISTORY_BEAM_SET" or databaseKeyword[0] == "*DATABASE_HISTORY_SHELL" or databaseKeyword[0] == "*DATABASE_HISTORY_SHELL_SET" or databaseKeyword[0] == "*DATABASE_HISTORY_SOLID" or databaseKeyword[0] == "*DATABASE_HISTORY_SOLID_SET":            
@@ -1103,7 +1106,7 @@ class KooDatabaseManager:
             for keyword in databaseKeyword[1:]:   # 모든 데이터 줄 — 예전엔 첫 줄만 읽어 9번째부터의 ID 가 조용히 빠졌다(v131 리뷰 R4)
                 for i in range(0,len(keyword)):
                     if len(keyword[i].strip()) > 0:
-                        nodes.append(int(keyword[i]))
+                        nodes.append(KooDynaInt(keyword[i]))
             if databaseKeyword[0] == "*DATABASE_HISTORY_NODE":
                 self.SetDatabaseHistoryNode(nodes)
             elif databaseKeyword[0] == "*DATABASE_HISTORY_BEAM":
