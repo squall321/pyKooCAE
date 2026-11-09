@@ -16,4 +16,5 @@
 - [x] 컴파일본 스모크(/data/koopark/Test_E2E_v134/smoke, 가짜 Slurm) — prepare 미리보기, 기본 제출 순서 2·8·6·4·3·7·5·1·9·10(긴 것부터), --sequential --nodes 4 칸 0.47·0.46·0.46·0.39 h, --nodes 10 → 6 칸 ⚠️
 - [x] e2e(v133 하네스, 호스트·SIF) — v134 는 runner_config·KMM 을 바꾸지 않아 v133 golden 대조. 호스트·SIF 모두 ALL PASS 100 OK · SKIP 0 (/data/koopark/Test_E2E_v134)
 - [x] SIF v134 — 굽기 전 헤드·compute-node-images a92c1080(v133)·마지막 tar v133 확인, KooRemapper 15d013ec 검증. SIF 34c00cad(compute-node-images 같음, KCR v134 + KMM v133 54d0862d), tar 20261108_v134 16e28930·Drive·메일
-- [ ] 커밋·푸시(pykoocae-53 커밋 7개 함께 — 허락 받음)·알림(smarttwinmcp)·메모리, 헤드 /opt 교체는 사용자 확인
+- [x] 커밋·푸시(f3a49d9..653cbea, pykoocae-53 커밋 7개 함께 — 허락 받음)·알림(pykoocae-53·kooremapper-fd·smarttwinmcp-c8·4c)·메모리
+- [x] 헤드 /opt 교체 — 사용자 승인(11-09): 00:45, v133 은 rename 백업 _backup_20261109_004506(a92c1080), 헤드 34c00cad, apptainer exec 로 KCR environment.schedule·KMM PresimStrongContact 0.2 확인. pykoocae-53 이 v135(KCR v134 + KMM 누적 체인 고침)를 이어 굽는다
