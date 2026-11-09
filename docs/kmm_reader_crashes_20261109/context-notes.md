@@ -23,3 +23,8 @@
 - 말뭉치 대조(corpus_run.py, gen_a1c4ec6 ↔ 지금): 웹 자동화 taylor_A·taylor_A_dump 4덱이 rc 1 → 0. KooRemapper ref·out 은 짧은 접촉에서 필수 카드로 멈춘다(rc 1, 이유를 알림).
   🔴 배터리 연구 덱 3개(case_*_phase1_*_merged)는 *DATABASE_RBDOUT(2.0E-05 0 0 1)이 고치기 전 출력에 없었다 — 이제 돌아온 2줄만 다르다. 나머지 덱은 바이트 같음.
 - RBDOUT 기록기는 DT 를 10.3e 로 쓰고 LCUR 0 을 빈 칸으로 쓴다(다른 ASCII 데이터베이스 카드와 같은 기존 꼴, 뜻은 같음).
+
+## CLI 도움말(11-09)
+- v135 에서 DTI 지시어 둘(*RemoveRigidWallbyID·*SpecimenModified)을 더하고 kmm_catalog 를 고치지 않았다(카탈로그 규칙: 키를 바꾸면 사례·설명도). 이번 빌드에 같이 싣는다.
+- 사례 「누적 낙하 다음 단계」 는 DROP 이 적는 꼴 그대로(*RemovePartbyID·*RemoveContactbyID·*RemoveRigidWallbyID) — 파싱 기대치만 본다(번호 900·1 은 예시).
+- 아는 불량 확인: 새 카탈로그 + v135 이전 파서(gen_f3a49d9)면 RemoveRigidWallIDList·SpecimenModified 두 항목 FAIL(AIRMESH#1 FAIL 은 옛 트리를 링크로 엮은 탓, 무관).
