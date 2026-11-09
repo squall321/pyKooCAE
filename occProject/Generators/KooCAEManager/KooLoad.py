@@ -1193,10 +1193,11 @@ class KooLoadManager:
             parameters = dynaLoad[1]
             curParameters = parameters[0]
             firstLine = curParameters
-            SSID = int(firstLine[0])
-            lcid = int(firstLine[1])
-            sf = float(firstLine[2])
-            at = float(firstLine[3])
+            # 빈 SF·AT 는 R16 기본값 1.0·0.0 — 예전엔 float('') 로 죽었다(KooRemapper 회귀 덱, 2026-11-09)
+            SSID = KooDynaInt(firstLine[0])
+            lcid = KooDynaInt(firstLine[1])
+            sf = KooDynaFloat(firstLine[2], 1.0)
+            at = KooDynaFloat(firstLine[3], 0.0)
             segmentSet = _segment_set_or_ref(segmentSetManager, SSID, "*LOAD_SEGMENT_SET")
             load = self.CreateLoadSegmentSet("",segmentSet,lcid,sf,at)                
             
@@ -1208,10 +1209,10 @@ class KooLoadManager:
             name = firstLine[1]
             curParameters = parameters[1]
             secondLine = curParameters
-            SSID = int(secondLine[0])
-            lcid = int(secondLine[1])
-            sf = float(secondLine[2])
-            at = float(secondLine[3])
+            SSID = KooDynaInt(secondLine[0])
+            lcid = KooDynaInt(secondLine[1])
+            sf = KooDynaFloat(secondLine[2], 1.0)
+            at = KooDynaFloat(secondLine[3], 0.0)
             segmentSet = _segment_set_or_ref(segmentSetManager, SSID, "*LOAD_SEGMENT_SET_ID")
             load = self.CreateLoadSegmentSetwithID(lid,name,segmentSet,lcid,sf,at)            
             
