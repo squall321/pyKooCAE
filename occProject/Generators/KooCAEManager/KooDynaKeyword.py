@@ -7025,7 +7025,8 @@ class InitialVelocity(DynaKeyword):
             parameterList.append(parameters1)
             parameters2 = self.parse_whole(initialVelocityKeywords[i][1], [10, 10, 10, 10, 10, 10])            
             parameterList.append(parameters2)
-            if len(parameters1[1]) > 0 and int(parameters1[1]) >0:
+            # NSIDEX 빈 칸(공백 10자)은 0 — 예전엔 길이로만 보고 int('          ') 로 죽었다(웹 자동화 taylor_A_dump.k, 2026-11-09)
+            if (_whole_int(parameters1[1]) or 0) > 0 and len(initialVelocityKeywords[i]) > 2:
                 parameters3 = self.parse_whole(initialVelocityKeywords[i][2], [10, 10, 10, 10, 10, 10])
                 parameterList.append(parameters3)
             self.parameters.append(parameterList)
