@@ -922,6 +922,12 @@ class KooContactManager:
         self.CreateContactAddWear(cid, wtype, p1, p2, p3, p4, p5, p6)                
     
     def AddContactfromDyna(self, contactKeyword):
+        # 카드 1~3 은 R16 필수 카드다 — 모자라면 _contact_cards(KooDynaKeyword)와 같은 뜻으로 원인을 밝혀 멈춘다. 그 검사를 거치지 않는
+        # 종류(TIED 등)는 예전엔 IndexError 로 죽었다(KooRemapper 회귀 덱 ref.k, 2026-11-09)
+        if len(contactKeyword) < 4:
+            msg = f"🔴 {contactKeyword[0]}: 필수 카드가 {4 - len(contactKeyword)}장 모자란다(카드 1~3). 덱을 확인하라"
+            print(msg)
+            raise ValueError(msg)
 
         parameter = contactKeyword[1]
         SSID = KooDynaInt(parameter[0])
@@ -1003,6 +1009,11 @@ class KooContactManager:
        
        
     def AddContactfromDynawithID(self, contactKeyword):
+        # ID 카드 + 카드 1~3(R16 필수) — 모자라면 원인을 밝혀 멈춘다(위와 같음)
+        if len(contactKeyword) < 5:
+            msg = f"🔴 {contactKeyword[0]}: 필수 카드가 {5 - len(contactKeyword)}장 모자란다(카드 1~3). 덱을 확인하라"
+            print(msg)
+            raise ValueError(msg)
         if contactKeyword[0] == "*CONTACT_FEM_PERI_TIE_BREAK_ID":
             parameter = contactKeyword[1]
             cid = KooDynaInt(parameter[0])
