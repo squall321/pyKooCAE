@@ -1151,9 +1151,14 @@ mode("DYNAIN_TO_INITIAL", "이전 해석 dynain(변형 형상+응력)을 다음 
            K("*DynamicRelaxation", "True/False", "False", "새 DR 추가 (Nrcyck/Tol/Fctr/Term 접미 키)"),
            K("*MovetoOriginAutomatic", "True/False", "False", "모델을 원점으로"),
            K("*MovetoOriginbyNode", "정수", "[]", "지정 절점 기준 원점 이동"),
-           K("*RemovePartbyID / *RemovePartbyName", "리스트", "[]", "파트 제거 (바닥판 등) — 그 파트를 종·주 면 파트(SSTYP·MSTYP 3)로 쓰는 접촉도 지운다"),
+           K("*RemovePartbyID / *RemovePartbyName", "리스트", "[]", "파트 제거 (바닥판 등) — 그 파트를 종·주 면 파트(SSTYP·MSTYP 3)로 쓰는 접촉, "
+             "그 파트의 강체 처방 운동·초기 속도 GENERATION(STYP 2)·*SET_PART 번호도 지운다(비게 된 파트 묶음은 지우고, 그 묶음을 쓰는 접촉이 남으면 ⚠)"),
            K("*RemoveContactbyID", "정수 리스트", "[]", "접촉 제거 — 없어진 접촉을 ENTNO 로 가리키는 덱 *DEFORMABLE_TO_RIGID_AUTOMATIC"
-             "(CODE 2·4)도 짝 스위치와 함께 지운다. KMM 이 해석하지 않는 원문 접촉은 지우지 못하고 ⚠ 로 알린다(그 D2R 도 남는다)")],
+             "(CODE 2·4)도 짝 스위치와 함께 지운다. KMM 이 해석하지 않는 원문 접촉은 지우지 못하고 ⚠ 로 알린다(그 D2R 도 남는다)"),
+           K("*RemoveRigidWallbyID", "정수 리스트", "[]", "강체벽 제거 — 앞 단계 DROP 이 만든 바닥 벽(DROP 이 dynaintoinitial.txt 에 번호를 적는다). "
+             "덱에 그 번호의 벽이 없으면 ⚠"),
+           K("*SpecimenModified", "까닭(문자열)", "없음", "앞 단계 충격(DROP_WEIGHT_IMPACT_TEST)이 시편을 잘라 냈거나 강체로 바꿨다는 표시 — "
+             "그 충격이 dynaintoinitial.txt 에 적는다. 있으면 DTI 가 까닭을 알리고 rc 1 로 멈춘다(바뀐 시편은 다음 단계로 이어 갈 수 없다)")],
      examples=[Example("dynain 응력 이어받고 바닥판(파트 23) 제거", _opt("drop_step1.k", "DYNAIN_TO_INITIAL,1", """**DynainToInitial,1
 *DynainPath,dynain
 *IncludeStress,True
@@ -1163,7 +1168,20 @@ mode("DYNAIN_TO_INITIAL", "이전 해석 dynain(변형 형상+응력)을 다음 
 **EndDynainToInitial"""),
                        verify={"mode": "DYNAIN_TO_INITIAL", "id": 1, "expect": {
                            "DynainPath": "dynain", "IncludeStress": True, "MovetoOriginAutomatic": True,
-                           "RemovePartIDList": [23]}})],
+                           "RemovePartIDList": [23]}}),
+               Example("누적 낙하 다음 단계 — 앞 단계 DROP 이 적는 꼴(바닥판 파트·바닥 접촉·바닥 강체벽 제거)",
+                       _opt("drop_step1.k", "DYNAIN_TO_INITIAL,1", """**DynainToInitial,1
+*DynainPath,dynain
+*IncludeStress,True
+*RemoveDynamicRelaxation,True
+*MovetoOriginAutomatic,True
+*RemovePartbyID,900
+*RemoveContactbyID,900
+*RemoveRigidWallbyID,1
+**EndDynainToInitial"""),
+                       verify={"mode": "DYNAIN_TO_INITIAL", "id": 1, "expect": {
+                           "RemovePartIDList": [900], "RemoveContactIDList": [900], "RemoveRigidWallIDList": [1],
+                           "SpecimenModified": ""}})],
      related=["DROP_ATTITUDE"])
 
 
