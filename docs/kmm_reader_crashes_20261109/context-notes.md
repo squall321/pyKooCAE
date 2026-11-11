@@ -28,3 +28,14 @@
 - v135 에서 DTI 지시어 둘(*RemoveRigidWallbyID·*SpecimenModified)을 더하고 kmm_catalog 를 고치지 않았다(카탈로그 규칙: 키를 바꾸면 사례·설명도). 이번 빌드에 같이 싣는다.
 - 사례 「누적 낙하 다음 단계」 는 DROP 이 적는 꼴 그대로(*RemovePartbyID·*RemoveContactbyID·*RemoveRigidWallbyID) — 파싱 기대치만 본다(번호 900·1 은 예시).
 - 아는 불량 확인: 새 카탈로그 + v135 이전 파서(gen_f3a49d9)면 RemoveRigidWallIDList·SpecimenModified 두 항목 FAIL(AIRMESH#1 FAIL 은 옛 트리를 링크로 엮은 탓, 무관).
+
+## 배포 v136 (11-11, 사용자 승인 「배포」)
+- **빌드 전 확인.** origin/main = HEAD 4d8eb00(그사이 남의 push 없음), occProject/·Runner/ 미커밋 없음. 헤드 /opt·compute-node-images Pre = v135 da892a35, 마지막 tar v135. kooomnidropanalyzer-43 에 알림 — 그쪽 진행 작업 없음, 헤드 교체 알림까지 소스 안 건드림.
+- **아는 불량(컴파일본).** 헤드 v135 SIF 안 KMM(c18245a2)으로 새 시험 1 OK / 8 FAIL — 소스 아는 불량(gen_a1c4ec6)과 같다.
+- **빌드.** build_capped_v136.sh(root scope MemoryMax 24G·oom_score_adj 1000·가용 8.5 GB 워치독)로 build_without_automatedmodeller.sh --clean — 16:43~17:39 BUILD_RC 0, 최저 가용 28.2 GB. KMM 41f37642(17:29), KCR 35511107(v135 와 바이트 같음 — 이번 커밋은 KMM 쪽만), KAM 580f028e 그대로. NFS·SIF 소스 트리 같음. 빌드 로그 error 류 100줄은 Nuitka 진행 메시지.
+- **컴파일본 시험(host_v136, KMM_BIN·C.UTF-8).** 리더 크래시 9/9·누적 체인 51/51·v131 리뷰 107/107. 호스트 e2e(e2e_rde.sh host, GOLDEN = 이 폴더 사본 — 43 기준과 diff 없음) ALL PASS 100(v135 와 같은 100), f 회귀 7종 FAIL 0.
+- **굽기 직전(17:5x).** 헤드·compute-node-images da892a35, 마지막 tar v135, 잡 0, KooRemapper c5f74c18(원본 = 스테이징, v135 와 같음) — kooremapper-fd·4a 에 알림.
+- **굽기(17:5x, BAKE_RC 0).** SIF v136 1c973c25(1,615,892,480 B) = compute-node-images. 안의 바이너리 KMM 41f37642·KCR 35511107·KAM 580f028e·KooRemapper c5f74c18(굽기 검증 기대 = 실제, 그림 op 3/3). tar v136 1,379,317,626 B, Drive ApptainerImages:SmartTwinPreprocessor/(SIF·tar), 메일 sent OK. kooremapper-fd·4a 에 끝 알림.
+- **SIF 판정(kmm_sif.sh, SIF = 새로 구운 것).** 리더 크래시 9/9·누적 체인 51/51·v131 리뷰 107/107. e2e_rde.sh sif ALL PASS 100(SIF 안 KMM 41f37642), f 회귀 7종 FAIL 0.
+- **헤드 /opt(18:25).** 잡 0. compute-node-images 사본을 .new 로 cp -p → 지금 헤드를 하드 링크 `SmartTwinPreprocessor_backup_20261111_182504.sif`(v135 da892a35, 옛 inode) → .new 를 rename. 새 헤드 1c973c25(새 inode). 헤드 SIF 로 리더 크래시 9/9, `--help DYNAIN_TO_INITIAL` 에 *RemoveRigidWallbyID·*SpecimenModified·사례 2 가 나온다.
+- 노드(node001·002)는 VM 이 꺼져 있어 대상 아님 — 켤 때 사용자 확인 뒤 Pre v136·Post v51.
