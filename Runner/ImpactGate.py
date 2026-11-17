@@ -255,6 +255,9 @@ def run_impact_gate(config_path: str, sample="5", out_dir: Optional[str] = None,
     with open(gpath, "w", encoding="utf-8") as f:
         json.dump(gcfg, f, ensure_ascii=False, indent=1)
     runner = CumulativeScenarioRunner(gpath)
+    # 🔴 관문은 헤드 노드(prepare)에서 돈다 — 러너의 KMM 뒤 정리(cleanup_after_exec = 사용자의 squashfuse 를 모두 pkill·fuse 언마운트)는
+    #    같은 사용자의 다른 컨테이너(다른 세션·viz·post)를 죽인다. EndTimePresim 사전 해석과 같은 규칙으로 부르지 않는다
+    runner.apptainer.cleanup_after_exec = lambda: None
     sim = cfg.get("simulation_params") or {}
     model_contacts = None
     try:
