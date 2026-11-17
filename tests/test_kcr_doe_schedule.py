@@ -192,6 +192,8 @@ def norm(text, tmp, kcr):
     """임시 폴더·KCR 경로·제출 시각·rerun 번호(HHMMSS) → 자리표."""
     t = text.replace(tmp, "<TMP>").replace(str(Path(kcr.__file__).resolve()), "<KCR>")
     t = re.sub(r'"submitted_at": "[^"]*"', '"submitted_at": "<TS>"', t)
+    # KC-01(2026-11-17, stcx 요청서) 출처 기록 세 줄은 잡 스크립트에 일부러 더했다 — 바꾸기 전 코드와 견줄 때만 뺀다
+    t = re.sub(r"# 출처 기록\(KC-01\)[^\n]*\nexport KCR_JOB_SCRIPT=[^\n]*\nexport KCR_RUNNER_CONFIG_ORIG=[^\n]*\n", "", t)
     return re.sub(r"rerun_seq_\d+_", "rerun_seq_<T>_", t)
 
 
