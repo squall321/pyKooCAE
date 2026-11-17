@@ -83,3 +83,36 @@
   - 동작 변경(버그 아님, 사용자 결정대로): DTMIN·ENDMAS·ENDCYC 로 목표 시각 전에 끝난 런은 이제 재시도 없는 invalid.
 - 반영 뒤: 새 시험 107(리뷰 판정 17) 모두 통과, 리뷰 반영 전 트리(d59a868)는 리뷰 판정 14 FAIL·2 OK(예전 동작을 지키는 판정·모듈 단위). KCR·Runner 를
   쓰는 기존 시험 21개 모두 rc 0, cli_help ALL PASS.
+
+## 재빌드·굽기(11-17)
+- 리뷰 반영 커밋 72c2f83..de53723(8개)·push. KooChainRun 다시 빌드 10:00~10:03 BUILD_RC 0, 최저 가용 36.8 GB → **KCR a558c8ed**(/data = SIF 소스 트리, glibc ≤ 2.35).
+- 컴파일본(KCR_BIN) 시험: test_kcr_stcx_requests 107 · result_return 41 · doe_schedule 101 · endtime_presim 157 · impact_conditions 105 — 모두 FAIL 0.
+  e2e_rde host ALL PASS 100(기준 사본 = 43 GOLDEN).
+- 굽기 직전: 헤드·compute-node-images = v136 1c973c25, 마지막 tar v136, KooRemapper c5f74c18(원본 = 스테이징). kooremapper-fd·4a·43 에 알림.
+
+- **굽기 v137(10:05~10:16, BAKE_RC 0).** SIF ad5962f4(1,616,699,392 B) = compute-node-images. 안의 바이너리 KCR a558c8ed(새)·KMM 41f37642·
+  KAM 580f028e·KooRemapper c5f74c18(굽기 검증 기대 = 실제). tar v137 1,380,118,416 B, Drive ApptainerImages:SmartTwinPreprocessor/(SIF·tar),
+  메일 sent OK. kooremapper-fd·4a 에 끝 알림.
+
+## 🔴 SIF 판정에서 찾은 것 — 헤드 노드 pkill(11-17)
+- SIF 안 KooChainRun 으로 새 시험을 돌리니 러너 시험이 rc −7(SIGBUS)로 죽었다. 러너의 기존 정리 `cleanup_after_exec`(LS-DYNA·KMM 뒤
+  `pkill -u <사용자> -f squashfuse` + squashfuse 언마운트)가 자기 컨테이너의 마운트를 죽였다. 확인하려다 그 pkill 이 「squashfuse」 낱말이 든
+  내 셸까지 죽였다(rc 144 — 메모리의 함정 그대로).
+- **결함(내 것)**: `prepare --check-impact`(ImpactGate)가 러너의 KMM 경로를 써서 **헤드 노드**에서 이 정리를 불렀다 — 같은 사용자의 다른 컨테이너
+  (다른 세션·viz·post)를 죽인다. 43 의 사전 해석(EndTimePresim.run_kmm)은 같은 까닭으로 부르지 않는다. → 관문은 정리를 부르지 않게
+  (runner.apptainer.cleanup_after_exec 를 빈 함수로). 판정: 고치기 전 트리(de53723)는 관문이 pkill 2번 → FAIL, 지금 0번.
+- **시험이 헤드 노드에서 진짜 pkill 을 불렀다.** 08:00~10:30 UTC 쯤 이 시험(러너 4회·관문 2회)을 15번 남짓 돌려 `pkill -u koopark -f squashfuse`
+  가 수십 번 돌았다 — 그 순간 koopark 의 squashfuse 컨테이너(예: AIDataHub 의 apptainer 1.3.6 squashfuse_ll)가 있었다면 죽었을 수 있다. 피해는
+  확인하지 못했다(사용자에게 알림). 시험은 이제 pkill·fusermount·findmnt 를 기록만 하는 가짜로(APPTAINERENV_PREPEND_PATH 로 컨테이너 안도).
+- **v137 은 헤드에 넣지 않는다.** SIF v137(ad5962f4)·tar v137 은 이 결함(관문)이 든 채 Drive·메일로 나갔다 → 고친 KCR 로 v138 을 굽고 헤드는 v138.
+  v137 tar 를 받은 쪽은 `prepare --check-impact` 를 쓰지 말 것(그 밖은 같다).
+- 범위 밖(기존 동작, 알림만): 러너 정리는 계산 노드에서도 같은 사용자의 모든 squashfuse 를 죽인다 — exclusive 가 아닌 잡이 한 노드를 나눠 쓰면 이웃 잡
+  컨테이너를 죽일 수 있다. 잡 자기 APPTAINER_TMPDIR 로 좁히는 일은 따로.
+
+## 다음 판으로
+- 회전 런 한쪽 KE 비교(43 제안, 11-17): KMM 이 RigidAngularVelocity 회전 중심을 기기 무게중심으로 두니(_ResolveRigidAngularVelocity)
+  첫 KE = ½Mv² + ½ωᵀIω ≥ ½Mv². 지금은 회전이면 비교를 통째로 건너뛰어 병진 초기 속도가 빠진 회전 런을 못 잡는다 → 첫 KE ≥ ½Mv²·(1 − 허용치)
+  를 남긴다(허용치 = 절점 질량 무게중심 대 KMM 무게중심 차이의 교차항). impact_conditions 시험으로 확인할 것.
+- stcx 사례로 문턱 다시 맞추기: 캠페인 IE 비교 배수(3)·접촉 에너지 음수 2 %·파트 IE 튐(런 하나, 기본 끔).
+- DynaForge DF-04 형식이 정해지면 required_extractions·deletion_clearance 를 그 형식에 맞춘다(지금은 KooChainRun 안 형식·가정 URL 응답).
+- 리뷰 하4 나머지: 덱을 두 번 훑는 것(provenance·health), postprocess --all 건너뛰기 판정의 64 MB 이하 JSON 전부 읽기 — 성능만.
