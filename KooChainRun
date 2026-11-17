@@ -867,9 +867,9 @@ def _presubmit_checks(rc, config_path, args):
             print("[budget] environment.storage_budget 는 있지만 pilot 이 없어 디스크 예산 점검을 건너뛴다")
         return True
     from Runner.StorageBudget import budget
-    conc = sb.get("concurrency")
-    if not conc and getattr(args, "nodes", None) and getattr(args, "jobs_per_node", None):
-        conc = args.nodes * (1 if getattr(args, "sequential", False) else args.jobs_per_node)
+    conc = sb.get("concurrency") or env.get("max_concurrent")
+    if not conc and getattr(args, "sequential", False) and getattr(args, "nodes", None):
+        conc = args.nodes            # --sequential 은 칸(잡) 수가 동시 수다. 그 밖(DOE 마다 잡)은 동시 수를 모른다 → 런 수 전부
     try:
         B = budget(rc, pilot, concurrency=conc)
     except Exception as e:
@@ -2467,7 +2467,7 @@ cleanup() {{
     fi
 
     # Scratch 정리
-    if [ "{'true' if scratch_cleanup else 'false'}" = "true" ] && [ $EXIT_CODE -eq 0 ]; then
+    if [ "{'true' if scratch_cleanup else 'false'}" = "true" ] && {{ [ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 3 ]; }}; then
         rm -rf $SCRATCH_DIR
         echo "Scratch 디렉토리 정리 완료"
     else
@@ -2976,14 +2976,17 @@ def cmd_status(args):
                     _jobs = _json.loads((config_path.parent / "jobs.json").read_text(encoding="utf-8"))
                 except (OSError, ValueError):
                     pass
-                _st = campaign_status(_rc, _jobs)
                 print(f"Config: {config_path}")
-                for _line in summary_lines(_st):
-                    print(_line)
-                if getattr(args, "csv", None) is not None:
-                    _out = args.csv or os.path.join(_rc["project"]["output_dir"], "doe_status.csv")
-                    write_csv(_st, _out)
-                    print(f"  표: {_out}")
+                try:
+                    _st = campaign_status(_rc, _jobs)
+                    for _line in summary_lines(_st):
+                        print(_line)
+                    if getattr(args, "csv", None) is not None:
+                        _out = args.csv or os.path.join(_rc["project"]["output_dir"], "doe_status.csv")
+                        write_csv(_st, _out)
+                        print(f"  표: {_out}")
+                except Exception as _e:
+                    print(f"⚠️  상태 표를 만들지 못했다({type(_e).__name__}: {_e}) — runner_config 가 캠페인 설정인지 확인")
             else:
                 print(f"⚠️  Warning: Config file not found: {config_path}")
 
@@ -3667,14 +3670,16 @@ def cmd_postprocess(args):
                 deep_existing += 1
                 continue
             sh = rd / "deep_report.sh"
-            # 관문 없이 d3plot 을 지우던 옛 deep_report.sh 는 다시 만든다(KC-03)
-            if sh.exists() and pp_opts.get("delete_d3plot_after_deep"):
+            # 옛 판 deep_report.sh(관문 없이 d3plot 을 지우고 빈 리포트를 성공으로 보던 것)는 지금 설정으로 다시 만든다(KC-03, 리뷰 상3)
+            #   — 지금 설정이 삭제 끔이어도: 옛 판은 그때 설정의 rm 을 그대로 품고 있다
+            if sh.exists():
+                from Runner.PostprocessShellGenerator import deep_script_is_current
                 try:
                     old = sh.read_text(encoding="utf-8", errors="replace")
                 except OSError:
                     old = ""
-                if 'rm -f "$RUN_DIR"/d3plot' in old and "d3plot-delete" not in old:
-                    print(f"  {rd.name}: 관문 없이 d3plot 을 지우던 옛 deep_report.sh — 새로 만든다")
+                if not deep_script_is_current(old):
+                    print(f"  {rd.name}: 옛 판 deep_report.sh — 지금 설정으로 새로 만든다")
                     sh.unlink()
             # Fallback: sh 없으면 그때 생성 (시뮬 실패해도 d3plot 있으면 후처리 가능)
             if not sh.exists():
@@ -3912,11 +3917,14 @@ def cmd_health(args):
     th = load_thresholds(rc, args.thresholds)
     pp, hc = rc.get("postprocess") or {}, rc.get("health") or {}
     post_sif = hc.get("post_sif") or pp.get("sif_path") or "/opt/apptainers/SmartTwinPostprocessor.sif"
+    from Runner.CampaignStatus import load_index_runs
+    modes = {r.get("folder"): r.get("mode") for r in load_index_runs(rc).values() if r.get("folder")}
     Hs = []
     for rd in sorted(glob.glob(os.path.join(out_dir, "Run_*"))):
         if not os.path.isfile(os.path.join(rd, "Output", "d3hsp")):
             continue
-        Hs.append(evaluate_run(rd, thresholds=th, use_binout=not args.no_binout, post_sif=post_sif))
+        Hs.append(evaluate_run(rd, thresholds=th, use_binout=not args.no_binout, post_sif=post_sif,
+                               mode=modes.get(os.path.basename(rd))))
     flags = campaign_outliers(Hs, th)
     for H in Hs:
         extra = flags.get(H["run_dir"])
@@ -4002,8 +4010,12 @@ def cmd_budget(args):
     from Runner.StorageBudget import budget
     rc = _load_rc(args.config)
     prc = _load_rc(args.pilot_config) if args.pilot_config else None
-    B = budget(rc, args.pilot, concurrency=args.concurrency, threshold_pct=args.threshold, backlog=args.backlog,
-               pilot_config=prc)
+    try:
+        B = budget(rc, args.pilot, concurrency=args.concurrency, threshold_pct=args.threshold, backlog=args.backlog,
+                   pilot_config=prc)
+    except (OSError, ValueError) as e:
+        print(f"[budget] 점검하지 못했다 — {e}")
+        sys.exit(1)
     for line in B["lines"]:
         print("  " + line)
     print(f"[budget] 판정: {B['verdict']}" + (f" (동시 수 {B['suggest_concurrency']} 이하)" if B.get("suggest_concurrency") else ""))
