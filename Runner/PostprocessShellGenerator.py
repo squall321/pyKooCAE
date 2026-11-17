@@ -61,6 +61,13 @@ HOTSPOT_TIME_AGGREGATES = ("elemmax_then_mean", "mean_then_timemax", "both")
 # KC-05 후처리 프로필 — screening 은 파트별 단면뷰(런당 7.5시간 'timed out' 308/623 — DEEP_REPORT_PER_PART_SECTION_VIEW_BURN)를 끈다.
 # 값은 그 SIF 의 koo_deep_report --help 에 있을 때만 넘긴다. detail 은 도구 기본 그대로
 DEEP_PROFILES = ("screening", "detail")
+# 이 생성기(2026-11-17 판)가 만든 deep_report.sh 의 표지 — 빈 리포트 검사 줄. 없으면 옛 판(관문 없이 d3plot 을 지우고 빈 리포트를
+# 성공으로 본다) — postprocess·keeper 는 옛 판을 다시 만든 뒤 돌린다
+DEEP_SH_MARKER = "N_OK=0; N_BAD=0"
+
+
+def deep_script_is_current(text):
+    return DEEP_SH_MARKER in (text or "")
 DEEP_PROFILE_FLAGS = {"screening": ("--no-section-view-per-part",), "detail": ()}
 _HOTSPOT_ALIASES = {
     "vm": "von_mises", "vonmises": "von_mises",
@@ -278,9 +285,10 @@ def build_deep_report_sh(run_dir, sif_path=None, options=None, kcr_cmd=None, con
             )
         else:
             cleanup_block = (
-                '\n# d3plot 삭제(관문 명령을 몰라 리포트 JSON 두 개의 끝 바이트만 본다) — report/ 보존.\n'
-                'if [ "$(tail -c 64 "$REPORT_DIR/result.json" | tr -d \'[:space:]\' | tail -c 1)" = "}" ] && \\\n'
-                '   [ "$(tail -c 64 "$REPORT_DIR/analysis_result.json" 2>/dev/null | tr -d \'[:space:]\' | tail -c 1)" = "}" ]; then\n'
+                '\n# d3plot 삭제(관문 명령을 모른다) — 리포트 JSON 두 개를 SIF 안 python 으로 끝까지 읽혀야만 지운다. report/ 보존.\n'
+                'if apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" "$SIF_PATH" python3 -c '
+                '\'import json, sys; [json.load(open(p, encoding="utf-8")) for p in sys.argv[1:]]\' '
+                '"$REPORT_DIR/result.json" "$REPORT_DIR/analysis_result.json" 2>/dev/null; then\n'
                 '    echo "[deep_report] d3plot 삭제: $RUN_DIR"\n'
                 '    rm -f "$RUN_DIR"/d3plot "$RUN_DIR"/d3plot[0-9]* 2>/dev/null || true\n'
                 'else\n'

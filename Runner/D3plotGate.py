@@ -89,7 +89,7 @@ def run_extractions(run_dir: str, spec: Optional[List[Dict[str, Any]]], run_comm
         for o in item.get("outputs") or []:
             path = _out_path(run_dir, o)
             r = {"path": path, "exists": os.path.isfile(path), "size": os.path.getsize(path) if os.path.isfile(path) else 0}
-            r["complete"] = json_complete(path)["complete"] if path.endswith(".json") and r["exists"] else (r["exists"] and r["size"] > 0)
+            r["complete"] = json_complete(path, full=True)["complete"] if path.endswith(".json") and r["exists"] else (r["exists"] and r["size"] > 0)
             if path.endswith(".json") and r["complete"]:
                 try:
                     with open(path, encoding="utf-8") as f:
@@ -145,7 +145,7 @@ def gate(run_dir: str, config: Optional[Dict[str, Any]] = None, run_key: Optiona
     pp = (config or {}).get("postprocess", {}) or {}
     od = output_dir_of(run_dir)
     reasons = []
-    rep = report_status(od)
+    rep = report_status(od, full=True)        # 되돌릴 수 없는 판단 — 크기와 상관없이 끝까지 읽는다(리뷰 중4)
     if not rep["complete_all"]:
         bad = [f"{n}({'잘림' if v['exists'] else '없음'})" for n, v in rep["files"].items() if not v["complete"]]
         reasons.append(f"리포트 JSON 이 완결이 아니다 — {', '.join(bad)}(d3plot 을 지운 뒤 harvest·impact 가 둘 다 다시 읽는다)")
