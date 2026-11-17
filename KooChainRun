@@ -77,6 +77,13 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         help='Output runner_config.json path (default: same directory as scenario)',
         default=None
     )
+    prepare_parser.add_argument(
+        '--check-impact', action='store_true',
+        help='IMPACT 생성 덱 관문 — 표본 위치의 덱을 만들어 충격추 요소·질량·속도·자리·접촉·출력 간격을 본다 (KC-08)'
+    )
+    prepare_parser.add_argument(
+        '--sample', default='5', help='--check-impact 표본 수 또는 all (기본 5)'
+    )
 
     # ========================================================================
     # KooChainRun submit: Submit jobs to Slurm
@@ -137,6 +144,14 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         help='Root directory for execution (default: /data)'
     )
     submit_parser.add_argument(
+        '--pilot', default=None,
+        help='디스크 예산 점검에 쓸 정상 파일럿 런(Run_*) — environment.storage_budget.pilot 대신 (KC-04)'
+    )
+    submit_parser.add_argument(
+        '--ignore-budget', action='store_true',
+        help='디스크 예산 점검이 통과가 아니어도 낸다'
+    )
+    submit_parser.add_argument(
         '--sequential',
         action='store_true',
         help='Sequential mode: 노드당 1개 잡, 잡 안에서 여러 DOE 순차 실행. '
@@ -160,6 +175,10 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         '--watch',
         action='store_true',
         help='Continuously monitor status (update every 60s)'
+    )
+    status_parser.add_argument(
+        '--csv', nargs='?', const='', default=None,
+        help='DOE·단계별 상태 표(doe_status.csv) — 경로를 안 주면 <output_dir>/doe_status.csv (KC-06)'
     )
 
     # ========================================================================
@@ -386,6 +405,77 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
                                      '(-o 로 경로, --parts·--yield 도 쓴다)')
 
     # Parse arguments
+
+    # ========================================================================
+    # stcx 요청서 v1.0 (KC-01~KC-10) — 출처·건강·추출·삭제·예산·지킴이·자리·덱 관문
+    # ========================================================================
+    prov_parser = subparsers.add_parser(
+        'provenance', help='런 출처 기록(provenance.json) 보기 — 없으면(옛 런) 지금 파일로 다시 만든다 (KC-01)')
+    prov_parser.add_argument('run_dir', help='Run_* 폴더')
+    prov_parser.add_argument('--config', default=None, help='runner_config.json (옛 런을 다시 만들 때)')
+
+    man_parser = subparsers.add_parser(
+        'manifest', help='끝난 런 귀환 매니페스트(return_manifest.jsonl) — 런마다 출처·건강·추출 (KC-01)')
+    man_parser.add_argument('config', help='runner_config.json')
+    man_parser.add_argument('--since', default=None, help='이 시각(ISO, 예 2026-11-17T00:00) 뒤에 끝난 런만')
+    man_parser.add_argument('-o', '--out', default=None, help='출력 경로 (기본 <output_dir>/return_manifest.jsonl)')
+
+    health_parser = subparsers.add_parser(
+        'health', help='정상 종료·건강 판정(health.json) — 런 하나 또는 캠페인 전부(health_table.csv·캠페인 비교) (KC-02)')
+    health_parser.add_argument('target', help='Run_* 폴더 또는 runner_config.json(캠페인)')
+    health_parser.add_argument('--thresholds', default=None, help='문턱 JSON 파일(runner_config 의 health.thresholds 위에)')
+    health_parser.add_argument('--no-binout', action='store_true', help='binout(파트 IE·접촉 에너지) 읽기를 건너뛴다')
+    health_parser.add_argument('--no-write', action='store_true', help='health.json 을 쓰지 않고 보기만')
+    health_parser.add_argument('--json', action='store_true', help='판정 JSON 을 그대로 찍는다')
+
+    extract_parser = subparsers.add_parser(
+        'extract', help='필수 추출(postprocess.required_extractions)을 돌리고 확인만 — 지우지 않는다 (KC-03)')
+    extract_parser.add_argument('run_dir', help='Run_* 폴더')
+    extract_parser.add_argument('--config', default=None, help='runner_config.json')
+    extract_parser.add_argument('--spec', default=None, help='필수 추출 목록 JSON(설정 대신)')
+
+    del_parser = subparsers.add_parser(
+        'd3plot-delete', help='관문(리포트 완결·필수 추출·삭제 허가·health)을 지난 런만 d3plot 삭제 (KC-03)')
+    del_parser.add_argument('run_dir', help='Run_* 폴더')
+    del_parser.add_argument('--config', default=None, help='runner_config.json(필수 추출·허가 설정)')
+    del_parser.add_argument('--gate', action='store_true', help='관문을 본다(늘 본다 — deep_report.sh 호환)')
+    del_parser.add_argument('--require-clearance', action='store_true', help='삭제 허가 설정이 없으면 지우지 않는다')
+    del_parser.add_argument('--run-key', default=None, help='허가·기록에 쓸 런 이름(index 별칭)')
+    del_parser.add_argument('--dry-run', action='store_true', help='판정만, 지우지 않는다')
+
+    budget_parser = subparsers.add_parser(
+        'budget', help='제출 전 디스크 예산 — 파일럿 런 크기 × 런 수 × 동시 수 대 문턱 선 (KC-04)')
+    budget_parser.add_argument('config', help='runner_config.json')
+    budget_parser.add_argument('--pilot', required=True, help='정상 파일럿 런(Run_* 폴더)')
+    budget_parser.add_argument('--pilot-config', default=None, help='파일럿의 runner_config(IMPACT 상태 수 비교)')
+    budget_parser.add_argument('--concurrency', type=int, default=None, help='동시 실행 수(%%N)')
+    budget_parser.add_argument('--threshold', type=float, default=None, help='문턱 선 %% (기본 90)')
+    budget_parser.add_argument('--backlog', type=int, default=None, help='후처리 대기로 d3plot 을 든 런 수 여유(기본 = 동시 수)')
+
+    keeper_parser = subparsers.add_parser(
+        'keeper', help='후처리 지킴이 — 리포트 없는 끝난 런만 배열 잡 하나로 deep_report 재제출 (KC-07)')
+    keeper_parser.add_argument('configs', nargs='+', help='runner_config.json (캠페인 여럿 가능)')
+    keeper_parser.add_argument('--interval', type=float, default=None, help='N분마다 되풀이(없으면 한 번)')
+    keeper_parser.add_argument('--dry-run', action='store_true', help='고르기만, 제출하지 않는다')
+    keeper_parser.add_argument('--cpus', type=int, default=None, help='deep 잡 CPU (기본 40)')
+    keeper_parser.add_argument('--mem', default=None, help='deep 잡 메모리 (기본 400G, 실측 최대 RSS × 1.2 이상으로 올림)')
+    keeper_parser.add_argument('--exclude', default=None, help='제외 노드(기본 slurmctld 호스트)')
+    keeper_parser.add_argument('--partition', default=None)
+    keeper_parser.add_argument('--time', default=None, help='deep 잡 시간 (기본 04:00:00)')
+    keeper_parser.add_argument('--max-parallel', type=int, default=None, help='배열 동시 수 %%N (기본 20)')
+
+    sites_parser = subparsers.add_parser(
+        'sites', help='IMPACT 자리 격자 표(sites.csv) — 계획 = 생성 + 빠짐, 빠진 자리마다 까닭 (KC-09)')
+    sites_parser.add_argument('config', help='runner_config.json')
+    sites_parser.add_argument('--csv', default=None, help='출력 경로 (기본 <output_dir>/sites.csv)')
+    sites_parser.add_argument('--face', default=None, help='면 표시(TOP·BOT) — 없으면 scenario position_source.face')
+
+    gate_parser = subparsers.add_parser(
+        'gate', help='제출 전 덱 관문 — include·요소 수 3자 대조·TIED 파트·카나리아 건강 (KC-10)')
+    gate_parser.add_argument('config', help='runner_config.json')
+    gate_parser.add_argument('--canary', default=None, help='카나리아 DOE 목록(예 1,5,10) — 이미 돈 런을 본다')
+    gate_parser.add_argument('--json', default=None, help='보고 JSON 경로 (기본 <output_dir>/gate_report.json)')
+
     args = parser.parse_args()
 
     # Execute command
@@ -411,6 +501,24 @@ For more information, visit: https://github.com/kooengineering/pyKooCAE
         cmd_reprioritize(args)
     elif args.command == 'harvest':
         cmd_harvest(args)
+    elif args.command == 'provenance':
+        cmd_provenance(args)
+    elif args.command == 'manifest':
+        cmd_manifest(args)
+    elif args.command == 'health':
+        cmd_health(args)
+    elif args.command == 'extract':
+        cmd_extract(args)
+    elif args.command == 'd3plot-delete':
+        cmd_d3plot_delete(args)
+    elif args.command == 'budget':
+        cmd_budget(args)
+    elif args.command == 'keeper':
+        cmd_keeper(args)
+    elif args.command == 'sites':
+        cmd_sites(args)
+    elif args.command == 'gate':
+        cmd_gate(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -666,6 +774,7 @@ def cmd_prepare(args):
                     print(f"    · {_note}")
 
         print(f"✅ Successfully generated: {output_path}")
+        _prepare_kcr_checks(_rc, scenario_path, output_path, args)
 
         # rerun.sh / stop.sh / diagnose.sh / copy.sh 자동 생성
         script_dir = scenario_path.parent
@@ -677,6 +786,105 @@ def cmd_prepare(args):
         traceback.print_exc()
         sys.exit(1)
 
+
+
+def _prepare_kcr_checks(rc, scenario_path, output_path, args):
+    """prepare 끝 점검(stcx 요청서 v1.0) — 기록·경고만 하고 runner_config 는 그대로 둔다(e2e 가 바이트 대조)."""
+    try:
+        from Runner.RunProvenance import write_prepare_record
+        write_prepare_record(str(output_path), str(scenario_path))
+    except Exception as e:
+        print(f"⚠ prepare 기록(.kcr_prepare.json)을 쓰지 못했다(출처 기록의 scenario 해시만 빈다): {e}")
+    steps = (rc.get("scenario") or {}).get("steps") or []
+    sim = rc.get("simulation_params") or {}
+    pp = rc.get("postprocess") or {}
+    # KC-08 — IMPACT 모르는 키·SI 기본값
+    if any(s.get("mode") == "IMPACT" for s in steps):
+        from Runner.ImpactGate import check_impact_keys, si_default_warnings
+        units = None
+        try:
+            from Runner.DeckScan import scan_deck
+            mf = (rc.get("project") or {}).get("model_file")
+            units = scan_deck(mf)["units"] if mf and os.path.isfile(mf) else None
+        except Exception:
+            units = None
+        for w in check_impact_keys(sim) + si_default_warnings(sim, units):
+            print(w)
+    # KC-05 — 후처리 프로필
+    prof = str(pp.get("profile") or "").lower()
+    if prof:
+        from Runner.PostprocessShellGenerator import DEEP_PROFILES, DEEP_PROFILE_FLAGS
+        if prof not in DEEP_PROFILES:
+            print(f"⚠ postprocess.profile '{pp.get('profile')}' 를 모른다(가능: {', '.join(DEEP_PROFILES)}) — 프로필 없이 간다")
+        else:
+            extra = pp.get("deep_extra_args") or []
+            extra = extra.split() if isinstance(extra, str) else list(extra)
+            print(f"[postprocess] 프로필 {prof}: deep 에 {list(DEEP_PROFILE_FLAGS[prof]) or '도구 기본'} "
+                  f"(그 SIF 의 도구가 아는 옵션만)")
+            if prof == "screening" and "--parts" not in extra:
+                print("  · 스크리닝은 --parts 로 볼 파트를 정하면 deep 메모리가 크게 준다(실측 137.6 → 75 GB) — deep_extra_args 에")
+            print("  · 이미 도는 런은 시작할 때 읽은 설정을 쓴다 — 새 프로필은 대기 잡엔 바로 먹고, 도는 런은 requeue 해야 먹는다")
+    # KC-02 — 문턱 키 확인(모르는 키는 load_thresholds 가 알린다)
+    if rc.get("health"):
+        from Runner.RunHealth import load_thresholds
+        load_thresholds(rc)
+    # KC-03 — 캠페인 안 d3plot 삭제 설정
+    _warn_delete_consistency(output_path)
+    # KC-08 — 생성 덱 관문
+    if getattr(args, "check_impact", False):
+        from Runner.ImpactGate import run_impact_gate
+        res = run_impact_gate(str(output_path), sample=args.sample)
+        print(f"[impact-gate] {res['verdict']} — 표본 {res.get('sample')} · 보고 {res.get('out_dir')}/impact_gate.csv")
+        for r in res.get("rows", []):
+            if r.get("verdict") != "pass":
+                print(f"  DOE {r.get('doe')} {r.get('site') or ''}: {r.get('verdict')} — "
+                      + " | ".join((r.get('reject') or []) + (r.get('warn') or [])))
+        if res["verdict"] == "reject":
+            print("❌ IMPACT 관문 거절 — runner_config 는 만들었지만 이대로 내지 말 것")
+            sys.exit(1)
+
+
+def _warn_delete_consistency(config_path):
+    try:
+        from Runner.D3plotGate import delete_consistency
+        dc = delete_consistency(str(config_path))
+    except Exception:
+        return
+    if not dc["consistent"]:
+        print("⚠ 캠페인 안 runner_config 들의 postprocess.delete_d3plot_after_deep 이 다르다:")
+        for v, ps in dc["values"].items():
+            print(f"    {v}: {len(ps)}개 — " + ", ".join(os.path.relpath(p) for p in ps[:5]) + (" …" if len(ps) > 5 else ""))
+
+
+def _presubmit_checks(rc, config_path, args):
+    """False 면 내지 않는다. 디스크 예산은 파일럿(--pilot 또는 environment.storage_budget.pilot)이 있을 때만 본다."""
+    _warn_delete_consistency(config_path)
+    env = rc.get("environment") or {}
+    sb = env.get("storage_budget") or {}
+    pilot = getattr(args, "pilot", None) or sb.get("pilot")
+    if not pilot:
+        if sb:
+            print("[budget] environment.storage_budget 는 있지만 pilot 이 없어 디스크 예산 점검을 건너뛴다")
+        return True
+    from Runner.StorageBudget import budget
+    conc = sb.get("concurrency")
+    if not conc and getattr(args, "nodes", None) and getattr(args, "jobs_per_node", None):
+        conc = args.nodes * (1 if getattr(args, "sequential", False) else args.jobs_per_node)
+    try:
+        B = budget(rc, pilot, concurrency=conc)
+    except Exception as e:
+        print(f"[budget] 점검 실패 — {type(e).__name__}: {e}")
+        return bool(getattr(args, "ignore_budget", False))
+    for line in B["lines"]:
+        print("  " + line)
+    print(f"[budget] 판정: {B['verdict']}" + (f" (동시 수 {B['suggest_concurrency']} 이하)" if B.get("suggest_concurrency") else ""))
+    if B["verdict"] != "pass":
+        if getattr(args, "ignore_budget", False):
+            print("[budget] --ignore-budget — 판정을 넘기고 낸다")
+            return True
+        print("❌ 디스크 예산 판정이 통과가 아니라 내지 않는다(넘기려면 --ignore-budget)")
+        return False
+    return True
 
 def _generate_helper_scripts(script_dir: Path, runner_config: dict = None):
     """rerun.sh, stop.sh, diagnose.sh, copy.sh 자동 생성"""
@@ -1415,6 +1623,10 @@ def cmd_submit(args):
         _maybe_submit_sphere_after(rc, config_path)
         return
 
+    # KC-03·04 제출 전 점검 — 캠페인 안 d3plot 삭제 설정 비교, 디스크 예산(파일럿이 있을 때)
+    if not _presubmit_checks(rc, config_path, args):
+        sys.exit(1)
+
     if args.mode == 'cumulative':
         _submit_cumulative(args, config_path)
     else:
@@ -2149,6 +2361,9 @@ export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
+# 출처 기록(KC-01) — 런이 이 잡 스크립트와 원본 runner_config 를 provenance.json 에 적는다
+export KCR_JOB_SCRIPT="{script_path}"
+export KCR_RUNNER_CONFIG_ORIG="{config_path}"
 """
 
         if scratch_enabled:
@@ -2558,6 +2773,9 @@ export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
+# 출처 기록(KC-01) — 런이 이 잡 스크립트와 원본 runner_config 를 provenance.json 에 적는다
+export KCR_JOB_SCRIPT="{script_path}"
+export KCR_RUNNER_CONFIG_ORIG="{config_path}"
 """
             # DOE 실행 명령 목록 생성
             doe_run_cmds = ""
@@ -2712,6 +2930,10 @@ def cmd_run(args):
             resume=args.resume
         )
         success = runner.run_all()
+        if success and runner.postprocess_failures:
+            # 해석은 끝났고 후처리만 실패 — 단계는 completed 라 rerun 이 해석을 다시 돌리지 않는다(KC-02, 사용자 결정 11-17)
+            print(f"DOE {args.doe} solver completed, postprocess failed: {runner.postprocess_failures} (exit 3)")
+            sys.exit(3)
         if success:
             print(f"DOE {args.doe} completed successfully")
         else:
@@ -2745,9 +2967,23 @@ def cmd_status(args):
         if args.config:
             config_path = Path(args.config).resolve()
             if config_path.exists():
-                # TODO: Parse runner_config.json and show detailed progress
+                # KC-06 — DOE·단계마다 상태(디렉토리 이름 추측 없이 index·잡·health·리포트·추출 기록으로)
+                import json as _json
+                from Runner.CampaignStatus import campaign_status, write_csv, summary_lines
+                _rc = _json.loads(config_path.read_text(encoding="utf-8"))
+                _jobs = None
+                try:
+                    _jobs = _json.loads((config_path.parent / "jobs.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    pass
+                _st = campaign_status(_rc, _jobs)
                 print(f"Config: {config_path}")
-                print("(Detailed progress monitoring coming soon)")
+                for _line in summary_lines(_st):
+                    print(_line)
+                if getattr(args, "csv", None) is not None:
+                    _out = args.csv or os.path.join(_rc["project"]["output_dir"], "doe_status.csv")
+                    write_csv(_st, _out)
+                    print(f"  표: {_out}")
             else:
                 print(f"⚠️  Warning: Config file not found: {config_path}")
 
@@ -3056,6 +3292,9 @@ export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
+# 출처 기록(KC-01) — 런이 이 잡 스크립트와 원본 runner_config 를 provenance.json 에 적는다
+export KCR_JOB_SCRIPT="{script_path}"
+export KCR_RUNNER_CONFIG_ORIG="{config_path}"
 """
 
         doe_cmds = ""
@@ -3419,13 +3658,24 @@ def cmd_postprocess(args):
              if d.is_dir()}
         )
         print(f"\n[Deep] {len(run_dirs)} Run_* 폴더 발견")
+        from Runner.RunHealth import report_status, update_health_report
+        from Runner.D3plotGate import kcr_command
         for rd in run_dirs:
             report_dir = rd / "Output" / "report"
-            if skip_done_deep and ((report_dir / "result.json").exists()
-                                   or (report_dir / "analysis_result.json").exists()):
+            # 끝까지 쓰인 리포트만 '이미 있음' — 예전엔 파일만 있으면 건너뛰어 잘린 JSON(270~337 MB)이 완료로 셌다(KC-06)
+            if skip_done_deep and report_status(str(rd / "Output"))["complete"]:
                 deep_existing += 1
                 continue
             sh = rd / "deep_report.sh"
+            # 관문 없이 d3plot 을 지우던 옛 deep_report.sh 는 다시 만든다(KC-03)
+            if sh.exists() and pp_opts.get("delete_d3plot_after_deep"):
+                try:
+                    old = sh.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    old = ""
+                if 'rm -f "$RUN_DIR"/d3plot' in old and "d3plot-delete" not in old:
+                    print(f"  {rd.name}: 관문 없이 d3plot 을 지우던 옛 deep_report.sh — 새로 만든다")
+                    sh.unlink()
             # Fallback: sh 없으면 그때 생성 (시뮬 실패해도 d3plot 있으면 후처리 가능)
             if not sh.exists():
                 output_run_dir = rd / "Output"
@@ -3439,6 +3689,8 @@ def cmd_postprocess(args):
                         run_dir=str(output_run_dir),
                         sif_path=pp_opts.get("sif_path"),
                         options=pp_opts,
+                        kcr_cmd=kcr_command(runner_config) if pp_opts.get("delete_d3plot_after_deep") else None,
+                        config_path=str(config_path),
                     )
                     with open(sh, 'w', encoding='utf-8') as f:
                         f.write(sh_text)
@@ -3458,11 +3710,15 @@ def cmd_postprocess(args):
                     ["bash", str(sh)], cwd=str(rd),
                     stdout=logf, stderr=subprocess.STDOUT
                 )
+            try:
+                update_health_report(str(rd))   # health.json 의 리포트 칸(있을 때만)
+            except Exception:
+                pass
             if rc.returncode == 0:
                 deep_done += 1
             else:
                 deep_failed += 1
-                print(f"    ✗ rc={rc.returncode}, log={log_path}")
+                print(f"    ✗ rc={rc.returncode}, log={log_path}" + ("  (빈 리포트 — 도구는 끝났지만 result.json·analysis_result.json 이 없거나 잘렸다)" if rc.returncode == 3 else ""))
         if deep_existing:
             print(f"[Deep] deep 산출물이 이미 있는 {deep_existing}개 Run 은 건너뜀 (다시 돌리려면 --deep)")
         print(f"[Deep] done: {deep_done}, failed: {deep_failed}")
@@ -3572,6 +3828,264 @@ def cmd_diagnose(args):
                 print(f"    > {line[:120]}")
         print()
 
+
+
+# ============================================================================
+# stcx 요청서 v1.0 (KC-01~KC-10) 명령
+# ============================================================================
+def _load_rc(path):
+    import json
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _rc_near_run(run_dir, explicit=None):
+    """런 폴더의 runner_config — --config, provenance.json 의 경로, 출력 폴더 위 runner_config.json 순."""
+    import json
+    cands = [explicit] if explicit else []
+    try:
+        with open(os.path.join(run_dir, "provenance.json"), encoding="utf-8") as f:
+            P = json.load(f)
+        cands += [P.get("runner_config_orig_path"), P.get("runner_config_path")]
+    except (OSError, ValueError):
+        pass
+    cands.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(run_dir))), "runner_config.json"))
+    for c in cands:
+        if c and os.path.isfile(c):
+            try:
+                return _load_rc(c), c
+            except (OSError, ValueError):
+                continue
+    return {}, None
+
+
+def cmd_provenance(args):
+    import json
+    from Runner.RunProvenance import provenance_for_run
+    _rc, cfg_path = _rc_near_run(args.run_dir, args.config)
+    print(json.dumps(provenance_for_run(os.path.abspath(args.run_dir), cfg_path), ensure_ascii=False, indent=2))
+
+
+def cmd_manifest(args):
+    from Runner.RunProvenance import build_manifest, write_manifest
+    rc = _load_rc(args.config)
+    rows = build_manifest(rc, since=args.since)
+    out = args.out or os.path.join(rc["project"]["output_dir"], "return_manifest.jsonl")
+    write_manifest(rows, out)
+    head = rows[0]
+    print(f"[manifest] {out} — 런 {head['runs']}개 (provenance 없음 {head['without_provenance']})")
+    print(f"  래퍼별 런 수: {head['by_wrapper']}")
+    print(f"  설정(sha256 앞 12자)별: { {k[:12]: v for k, v in head['by_runner_config_sha256'].items()} }")
+    print(f"  health: {head['by_health']}")
+    if head.get("note"):
+        print(f"  ⚠ {head['note']}")
+
+
+def _health_line(H):
+    r = "; ".join(H.get("reasons") or []) or "-"
+    return f"{H.get('verdict'):8s} {os.path.basename(H['run_dir'])}  {r}"
+
+
+def cmd_health(args):
+    import csv
+    import glob
+    import json
+    from Runner.RunHealth import evaluate_run, write_health, load_thresholds, campaign_outliers
+    target = os.path.abspath(args.target)
+    if os.path.isdir(target):
+        rc, _ = _rc_near_run(target)
+        th = load_thresholds(rc, args.thresholds)
+        pp, hc = rc.get("postprocess") or {}, rc.get("health") or {}
+        H = evaluate_run(target, thresholds=th, use_binout=not args.no_binout,
+                         post_sif=hc.get("post_sif") or pp.get("sif_path") or "/opt/apptainers/SmartTwinPostprocessor.sif")
+        if not args.no_write:
+            write_health(target, H)
+        if args.json:
+            print(json.dumps(H, ensure_ascii=False, indent=2))
+        else:
+            print(_health_line(H))
+            for m in H.get("missing") or []:
+                print(f"  (모름) {m}")
+        sys.exit(1 if H["verdict"] == "invalid" else 0)
+    rc = _load_rc(target)
+    out_dir = rc["project"]["output_dir"]
+    th = load_thresholds(rc, args.thresholds)
+    pp, hc = rc.get("postprocess") or {}, rc.get("health") or {}
+    post_sif = hc.get("post_sif") or pp.get("sif_path") or "/opt/apptainers/SmartTwinPostprocessor.sif"
+    Hs = []
+    for rd in sorted(glob.glob(os.path.join(out_dir, "Run_*"))):
+        if not os.path.isfile(os.path.join(rd, "Output", "d3hsp")):
+            continue
+        Hs.append(evaluate_run(rd, thresholds=th, use_binout=not args.no_binout, post_sif=post_sif))
+    flags = campaign_outliers(Hs, th)
+    for H in Hs:
+        extra = flags.get(H["run_dir"])
+        if extra:
+            H["campaign_flags"] = extra
+            H["warn_reasons"] = (H.get("warn_reasons") or []) + extra
+            H["reasons"] = (H.get("reasons") or []) + extra
+            if H["verdict"] == "valid":
+                H["verdict"] = "warn"
+        if not args.no_write:
+            write_health(H["run_dir"], H)
+    table = os.path.join(out_dir, "health_table.csv")
+    cols = ("run_dir", "verdict", "normal_termination", "end_time", "target_end_time", "energy_ratio_max", "hg_over_ie_max",
+            "added_mass_pct_total", "added_mass_pct_device", "ke0_measured", "ke0_expected", "contact_energy_min",
+            "nan_onset", "reasons")
+    with open(table, "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(cols)
+        for H in Hs:
+            w.writerow([("; ".join(H.get(c) or []) if c == "reasons" else H.get(c)) for c in cols])
+    cnt = {}
+    for H in Hs:
+        cnt[H["verdict"]] = cnt.get(H["verdict"], 0) + 1
+    print(f"[health] 런 {len(Hs)}개 — {cnt}  표: {table}")
+    for H in Hs:
+        if H["verdict"] != "valid":
+            print("  " + _health_line(H))
+    if args.json:
+        print(json.dumps(Hs, ensure_ascii=False, indent=1))
+
+
+def _rc_with_spec(args):
+    import json
+    rc, path = _rc_near_run(args.run_dir, getattr(args, "config", None))
+    if getattr(args, "spec", None):
+        with open(args.spec, encoding="utf-8") as f:
+            spec = json.load(f)
+        rc = dict(rc)
+        rc["postprocess"] = dict(rc.get("postprocess") or {}, required_extractions=spec.get("required_extractions", spec)
+                                 if isinstance(spec, dict) else spec)
+    return rc
+
+
+def cmd_extract(args):
+    from Runner.D3plotGate import run_extractions
+    rc = _rc_with_spec(args)
+    spec = (rc.get("postprocess") or {}).get("required_extractions")
+    if not spec:
+        print("필수 추출 목록이 없다(postprocess.required_extractions 또는 --spec)")
+        sys.exit(1)
+    res = run_extractions(os.path.abspath(args.run_dir), spec)
+    for e in res:
+        print(f"  {'OK ' if e['ok'] else 'NG '} {e['name']}" + (f" (rc {e['rc']})" if e.get('ran') else "")
+              + (f" — {e.get('error')}" if e.get('error') else ""))
+        for o in e.get("outputs") or []:
+            print(f"      {'있음' if o['complete'] else '없음'} {o['path']}")
+    sys.exit(0 if all(e["ok"] for e in res) else 1)
+
+
+def cmd_d3plot_delete(args):
+    from Runner.D3plotGate import gate_and_delete
+    rc, _ = _rc_near_run(args.run_dir, args.config)
+    try:
+        X = gate_and_delete(os.path.abspath(args.run_dir), rc, run_key=args.run_key,
+                            require_clearance=args.require_clearance, dry_run=args.dry_run)
+    except Exception as e:
+        print(f"[d3plot-delete] 오류 — d3plot 보존: {type(e).__name__}: {e}")
+        sys.exit(1)
+    if X.get("deleted_at"):
+        print(f"[d3plot-delete] 지움 {len(X['deleted_files'])}개 ({X['d3plot_bytes'] / 1024 ** 3:.2f} GiB): {args.run_dir}")
+        sys.exit(0)
+    if not X["gate"]["d3plot_files"]:
+        print(f"[d3plot-delete] d3plot 이 없다: {args.run_dir}")
+        sys.exit(0)
+    if X.get("dry_run"):
+        print(f"[d3plot-delete] (dry-run) 관문 통과 — 지울 수 있다: {args.run_dir}")
+        sys.exit(0)
+    print(f"[d3plot-delete] 보존 — " + "; ".join(X["retained_reasons"]))
+    sys.exit(2)
+
+
+def cmd_budget(args):
+    from Runner.StorageBudget import budget
+    rc = _load_rc(args.config)
+    prc = _load_rc(args.pilot_config) if args.pilot_config else None
+    B = budget(rc, args.pilot, concurrency=args.concurrency, threshold_pct=args.threshold, backlog=args.backlog,
+               pilot_config=prc)
+    for line in B["lines"]:
+        print("  " + line)
+    print(f"[budget] 판정: {B['verdict']}" + (f" (동시 수 {B['suggest_concurrency']} 이하)" if B.get("suggest_concurrency") else ""))
+    sys.exit({"pass": 0, "reject": 1}.get(B["verdict"], 2))
+
+
+def cmd_keeper(args):
+    import time
+    from Runner.DeepKeeper import keeper_pass
+    ov = {"cpus": args.cpus, "mem": args.mem, "partition": args.partition, "time": args.time,
+          "max_parallel": args.max_parallel, "exclude": args.exclude.split(",") if args.exclude else None}
+    while True:
+        for c in args.configs:
+            r = keeper_pass(os.path.abspath(c), dry_run=args.dry_run, viz_override=ov)
+            msg = r.get("note") or (f"대상 {r.get('candidates')} · 건너뜀 {r.get('skipped')} · 제출 {r.get('submitted')}"
+                                    + (f" (잡 {r['job_id']})" if r.get("job_id") else "")
+                                    + (f" — {r['error']}" if r.get("error") else ""))
+            print(f"[keeper] {c}: {msg}")
+            if r.get("mem_note"):
+                print(f"  ⚠ {r['mem_note']}")
+            if args.dry_run and r.get("would_submit"):
+                for a in r["would_submit"][:20]:
+                    print(f"    낼 것: {a}")
+        if not args.interval:
+            break
+        try:
+            time.sleep(args.interval * 60)
+        except KeyboardInterrupt:
+            print("\n[keeper] 멈춤")
+            break
+
+
+def cmd_sites(args):
+    from Runner.ImpactGate import sites_table, write_sites_csv
+    from Runner.RunProvenance import read_json, prepare_record_path
+    rc = _load_rc(args.config)
+    face = args.face
+    if face is None:
+        prep = read_json(prepare_record_path(args.config)) or {}
+        sc = read_json(prep.get("scenario_path") or "") or {}
+        for s in sc.get("scenarios") or []:
+            face = (s.get("position_source") or {}).get("face") or face
+    tab = sites_table(rc, face=face)
+    out = args.csv or os.path.join(rc["project"]["output_dir"], "sites.csv")
+    write_sites_csv(tab, out)
+    print(f"[sites] 계획 {tab['planned']} = 생성 {tab['generated']} + 빠짐 {tab['missing']}  표: {out}")
+    for r in [r for r in tab["rows"] if not r["generated"]][:20]:
+        print(f"  빠짐 {r['site_id']} (DOE {r['doe']}): {r['missing_reason']}")
+
+
+def cmd_gate(args):
+    import json
+    from Runner.DeckGate import deck_gate
+    from Runner.CampaignStatus import load_index_runs, alias_of
+    rc = _load_rc(args.config)
+    out_dir = rc["project"]["output_dir"]
+    run_dirs, missing = [], []
+    if args.canary:
+        runs = load_index_runs(rc)
+        for d in [int(x) for x in args.canary.split(",") if x.strip()]:
+            for st in range(1, int(rc["scenario"].get("total_steps", 1)) + 1):
+                r = runs.get(alias_of(rc, d, st)) or {}
+                if r.get("folder"):
+                    run_dirs.append(os.path.join(out_dir, r["folder"]))
+                else:
+                    missing.append(f"DOE {d} 단계 {st}")
+    R = deck_gate(rc, run_dirs)
+    if missing:
+        R.setdefault("info", []).append(f"카나리아 런이 아직 없다: {missing} — 먼저 그 DOE 만 돌릴 것(rerun --does)")
+    out = args.json or os.path.join(out_dir, "gate_report.json")
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(R, f, ensure_ascii=False, indent=1, default=str)
+    print(f"[gate] 판정: {R['verdict']}  보고: {out}")
+    for x in R["reject"]:
+        print(f"  ❌ {x}")
+    for x in R["warn"]:
+        print(f"  ⚠ {x}")
+    for x in R.get("info", []):
+        print(f"  · {x}")
+    if R.get("tied"):
+        print(f"  TIED 결속 {len(R['tied'])}개(사람 점검) — {out} 의 tied")
+    sys.exit(1 if R["verdict"] == "reject" else 0)
 
 if __name__ == '__main__':
     main()

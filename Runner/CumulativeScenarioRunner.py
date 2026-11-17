@@ -343,6 +343,7 @@ class LSDynaSolverRunner:
         self.mpi_enabled = env.get("mpi_enabled", False)
         self.mpi_launcher = env.get("mpi_launcher", "mpirun")  # "mpirun" or "srun"
         self.apptainer = ApptainerWrapper(config)
+        self.last_returncode = None   # 마지막 실행의 LS-DYNA 프로세스 종료 코드(health.json 의 solver_exit_code)
 
     def run(self, input_file: str, working_dir: str, timeout: int = 7200, extra_args: List[str] = None) -> bool:
         """LS-DYNA 실행 및 완료 대기
@@ -434,6 +435,7 @@ class LSDynaSolverRunner:
                 )
 
                 _, stderr = process.communicate(timeout=timeout)
+            self.last_returncode = process.returncode
 
             # Apptainer 컨테이너 정리 대기 (squashfuse unmount, sandbox 정리)
             time.sleep(5)
@@ -508,6 +510,10 @@ class LSDynaSolverRunner:
         return False
 
 
+class HealthInvalidError(RuntimeError):
+    """LS-DYNA 가 0 을 돌려줬지만 health 가 invalid(정상 종료 아님·목표 미달·NaN·첫 KE 0 …) — 다시 돌려도 같다."""
+
+
 class CumulativeScenarioRunner:
     """누적 시나리오 실행자"""
 
@@ -523,8 +529,9 @@ class CumulativeScenarioRunner:
             resume: True면 기존 checkpoint에서 이어서 진행, False면 checkpoint를
                     무시하고 처음부터 스캔(완료된 run은 simulation_index status로 계속 skip).
         """
-        with open(config_path, 'r', encoding='utf-8') as f:
-            self.config = json.load(f)
+        # KC-01: 읽는 순간의 바이트로 sha256 — 제출 뒤 고친 설정이 어느 런부터 먹었는지 가린다(RUNNER_CONFIG_LIVE_VS_FROZEN)
+        from Runner.RunProvenance import read_config_bytes
+        self.config, self.config_snapshot = read_config_bytes(config_path)
 
         self.config_path = config_path
         self.doe_filter = doe_filter
@@ -550,6 +557,14 @@ class CumulativeScenarioRunner:
         self._setup_logging()
         self._load_checkpoint(resume=resume)
         self._load_index()
+        try:
+            self.config_snapshot.save(self.output_dir)
+        except Exception as e:
+            logging.warning(f"runner_config 사본 저장 실패(출처 기록에만 영향): {e}")
+        # KC-02 건강 판정 문턱(runner_config 의 health.thresholds) · KC-03/05 후처리 실패 목록(잡 끝 코드 3)
+        from Runner.RunHealth import load_thresholds
+        self.health_thresholds = load_thresholds(self.config)
+        self.postprocess_failures: List[str] = []
 
     def _setup_logging(self):
         """로깅 설정"""
@@ -814,7 +829,8 @@ class CumulativeScenarioRunner:
         return self._generate_alias(doe_index, step - 1, prev_mode, prev_condition)
 
     def _generate_and_maybe_run_deep_report(self, run_dir: str, output_run_dir: str,
-                                            doe_index: Optional[int] = None, step_num: Optional[int] = None):
+                                            doe_index: Optional[int] = None, step_num: Optional[int] = None,
+                                            alias: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """deep_report.sh를 run_dir에 항상 생성, postprocess.enabled && auto_deep이면 자동 실행.
 
         auto_deep_mode (default 'inline'):
@@ -822,10 +838,12 @@ class CumulativeScenarioRunner:
           - 'separate_job': dependent sbatch 별도 제출 (시뮬 노드 즉시 해방)
 
         postprocess 옵션 없으면 전체 skip (회귀 무영향).
+        반환: 후처리 기록 {mode, rc, report_complete, maxrss_kb, log} — 실행하지 않았으면 None.
+        inline 이 실패하면(rc ≠ 0 — 도구 실패·빈 리포트 3) self.postprocess_failures 에 별칭을 넣어 잡 끝 코드를 3 으로 만든다.
         """
         pp = self.config.get("postprocess")
         if not pp:
-            return  # 옵션 없으면 아무것도 안 함
+            return None  # 옵션 없으면 아무것도 안 함
         # 종료 시간 표로 이 스텝이 tFinal 의 f 배로 길면 deep report 시간 제한도 f 배(상태 수가 endtim 에 비례). 표가 없으면 1
         if doe_index is not None:
             from Runner.EndTimePresim import endtime_time_factor
@@ -835,10 +853,14 @@ class CumulativeScenarioRunner:
 
         try:
             from Runner.PostprocessShellGenerator import build_deep_report_sh
+            from Runner.D3plotGate import kcr_command
             sh_text = build_deep_report_sh(
                 run_dir=output_run_dir,
                 sif_path=pp.get("sif_path"),
                 options=pp,
+                kcr_cmd=kcr_command(self.config) if pp.get("delete_d3plot_after_deep") else None,
+                config_path=os.path.abspath(self.config_path),
+                run_key=alias,
             )
             sh_path = os.path.join(run_dir, "deep_report.sh")
             with open(sh_path, 'w', encoding='utf-8') as f:
@@ -847,30 +869,52 @@ class CumulativeScenarioRunner:
             logging.info(f"deep_report.sh 생성: {sh_path}")
         except Exception as e:
             logging.warning(f"deep_report.sh 생성 실패 (skip): {e}")
-            return
+            return None
 
         # 자동 실행
         if not (pp.get("enabled") and pp.get("auto_deep", True)):
-            return
+            return None
 
         mode = pp.get("auto_deep_mode", "inline").lower()
         if mode == "separate_job":
             self._submit_deep_report_sbatch(run_dir, sh_path, pp)
-        else:  # inline
-            try:
-                log_path = os.path.join(run_dir, "deep_report.log")
-                logging.info(f"deep_report 자동 실행 (inline): {sh_path}")
-                with open(log_path, 'w', encoding='utf-8') as logf:
-                    result = subprocess.run(
-                        ["bash", sh_path],
-                        cwd=run_dir,
-                        stdout=logf, stderr=subprocess.STDOUT,
-                        timeout=pp.get("deep_timeout_seconds", 7200),
-                    )
-                if result.returncode != 0:
-                    logging.warning(f"deep_report 실행 실패 (rc={result.returncode}, log={log_path})")
-            except Exception as e:
-                logging.warning(f"deep_report 자동 실행 실패 (skip): {e}")
+            return {"mode": "separate_job", "rc": None}
+        # inline
+        rec = {"mode": "inline", "rc": None, "log": os.path.join(run_dir, "deep_report.log")}
+        try:
+            log_path = rec["log"]
+            logging.info(f"deep_report 자동 실행 (inline): {sh_path}")
+            with open(log_path, 'w', encoding='utf-8') as logf:
+                result = subprocess.run(
+                    ["bash", sh_path],
+                    cwd=run_dir,
+                    stdout=logf, stderr=subprocess.STDOUT,
+                    timeout=pp.get("deep_timeout_seconds", 7200),
+                )
+            rec["rc"] = result.returncode
+            if result.returncode != 0:
+                logging.warning(f"deep_report 실행 실패 (rc={result.returncode}, log={log_path})")
+        except subprocess.TimeoutExpired:
+            rec["rc"], rec["error"] = None, f"시간 초과({pp.get('deep_timeout_seconds', 7200)}초)"
+            logging.warning(f"deep_report 시간 초과 — {rec['error']}")
+        except Exception as e:
+            rec["error"] = f"{type(e).__name__}: {e}"
+            logging.warning(f"deep_report 자동 실행 실패 (skip): {e}")
+        try:
+            from Runner.RunHealth import report_status, update_health_report
+            rec["report_complete"] = report_status(output_run_dir)["complete"]
+            update_health_report(run_dir)
+            with open(os.path.join(output_run_dir, "deep_report.maxrss_kb"), encoding="utf-8") as f:
+                rec["maxrss_kb"] = int(f.read().strip().split()[-1])
+        except (OSError, ValueError, IndexError):
+            pass
+        except Exception as e:
+            logging.warning(f"deep_report 뒤 기록 실패: {e}")
+        if rec["rc"] != 0 or not rec.get("report_complete", False):
+            self.postprocess_failures.append(alias or run_dir)
+            logging.error(f"🔴 후처리 실패 — 해석은 정상이라 단계는 completed, 잡 끝 코드는 3: {alias or run_dir} "
+                          f"(rc={rec['rc']}, 리포트 완결={rec.get('report_complete')})")
+        return rec
 
     @staticmethod
     def _scaled_deep_options(pp: dict, f: int) -> dict:
@@ -921,6 +965,52 @@ class CumulativeScenarioRunner:
                 f.write(f"{jid}\t{run_id}\n")
         except Exception as e:
             logging.warning(f"deep_report sbatch 제출 실패 (skip): {e}")
+
+    # ── KC-01 출처 · KC-02 건강 ──────────────────────────────────────────────
+    # 둘 다 보조 기록이다 — 기록 코드가 실패해도 해석 판정은 예전처럼 LS-DYNA 종료 코드로 간다(로그에 경고)
+    def _start_provenance(self, run_dir, input_file, doe_index, step_num, alias, mode):
+        try:
+            from Runner.RunProvenance import build_provenance, write_provenance
+            P = build_provenance(run_dir, self.config, self.config_snapshot, input_file, doe=doe_index, step=step_num,
+                                 alias=alias, mode=mode, campaign_dir=self.output_dir)
+            write_provenance(run_dir, P)
+            return P
+        except Exception as e:
+            logging.warning(f"provenance 기록 실패(해석은 그대로): {type(e).__name__}: {e}")
+            return None
+
+    def _finish_provenance(self, run_dir, P, status, health=None, postprocess=None, error=None):
+        if not P:
+            return
+        try:
+            from Runner.RunProvenance import finish_provenance, write_provenance
+            write_provenance(run_dir, finish_provenance(P, health=health, status=status, postprocess=postprocess, error=error))
+        except Exception as e:
+            logging.warning(f"provenance 마무리 실패: {type(e).__name__}: {e}")
+
+    def _evaluate_health(self, run_dir, mode):
+        hcfg = self.config.get("health") or {}
+        if hcfg.get("enabled") is False:
+            return None
+        try:
+            from Runner.RunHealth import evaluate_run, write_health
+            pp = self.config.get("postprocess") or {}
+            post_sif = hcfg.get("post_sif") or pp.get("sif_path") or "/opt/apptainers/SmartTwinPostprocessor.sif"
+            H = evaluate_run(run_dir, thresholds=self.health_thresholds, solver_exit_code=self.solver.last_returncode,
+                             post_sif=post_sif, use_binout=hcfg.get("binout", True), mode=mode,
+                             binout_timeout=int(hcfg.get("binout_timeout_seconds", 900)))
+            write_health(run_dir, H)
+            logging.info(f"health: {H['verdict']}" + (f" — {'; '.join(H['reasons'])[:300]}" if H.get("reasons") else ""))
+            return H
+        except Exception as e:
+            logging.warning(f"health 판정 실패(해석 판정은 예전처럼 종료 코드로): {type(e).__name__}: {e}")
+            return None
+
+    @staticmethod
+    def _health_transient(H) -> bool:
+        """invalid 이지만 다시 돌리면 나을 수 있는 경우(라이선스) — 재시도 허용."""
+        text = " ".join([x.get("line", "") for x in H.get("error_lines") or []] + list(H.get("termination_reasons") or []))
+        return "licen" in text.lower()
 
     def _get_prev_run_dir(self, doe_index: int, step: int) -> Optional[str]:
         """이전 step의 결과 폴더 반환"""
@@ -1117,6 +1207,7 @@ class CumulativeScenarioRunner:
     #: 재시도하면 시간만 태우고 로그에는 "N회 재시도 후 실패" 로 남아
     #: 일시적 자원 문제인 것처럼 보이게 만든다 (오진의 원인).
     DETERMINISTIC_ERRORS = (
+        HealthInvalidError,
         UnicodeDecodeError, UnicodeEncodeError, LookupError,
         FileNotFoundError, NotADirectoryError, IsADirectoryError, PermissionError,
         json.JSONDecodeError,
@@ -1265,6 +1356,7 @@ class CumulativeScenarioRunner:
 
         # 5. LS-DYNA 실행 (로컬 디스크 stage-in/out으로 NFS 부하 방지)
         input_file = self._find_input_file(run_dir, mode)
+        prov = self._start_provenance(run_dir, input_file, doe_index, step_num, alias, mode)   # KC-01
         timeout = self._step_timeout(doe_index, step_num)
         output_run_dir = os.path.join(run_dir, "Output")
         os.makedirs(output_run_dir, exist_ok=True)
@@ -1347,6 +1439,10 @@ class CumulativeScenarioRunner:
         else:
             solver_success = self.solver.run(input_file, output_run_dir, timeout)
 
+        # 5.5 KC-02 건강 판정 — LS-DYNA 가 0 을 돌려줘도 정상 종료·목표 시각(덱 ENDTIM)·NaN·첫 운동에너지를 본다.
+        #     예전엔 종료 코드만 봐서 중간에 멈춘 런이 completed('COMPLETED 0:0')였다
+        health = self._evaluate_health(run_dir, mode)
+        verdict = (health or {}).get("verdict")
         if not solver_success:
             self._update_index(alias, {
                 "run_id": run_id,
@@ -1354,9 +1450,22 @@ class CumulativeScenarioRunner:
                 "folder": f"Run_{run_id}",
                 "mode": mode,
                 "condition": condition,
-                "error": "LS-DYNA failed"
+                "error": "LS-DYNA failed",
+                **({"health": verdict} if verdict else {}),
             })
+            self._finish_provenance(run_dir, prov, "failed", health, error="LS-DYNA failed")
             return False
+        if verdict == "invalid":
+            why = "; ".join(health.get("invalid_reasons") or [])[:400]
+            self._update_index(alias, {
+                "run_id": run_id, "status": "failed", "folder": f"Run_{run_id}", "mode": mode,
+                "condition": condition, "error": f"health invalid: {why}", "health": "invalid",
+            })
+            self._finish_provenance(run_dir, prov, "failed", health, error=f"health invalid: {why}")
+            logging.error(f"🔴 LS-DYNA 종료 코드는 0 인데 health invalid — 단계 실패: {alias} ({why})")
+            if self._health_transient(health):
+                return False          # 라이선스 등 — 재시도 허용
+            raise HealthInvalidError(f"{alias}: {why}")
 
         # 6. dynain 생성 대기 (Output/ 폴더)
         dynain_timeout = self.config["execution"].get("timeout_dynain_seconds", 604800)
@@ -1369,11 +1478,12 @@ class CumulativeScenarioRunner:
                 "condition": condition,
                 "error": "dynain not generated"
             })
+            self._finish_provenance(run_dir, prov, "failed", health, error="dynain not generated")
             return False
 
         # 6.5 KooD3plotReader deep_report sh 생성 + (옵션 시) 자동 실행
-        # postprocess 옵션 없으면 전체 skip → 회귀 무영향
-        self._generate_and_maybe_run_deep_report(run_dir, output_run_dir, doe_index, step_num)
+        # postprocess 옵션 없으면 전체 skip → 회귀 무영향. 실패는 단계를 막지 않고 잡 끝 코드 3 으로(KC-02)
+        pp_rec = self._generate_and_maybe_run_deep_report(run_dir, output_run_dir, doe_index, step_num, alias)
 
         # 7. DYNAIN_TO_INITIAL 실행 (마지막 step 제외)
         # 누적 무결성: 실패/산출물 부재 시 기본은 warning+degraded 태깅(기존 동작 유지),
@@ -1399,6 +1509,8 @@ class CumulativeScenarioRunner:
                         "folder": f"Run_{run_id}", "mode": mode, "condition": condition,
                         "error": f"strict_accumulation: {dti_degraded}"
                     })
+                    self._finish_provenance(run_dir, prov, "failed", health, postprocess=pp_rec,
+                                            error=f"strict_accumulation: {dti_degraded}")
                     return False
                 logging.warning(msg)
 
@@ -1412,6 +1524,10 @@ class CumulativeScenarioRunner:
             "completed_at": datetime.now().isoformat(),
             "prev": self._get_prev_alias(doe_index, step_num)
         }
+        if verdict:
+            _rec["health"] = verdict              # KC-02 — valid·warn (invalid 은 위에서 실패)
+        if pp_rec:
+            _rec["postprocess"] = {k: pp_rec.get(k) for k in ("mode", "rc", "report_complete", "maxrss_kb") if k in pp_rec}
         if dti_degraded:
             _rec["degraded"] = dti_degraded
         if getattr(self, "_fallback_degraded", None):
@@ -1419,6 +1535,7 @@ class CumulativeScenarioRunner:
             self._fallback_degraded = None
         self._update_index(alias, _rec)
 
+        self._finish_provenance(run_dir, prov, "completed", health, postprocess=pp_rec)
         # 9. 체크포인트에 완료 기록
         self.checkpoint["completed_runs"].append(alias)
 
@@ -2532,7 +2649,8 @@ def main():
         pregenerated_dir=args.pregenerated_dir
     )
     success = runner.run_all()
-    sys.exit(0 if success else 1)
+    # 1 = 해석 실패(LS-DYNA·health invalid), 3 = 해석은 끝났고 후처리만 실패(rerun 은 completed 로 보고 다시 돌리지 않는다)
+    sys.exit(1 if not success else (3 if runner.postprocess_failures else 0))
 
 
 if __name__ == "__main__":

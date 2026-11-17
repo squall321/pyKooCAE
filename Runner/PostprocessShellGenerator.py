@@ -58,6 +58,10 @@ DEFAULT_SPHERE_VIEWER = "canvas"
 HOTSPOT_CRITERIA = ("von_mises", "max_principal", "min_principal", "max_shear",
                     "x_tension", "y_tension", "z_tension")
 HOTSPOT_TIME_AGGREGATES = ("elemmax_then_mean", "mean_then_timemax", "both")
+# KC-05 후처리 프로필 — screening 은 파트별 단면뷰(런당 7.5시간 'timed out' 308/623 — DEEP_REPORT_PER_PART_SECTION_VIEW_BURN)를 끈다.
+# 값은 그 SIF 의 koo_deep_report --help 에 있을 때만 넘긴다. detail 은 도구 기본 그대로
+DEEP_PROFILES = ("screening", "detail")
+DEEP_PROFILE_FLAGS = {"screening": ("--no-section-view-per-part",), "detail": ()}
 _HOTSPOT_ALIASES = {
     "vm": "von_mises", "vonmises": "von_mises",
     "sigma1": "max_principal", "s1": "max_principal", "p1": "max_principal", "maxprincipal": "max_principal",
@@ -205,7 +209,7 @@ def _normalize_hotspot_criterion(value):
     return ",".join(out) if out else None
 
 
-def build_deep_report_sh(run_dir, sif_path=None, options=None):
+def build_deep_report_sh(run_dir, sif_path=None, options=None, kcr_cmd=None, config_path=None, run_key=None):
     """단일 시뮬용 deep_report.sh 텍스트 생성.
 
     Args:
@@ -226,6 +230,15 @@ def build_deep_report_sh(run_dir, sif_path=None, options=None):
             - deep_extra_args: list|str — 임의 koo_deep_report 인자 pass-through
               (고정 플래그·핫스팟 플래그 **뒤에** 추가되므로 둘 다 주면 이쪽이 이긴다.
                예: ["--per-part-render","--element-quality"])
+            - profile: "screening" | "detail" (KC-05) — screening 은 파트별 단면뷰를 끈다(--no-section-view-per-part,
+              그 SIF 의 도구가 아는 옵션일 때만). 없으면 예전 그대로
+            - delete_d3plot_after_deep: True 면 관문(KC-03)을 지난 런만 d3plot 을 지운다
+        kcr_cmd: 관문을 부를 KooChainRun 명령(셸 문자열). 없으면 리포트 JSON 끝 바이트만 보고 지운다
+        config_path: 관문에 넘길 runner_config.json(필수 추출·삭제 허가 설정)
+        run_key: 관문·기록에 쓸 런 이름(index 별칭)
+
+    끝 코드: 도구 rc ≠ 0 이면 그 값(set -e), 도구가 0 이어도 result.json·analysis_result.json 이 둘 다 없거나 하나라도 잘렸으면 3
+    (빈 리포트 폴더를 성공으로 보던 것 — 요청서 STC_STALE_SIF_SILENT_EMPTY_REPORT). 러너는 이것을 후처리 실패(잡 끝 코드 3)로 센다.
 
     Returns:
         sh 스크립트 문자열 (실행 가능, chmod +x 후 bash 실행)
@@ -249,18 +262,45 @@ def build_deep_report_sh(run_dir, sif_path=None, options=None):
     extra = _extra_args_str(opts, "deep_extra_args")
     extra_line = f" \\\n    {extra}" if extra else ""
     # deep_report 성공 후 d3plot 삭제 여부 (디스크 절약, 기본 OFF).
-    # set -e 라서 koo_deep_report 가 성공해 아래 done 줄에 도달했을 때만 삭제됨
-    # (실패 시 d3plot 보존). impact aggregate 는 report/(analysis_result.json
-    # +motion/) 만 읽으므로 영향 없음 — 단 koo_impact_report 가 d3plot 부재 시
-    # deep output 재사용을 지원해야 함(force_reuse).
+    # 🔴 KC-03: 예전엔 도구 rc 0 이면 확인 없이 지웠다. 이제 관문(리포트 JSON 완결·필수 추출·삭제 허가·health)을 지난 런만.
+    #    관문 명령을 모르면(DWI 틀 등) 리포트 JSON 두 개의 끝 바이트만 보고 지운다.
     delete_d3plot = bool(opts.get("delete_d3plot_after_deep", False))
     cleanup_block = ""
     if delete_d3plot:
-        cleanup_block = (
-            '\n# deep_report 성공 후 d3plot 삭제 (디스크 절약). report/ 보존.\n'
-            'echo "[deep_report] d3plot 삭제: $RUN_DIR"\n'
-            'rm -f "$RUN_DIR"/d3plot "$RUN_DIR"/d3plot[0-9]* 2>/dev/null || true\n'
-        )
+        if kcr_cmd:
+            gate_args = f" --config {shlex.quote(str(config_path))}" if config_path else ""
+            if run_key:
+                gate_args += f" --run-key {shlex.quote(str(run_key))}"
+            cleanup_block = (
+                '\n# d3plot 삭제 관문(KC-03) — 리포트 JSON 완결·필수 추출·삭제 허가·health 를 지난 런만 지운다. 결정은 extraction.json\n'
+                'if [ "$(basename "$RUN_DIR")" = "Output" ]; then GATE_DIR="$(dirname "$RUN_DIR")"; else GATE_DIR="$RUN_DIR"; fi\n'
+                f'{kcr_cmd} d3plot-delete "$GATE_DIR" --gate{gate_args} || echo "[deep_report] d3plot 보존(관문 rc $?) — 까닭은 extraction.json: $RUN_DIR" >&2\n'
+            )
+        else:
+            cleanup_block = (
+                '\n# d3plot 삭제(관문 명령을 몰라 리포트 JSON 두 개의 끝 바이트만 본다) — report/ 보존.\n'
+                'if [ "$(tail -c 64 "$REPORT_DIR/result.json" | tr -d \'[:space:]\' | tail -c 1)" = "}" ] && \\\n'
+                '   [ "$(tail -c 64 "$REPORT_DIR/analysis_result.json" 2>/dev/null | tr -d \'[:space:]\' | tail -c 1)" = "}" ]; then\n'
+                '    echo "[deep_report] d3plot 삭제: $RUN_DIR"\n'
+                '    rm -f "$RUN_DIR"/d3plot "$RUN_DIR"/d3plot[0-9]* 2>/dev/null || true\n'
+                'else\n'
+                '    echo "[deep_report] 리포트 JSON 이 완결이 아니라 d3plot 을 남긴다: $RUN_DIR" >&2\n'
+                'fi\n'
+            )
+
+    # KC-05 프로필 — 그 SIF 의 도구가 아는 옵션만 넘긴다(옛 SIF 가 모르는 옵션으로 rc 2·빈 폴더가 되지 않게)
+    profile = str(opts.get("profile") or "").strip().lower()
+    prof_flags = list(DEEP_PROFILE_FLAGS.get(profile, ()))
+    profile_block, profile_arg = "", ""
+    if prof_flags:
+        checks = "".join(f'if deep_has_opt {f}; then DEEP_PROFILE+=({f}); else echo "[deep_report] 이 SIF 의 도구는 {f} 를 모른다 — 넘기지 않음" >&2; fi\n'
+                         for f in prof_flags)
+        profile_block = (
+            f'# 후처리 프로필 {profile} (KC-05)\n'
+            'DEEP_HELP="$(apptainer exec "$SIF_PATH" python3 -m koo_deep_report --help 2>&1 || true)"\n'
+            'deep_has_opt() { printf \'%s\\n\' "$DEEP_HELP" | grep -qE "^  +$1([ ,=]|$)"; }\n'
+            'DEEP_PROFILE=()\n' + checks)
+        profile_arg = ' "${DEEP_PROFILE[@]}"'
 
     return f"""#!/bin/bash
 # Auto-generated by KooChainRun PostprocessShellGenerator
@@ -283,9 +323,13 @@ if [ ! -f "$SIF_PATH" ]; then
     echo "[deep_report] ERROR: SIF not found: $SIF_PATH" >&2
     exit 2
 fi
+{profile_block}
+# 실측 최대 RSS(KB) — 메모리 예약을 실측 이상으로 잡게(KC-05·07). GNU time 이 없으면 건너뛴다
+TIME_PREFIX=()
+if [ -x /usr/bin/time ]; then TIME_PREFIX=(/usr/bin/time -f "%M" -o "$RUN_DIR/deep_report.maxrss_kb"); fi
 
 echo "[deep_report] start: $RUN_DIR"
-apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \\
+"${{TIME_PREFIX[@]}}" apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \\
     "$SIF_PATH" python3 -m koo_deep_report "$RUN_DIR" \\
     -o "$REPORT_DIR" \\
     --section-view \\
@@ -294,8 +338,20 @@ apptainer exec --bind /data:/data,"$RUN_DIR":"$RUN_DIR" \\
     --section-view-axes {axes_str} \\
     --section-view-fields {fields_str} \\
     --ua-threads {ua} \\
-    --sv-threads {sv}{hotspot_line}{extra_line}
+    --sv-threads {sv}{profile_arg}{hotspot_line}{extra_line}
 
+# 도구가 0 으로 끝나도 리포트가 비었거나 잘렸으면 실패(3) — 예전엔 빈 폴더가 성공으로 보였다.
+# result.json·analysis_result.json 중 하나 이상이 끝까지 쓰였고, 있는 것 중 잘린 것이 없어야 한다(옛 SIF 는 한 파일만 쓴다)
+N_OK=0; N_BAD=0
+for J in result.json analysis_result.json; do
+    [ -e "$REPORT_DIR/$J" ] || continue
+    LAST="$(tail -c 64 "$REPORT_DIR/$J" 2>/dev/null | tr -d '[:space:]' | tail -c 1)"
+    if [ "$LAST" = "}}" ]; then N_OK=$((N_OK + 1)); else N_BAD=$((N_BAD + 1)); echo "[deep_report] ERROR: $REPORT_DIR/$J 이 끝까지 쓰이지 않았다" >&2; fi
+done
+if [ "$N_OK" -eq 0 ] || [ "$N_BAD" -gt 0 ]; then
+    echo "[deep_report] ERROR: 리포트 JSON 이 없거나 잘렸다 — 빈 리포트(종료 코드 3): $REPORT_DIR" >&2
+    exit 3
+fi
 echo "[deep_report] done: $REPORT_DIR"
 {cleanup_block}"""
 

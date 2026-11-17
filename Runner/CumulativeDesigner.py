@@ -1070,6 +1070,8 @@ class CumulativeDesigner:
             **({"simulation_params": runner_config.simulation_params} if runner_config.simulation_params else {}),
             # postprocess (있으면 추가) — KooD3plotReader pipeline
             **({"postprocess": runner_config.postprocess} if runner_config.postprocess else {}),
+            # health (있으면 추가) — 단계마다 정상 종료·건강 판정 문턱(KC-02). 없으면 키가 없어 바이트 그대로
+            **({"health": self.user_config["health"]} if self.user_config.get("health") else {}),
             # 원본 시나리오 목록 (LargeScaleDOEManager 등 다른 Runner 호환)
             "project_name": runner_config.project_name,
             "base_dir": runner_config.base_dir,
