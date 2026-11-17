@@ -109,6 +109,37 @@
 - 범위 밖(기존 동작, 알림만): 러너 정리는 계산 노드에서도 같은 사용자의 모든 squashfuse 를 죽인다 — exclusive 가 아닌 잡이 한 노드를 나눠 쓰면 이웃 잡
   컨테이너를 죽일 수 있다. 잡 자기 APPTAINER_TMPDIR 로 좁히는 일은 따로.
 
+- **v138 준비(11-17).** 관문 수정 커밋 5a3ef15 까지 push. KooChainRun 다시 빌드 10:47~10:50 → **KCR 336b0f28**(/data = SIF 소스 트리, glibc ≤ 2.35).
+  컴파일본 시험 108·41·101·157·105 모두 FAIL 0, e2e_rde host ALL PASS 100. 굽기 직전 헤드 v136 1c973c25(그대로)·compute-node-images v137 ad5962f4·마지막 tar v137.
+- **굽기 v138(~10:59, BAKE_RC 0).** SIF 9caad7ec = compute-node-images. KCR 336b0f28·KooRemapper c5f74c18(굽기 검증 기대 = 실제).
+  tar v138 1,380,116,042 B·Drive·메일. 헤드에는 넣지 않았다(아래 사고).
+
+## 🔴 사고 — 헤드 노드의 서비스 컨테이너가 내려갔다(11-17)
+- 43 이 알렸다: koopark 의 서비스 컨테이너 32개가 죽어 있었다. DynaForge 는 kooremapper-fd 가 다시 띄웠고, 나머지는 포털 세션(hwaxportal-71)이
+  되살린다(사용자 결정). 원인은 위 「시험이 헤드 노드에서 진짜 pkill 을 불렀다」(08:00~10:30 UTC, 내 러너·관문 시험)다.
+  SIF 안에서 돌려도 같다 — apptainer 는 기본으로 PID 이름공간을 나누지 않아, 컨테이너 안 pkill 이 호스트의 같은 사용자 squashfuse 를 모두 본다.
+- **뿌리.** 러너 정리가 「계산 노드에서만」이라는 전제가 코드에 없었다. 헤드·로컬에서 러너가 돌면(로컬 `KooChainRun run`·관문·시험) 같은 일이 난다.
+  → 가드(사용자 결정 「가드 넣고 v139 까지」): SLURM_JOB_ID 가 없으면 정리하지 않는다. 계산 노드 잡 안 동작은 그대로다(e6126f9·e2b76a2).
+  판정: 가드 전 트리 gen_5a3ef15 는 「SLURM_JOB_ID 없음 → pkill 0번」 FAIL(1번), 지금 OK. 시험은 같은 프로세스 안의 가짜 pkill 로만 센다.
+- **v137·v138 은 헤드에 넣지 않는다.** 둘 다 가드 전 러너다(v137 은 관문 pkill 도). 헤드 /opt 는 v136 에서 바로 v139 로 간다.
+  tar v137·v138 을 받은 쪽은 v139 를 쓴다. v136 까지의 SIF 로 헤드에서 `apptainer exec … KooChainRun run` 을 돌려도 같은 일이 난다
+  (운영 잡은 /data 의 호스트 바이너리 — 이제 가드판).
+- e2e_rde 하네스는 `prepare`·`harvest` 만 부른다. 사전 해석은 원래 정리를 부르지 않으니, v137·v138 의 e2e 는 pkill 을 부르지 않았다.
+- **가드 빌드.** KooChainRun 21:29~21:38 BUILD_RC 0, 최저 가용 37.0 GB → **KCR 501601d7**(/data = SIF 소스 트리, glibc ≤ 2.35).
+  컴파일본 시험 110·41·101·157·105 모두 FAIL 0. 굽기 직전 헤드 v136 1c973c25·compute-node-images v138 9caad7ec·마지막 tar v138.
+  KooRemapper 스테이징 c5f74c18 → 굽기 때 248ec9bc(kooremapper-4a 11-17 21:22 — 계열끼리 겹치는 요소 번호 덱을 rc 1 로 거절, glibc 2.35).
+  e2e_rde host ALL PASS 100(KCR 501601d7 확인).
+- **굽기 v139(21:51~22:01, BAKE_RC 0).** SIF 28574f6a(1,616,715,776 B) = compute-node-images = 헤드 /opt. 안의 바이너리 KCR 501601d7·KMM 41f37642·
+  KAM 580f028e·KooRemapper 248ec9bc(굽기 검증 기대 = 실제). tar v139 1,380,119,057 B(sha256 f555f94d)·Drive·메일 sent OK.
+- **SIF 판정.** SIF 안 KooChainRun(KCR_IN_SIF) 105 OK · FAIL 0 · 건너뜀 1(관문 끝까지 — 컨테이너 안에는 apptainer 가 없다).
+  처음엔 「리포트 빈 폴더」 하나가 postprocess rc 127 로 FAIL 이었다. 시험의 가짜 apptainer 가 호스트 PATH 에만 있어, SIF 안 deep_report.sh 가
+  apptainer 를 못 찾았다(deep_report.log 「apptainer: command not found」). 제품 약속(잡 rc 3·단계 completed)은 그때도 지켜졌다.
+  시험이 가짜를 APPTAINERENV_PREPEND_PATH 로도 넘기게 고쳤다(e279e09) → SIF 안에서도 deep rc 3. 호스트 110 OK 그대로.
+  e2e_rde sif ALL PASS 100(713 s). 시험 내내 squashfuse 35개 그대로(죽인 것 없음).
+- **헤드 /opt = v139(22:11).** v136(1c973c25)은 하드 링크 `SmartTwinPreprocessor_backup_20261117_221140.sif` 로 남겼다(옛 inode — mv 로 바꿔 돌던
+  컨테이너를 지킨다). 헤드 SIF 로 확인: 안의 바이너리 4개·`--help health`·새 시험(관문 끝까지가 헤드 SIF 의 KMM 을 쓴다).
+  노드(node001·002)는 VM 이 꺼져 있다 — 켜면 Pre v139·Post v51 을 deploy_apptainers.sh 로(그때 사용자 확인).
+
 ## 다음 판으로
 - 회전 런 한쪽 KE 비교(43 제안, 11-17): KMM 이 RigidAngularVelocity 회전 중심을 기기 무게중심으로 두니(_ResolveRigidAngularVelocity)
   첫 KE = ½Mv² + ½ωᵀIω ≥ ½Mv². 지금은 회전이면 비교를 통째로 건너뛰어 병진 초기 속도가 빠진 회전 런을 못 잡는다 → 첫 KE ≥ ½Mv²·(1 − 허용치)
@@ -116,3 +147,6 @@
 - stcx 사례로 문턱 다시 맞추기: 캠페인 IE 비교 배수(3)·접촉 에너지 음수 2 %·파트 IE 튐(런 하나, 기본 끔).
 - DynaForge DF-04 형식이 정해지면 required_extractions·deletion_clearance 를 그 형식에 맞춘다(지금은 KooChainRun 안 형식·가정 URL 응답).
 - 리뷰 하4 나머지: 덱을 두 번 훑는 것(provenance·health), postprocess --all 건너뛰기 판정의 64 MB 이하 JSON 전부 읽기 — 성능만.
+- 계산 노드의 정리도 좁히기(사고 11-17 뒤): 러너 정리·잡 스크립트 시작의 `pkill -u $(whoami) -f "squashfuse.*apptainer"`·kill 명령의 노드 ssh
+  정리는 그 노드에 있는 같은 사용자의 squashfuse 를 모두 죽인다. exclusive 가 아닌 잡이 노드를 나눠 쓰면 이웃 잡 컨테이너가 죽는다 → 잡 자기
+  APPTAINER_TMPDIR·마운트로 좁힌다.
