@@ -37,7 +37,8 @@ for _n in ("pkill", "fusermount", "findmnt"):
 def safe_env(env=None):
     e = dict(env or os.environ)
     e["PATH"] = f"{SAFE_BIN}:{e.get('PATH', os.environ['PATH'])}"
-    e["APPTAINERENV_PREPEND_PATH"] = str(SAFE_BIN)
+    inner = e.get("APPTAINERENV_PREPEND_PATH")                      # 시험이 컨테이너 안에 넘길 가짜(예: apptainer) — 가짜 pkill 뒤에
+    e["APPTAINERENV_PREPEND_PATH"] = f"{SAFE_BIN}:{inner}" if inner else str(SAFE_BIN)
     return e
 DWI = Path("/data/koopark/Test_reader_crashes_20261109/host_v136/tmp/v131r_dwi_cyl3_m9915kn0")
 FAILS, SKIPS = [], []
@@ -920,7 +921,8 @@ def t_runner():
     b = fake_bin("rpp", deep_writes=())
     s, calls = fake_solver("spp", good)
     w, out, rc = runner_campaign("rpp", s, pp={"enabled": True, "auto_deep": True, "sif_path": str(sif)})
-    r = run_kcr(w, {"PATH": f"{b}:{os.environ['PATH']}"})
+    # KCR_IN_SIF: 호스트 PATH 는 컨테이너에 넘어가지 않는다 — 가짜 apptainer 를 컨테이너 PATH 에도(없으면 deep 이 rc 127)
+    r = run_kcr(w, {"PATH": f"{b}:{os.environ['PATH']}", "APPTAINERENV_PREPEND_PATH": str(b)})
     idx = json.loads((out / "simulation_index.json").read_text())["scenarios"][0]["runs"]
     rec = next(iter(idx.values()), {})
     check("해석 정상·리포트 빈 폴더 → 잡 rc 3, 단계 completed·postprocess rc 3", r.returncode == 3
