@@ -25,6 +25,20 @@ TMP.mkdir(parents=True, exist_ok=True)
 REAL = Path("/data/koopark/Test_005_Fibonacci_100/output/Run_20260602_200105_01cc5f")
 KCR_BIN = os.environ.get("KCR_BIN")
 KCR_CMD = [KCR_BIN] if KCR_BIN else [sys.executable, str(ROOT / "KooChainRun")]
+# 🔴 러너의 LS-DYNA·KMM 뒤 정리(cleanup_after_exec)는 사용자의 squashfuse 를 모두 pkill·fuse 언마운트한다 — 계산 노드용이다.
+#    헤드 노드에서 돌리는 이 시험이 다른 세션의 컨테이너를 죽이지 않게 pkill·fusermount·findmnt 를 기록만 하는 가짜로(컨테이너 안도)
+SAFE_BIN = TMP / "safe_bin"
+SAFE_BIN.mkdir(parents=True, exist_ok=True)
+for _n in ("pkill", "fusermount", "findmnt"):
+    (SAFE_BIN / _n).write_text(f'#!/bin/bash\necho "$@" >> "{SAFE_BIN}/{_n}.calls"\nexit 0\n')
+    os.chmod(SAFE_BIN / _n, 0o755)
+
+
+def safe_env(env=None):
+    e = dict(env or os.environ)
+    e["PATH"] = f"{SAFE_BIN}:{e.get('PATH', os.environ['PATH'])}"
+    e["APPTAINERENV_PREPEND_PATH"] = str(SAFE_BIN)
+    return e
 DWI = Path("/data/koopark/Test_reader_crashes_20261109/host_v136/tmp/v131r_dwi_cyl3_m9915kn0")
 FAILS, SKIPS = [], []
 
@@ -858,7 +872,7 @@ def runner_campaign(tag, solver, pp=None):
 
 
 def run_kcr(w, extra_env=None):
-    env = dict(os.environ, **(extra_env or {}))
+    env = safe_env(dict(os.environ, **(extra_env or {})))
     cmd = [*KCR_CMD, "run", str(w / "runner_config.json"), "--doe", "1",
            "--skip-koomeshmodifier", "--pregenerated-dir", str(w / "pre")]
     return subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=600)
@@ -920,7 +934,7 @@ PRE_SIF = "/opt/apptainers/SmartTwinPreprocessor.sif"
 
 
 def kcr(*args, env=None, timeout=900):
-    e = dict(os.environ, LANG="C.UTF-8", LC_ALL="C.UTF-8", PYTHONIOENCODING="utf-8", **(env or {}))
+    e = safe_env(dict(os.environ, LANG="C.UTF-8", LC_ALL="C.UTF-8", PYTHONIOENCODING="utf-8", **(env or {})))
     return subprocess.run([*KCR_CMD, *map(str, args)], capture_output=True, text=True, env=e, timeout=timeout)
 
 
@@ -945,9 +959,16 @@ def t_impact_gate_e2e():
     if not (os.path.isfile(PRE_SIF) and shutil.which("apptainer")):
         skip("IMPACT 관문 끝까지", f"{PRE_SIF}·apptainer 없음")
         return
+    if os.environ.get("KCR_IN_SIF"):
+        skip("IMPACT 관문 끝까지", "KooChainRun 이 SIF 안 — 컨테이너 안에서는 KMM 을 부를 apptainer 가 없다(운영 prepare 는 호스트)")
+        return
     d = tmpdir("igate")
     sp = impact_scenario(d)
+    pk = SAFE_BIN / "pkill.calls"
+    n0 = len(pk.read_text().splitlines()) if pk.exists() else 0
     r = kcr("prepare", sp, "--check-impact", "--sample", "2")
+    n1 = len(pk.read_text().splitlines()) if pk.exists() else 0
+    check("관문(헤드 노드)은 러너 정리(pkill squashfuse)를 부르지 않는다 — 다른 세션 컨테이너 보호", n1 == n0, f"pkill {n1 - n0}번")
     gj = d / "impact_gate" / "impact_gate.json"
     res = json.loads(gj.read_text()) if gj.is_file() else {}
     rows = res.get("rows") or []
