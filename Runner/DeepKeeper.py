@@ -4,8 +4,11 @@
 캠페인마다 새로 짜던 재제출 스크립트(h89keeper·cyl_keeper·finish.sh·on4_deepprio_hourly·rerep_v42)를 대신한다.
 - 대상: 상태 표(KC-06)의 report_wait(해석 정상·리포트 없음) — 그리고 report_failed 는 시도 수 max_attempts 까지.
   health invalid 런은 내지 않는다.
-- 같은 런을 두 번 내지 않는다: Run_*/.deep_keeper.json 의 잡이 squeue 에 PENDING·RUNNING 이면 건너뛴다. 한 번에 한 지킴이만
-  (출력 폴더 .keeper.lock).
+- 같은 런을 두 번 내지 않는다(리뷰 상2): Run_*/.deep_keeper.json 의 잡과 러너 separate_job 잡(<output>/deep_report_jobs.txt)이
+  squeue 에 있으면, 최근 recent_minutes(기본 30) 안에 리포트·deep 로그가 바뀌었으면(도는 중일 수 있다) 건너뛴다. squeue 를 못 읽으면
+  그 패스는 아무것도 내지 않는다. 한 번에 한 지킴이만(출력 폴더 .keeper.lock).
+- 옛 deep_report.sh(관문 없이 d3plot 을 지우던 판)는 지금 runner_config 로 다시 만든 뒤 낸다(리뷰 상3).
+- 배열 한 개는 max_array(기본 1000) 개까지 — MaxArraySize(기본 1001)를 넘지 않게 나눠 낸다(리뷰 중3).
 - 한 패스의 대상을 **배열 잡 하나**로 낸다 — 우선순위는 배열 단위로만 바꿀 수 있게(태스크별 scontrol update 금지:
   STCX_HEAD_ROOTFS_SPACE, binlog 시간당 8.8 GB). 지킴이 자신은 우선순위를 바꾸지 않는다.
 - 자원 기본: 40 CPU · 400G · 제어 노드(slurmctld 호스트) 제외(STCX_VIZ_HEAD_MASS_SUBMIT_HANG). postprocess.viz 로 바꾼다.
@@ -23,7 +26,8 @@ from Runner.CampaignStatus import campaign_status
 
 STATE_FILE = ".deep_keeper.json"
 LOG_FILE = "keeper_log.jsonl"
-DEFAULT_VIZ = {"cpus": 40, "mem": "400G", "time": "04:00:00", "max_parallel": 20, "max_attempts": 2}
+DEFAULT_VIZ = {"cpus": 40, "mem": "400G", "time": "04:00:00", "max_parallel": 20, "max_attempts": 2,
+               "max_array": 1000, "recent_minutes": 30}
 
 
 def _mem_gb(m: str) -> Optional[float]:
@@ -57,13 +61,17 @@ def controller_hosts() -> List[str]:
     return hosts
 
 
-def queued_jobs() -> Dict[str, str]:
-    """사용자의 대기·실행 잡 id → 상태(배열 태스크는 'JOB_TASK')."""
+def queued_jobs() -> Optional[Dict[str, str]]:
+    """사용자의 대기·실행 잡 id → 상태(배열 태스크는 'JOB_TASK'). squeue 를 못 읽으면 None — 그때는 아무것도 내지 않는다."""
+    import getpass
     try:
-        p = subprocess.run(["squeue", "-h", "-u", os.environ.get("USER", ""), "-o", "%i|%T"], capture_output=True,
-                           text=True, timeout=30, encoding="utf-8", errors="replace")
-    except (OSError, subprocess.TimeoutExpired):
-        return {}
+        user = os.environ.get("USER") or getpass.getuser()
+        p = subprocess.run(["squeue", "-h", "-u", user, "-o", "%i|%T"], capture_output=True,
+                           text=True, timeout=60, encoding="utf-8", errors="replace")
+    except (OSError, subprocess.TimeoutExpired, KeyError):
+        return None
+    if p.returncode != 0:
+        return None
     out = {}
     for line in (p.stdout or "").splitlines():
         f = line.split("|")
@@ -96,6 +104,50 @@ def _log(out_dir: str, rec: Dict[str, Any]):
     rec = dict(rec, at=datetime.now().isoformat())
     with open(os.path.join(out_dir, LOG_FILE), "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def _runner_deep_jobs(out_dir: str) -> Dict[str, List[str]]:
+    """러너 separate_job 모드가 남긴 <output>/deep_report_jobs.txt(잡 id ⇥ Run 이름) → {Run 이름: [잡 id, …]}."""
+    out: Dict[str, List[str]] = {}
+    try:
+        with open(os.path.join(out_dir, "deep_report_jobs.txt"), encoding="utf-8") as f:
+            for line in f:
+                p = line.strip().split("\t")
+                if len(p) >= 2 and p[0]:
+                    out.setdefault(p[1], []).append(p[0])
+    except OSError:
+        pass
+    return out
+
+
+def _ensure_current_deep_sh(run_dir: str, config: Dict[str, Any], config_path: str, alias: str, dry_run: bool) -> Optional[str]:
+    """deep_report.sh 가 지금 판인지 — 없거나 옛 판(관문 없이 d3plot 을 지움·빈 리포트를 성공으로 봄)이면 지금 설정으로 다시 만든다.
+    못 만들면 건너뛸 까닭(문자열), 되면 None."""
+    from Runner.PostprocessShellGenerator import build_deep_report_sh, deep_script_is_current
+    from Runner.D3plotGate import kcr_command
+    sh = os.path.join(run_dir, "deep_report.sh")
+    try:
+        with open(sh, encoding="utf-8", errors="replace") as f:
+            if deep_script_is_current(f.read()):
+                return None
+    except OSError:
+        pass
+    od = os.path.join(run_dir, "Output")
+    if not os.path.isdir(od):
+        return "Output 폴더 없음"
+    if dry_run:
+        return None
+    pp = config.get("postprocess") or {}
+    try:
+        text = build_deep_report_sh(od, sif_path=pp.get("sif_path"), options=pp,
+                                    kcr_cmd=kcr_command(config) if pp.get("delete_d3plot_after_deep") else None,
+                                    config_path=os.path.abspath(config_path), run_key=alias)
+        with open(sh, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.chmod(sh, 0o755)
+    except Exception as e:
+        return f"deep_report.sh 를 다시 만들지 못했다({type(e).__name__}: {e})"
+    return None
 
 
 def build_array_sbatch(list_path: str, n: int, viz: Dict[str, Any], out_dir: str, job_name: str) -> str:
@@ -141,6 +193,11 @@ def keeper_pass(config_path: str, dry_run: bool = False, viz_override: Optional[
         jobs = _read(os.path.join(os.path.dirname(os.path.abspath(config_path)), "jobs.json"))
         st = campaign_status(config, jobs)
         q = queued_jobs()
+        if q is None:
+            return {"config": config_path, "submitted": 0, "error": "squeue 를 읽지 못했다 — 이번 패스는 아무것도 내지 않는다"}
+        runner_jobs = _runner_deep_jobs(out_dir)
+        recent_s = float(viz.get("recent_minutes") or 0) * 60
+        now = __import__("time").time()
         picks, skipped = [], []
         maxrss = []
         for r in st["rows"]:
@@ -159,14 +216,26 @@ def keeper_pass(config_path: str, dry_run: bool = False, viz_override: Optional[
             if _queued(stt, q):
                 skipped.append((r, "이미 대기·실행 중인 keeper 잡이 있다"))
                 continue
+            rj = [j for j in runner_jobs.get(os.path.basename(rd), []) if any(k == j or k.startswith(f"{j}_") for k in q)]
+            if rj:
+                skipped.append((r, f"러너의 separate_job deep 잡 {rj} 이 대기·실행 중"))
+                continue
+            if recent_s > 0:
+                touched = [p for p in (os.path.join(rd, "deep_report.log"), os.path.join(rd, "Output", "report", "result.json"),
+                                       os.path.join(rd, "Output", "report", "analysis_result.json"))
+                           if os.path.exists(p) and now - os.path.getmtime(p) < recent_s]
+                if touched:
+                    skipped.append((r, f"최근 {viz['recent_minutes']}분 안에 {os.path.basename(touched[0])} 가 바뀌었다 — deep 이 도는 중일 수 있다"))
+                    continue
             if r["state"] == "report_failed" and int(stt.get("attempts", 0)) >= int(viz["max_attempts"]):
                 skipped.append((r, f"시도 {stt.get('attempts')}회 — max_attempts {viz['max_attempts']}"))
                 continue
             if r["health"] == "invalid":
                 skipped.append((r, "health invalid"))
                 continue
-            if not os.path.isfile(os.path.join(rd, "deep_report.sh")):
-                skipped.append((r, "deep_report.sh 없음 — KooChainRun postprocess --deep 로 만든다"))
+            why = _ensure_current_deep_sh(rd, config, config_path, r["alias"], dry_run)
+            if why:
+                skipped.append((r, why))
                 continue
             picks.append((r, stt))
         # 메모리 — 실측 최대 RSS 이상
@@ -187,32 +256,42 @@ def keeper_pass(config_path: str, dry_run: bool = False, viz_override: Optional[
         kd = os.path.join(out_dir, "keeper_logs")
         os.makedirs(kd, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        list_path = os.path.join(kd, f"deep_list_{stamp}.txt")
-        with open(list_path, "w", encoding="utf-8") as f:
-            for r, _ in picks:
-                f.write(r["run_dir"] + "\n")
-        sb_path = os.path.join(kd, f"deep_keeper_{stamp}.sbatch")
-        with open(sb_path, "w", encoding="utf-8") as f:
-            f.write(build_array_sbatch(list_path, len(picks), viz, out_dir, f"deep_keeper_{config.get('project', {}).get('name', '')}"))
-        res.update(list=list_path, sbatch=sb_path)
+        chunk = max(1, int(viz.get("max_array") or 1000))
+        res.update(lists=[], sbatches=[], job_ids=[])
         if dry_run:
             res["would_submit"] = [r["alias"] for r, _ in picks]
+            res["arrays"] = (len(picks) + chunk - 1) // chunk
             return res
-        p = subprocess.run([sbatch_cmd, sb_path], capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace")
-        if p.returncode != 0:
-            res["error"] = (p.stderr or p.stdout or "").strip()[-300:]
-            for r, _ in picks:
-                _log(out_dir, {"doe": r["doe"], "alias": r["alias"], "action": "submit_failed", "reason": res["error"]})
-            return res
-        jid = (p.stdout or "").strip().split()[-1]
-        res.update(submitted=len(picks), job_id=jid)
-        for i, (r, stt) in enumerate(picks):
-            new = {"job_id": jid, "array_index": i, "submitted_at": datetime.now().isoformat(),
-                   "attempts": int(stt.get("attempts", 0)) + 1, "state_at_submit": r["state"]}
-            with open(os.path.join(r["run_dir"], STATE_FILE), "w", encoding="utf-8") as f:
-                json.dump(new, f, ensure_ascii=False, indent=1)
-            _log(out_dir, {"doe": r["doe"], "alias": r["alias"], "action": "submit", "job_id": jid, "array_index": i,
-                           "reason": r["state"]})
+        for ci in range(0, len(picks), chunk):
+            part = picks[ci:ci + chunk]
+            tag = f"{stamp}_{ci // chunk:02d}"
+            list_path = os.path.join(kd, f"deep_list_{tag}.txt")
+            with open(list_path, "w", encoding="utf-8") as f:
+                for r, _ in part:
+                    f.write(r["run_dir"] + "\n")
+            sb_path = os.path.join(kd, f"deep_keeper_{tag}.sbatch")
+            with open(sb_path, "w", encoding="utf-8") as f:
+                f.write(build_array_sbatch(list_path, len(part), viz, out_dir, f"deep_keeper_{config.get('project', {}).get('name', '')}"))
+            res["lists"].append(list_path)
+            res["sbatches"].append(sb_path)
+            p = subprocess.run([sbatch_cmd, sb_path], capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace")
+            if p.returncode != 0:
+                res["error"] = (p.stderr or p.stdout or "").strip()[-300:]
+                for r, _ in part:
+                    _log(out_dir, {"doe": r["doe"], "alias": r["alias"], "action": "submit_failed", "reason": res["error"]})
+                break
+            jid = (p.stdout or "").strip().split()[-1]
+            res["job_ids"].append(jid)
+            res["submitted"] += len(part)
+            for i, (r, stt) in enumerate(part):
+                new = {"job_id": jid, "array_index": i, "submitted_at": datetime.now().isoformat(),
+                       "attempts": int(stt.get("attempts", 0)) + 1, "state_at_submit": r["state"]}
+                with open(os.path.join(r["run_dir"], STATE_FILE), "w", encoding="utf-8") as f:
+                    json.dump(new, f, ensure_ascii=False, indent=1)
+                _log(out_dir, {"doe": r["doe"], "alias": r["alias"], "action": "submit", "job_id": jid, "array_index": i,
+                               "reason": r["state"]})
+        res["job_id"] = res["job_ids"][0] if res["job_ids"] else None
+        res["sbatch"] = res["sbatches"][0] if res["sbatches"] else None
         return res
     finally:
         try:
