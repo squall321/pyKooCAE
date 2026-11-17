@@ -55,11 +55,18 @@ FULL_PARSE_MAX_BYTES = 64 * 1024 * 1024   # 이보다 크면 머리·끝 바이�
 
 
 def _f(s) -> Optional[float]:
+    """수 칸 — D 지수, E 없는 Fortran 지수('4.17160+258' — 배정밀 glstat)까지."""
+    t = str(s).strip().replace("D", "E").replace("d", "e")
     try:
-        v = float(str(s).replace("D", "E").replace("d", "e"))
+        return float(t)
     except (TypeError, ValueError):
+        m = re.fullmatch(r"([+-]?(?:\d+\.?\d*|\.\d+))([+-]\d+)", t)
+        if m:
+            try:
+                return float(m.group(1) + "e" + m.group(2))
+            except ValueError:
+                return None
         return None
-    return v
 
 
 def output_dir_of(run_dir: str) -> str:
@@ -220,16 +227,26 @@ def parse_step_config(path: str) -> Dict[str, Any]:
             if not s or s.startswith("$"):
                 continue
             if s.startswith("*Mode"):
-                out["_mode_next"] = True
+                out["_in_mode"] = True
                 continue
-            if out.pop("_mode_next", False) and "," in s and not s.startswith("*"):
-                out["_mode"] = s.split(",")[0].strip().upper()
+            if out.get("_in_mode") and not s.startswith("*"):
+                out.setdefault("_modes", []).append(s.split(",")[0].strip().upper())
                 continue
+            out.pop("_in_mode", None)
             if s.startswith("*"):
                 continue
             k, _, v = s.partition(",")
             out[k.strip()] = v.strip()
+    out.pop("_in_mode", None)
+    modes = out.get("_modes") or []
+    main = [m for m in modes if m in _MAIN_MODES]
+    if main or modes:
+        out["_mode"] = (main or modes)[0]
     return out
+
+
+# 단계 설정의 *Mode 블록에서 해석 모드(PART_TRANSLATE 같은 보조 모드는 앞에 와도 건너뛴다)
+_MAIN_MODES = ("DROP_ATTITUDE", "DROP_WEIGHT_IMPACT_TEST", "THERMAL_LOAD", "VIBRATION_LOAD", "VIBRATION")
 
 
 # ── binout(Post SIF 의 lasso) ───────────────────────────────────────────────
@@ -271,7 +288,7 @@ json.dump(out, open(sys.argv[2], "w"))
 '''
 
 
-def binout_health(output_dir: str, post_sif: Optional[str], timeout: int = 900) -> Dict[str, Any]:
+def binout_health(output_dir: str, post_sif: Optional[str], timeout: int = 300) -> Dict[str, Any]:
     """binout 의 matsum·sleout 을 Post SIF 의 lasso 로 읽는다. 못 읽으면 {'error': 까닭}."""
     if not glob.glob(os.path.join(output_dir, "binout*")):
         return {"error": "binout 없음"}
@@ -297,8 +314,9 @@ def binout_health(output_dir: str, post_sif: Optional[str], timeout: int = 900) 
 
 
 # ── 리포트 JSON 완결 ────────────────────────────────────────────────────────
-def json_complete(path: str) -> Dict[str, Any]:
-    """JSON 이 끝까지 있는가 — 작으면 전부 읽고, 크면 머리·끝 바이트로 본다(잘린 270~337 MB JSON 사례)."""
+def json_complete(path: str, full: bool = False) -> Dict[str, Any]:
+    """JSON 이 끝까지 있는가 — 작으면(또는 full) 전부 읽고, 크면 머리·끝 바이트로 본다(잘린 270~337 MB JSON 사례).
+    머리·끝 바이트는 임의 지점에서 잘린 큰 JSON 의 0.4~0.5 % 를 놓친다 — 되돌릴 수 없는 판단(d3plot 삭제)은 full 로."""
     if not os.path.isfile(path):
         return {"path": path, "exists": False, "complete": False, "method": None}
     size = os.path.getsize(path)
@@ -306,7 +324,7 @@ def json_complete(path: str) -> Dict[str, Any]:
     if size == 0:
         rec.update(complete=False, method="size")
         return rec
-    if size <= FULL_PARSE_MAX_BYTES:
+    if full or size <= FULL_PARSE_MAX_BYTES:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 json.load(f)
@@ -323,12 +341,12 @@ def json_complete(path: str) -> Dict[str, Any]:
     return rec
 
 
-def report_status(output_dir: str) -> Dict[str, Any]:
+def report_status(output_dir: str, full: bool = False) -> Dict[str, Any]:
     """리포트 JSON 상태. complete = 끝까지 쓰인 파일이 하나 이상이고 있는 파일 중 잘린 것이 없다(sphere_report.sh 와 같은
     '둘 중 하나' 약속 — 옛 SIF 는 한 파일만 쓴다). complete_all = 둘 다 완결(d3plot 삭제 관문 — harvest 는 result.json,
     impact 는 analysis_result.json 을 d3plot 없이 다시 읽는다)."""
     rd = os.path.join(output_dir, "report")
-    files = {name: json_complete(os.path.join(rd, name)) for name in REPORT_FILES}
+    files = {name: json_complete(os.path.join(rd, name), full=full) for name in REPORT_FILES}
     present = [v for v in files.values() if v["exists"]]
     complete = bool(present) and all(v["complete"] for v in present)
     return {"dir": rd, "files": files, "complete": complete, "complete_all": all(v["complete"] for v in files.values())}
@@ -376,7 +394,7 @@ def _moving_parts(deck_info, d3: Dict[str, Any], binout: Dict[str, Any]):
 
 def evaluate_run(run_dir: str, thresholds: Optional[Dict[str, Any]] = None, solver_exit_code: Optional[int] = None,
                  post_sif: Optional[str] = None, use_binout: bool = True, mode: Optional[str] = None,
-                 binout_timeout: int = 900) -> Dict[str, Any]:
+                 binout_timeout: int = 300) -> Dict[str, Any]:
     """런 폴더(Run_*) 하나를 판정한다. 결과 dict 는 health.json 그대로."""
     th = dict(DEFAULT_THRESHOLDS)
     th.update({k: v for k, v in (thresholds or {}).items() if k in DEFAULT_THRESHOLDS and v is not None})
@@ -498,13 +516,27 @@ def evaluate_run(run_dir: str, thresholds: Optional[Dict[str, Any]] = None, solv
         ke_exp, ke_basis = 0.5 * m_moving * v_exp ** 2, f"½·m·v²(m = {basis} {pids} 질량, v = √(2gh))"
     elif v_exp is not None and ke0 and deck_v:
         ke_exp, ke_basis = ke0 * (v_exp / deck_v) ** 2, "½·m·v²(m 은 덱 속도로 역산, v = √(2gh))"
+    # 회전이 있으면 첫 KE 에 ½ωᵀIω 가 더해지고(충격 조건 DOE 의 RigidAngularVelocity·낙하 InitialAngularVelocity), 집중 질량
+    # (*ELEMENT_MASS)은 matsum 파트에 없다 — 그때는 ½mv² 비교를 하지 않고 첫 KE 0 판정만 남긴다(리뷰 상1·중5)
+    rot_keys = [k for k in step if k.startswith(("InitialAngularVelocity", "RigidAngularVelocity"))]
+    rotating = any(abs(_f(step[k]) or 0.0) > 0 for k in rot_keys) or any(
+        abs(iv_.get("omega") or 0.0) > 0 or any(abs(x) > 0 for x in (iv_.get("vr") or []))
+        for iv_ in (deck_info or {}).get("initial_velocities", []))
+    lumped = any(k.startswith("*ELEMENT_MASS") for k in ((deck_info or {}).get("keywords") or {}))
+    if ke_exp is not None and (rotating or lumped):
+        H["missing"].append("첫 KE 대 ½mv² 비교를 건너뜀 — " + ("초기 회전 속도가 있다(회전 운동에너지)" if rotating
+                                                       else "집중 질량(*ELEMENT_MASS)이 있다"))
+        ke_cmp = None
+    else:
+        ke_cmp = ke_exp
     H["ke0_expected"], H["ke0_expected_basis"], H["moving_parts"] = ke_exp, ke_basis, pids
+    H["ke0_compared"] = ke_cmp is not None
     moving_case = H["mode"] in ("DROP", "IMPACT") and ((v_exp or 0) > 0 or (deck_v or 0) > 0)
     if moving_case and ke0 is not None:
         scale = max(abs(ke_exp or 0.0), abs(gl.get("te0") or 0.0), 1e-300)
         if ke0 <= 1e-12 * scale or ke0 == 0.0:
             invalid.append("첫 운동에너지가 0 이다(충격추·기기에 초기 속도가 걸리지 않았다)")
-        elif ke_exp:
+        elif ke_cmp:
             rel = ke0 / ke_exp - 1.0
             H["ke0_rel_error"] = rel
             if abs(rel) > th["ke0_invalid_rel"]:
@@ -562,11 +594,22 @@ def evaluate_run(run_dir: str, thresholds: Optional[Dict[str, Any]] = None, solv
     return H
 
 
+def json_safe(o):
+    """NaN·Inf → None(엄격한 JSON 파서·DynaForge 적재가 깨지지 않게)."""
+    if isinstance(o, float):
+        return o if math.isfinite(o) else None
+    if isinstance(o, dict):
+        return {k: json_safe(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [json_safe(v) for v in o]
+    return o
+
+
 def write_health(run_dir: str, health: Dict[str, Any]) -> str:
     p = os.path.join(run_dir, "health.json")
     tmp = p + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(health, f, ensure_ascii=False, indent=2)
+        json.dump(json_safe(health), f, ensure_ascii=False, indent=2, allow_nan=False)
     os.replace(tmp, p)
     return p
 
@@ -592,11 +635,22 @@ def update_health_report(run_dir: str) -> Optional[Dict[str, Any]]:
     return H
 
 
+def health_settings(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """runner_config 의 health 블록 — dict 가 아니면(예 "health": true) 경고하고 빈 블록으로(예전엔 러너 생성자가 죽어 모든 DOE rc 1)."""
+    h = (config or {}).get("health")
+    if h is None:
+        return {}
+    if not isinstance(h, dict):
+        print(f"⚠ health 블록은 객체여야 한다(받은 값 {h!r}) — 무시하고 기본값으로")
+        return {}
+    return h
+
+
 def load_thresholds(config: Optional[Dict[str, Any]] = None, path: Optional[str] = None) -> Dict[str, Any]:
     """문턱 — runner_config 의 health.thresholds, 그다음 --thresholds 파일(JSON)이 이긴다."""
     th = {}
-    if config:
-        th.update(((config.get("health") or {}).get("thresholds")) or {})
+    hc = health_settings(config)
+    th.update(hc.get("thresholds") if isinstance(hc.get("thresholds"), dict) else {})
     if path:
         with open(path, encoding="utf-8") as f:
             th.update(json.load(f))

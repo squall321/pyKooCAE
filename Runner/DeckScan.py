@@ -334,7 +334,8 @@ class _Scanner:
         rec = {"kw": kw}
         if kw == "*INITIAL_VELOCITY" and len(data) >= 2:
             f1, f2 = self.fields(data[0], 10, 5), self.fields(data[1], 10, 6)
-            rec.update(nsid=_int(f1[0]), irigid=_int(f1[3]), v=[_num(x) or 0.0 for x in f2[:3]])
+            rec.update(nsid=_int(f1[0]), irigid=_int(f1[3]), v=[_num(x) or 0.0 for x in f2[:3]],
+                       vr=[_num(x) or 0.0 for x in f2[3:6]])
         elif kw == "*INITIAL_VELOCITY_GENERATION" and data:
             for l in data[0::2]:
                 f = self.fields(l, 10, 8)
@@ -344,7 +345,7 @@ class _Scanner:
             return
         elif kw == "*INITIAL_VELOCITY_RIGID_BODY" and data:
             f = self.fields(data[0], 10, 7)
-            rec.update(pid=_int(f[0]), v=[_num(x) or 0.0 for x in f[1:4]])
+            rec.update(pid=_int(f[0]), v=[_num(x) or 0.0 for x in f[1:4]], vr=[_num(x) or 0.0 for x in f[4:7]])
         elif kw == "*INITIAL_VELOCITY_NODE":
             rec.update(count=len(data))
         else:

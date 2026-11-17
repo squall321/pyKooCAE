@@ -365,6 +365,7 @@ class LSDynaSolverRunner:
         """
         nodes_per_job = self.apptainer.nodes_per_job
         ea = extra_args or []
+        self.last_returncode = None   # 시간 초과·실행 실패면 None 으로 남는다(앞 단계 값이 남지 않게)
 
         if nodes_per_job >= 2 and self.mpi_enabled:
             appt_args = self.apptainer.build_apptainer_exec_args(use_lsdyna=True)
@@ -562,9 +563,15 @@ class CumulativeScenarioRunner:
         except Exception as e:
             logging.warning(f"runner_config 사본 저장 실패(출처 기록에만 영향): {e}")
         # KC-02 건강 판정 문턱(runner_config 의 health.thresholds) · KC-03/05 후처리 실패 목록(잡 끝 코드 3)
-        from Runner.RunHealth import load_thresholds
+        from Runner.RunHealth import load_thresholds, health_settings
         self.health_thresholds = load_thresholds(self.config)
         self.postprocess_failures: List[str] = []
+        # 건강 판정 — 끄기·기록만·적용. 환경 변수 KCR_HEALTH(off|record|on)가 runner_config 의 health.enabled·enforce 보다 앞선다
+        # (대역 솔버 e2e 처럼 runner_config 를 바꿀 수 없을 때 — 리뷰 하3)
+        _hs = health_settings(self.config)
+        _env = os.environ.get("KCR_HEALTH", "").strip().lower()
+        self._health_mode = (_env if _env in ("off", "record", "on") else
+                             ("off" if _hs.get("enabled") is False else ("record" if _hs.get("enforce") is False else "on")))
 
     def _setup_logging(self):
         """로깅 설정"""
@@ -989,16 +996,16 @@ class CumulativeScenarioRunner:
             logging.warning(f"provenance 마무리 실패: {type(e).__name__}: {e}")
 
     def _evaluate_health(self, run_dir, mode):
-        hcfg = self.config.get("health") or {}
-        if hcfg.get("enabled") is False:
+        if getattr(self, "_health_mode", "on") == "off":
             return None
         try:
-            from Runner.RunHealth import evaluate_run, write_health
+            from Runner.RunHealth import evaluate_run, write_health, health_settings
+            hcfg = health_settings(self.config)
             pp = self.config.get("postprocess") or {}
             post_sif = hcfg.get("post_sif") or pp.get("sif_path") or "/opt/apptainers/SmartTwinPostprocessor.sif"
             H = evaluate_run(run_dir, thresholds=self.health_thresholds, solver_exit_code=self.solver.last_returncode,
                              post_sif=post_sif, use_binout=hcfg.get("binout", True), mode=mode,
-                             binout_timeout=int(hcfg.get("binout_timeout_seconds", 900)))
+                             binout_timeout=int(hcfg.get("binout_timeout_seconds", 300)))
             write_health(run_dir, H)
             logging.info(f"health: {H['verdict']}" + (f" — {'; '.join(H['reasons'])[:300]}" if H.get("reasons") else ""))
             return H
@@ -1455,7 +1462,10 @@ class CumulativeScenarioRunner:
             })
             self._finish_provenance(run_dir, prov, "failed", health, error="LS-DYNA failed")
             return False
-        if verdict == "invalid":
+        if verdict == "invalid" and getattr(self, "_health_mode", "on") == "record":
+            logging.warning(f"health invalid(기록만 — KCR_HEALTH=record 또는 health.enforce false): {alias} "
+                            f"({'; '.join(health.get('invalid_reasons') or [])[:300]})")
+        elif verdict == "invalid":
             why = "; ".join(health.get("invalid_reasons") or [])[:400]
             self._update_index(alias, {
                 "run_id": run_id, "status": "failed", "folder": f"Run_{run_id}", "mode": mode,
