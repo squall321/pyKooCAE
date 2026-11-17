@@ -300,23 +300,31 @@ class ApptainerWrapper:
         return args
 
     def cleanup_after_exec(self):
-        """apptainer exec 후 orphan squashfuse 및 stale mount 정리"""
+        """apptainer exec 후 orphan squashfuse 및 stale mount 정리 — Slurm 잡(계산 노드) 안에서만.
+
+        🔴 2026-11-17 사고: 헤드 노드에서 러너(시험·IMPACT 관문)가 이 정리를 불러 같은 사용자의 서비스 컨테이너 수십 개의 루트
+        파일시스템이 끊겼다(pkill 이 사용자의 squashfuse 를 모두 죽인다). SLURM_JOB_ID 가 없으면(헤드·로컬 실행) 아무것도 하지 않는다.
+        계산 노드 잡 안의 동작은 예전 그대로다.
+        """
+        if not os.environ.get("SLURM_JOB_ID"):
+            return
         import subprocess as _sp
         user = os.environ.get("USER", os.environ.get("LOGNAME", ""))
 
         # 1. orphan squashfuse 프로세스 정리
-        try:
-            _sp.run(["pkill", "-u", user, "-f", "squashfuse"],
-                    capture_output=True, timeout=5)
-        except Exception:
-            pass
+        if user:
+            try:
+                _sp.run(["pkill", "-u", user, "-f", "squashfuse"],
+                        capture_output=True, timeout=5)
+            except Exception:
+                pass
 
-        # 2. stale FUSE mount lazy unmount (APPTAINER_TMPDIR 하위)
+        # 2. stale FUSE mount lazy unmount (APPTAINER_TMPDIR 하위) — tmpdir 가 비면 'in' 이 늘 참이라 모든 마운트를 걸었다
         try:
             result = _sp.run(["findmnt", "-n", "-o", "TARGET", "-t", "fuse.squashfuse"],
                              capture_output=True, text=True, timeout=5)
             for mount in result.stdout.strip().splitlines():
-                if self.apptainer_tmpdir in mount or "/tmp" in mount:
+                if (self.apptainer_tmpdir and self.apptainer_tmpdir in mount) or "/tmp" in mount:
                     _sp.run(["fusermount", "-uz", mount], capture_output=True, timeout=5)
         except Exception:
             pass
