@@ -33,8 +33,10 @@ def dir_bytes(path: str) -> int:
 
 
 def pilot_sizes(pilot_run_dir: str) -> Dict[str, Any]:
-    """파일럿 런의 도는 중 정점(d3plot 포함)·끝난 뒤(삭제 뒤) 크기."""
+    """파일럿 런의 도는 중 정점(d3plot 포함)·끝난 뒤(삭제 뒤) 크기. 없거나 비면 ValueError(크기 0 으로 통과시키지 않는다)."""
     from Runner.RunHealth import read_health, output_dir_of
+    if not os.path.isdir(pilot_run_dir):
+        raise ValueError(f"파일럿 런 폴더가 없다: {pilot_run_dir}")
     X = None
     try:
         import json
@@ -49,6 +51,8 @@ def pilot_sizes(pilot_run_dir: str) -> Dict[str, Any]:
         after, peak, basis = total, total + int(X["d3plot_bytes"]), "extraction.json(지운 d3plot 크기 기록)"
     else:
         after, peak, basis = total - d3, total, "파일럿 실측(d3plot·d3plotNN 을 뺀 크기 = 끝난 뒤)"
+    if peak <= 0:
+        raise ValueError(f"파일럿 런이 비었다(크기 0): {pilot_run_dir}")
     H = read_health(pilot_run_dir) or {}
     return {"run_dir": os.path.abspath(pilot_run_dir), "peak_bytes": peak, "after_bytes": after, "d3plot_bytes": peak - after,
             "basis": basis, "health": H.get("verdict"), "end_time": H.get("end_time"),

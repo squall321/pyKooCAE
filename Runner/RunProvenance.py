@@ -228,12 +228,12 @@ def build_provenance(run_dir: str, config: Dict[str, Any], snapshot: Optional[Co
                                 "total_elements": sum(info["elements"].values()), "lines": info["total_lines"]}
             for inc in info["includes"]:
                 P["include_sha256"].append({"written": inc["written"], "path": inc["path"], "exists": inc["exists"],
-                                            "sha256": sha256_file(inc["path"]) if inc["exists"] else None})
+                                            "sha256": cached_sha(inc["path"], cache_dir) if inc["exists"] else None})
         except Exception as e:
             missing.append(f"include_sha256 — 덱 훑기 실패({type(e).__name__})")
     else:
         missing.append("deck_sha256 — 덱이 없다")
-    P["model_file"] = _file_rec(proj.get("model_file"))
+    P["model_file"] = _file_rec(proj.get("model_file"), cache_dir, big=True)
     # SIF 셋(KMM·LS-DYNA·Post) — sha 는 캠페인 폴더 캐시로 한 번만
     sifs = {"kmm": env.get("apptainer_sif"), "lsdyna": env.get("lsdyna_apptainer_sif"),
             "post": pp.get("sif_path") or ("/opt/apptainers/SmartTwinPostprocessor.sif" if pp else None)}
@@ -286,10 +286,11 @@ def finish_provenance(P: Dict[str, Any], health: Optional[Dict[str, Any]] = None
 
 
 def write_provenance(run_dir: str, P: Dict[str, Any]) -> str:
+    from Runner.RunHealth import json_safe
     p = os.path.join(run_dir, "provenance.json")
     tmp = p + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(P, f, ensure_ascii=False, indent=2)
+        json.dump(json_safe(P), f, ensure_ascii=False, indent=2, allow_nan=False)
     os.replace(tmp, p)
     return p
 
@@ -397,9 +398,10 @@ def _count(vals: Iterable[Optional[str]]) -> Dict[str, int]:
 
 
 def write_manifest(rows: List[Dict[str, Any]], path: str) -> str:
+    from Runner.RunHealth import json_safe
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         for r in rows:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+            f.write(json.dumps(json_safe(r), ensure_ascii=False, allow_nan=False) + "\n")
     os.replace(tmp, path)
     return path
