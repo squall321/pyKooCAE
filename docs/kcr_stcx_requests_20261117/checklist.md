@@ -26,4 +26,4 @@
 - [x] 가드 빌드 KCR 501601d7 → 컴파일본 시험 110·41·101·157·105 FAIL 0
 - [x] e2e_rde host(501601d7) ALL PASS 100
 - [x] 굽기 v139(SIF 28574f6a·KooRemapper 248ec9bc·tar v139·Drive·메일) → SIF 판정(KCR_IN_SIF 105 OK·e2e sif ALL PASS 100) → 헤드 /opt 교체(v136 → v139, 22:11)
-- [ ] 알림(43·kooremapper·포털 sha)·문서 커밋·메모리
+- [x] 알림(43·kooremapper-fd·4a·포털 sha256)·문서 커밋(660b1a9)·메모리
