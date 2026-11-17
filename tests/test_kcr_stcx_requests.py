@@ -1076,9 +1076,32 @@ def t_cli():
           "[ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 3 ]" in src)
 
 
+def t_cleanup_guard():
+    print("[사고 11-17] 러너 정리(cleanup_after_exec)는 Slurm 잡 밖(헤드·로컬)에서 아무것도 하지 않는다 — pkill 은 가짜로만 센다")
+    from Runner.CumulativeScenarioRunner import ApptainerWrapper
+    pk = SAFE_BIN / "pkill.calls"
+    old_path, old_job = os.environ.get("PATH", ""), os.environ.pop("SLURM_JOB_ID", None)
+    os.environ["PATH"] = f"{SAFE_BIN}:{old_path}"                  # 혹시 불려도 진짜 pkill 이 아니게
+    try:
+        w = ApptainerWrapper({"environment": {"apptainer_tmpdir": str(TMP / "apptmp")}})
+        n0 = len(pk.read_text().splitlines()) if pk.exists() else 0
+        w.cleanup_after_exec()
+        n1 = len(pk.read_text().splitlines()) if pk.exists() else 0
+        check("SLURM_JOB_ID 없음(헤드 노드) → pkill 0번", n1 == n0, f"pkill {n1 - n0}번")
+        os.environ["SLURM_JOB_ID"] = "999999"
+        w.cleanup_after_exec()
+        n2 = len(pk.read_text().splitlines()) if pk.exists() else 0
+        check("SLURM_JOB_ID 있음(계산 노드 잡) → 예전 그대로 pkill 1번(가짜)", n2 == n1 + 1, f"pkill {n2 - n1}번")
+    finally:
+        os.environ["PATH"] = old_path
+        os.environ.pop("SLURM_JOB_ID", None)
+        if old_job is not None:
+            os.environ["SLURM_JOB_ID"] = old_job
+
+
 def main():
-    for t in (t_health, t_provenance, t_gate, t_deep_sh, t_budget, t_status, t_keeper, t_impact, t_deck_gate, t_runner,
-              t_impact_gate_e2e, t_cli):
+    for t in (t_cleanup_guard, t_health, t_provenance, t_gate, t_deep_sh, t_budget, t_status, t_keeper, t_impact, t_deck_gate,
+              t_runner, t_impact_gate_e2e, t_cli):
         try:
             t()
         except Exception as e:
