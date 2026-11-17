@@ -49,3 +49,37 @@
 ## 시험(11-17)
 - tests/test_kcr_stcx_requests.py 86 판정 모두 통과. 옛 트리(gen_d95d2ed, KCR_ROOT)는 3 OK / 29 FAIL — 통과 3개는 예전 동작을 지키는 판정.
   옛 러너는 LS-DYNA rc 0·정상 문구 없음 런을 completed·rc 0 으로 본다(요청서의 'COMPLETED 0:0' 그대로 재현).
+
+## 회귀·커밋·빌드(11-17)
+- **회귀 1차(suite1).** tests/ 62개 중 59개 rc 0. 실패 셋: test_encoding_guard(DeepKeeper open() encoding 빠짐), test_kcr_doe_schedule(잡 스크립트
+  KC-01 세 줄로 [0] 바이트 동일 10건 — 43 의 정답 GOLDEN 은 두고 norm() 이 그 세 줄만 지우게, 43 확인), test_result_return(가짜 deep 이
+  analysis_result.json 하나만 쓴다 — '둘 중 하나' 약속을 내가 깼다).
+- **리포트 완결 규칙을 둘로.** complete = 끝까지 쓰인 파일이 하나 이상·있는 것 중 잘린 것 없음(deep 성공·postprocess --all 건너뛰기·상태 표 —
+  옛 SIF 는 한 파일만 쓴다). complete_all = 둘 다(d3plot 삭제 관문 — harvest 는 result.json, impact 는 analysis_result.json).
+- 패치 뒤 다시: 세 시험 + cli_help·hotspot_keys·새 시험 모두 rc 0.
+- **매니페스트**에 scheduler_state·chain_exit_code(sacct 한 번)·solver_exit_code. **예산**은 파일럿 provenance 의 읽은 설정 사본으로 IMPACT 상태 수 비를 저절로.
+- **커밋** de3d443..d59a868(13개)·push.
+- **빌드** KooChainRun 만(build_capped_kcr.sh — root scope MemoryMax 14G·adj 1000, 2.35 컨테이너 가드) 08:50~08:53 BUILD_RC 0,
+  최저 가용 35.8 GB. KCR ebb0c6cb(/data = SIF 소스 트리), glibc 요구 최고 2.35. KMM·KAM 은 v136 그대로(소스 변경 없음).
+- **컴파일본 시험(KCR_BIN, C.UTF-8).** test_kcr_stcx_requests 88 · test_result_return 41 · test_kcr_doe_schedule 101 · test_kcr_endtime_presim 157 ·
+  test_kcr_impact_conditions 105 — 모두 FAIL 0.
+
+## 독립 적대 리뷰와 반영(11-17)
+- 에이전트 리뷰(읽기 전용, /data 의 실제 KCR 런 약 190개·다른 연구 폴더 d3hsp 153개로 판정 재현). DROP·누적 DROP·VIB·THERM 정상 런의 거짓 invalid 는
+  없었다. 막아야 할 것과 반영(검토 번호는 상·중·하 — 제품 코드명과 겹치지 않게):
+  - **상1** 회전 초기 속도(충격 조건 DOE 의 RigidAngularVelocity·낙하 InitialAngularVelocity·IVG OMEGA·*INITIAL_VELOCITY VXR..)가 있으면 첫 KE 에
+    ½ωᵀIω 가 더해져 ½mv² 비교가 +60 % → 재시도 없는 invalid 였다 → 회전·집중 질량(중5)이면 비교를 건너뛰고 첫 KE 0 판정만 남긴다.
+  - **상2** 지킴이 중복 제출 — 러너 separate_job deep 잡(deep_report_jobs.txt)을 보지 않음·도는 deep 을 report_failed 로 봄·squeue 실패를 '대기 잡 없음'
+    으로 봄 → 러너 잡 기록과 최근 recent_minutes(30) 안에 바뀐 리포트·deep 로그는 건너뛰고, squeue 를 못 읽으면 그 패스는 아무것도 내지 않는다.
+  - **상3** 지킴이·postprocess 가 옛 판 deep_report.sh(관문 없는 rm·빈 리포트 성공)를 그대로 돌림 → 표지(빈 리포트 검사 줄)가 없으면 지금 설정으로 다시 만든다
+    (postprocess 는 지금 설정이 삭제 끔이어도).
+  - 중1 submit 예산의 동시 수가 argparse 기본 2×4 → 모르면 런 수 전부(sequential 은 --nodes). 중2 스크래치 rc 3 이면 노드 임시 폴더가 남음 → 0·3 이면 정리.
+    중3 지킴이 배열이 MaxArraySize 를 넘음 → max_array(1000)로 나눔. 중4 64 MB 넘는 JSON 은 머리·끝만 봐서 0.4~0.5 % 잘림을 놓침 → 삭제 관문은 크기와
+    상관없이 끝까지 읽는다(관문 명령이 없는 DWI 틀도 SIF 안 python 으로). 중5 집중 질량(*ELEMENT_MASS) → ½mv² 비교 건너뜀.
+  - 하1 E 없는 세 자리 지수('4.17160+258') 읽기. 하2 "health": true 같은 비객체 → 경고 뒤 무시(러너 생성자가 죽어 모든 DOE rc 1 이던 것).
+    하3 KCR_HEALTH=off|record|on·health.enforce(기록만) — 대역 솔버 e2e. 하4 모델·include sha 는 캠페인 캐시, binout 시간 제한 기본 300 s.
+    하5 health.json·provenance·manifest 에 NaN 을 쓰지 않음(allow_nan=False), 시간 초과면 solver_exit_code None, 없는·빈 파일럿은 오류,
+    status 는 예외에 죽지 않음, health 캠페인 판정은 index 모드, *Mode 에 PART_TRANSLATE 가 앞에 와도 주 모드.
+  - 동작 변경(버그 아님, 사용자 결정대로): DTMIN·ENDMAS·ENDCYC 로 목표 시각 전에 끝난 런은 이제 재시도 없는 invalid.
+- 반영 뒤: 새 시험 107(리뷰 판정 17) 모두 통과, 리뷰 반영 전 트리(d59a868)는 리뷰 판정 14 FAIL·2 OK(예전 동작을 지키는 판정·모듈 단위). KCR·Runner 를
+  쓰는 기존 시험 21개 모두 rc 0, cli_help ALL PASS.
