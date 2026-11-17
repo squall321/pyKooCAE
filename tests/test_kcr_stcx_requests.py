@@ -130,6 +130,17 @@ def t_health():
     H = try_(lambda: evaluate(d), {})
     check("glstat 중간에 NaN → invalid(nan_onset 기록)", isinstance(H, dict) and H.get("verdict") == "invalid"
           and H.get("nan_onset") is not None)
+    d = fixture_run("nan0")             # 첫 기록의 KE 가 NaN — health 의 ke0_measured 가 NaN 이 된다
+    edit(d / "Output" / "glstat", lambda t: t.replace(" kinetic energy.................   2.65415E+03",
+                                                       " kinetic energy.................         NaN", 1))
+    H0 = try_(lambda: evaluate(d), {})
+    RHm = __import__("Runner.RunHealth", fromlist=["x"])
+    try_(lambda: RHm.write_health(str(d), H0))
+    def _no_nan(x):
+        raise ValueError(x)
+    ok = try_(lambda: json.loads((d / "health.json").read_text(), parse_constant=_no_nan) is not None, False)
+    check("[리뷰 하5] 첫 KE NaN 런의 health.json 에도 NaN·Infinity 가 없다(엄격한 JSON)·invalid",
+          ok is True and isinstance(H0, dict) and H0.get("verdict") == "invalid", str(ok))
     d = fixture_run("nan2")
     edit(d / "Output" / "glstat", _nan_eroded)
     H = try_(lambda: evaluate(d), {})
@@ -168,6 +179,35 @@ def t_health():
     (d / "Output" / "mes0000").unlink()
     H = try_(lambda: evaluate(d), {})
     check("d3hsp 없음 → invalid", isinstance(H, dict) and H.get("verdict") == "invalid")
+
+    # 리뷰 상1 — 회전 속도가 있으면 첫 KE 에 회전분이 더해진다: ½mv² 비교를 하지 않는다(첫 KE 0 판정은 남는다)
+    d = fixture_run("spin")
+    edit(d / "step_config.txt", lambda t: t.replace("InitialAngularVelocityX,0", "InitialAngularVelocityX,12.5"))
+    edit(d / "Output" / "glstat", lambda t: t.replace(" kinetic energy.................   2.65415E+03",
+                                                       " kinetic energy.................   4.24664E+03", 1))
+    H = try_(lambda: evaluate(d), {})
+    check("[리뷰 상1] 초기 회전 속도 + 첫 KE 1.6배(회전분) → invalid 아님·비교 건너뜀 기록", isinstance(H, dict)
+          and H.get("verdict") != "invalid" and H.get("ke0_compared") is False, str(H.get("reasons") if isinstance(H, dict) else H))
+    edit(d / "Output" / "glstat", lambda t: t.replace(" kinetic energy.................   4.24664E+03",
+                                                       " kinetic energy.................   0.00000E+00", 1))
+    H = try_(lambda: evaluate(d), {})
+    check("[리뷰 상1] 회전이 있어도 첫 KE 0 → invalid", isinstance(H, dict) and H.get("verdict") == "invalid")
+    d = fixture_run("lumped")
+    edit(d / "DropSet.k", lambda t: t.replace("*END", "*ELEMENT_MASS\n 9000001       1 1.000e-06       0\n*END", 1))
+    edit(d / "Output" / "glstat", lambda t: t.replace(" kinetic energy.................   2.65415E+03",
+                                                       " kinetic energy.................   4.24664E+03", 1))
+    H = try_(lambda: evaluate(d), {})
+    check("[리뷰 중5] 집중 질량(*ELEMENT_MASS) 덱 → ½mv² 비교 건너뜀(invalid 아님)", isinstance(H, dict)
+          and H.get("verdict") != "invalid" and H.get("ke0_compared") is False)
+    RH = __import__("Runner.RunHealth", fromlist=["x"])
+    check("[리뷰 하1] '4.17160+258'(E 없는 세 자리 지수)·'1.0D-03' 를 읽는다", abs((RH._f("4.17160+258") or 0) / 4.1716e258 - 1) < 1e-9
+          and RH._f("1.0D-03") == 1e-3)
+    check("[리뷰 하2] \"health\": true(객체 아님) → 경고 뒤 무시(러너 생성자가 죽지 않는다)", RH.load_thresholds({"health": True}) == {}
+          and RH.health_settings({"health": True}) == {})
+    sc = tmpdir("modes") / "step_config.txt"
+    sc.write_text("*Mode\nPART_TRANSLATE,1\nDROP_WEIGHT_IMPACT_TEST,2\n**PartTranslate,1\nX,1\n**EndPartTranslate\n*End\n")
+    check("단계 설정 *Mode 에 PART_TRANSLATE 가 앞에 와도 주 모드 = DROP_WEIGHT_IMPACT_TEST", RH.parse_step_config(str(sc)).get("_mode")
+          == "DROP_WEIGHT_IMPACT_TEST")
 
     # binout(Post SIF lasso) — 파트 IE 기록·캠페인 비교
     sif = "/opt/apptainers/SmartTwinPostprocessor.sif"
@@ -285,6 +325,18 @@ def t_gate():
     report_files(d, truncate="analysis_result.json")
     X = G.gate_and_delete(str(d), {"postprocess": {}})
     check("analysis_result.json 잘림 → 지우지 않음", X["d3plot_retained"] and len(list((d / "Output").glob("d3plot*"))) == 3)
+    RH = __import__("Runner.RunHealth", fromlist=["x"])
+    keep = RH.FULL_PARSE_MAX_BYTES
+    RH.FULL_PARSE_MAX_BYTES = 8           # '큰 파일' 흉내 — 머리·끝 바이트만 본다
+    try:
+        d = gate_run("bigtrunc")
+        report_files(d)
+        (d / "Output" / "report" / "analysis_result.json").write_text('{"a": {"b": 1}')   # 끝은 '}' 인데 잘렸다
+        quick = RH.report_status(str(d / "Output"))["complete"]
+        X = G.gate_and_delete(str(d), {"postprocess": {}})
+    finally:
+        RH.FULL_PARSE_MAX_BYTES = keep
+    check("[리뷰 중4] 큰 JSON 이 끝만 '}' 로 잘림: 머리·끝 판정은 놓치지만 삭제 관문은 끝까지 읽어 보존", quick is True and X["d3plot_retained"])
     d = gate_run("req")
     report_files(d)
     spec = {"postprocess": {"required_extractions": [{"name": "board_strain", "outputs": ["extract/board_strain.npz"]}]}}
@@ -338,6 +390,7 @@ def fake_bin(tag, deep_writes=("result.json", "analysis_result.json"), help_opts
 args="$*"
 echo "$args" >> "$(dirname "$0")/apptainer.calls"
 if [[ "$args" == *"--help"* ]]; then printf 'usage: koo_deep_report\\n{opts}\\n'; exit 0; fi
+for ((i=1; i<=$#; i++)); do if [ "${{!i}}" = "-c" ]; then j=$((i+1)); code="${{!j}}"; shift $j; exec python3 -c "$code" "$@"; fi; done
 out=""; prev=""
 for a in "$@"; do if [ "$prev" = "-o" ]; then out="$a"; fi; prev="$a"; done
 if [ -n "$out" ]; then mkdir -p "$out"; for f in {writes}; do echo '{{"ok": true}}' > "$out/$f"; done; fi
@@ -394,7 +447,14 @@ def t_deep_sh():
     b = fake_bin("fallback")
     sh = try_(lambda: build_deep_report_sh(str(d / "Output"), str(sif), {"delete_d3plot_after_deep": True}), "")
     r = run_sh(sh, d, b)
-    check("관문 명령 없음: 리포트 완결이면 끝 바이트 확인 뒤 지움", r.returncode == 0 and not list((d / "Output").glob("d3plot*")))
+    check("관문 명령 없음: 리포트 완결이면 JSON 을 끝까지 읽은 뒤 지움", r.returncode == 0 and not list((d / "Output").glob("d3plot*")))
+    d = gate_run("fallback_trunc")
+    b = fake_bin("fallback_trunc")
+    sh2 = try_(lambda: build_deep_report_sh(str(d / "Output"), str(sif), {"delete_d3plot_after_deep": True}), "")
+    sh2 = sh2.replace('# 도구가 0 으로 끝나도', 'printf "{\\"a\\": {\\"b\\": 1}" > "$REPORT_DIR/analysis_result.json"\n# 도구가 0 으로 끝나도', 1)
+    r = run_sh(sh2, d, b)
+    check("관문 명령 없음 + 끝만 '}' 로 잘린 JSON → rc 0 이어도 d3plot 보존(끝까지 읽기)", len(list((d / "Output").glob("d3plot*"))) == 3,
+          f"rc={r.returncode} {r.stderr[-200:]}")
     # 프로필 — 도구가 아는 옵션만
     d = gate_run("prof")
     b = fake_bin("prof", help_opts=("--parts", "--no-section-view-per-part"))
@@ -448,6 +508,10 @@ def t_budget():
     (pilot / "health.json").write_text(json.dumps({"verdict": "invalid"}))
     B = SB.budget(rc, str(pilot), concurrency=10, threshold_pct=th_for(2000 * MB), fs_path=str(w), usage=du)
     check("파일럿 health invalid → 정상 런 크기가 아닐 수 있다는 경고 줄", any("파일럿 health" in l for l in B["lines"]))
+    e = try_(lambda: SB.budget(rc, str(w / "no_such_run"), concurrency=10, usage=du), None)
+    check("[리뷰 하5] 없는 파일럿 → 오류(크기 0 으로 통과시키지 않음)", isinstance(e, ValueError), str(e))
+    B = SB.budget(rc, str(pilot), backlog=0, threshold_pct=th_for(100000 * MB), fs_path=str(w), usage=du)
+    check("[리뷰 중1] 동시 수를 모르면 런 수 전부로 본다(근거 줄)", B["concurrency"] == 1000 and any("동시 수를 모른다" in l for l in B["lines"]))
     # IMPACT 상태 수 비
     rci = dict(rc, simulation_params={"impact": {"dt": 1e-6, "tFinal": 1e-3}})
     B = SB.budget(rci, str(pilot), concurrency=10, backlog=10, threshold_pct=th_for(100000 * MB), fs_path=str(w),
@@ -583,6 +647,27 @@ def t_keeper():
         (b / "squeue").write_text('#!/bin/bash\nprintf "4242_[0-1]|PENDING\\n777_0|PENDING\\n"\n')
         r = DK.keeper_pass(str(w / "runner_config.json"))
         check("다시 돌려도 같은 런을 두 번 내지 않는다(4242 대기)", r.get("submitted") == 0, str(r)[:300])
+        sh2 = (out / "Run_2" / "deep_report.sh").read_text()
+        check("[리뷰 상3] 옛 판 deep_report.sh 는 지금 설정으로 다시 만든 뒤 냈다(빈 리포트 검사 표지)", "N_OK=0; N_BAD=0" in sh2)
+        # squeue 가 실패하면 그 패스는 아무것도 내지 않는다
+        for f in (out / "Run_2" / ".deep_keeper.json", out / "Run_3" / ".deep_keeper.json"):
+            f.unlink()
+        (b / "squeue").write_text('#!/bin/bash\nexit 1\n')
+        n_before = len((b / "sbatch.calls").read_text().splitlines())
+        r = DK.keeper_pass(str(w / "runner_config.json"))
+        check("[리뷰 상2c] squeue 실패 → 제출 0·sbatch 안 부름", r.get("submitted") == 0 and r.get("error")
+              and len((b / "sbatch.calls").read_text().splitlines()) == n_before, str(r)[:300])
+        # 러너 separate_job 잡(deep_report_jobs.txt)이 대기 중이면 건너뛴다, 최근 바뀐 런도
+        (b / "squeue").write_text('#!/bin/bash\nprintf "555|PENDING\\n777_0|PENDING\\n"\n')
+        (out / "deep_report_jobs.txt").write_text("555\tRun_2\n")
+        (out / "Run_3" / "deep_report.log").write_text("running\n")
+        r = DK.keeper_pass(str(w / "runner_config.json"), dry_run=True)
+        check("[리뷰 상2a·b] 러너 deep 잡 대기(Run_2)·최근 로그가 바뀐 런(Run_3)은 건너뜀", not r.get("would_submit"), str(r)[:300])
+        # 배열 나누기 — max_array 1 이면 런마다 배열 하나
+        (out / "deep_report_jobs.txt").unlink()
+        os.utime(out / "Run_3" / "deep_report.log", (0, 0))
+        r = DK.keeper_pass(str(w / "runner_config.json"), viz_override={"max_array": 1})
+        check("[리뷰 중3] max_array 1 → 배열 둘로 나눠 낸다", r.get("submitted") == 2 and len(r.get("job_ids") or []) == 2, str(r)[:300])
     finally:
         os.environ["PATH"] = old
 
@@ -807,6 +892,14 @@ def t_runner():
     check("LS-DYNA rc 0 인데 정상 종료 문구 없음 → rc 1·failed(health invalid)·재시도 없음(1번만)", r.returncode == 1
           and rec.get("status") == "failed" and "health invalid" in (rec.get("error") or "") and n_calls == 1,
           f"rc={r.returncode} calls={n_calls} {rec}")
+    s, calls = fake_solver("srec", bad)
+    w, out, rc = runner_campaign("rrec", s)
+    r = run_kcr(w, {"KCR_HEALTH": "record"})
+    idx = json.loads((out / "simulation_index.json").read_text())["scenarios"][0]["runs"]
+    rec = next(iter(idx.values()), {})
+    Hr = json.loads((out / rec.get("folder", "x") / "health.json").read_text()) if rec.get("folder") else {}
+    check("[리뷰 하3] KCR_HEALTH=record(대역 솔버 e2e) → 같은 고장 런이 rc 0·completed, health.json 은 invalid 로 남김",
+          r.returncode == 0 and rec.get("status") == "completed" and Hr.get("verdict") == "invalid", f"rc={r.returncode} {rec}")
     # 후처리만 실패 — 가짜 apptainer 가 리포트를 안 쓴다 → deep rc 3 → 잡 rc 3, 단계 completed
     sif = TMP / "fake.sif"
     sif.write_text("x")
@@ -897,6 +990,23 @@ def t_cli():
     r = kcr("status", rcp, "--csv")
     check("status --csv → rc 0·doe_status.csv·'후처리 대기 1'", r.returncode == 0 and (out / "doe_status.csv").is_file()
           and "후처리 대기 1" in r.stdout, r.stdout[-300:] + r.stderr[-300:])
+    old = out / "Run_2" / "deep_report.sh"
+    old.write_text('#!/bin/bash\nRUN_DIR="%s"\nrm -f "$RUN_DIR"/d3plot "$RUN_DIR"/d3plot[0-9]*\n' % (out / "Run_2" / "Output"))
+    sif = TMP / "fake.sif"
+    sif.write_text("x")
+    rc["postprocess"] = {"enabled": True, "sif_path": str(sif), "delete_d3plot_after_deep": False}
+    rcp.write_text(json.dumps(rc))
+    bdeep = fake_bin("clipost")
+    r = kcr("postprocess", rcp, "--deep", env={"PATH": f"{bdeep}:{os.environ['PATH']}"})
+    check("[리뷰 상3] postprocess --deep: 옛 판(무조건 rm) 스크립트를 다시 만들어 돌림 — 삭제 끔이라 d3plot 그대로",
+          "N_OK=0; N_BAD=0" in old.read_text() and len(list((out / "Run_2" / "Output").glob("d3plot*"))) == 2,
+          r.stdout[-400:] + r.stderr[-300:])
+    report_files(out / "Run_2")
+    rc["postprocess"] = {"enabled": True, "auto_deep": True}
+    rcp.write_text(json.dumps(rc))
+    for n in ("d3plot", "d3plot01"):
+        (out / "Run_2" / "Output" / n).write_bytes(b"\0" * 2048)
+    shutil.rmtree(out / "Run_2" / "Output" / "report")
     r = kcr("manifest", rcp)
     check("manifest → return_manifest.jsonl(머리 + 2줄)", r.returncode == 0 and (out / "return_manifest.jsonl").is_file()
           and len((out / "return_manifest.jsonl").read_text().splitlines()) == 3, r.stdout[-300:] + r.stderr[-300:])
@@ -935,6 +1045,14 @@ def t_cli():
     r = kcr("submit", rcp, "--nodes", "1", "--jobs-per-node", "1", env={"PATH": f"{b}:{os.environ['PATH']}"})
     check("submit(예산 reject) → rc 1·'내지 않는다'·sbatch 안 불림", r.returncode == 1 and "내지 않는다" in r.stdout
           and not (b / "sbatch.calls").exists(), r.stdout[-400:] + r.stderr[-300:])
+    rc["environment"]["storage_budget"] = {"pilot": str(pilot), "threshold_pct": th}     # 동시 수 없음
+    rcp.write_text(json.dumps(rc))
+    r = kcr("submit", rcp, env={"PATH": f"{b}:{os.environ['PATH']}"})
+    check("[리뷰 중1] submit: 동시 수를 주지 않으면 argparse 기본(2×4)이 아니라 런 수 전부로 본다", "동시 수를 모른다" in r.stdout
+          and r.returncode == 1 and not (b / "sbatch.calls").exists(), r.stdout[-400:])
+    src = (ROOT / "KooChainRun").read_text(encoding="utf-8")
+    check("[리뷰 중2] 스크래치 잡 스크립트: rc 3(후처리만 실패)도 결과를 옮긴 뒤 노드 임시 폴더를 지운다",
+          "[ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 3 ]" in src)
 
 
 def main():
