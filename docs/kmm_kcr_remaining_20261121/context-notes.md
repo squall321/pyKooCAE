@@ -21,6 +21,19 @@
 5. **LOAD_SEGMENT 는 고친다(삭제·우회 아님).** 지금은 가져오기에서 항상 죽으므로 「기존 동작」이 없다 — 회귀 위험이 없다.
 6. 숫자 아닌 글을 `KooDynaFloat` 가 조용히 기본값으로 읽는 것은 그대로 둔다(전 코드가 쓰는 함수라 범위가 넓다). 제어·DB 카드에서는 병합이 덱 글을 되살리므로 틀 글(`{{…}}`)도 남는다. 한계로 보고.
 
+## 구현하며 정한 것(2026-11-22)
+7. **덱 글 되살리기(A1) 규칙** — `KooCAEManager/KooDeckEcho.py`. 가져온 직후 객체에 덱 블록·그때의 기록 결과(base)·속성 사본을 붙이고, 두 관리자 기록기(제어 15개·DB 키 루프)가 쓸 때 지금 기록 결과(now)와 맞춘다. 데이터 줄 수가 base·now 다르면 now 그대로(모드가 카드 짜임을 바꿨다). 칸: 모드가 바꿨으면(now ≠ base) now / 기록기에 없는 끝 칸·끝 카드는 덱 글(값 0 인 끝 칸과 맨 끝의 빈·0 카드는 붙이지 않는다 — LS-DYNA 는 빈 숫자 칸을 0 으로 읽는다) / 덱 빈칸·수치 같음·(now 빈칸이고 덱 0) → now / 다르면 덱 글. 바꾼 칸이 없는 줄은 now 줄 바이트 그대로.
+   - 안전장치: 바뀐 속성 수가 기록에 보이는 바뀐 칸 수보다 많으면 모델 칸은 now(모드 값의 4자리 표기가 가져온 때와 같아 덱 글이 모드 값을 덮는 것 방지). 기록기 키워드 줄이 덱 키워드와 다르면 붙이지 않는다(이름 없는 INTFOR_FILE·INTFOR 를 FILE 이 덮은 자리). 붙이기는 예외를 내지 않고(실패 → 안 붙임), 병합이 죽으면 now 를 쓰고 경고 한 줄. DR 카드 2 는 IDRFLG 가 바뀌면 붙이지 않는다. CONTROL_SOLID 카드 2 는 8칸, INTFOR_FILE 이름 줄은 글 한 칸.
+   - grep 확인: 제어·DB 를 쓰는 곳은 두 관리자 기록기뿐(주 출력·Fast DOE 베이스·노드 앞 판·`_ApplyDropEndTime`), 모드가 객체 칸을 제자리에서 바꾸는 곳은 ENDTIM·DTMIN·IHQ·QH 넷뿐, `_RestoreBaseState` 는 두 관리자를 건드리지 않는다 → Fast DOE `cached_base.count(old) == 1` 그대로(test_drop_endtime_table 63건 통과).
+8. **A3** 한 장짜리 CONTROL_CONTACT 의 카드 2 는 빈 칸(두 장짜리의 빈 칸과 같은 읽기 — 0). 카드 3 PTSCL·카드 5 RWKSF 빈칸은 R16 기본값 1.0 으로 읽는다(0 이 「기본값」 뜻이라는 말이 매뉴얼에 없다) — 3~5 장짜리는 예전 출력(세터 기본값 1.0) 그대로, 6~7 장짜리의 빈 PTSCL 은 0.000e+00 → 1.000e+00 으로 바뀐다(말뭉치 12·14·16번).
+9. **A4** 카드 3 만 자료가 있으면 빈 카드 2 줄을 먼저 쓴다(카드 순서). PM 이 모두 0 인 카드 2 는 예전처럼 쓰지 않는다.
+10. **INTFOR_FILE** 이름은 글자로(리더가 목록으로 줬다), 카드 2c 는 선택(없으면 IOOPT 0), 이름은 왼쪽부터 쓴다. 모드가 이름 있는 INTFOR 를 만드는 곳은 없다.
+11. **A5 표** — 개체 크기가 R16 로 정해진 평범한 꼴만 나눈다: MAT_ELASTIC(E < 0 이면 2)·MAT_RIGID 3·EOS_LINEAR_POLYNOMIAL 2·MAT_ADD_PZELECTRIC 7·BOUNDARY_SPC_SET·CONSTRAINED_EXTRA_NODES_NODE/SET·CONSTRAINED_NODE_SET·CONSTRAINED_JOINT_SPHERICAL·CONSTRAINED_NODAL_RIGID_BODY·DAMPING_PART_STIFFNESS(_SET)·LOAD_SEGMENT_SET·DATABASE_NODAL_FORCE_GROUP 1, DAMPING_PART_MASS(_SET)(FLAG = 1 이면 2), DEFINE_COORDINATE_SYSTEM·INITIAL_VELOCITY_GENERATION·RIGIDWALL_PLANAR 2. _ID·_TITLE 꼴은 (ID 카드 + 카드) 짝 반복인지 ID 하나 아래 카드 여럿인지 매뉴얼이 밝히지 않아 나누지 않고, 한 개체보다 길면 🔴 카드 소실(rc 3). 가운데 빈 줄·나누어떨어지지 않는 줄 수도 🔴 rc 3. 표에 없는 다른 재료·단면 꼴의 한 블록 여러 개체는 이번에 다루지 않았다(남은 한계로 보고). MAT_ELASTIC 카드 1.1(E < 0)은 KMM 이 옮기지 않는다 → 🔴 rc 3. KooRemapper 가 *MAT_ELASTIC 두 개체를 한 블록에 쓴다(REMAP 체인 입력) — 이번 나누기로 읽힌다.
+12. **NODAL_FORCE_GROUP**(새로 찾음): 키워드를 둘로 써도 매니저가 한 자리("NODAL_FORCE_GROUP")에 담아 하나만 남았다 → 그룹마다 열쇠(첫 것은 예전 열쇠).
+13. **A7** *LOAD_SEGMENT(_ID) 는 개체 단위로 읽고(카드 2 는 N5 ≠ 0 일 때만), 올바른 *LOAD_SEGMENT_ID(ID 카드·카드 1·카드 2)로 쓴다. 절점은 객체로 들고 쓸 때 번호. 없는 절점 → 🔴 rc 3, _ID 한 블록 여러 개체 → 🔴 rc 3. **하중 ID 겹침**(새로 찾음): `loads` 사전 열쇠가 겹치면 덮어 앞 하중이 rc 0 으로 빠졌다(*LOAD_NODE_POINT 가 번호 1 → *LOAD_SEGMENT_SET_ID 1) → KMM 이 매긴 번호면 그 하중을 새 번호로 옮기고, 덱 ID 끼리 겹치면 새 열쇠에 둔다(쓰는 ID 는 덱 그대로). SF·AT 는 `_e10`(4자리로 담기는 값은 예전 바이트 그대로).
+14. **말뭉치 25개(U1+U2)** — 바뀐 줄 전부 설명: KMM 이 쓴 DROP 덱의 INTFOR DT·NPLTC·IOOPT 복구(00·01·11·13·15·17), D3THDT DT 99999 자릿수(02~07), CONTACT 카드 4 복구(10·12·14·16, KMM 이 쓴 4장짜리), 6~7장짜리 빈 PTSCL 1.0(12·14·16), SOLID 빈 카드 2 + 카드 3 TET13V(10·12·14·16), 옛 LS-DYNA 꼴 SHELL 카드 2 의 6·7칸(NFAIL1·NFAIL4 자리) 되살림(12·14·16), EXTENT_BINARY 카드 3(12~24). rc 바뀜 0, 나누기 영향 0.
+15. KooDynaControl·KooDynaDatabase·KooLoad·KooMaterial 등 KooCAEManager 의 많은 파일이 CRLF 다 — 고칠 때 바이트로 바꾼다(text 모드로 열면 LF 로 바뀐다).
+
 ## 기록이 낡은 것(다시 고치지 않는다)
 *MAT_RIGID 카드 2 빈 줄, NUL 채움, 자기 자신 인클루드, *ELEMENT_SOLID 끝 빈 줄, 데이터 없는 키워드, PART_EXCHANGE TSHELL 단면, 셸 요소 두께 소실, IMPORT_MERGE_K PART.secid, BPM DEATH·BIRTH 표기, 요소 소실 rc 0(이미 rc 3) — 지금 소스에서 재현되지 않는다. 메모리·문서의 「미수정」 표기를 정리한다.
 

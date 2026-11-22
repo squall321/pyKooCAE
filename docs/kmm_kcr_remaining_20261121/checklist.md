@@ -9,13 +9,13 @@
 - [x] 계획·체크리스트·결정 기록
 
 ## 가. 조용한 소실·틀린 값
-- [ ] A1 덱 글 병합(제어·DB 선택 카드·끝 칸)
-- [ ] A2 *DATABASE_BINARY_INTFOR 카드 덮어쓰기
-- [ ] A3 *CONTROL_CONTACT 3~5장 되돌림·1장 죽음
-- [ ] A4 *CONTROL_SOLID 카드 2·3
-- [ ] A5 한 키워드 아래 여러 개체
-- [ ] A6 *RIGIDWALL_PLANAR 두 벽·3줄 오독
-- [ ] A7 *LOAD_SEGMENT(_ID)·_SET(_ID)
+- [x] A1 덱 글 병합(제어·DB 선택 카드·끝 칸) — KooDeckEcho, tests/test_remaining_control_database.py(옛 소스 24건 실패), 말뭉치 차이 전부 설명
+- [x] A2 *DATABASE_BINARY_INTFOR 카드 덮어쓰기 + INTFOR_FILE 크래시 둘(이름 TypeError·카드 2c IndexError)
+- [x] A3 *CONTROL_CONTACT 3~5장 되돌림·1장 죽음(+ 한 장짜리 *DATABASE_EXTENT_BINARY 죽음)
+- [x] A4 *CONTROL_SOLID 카드 2·3
+- [x] A5 한 키워드 아래 여러 개체 — 평범한 꼴 나누기, _ID·_TITLE·나머지는 🔴 rc 3, NODAL_FORCE_GROUP 매니저(새로 찾음). tests/test_remaining_multi_entity.py(옛 31건 실패)
+- [x] A6 *RIGIDWALL_PLANAR 두 벽·3줄 오독
+- [x] A7 *LOAD_SEGMENT(_ID)·_SET(_ID) + 하중 ID 겹침 덮어쓰기(새로 찾음). tests/test_remaining_load_segment.py(옛 4건 실패)
 - [ ] A8 *PARAMETER_EXPRESSION 의미
 - [ ] A9 재질 기록기 유효숫자
 - [ ] A10 Fast DROP 접촉 번호 누적
