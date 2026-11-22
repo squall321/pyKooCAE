@@ -4040,6 +4040,54 @@ class KooDynaAdvancedModification:
             return unit, dict(self._DWI_FALLBACK_SI)
         return "미판정", dict(self._DWI_FALLBACK_SI)
 
+    def _RawDeckMaterialIDs(self):
+        """KMM 이 해석하지 않아 원문 그대로 내보내는 덱 *MAT_ 블록의 MID(*MAT_ADD_ 는 정의가 아니라 뺀다, 제목 꼴은 둘째 줄) —
+        KooMeshImporter._ReportMaterialMIDInvariant 와 같은 읽기."""
+        imp = self.dynaImporter
+        out = set()
+        for kw, blocks in (getattr(imp.dynaManager, "_raw_keyword_dict", None) or {}).items():
+            if (not isinstance(kw, str) or not kw.startswith("MAT_") or kw.startswith("MAT_ADD_")
+                    or getattr(imp, "keywordInterpreted", {}).get(kw, False)):
+                continue
+            idx = 1 if kw.endswith("_TITLE") else 0
+            for block in blocks:
+                rows = [str(r) for r in block if str(r).strip() and not str(r).lstrip().startswith("$")]
+                if len(rows) > idx:
+                    tok = rows[idx][:10].replace(",", " ").split() or rows[idx][:20].replace(",", " ").split()
+                    try:
+                        out.add(int(round(float(tok[0]))))
+                    except (IndexError, ValueError, OverflowError):
+                        pass
+        return out
+
+    def _DwiDeckMaterial(self, mid, key):
+        """충격 장치 파트에 쓸 덱 재질(옵션 key = MaterialID…) — KMM 이 해석한 재질이면 그 객체, 해석하지 않고 원문 그대로 내보내는
+        재질(*MAT_001 같은 번호 꼴·*MAT_SIMPLIFIED_RUBBER 등)이면 None(부르는 곳이 파트에 번호만 넣는다 — 덱 파트와 같다). 덱에 그
+        번호의 재질이 없으면 🔴 종료 코드 1. 예전엔 둘 다 KeyError 로 죽었다(적대 리뷰 F3 을 확인하다 찾음)."""
+        materials = self.dynaImporter.matManager.materials
+        if mid in materials:
+            return materials[mid]
+        if mid in self._RawDeckMaterialIDs():
+            print(f"  {key} {mid}: KMM 이 해석하지 않는 덱 재질이다 — 원문 그대로 두고 파트는 번호만 가리킨다")
+            return None
+        print(f"🔴 {key} {mid}: 덱에 그 번호의 재질(*MAT_)이 없다 — 덱의 재질 번호를 주거나, 키를 빼고 재질 값(E·ρ·ν)을 준다 (종료 코드 1)")
+        sys.exit(1)
+
+    def _DwiReusedMaterial(self, mid):
+        """MaterialIDImpactor 로 쓴 덱 재질의 {E, rho(, nu)} — 앞·가운데 단의 빈 재질 키가 물려받는다. E·ρ 가 둘 다 양수일 때만
+        (값을 해석하지 않는 재질 — *MAT_001 같은 번호 꼴·원문으로만 드는 재질 — 은 0.0 을 돌려준다 → 빈 dict, 단위계 폴백 그대로)."""
+        m = (getattr(self.dynaImporter.matManager, "materials", {}) or {}).get(mid) if mid else None
+        try:
+            E, rho, nu = float(m.GetE()), float(m.GetRho()), float(m.GetNu())
+        except Exception:
+            return {}
+        if not (E > 0.0 and rho > 0.0):
+            return {}
+        out = {"E": E, "rho": rho, **({"nu": nu} if -1.0 < nu < 0.5 else {})}
+        print(f"  ⚠️ DWI: 앞·가운데 단의 빈 재질 키는 MaterialIDImpactor {mid} 덱 재질 값("
+              + "·".join(f"{k} {v:g}" for k, v in out.items()) + ")을 물려받는다 — 키를 주면 그 값")
+        return out
+
     def _warn_dwi_fallback(self, option, keys, where, unit="SI"):
         """재질 키 누락 시 어떤 폴백이 쓰였는지 경고. keys = [(키, 폴백값), ...]"""
         missing = [(k, v) for k, v in keys if k not in option]
@@ -4111,8 +4159,13 @@ class KooDynaAdvancedModification:
             
         _unit, _fb = self._DwiFallbacks("DropWeightImpactTestwithPartialRigid", option)
         # 앞부분 재질을 주지 않으면 충격체 본체 재질을 물려받는다(Mid 와 같은 규칙). 그것도 없으면 단위계 폴백
-        _fb["YoungsModulusImpactorFront"] = option.get("YoungsModulusImpactor", _fb["YoungsModulusImpactorFront"])
-        _fb["DensityImpactorFront"] = option.get("DensityImpactor", _fb["DensityImpactorFront"])
+        # MaterialIDImpactor 로 덱 재질을 쓰면 그 재질의 E·ρ·ν 를 물려받는다 — 예전엔 단위계 표 값이 됐다(남은 결함 820)
+        _inh = self._DwiReusedMaterial(matIDImpactor)
+        _fb["YoungsModulusImpactorFront"] = option.get("YoungsModulusImpactor", _inh.get("E", _fb["YoungsModulusImpactorFront"]))
+        _fb["DensityImpactorFront"] = option.get("DensityImpactor", _inh.get("rho", _fb["DensityImpactorFront"]))
+        if _inh:
+            _fb["YoungsModulusImpactor"] = option.get("YoungsModulusImpactor", _inh["E"])
+            _fb["DensityImpactor"] = option.get("DensityImpactor", _inh["rho"])
         self._warn_dwi_fallback(option, [(k, _fb[k]) for k in ('YoungsModulusImpactorFront', 'DensityImpactorFront', 'YoungsModulusWall', 'DensityWall', 'YoungsModulusImpactor', 'DensityImpactor')], "DropWeightImpactTestwithPartialRigid", _unit)
         
         if "YoungsModulusImpactorFront" in option:
@@ -4123,7 +4176,7 @@ class KooDynaAdvancedModification:
         if "PoissonRatioImpactorFront" in option:
             nuImpactorFront = option["PoissonRatioImpactorFront"]
         else:
-            nuImpactorFront = option.get("PoissonRatioImpactor", 0.3)
+            nuImpactorFront = option.get("PoissonRatioImpactor", _inh.get("nu", 0.3))
 
         if "DensityImpactorFront" in option:
             rhoImpactorFront = option["DensityImpactorFront"]
@@ -4134,7 +4187,7 @@ class KooDynaAdvancedModification:
         # NameError(matIDImpactorMid)로 죽었다
         matIDImpactorMid = option.get("MaterialIDImpactorMid", 0)
         EImpactorMid = option.get("YoungsModulusImpactorMid", option.get("YoungsModulusImpactor", _fb["YoungsModulusImpactor"]))
-        nuImpactorMid = option.get("PoissonRatioImpactorMid", option.get("PoissonRatioImpactor", 0.3))
+        nuImpactorMid = option.get("PoissonRatioImpactorMid", option.get("PoissonRatioImpactor", _inh.get("nu", 0.3)))
         rhoImpactorMid = option.get("DensityImpactorMid", option.get("DensityImpactor", _fb["DensityImpactor"]))
 
         if "YoungsModulusWall" in option:
@@ -4260,22 +4313,26 @@ class KooDynaAdvancedModification:
         impactFrontPart = None   # 구 임팩터는 앞 단이 없다 — 다음 단계 DTI 가 지울 DWI 접촉을 고를 때 쓴다(v131 리뷰 R7)
         if impactorType.lower() == "cylinder":
             if matIDImpactorFront != 0:
-                materialImpactorFront = matMan.materials[matIDImpactorFront]
+                materialImpactorFront = self._DwiDeckMaterial(matIDImpactorFront, "MaterialIDImpactorFront")
             else:
                 materialImpactorFront = matMan.CreateElasticMaterial("ImpactorFrontMaterial", rhoImpactorFront, EImpactorFront, nuImpactorFront)
             sectionImpactorFront : KooSectionSolid = secMan.CreateSolidSection("ImpactorFrontSection", 1)
             impactFrontElemMan : ElementManager = ElementManager(nodeMan)
             impactFrontPart = KooPart(nodeMan, impactFrontElemMan, materialImpactorFront, sectionImpactorFront, nodeSetMan)
+            if materialImpactorFront is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+                impactFrontPart.SetMaterialID(matIDImpactorFront)
             self.dynaImporter.partManager.CreatePartfromKooPart(impactFrontPart)
             # 3단 중간단 part (mid 활성 시)
             if use_mid_cyl:
                 if matIDImpactorMid != 0:
-                    materialImpactorMid = matMan.materials[matIDImpactorMid]
+                    materialImpactorMid = self._DwiDeckMaterial(matIDImpactorMid, "MaterialIDImpactorMid")
                 else:
                     materialImpactorMid = matMan.CreateElasticMaterial("ImpactorMidMaterial", rhoImpactorMid, EImpactorMid, nuImpactorMid)
                 sectionImpactorMid : KooSectionSolid = secMan.CreateSolidSection("ImpactorMidSection", 1)
                 impactMidElemMan : ElementManager = ElementManager(nodeMan)
                 impactMidPart = KooPart(nodeMan, impactMidElemMan, materialImpactorMid, sectionImpactorMid, nodeSetMan)
+                if materialImpactorMid is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+                    impactMidPart.SetMaterialID(matIDImpactorMid)
                 self.dynaImporter.partManager.CreatePartfromKooPart(impactMidPart)
         ########################################
         boundaryBox = nodeMan.GetBoundingBox()
@@ -4284,22 +4341,26 @@ class KooDynaAdvancedModification:
 
         ########## Impactor
         if matIDImpactor != 0:
-            materialImpactor = matMan.materials[matIDImpactor]
+            materialImpactor = self._DwiDeckMaterial(matIDImpactor, "MaterialIDImpactor")
         else:
             materialImpactor = matMan.CreateElasticMaterial("ImpactorMaterial", rhoImpactor, EImpactor, nuImpactor)
         sectionImpactor : KooSectionSolid = secMan.CreateSolidSection("ImpactorSection", 1)
         impactElemMan : ElementManager = ElementManager(nodeMan)
         impactorPart = KooPart(nodeMan, impactElemMan, materialImpactor, sectionImpactor, nodeSetMan)
+        if materialImpactor is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+            impactorPart.SetMaterialID(matIDImpactor)
         self.dynaImporter.partManager.CreatePartfromKooPart(impactorPart)
         
         ########## Wall
         sectionWall = secMan.CreateSolidSection("WallSection", 1)
         if matIDWall != 0:
-            materialWall = matMan.materials[matIDWall]
+            materialWall = self._DwiDeckMaterial(matIDWall, "MaterialIDWall")
         else:
             materialWall = matMan.CreateRigidMaterial("WallMaterial", rhoWall, EWall, nuWall)
         wallElemMan : ElementManager = ElementManager(nodeMan)
         wallPart = KooPart(nodeMan, wallElemMan, materialWall, sectionWall, nodeSetMan)
+        if materialWall is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+            wallPart.SetMaterialID(matIDWall)
         self.dynaImporter.partManager.CreatePartfromKooPart(wallPart)
         
         
@@ -4651,8 +4712,13 @@ class KooDynaAdvancedModification:
             
         _unit, _fb = self._DwiFallbacks("DropWeightImpactTest", option)
         # 앞부분 재질을 주지 않으면 충격체 본체 재질을 물려받는다(Mid 와 같은 규칙). 그것도 없으면 단위계 폴백
-        _fb["YoungsModulusImpactorFront"] = option.get("YoungsModulusImpactor", _fb["YoungsModulusImpactorFront"])
-        _fb["DensityImpactorFront"] = option.get("DensityImpactor", _fb["DensityImpactorFront"])
+        # MaterialIDImpactor 로 덱 재질을 쓰면 그 재질의 E·ρ·ν 를 물려받는다 — 예전엔 단위계 표 값이 됐다(남은 결함 820)
+        _inh = self._DwiReusedMaterial(matIDImpactor)
+        _fb["YoungsModulusImpactorFront"] = option.get("YoungsModulusImpactor", _inh.get("E", _fb["YoungsModulusImpactorFront"]))
+        _fb["DensityImpactorFront"] = option.get("DensityImpactor", _inh.get("rho", _fb["DensityImpactorFront"]))
+        if _inh:
+            _fb["YoungsModulusImpactor"] = option.get("YoungsModulusImpactor", _inh["E"])
+            _fb["DensityImpactor"] = option.get("DensityImpactor", _inh["rho"])
         self._warn_dwi_fallback(option, [(k, _fb[k]) for k in ('YoungsModulusImpactorFront', 'DensityImpactorFront', 'YoungsModulusDamper', 'DensityDamper', 'YoungsModulusWall', 'DensityWall', 'YoungsModulusImpactor', 'DensityImpactor')], "DropWeightImpactTest", _unit)
         
         if "YoungsModulusImpactorFront" in option:
@@ -4663,7 +4729,7 @@ class KooDynaAdvancedModification:
         if "PoissonRatioImpactorFront" in option:
             nuImpactorFront = option["PoissonRatioImpactorFront"]
         else:
-            nuImpactorFront = option.get("PoissonRatioImpactor", 0.3)
+            nuImpactorFront = option.get("PoissonRatioImpactor", _inh.get("nu", 0.3))
 
         if "DensityImpactorFront" in option:
             rhoImpactorFront = option["DensityImpactorFront"]
@@ -4673,7 +4739,7 @@ class KooDynaAdvancedModification:
         # 3단 실린더 중간단(mid) 재질 — MaterialIDImpactorMid/E/nu/Density (없으면 Impactor 본체 값 상속)
         matIDImpactorMid = option.get("MaterialIDImpactorMid", 0)
         EImpactorMid = option.get("YoungsModulusImpactorMid", option.get("YoungsModulusImpactor", _fb["YoungsModulusImpactor"]))
-        nuImpactorMid = option.get("PoissonRatioImpactorMid", option.get("PoissonRatioImpactor", 0.3))
+        nuImpactorMid = option.get("PoissonRatioImpactorMid", option.get("PoissonRatioImpactor", _inh.get("nu", 0.3)))
         rhoImpactorMid = option.get("DensityImpactorMid", option.get("DensityImpactor", _fb["DensityImpactor"]))
 
 
@@ -4836,27 +4902,31 @@ class KooDynaAdvancedModification:
         impactFrontPart = None   # 구 임팩터는 앞 단이 없다 — 다음 단계 DTI 가 지울 DWI 접촉을 고를 때 쓴다(v131 리뷰 R7)
         if impactorType.lower() == "cylinder":
             if matIDImpactorFront != 0:
-                materialImpactorFront = matMan.materials[matIDImpactorFront]
+                materialImpactorFront = self._DwiDeckMaterial(matIDImpactorFront, "MaterialIDImpactorFront")
             else:
                 materialImpactorFront = matMan.CreateElasticMaterial("ImpactorFrontMaterial", rhoImpactorFront, EImpactorFront, nuImpactorFront)
             sectionImpactorFront : KooSectionSolid = secMan.CreateSolidSection("ImpactorFrontSection", 1)
             impactFrontElemMan : ElementManager = ElementManager(nodeMan)
             impactFrontPart = KooPart(nodeMan, impactFrontElemMan, materialImpactorFront, sectionImpactorFront, nodeSetMan)
+            if materialImpactorFront is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+                impactFrontPart.SetMaterialID(matIDImpactorFront)
             self.dynaImporter.partManager.CreatePartfromKooPart(impactFrontPart)
             # 3단 중간단 part (mid 활성 시)
             if use_mid_cyl:
                 if matIDImpactorMid != 0:
-                    materialImpactorMid = matMan.materials[matIDImpactorMid]
+                    materialImpactorMid = self._DwiDeckMaterial(matIDImpactorMid, "MaterialIDImpactorMid")
                 else:
                     materialImpactorMid = matMan.CreateElasticMaterial("ImpactorMidMaterial", rhoImpactorMid, EImpactorMid, nuImpactorMid)
                 sectionImpactorMid : KooSectionSolid = secMan.CreateSolidSection("ImpactorMidSection", 1)
                 impactMidElemMan : ElementManager = ElementManager(nodeMan)
                 impactMidPart = KooPart(nodeMan, impactMidElemMan, materialImpactorMid, sectionImpactorMid, nodeSetMan)
+                if materialImpactorMid is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+                    impactMidPart.SetMaterialID(matIDImpactorMid)
                 self.dynaImporter.partManager.CreatePartfromKooPart(impactMidPart)
         ########################################
 
         if matIDDamp != 0:
-            materialBeam = matMan.materials[matIDDamp]
+            materialBeam = self._DwiDeckMaterial(matIDDamp, "MaterialIDDamper")
         else:
             materialBeam = matMan.CreateElasticMaterial("DamperMaterial", rhoDamp, EDamp, nuDamp)                
         sectionBeam : KooSectionBeam = secMan.CreateBeamSection("DamperSetion")
@@ -4865,26 +4935,32 @@ class KooDynaAdvancedModification:
         zMin = boundaryBox[2]                       
         beamElemMan : ElementManager = ElementManager(nodeMan)                                       
         beamPart = KooPart(nodeMan,beamElemMan,materialBeam,sectionBeam,nodeSetMan) 
+        if materialBeam is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+            beamPart.SetMaterialID(matIDDamp)
         
         self.dynaImporter.partManager.CreatePartfromKooPart(beamPart)
         ########################################
         
         if matIDImpactor != 0:
-            materialImpactor = matMan.materials[matIDImpactor]
+            materialImpactor = self._DwiDeckMaterial(matIDImpactor, "MaterialIDImpactor")
         else:
             materialImpactor = matMan.CreateElasticMaterial("ImpactorMaterial", rhoImpactor, EImpactor, nuImpactor)            
         sectionImpactor : KooSectionSolid = secMan.CreateSolidSection("ImpactorSection", 1)
         impactElemMan : ElementManager = ElementManager(nodeMan)
         impactorPart = KooPart(nodeMan, impactElemMan, materialImpactor, sectionImpactor, nodeSetMan)
+        if materialImpactor is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+            impactorPart.SetMaterialID(matIDImpactor)
         self.dynaImporter.partManager.CreatePartfromKooPart(impactorPart)                        
         
         sectionWall = secMan.CreateSolidSection("WallSection", 1)
         if matIDWall != 0:
-            materialWall = matMan.materials[matIDWall]
+            materialWall = self._DwiDeckMaterial(matIDWall, "MaterialIDWall")
         else:
             materialWall = matMan.CreateRigidMaterial("WallMaterial", rhoWall, EWall, nuWall)
         wallElemMan : ElementManager = ElementManager(nodeMan)
         wallPart = KooPart(nodeMan, wallElemMan, materialWall, sectionWall, nodeSetMan)
+        if materialWall is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+            wallPart.SetMaterialID(matIDWall)
         self.dynaImporter.partManager.CreatePartfromKooPart(wallPart)
         
         
@@ -5734,7 +5810,7 @@ class KooDynaAdvancedModification:
             rhoWall = 1.0e-9
             
         if matIDWall != 0:
-            materialWall = self.dynaImporter.matManager.materials[matIDWall]
+            materialWall = self._DwiDeckMaterial(matIDWall, "MaterialIDWall")
         else:
             materialWall = self.dynaImporter.matManager.CreateRigidMaterial("WallMaterial", rhoWall, EWall, nuWall)
         
@@ -5742,6 +5818,8 @@ class KooDynaAdvancedModification:
         wallElemMan : ElementManager = ElementManager(self.dynaImporter.nodeManager)
 
         wallPart = KooPart(self.dynaImporter.nodeManager, wallElemMan, materialWall, sectionWall, self.dynaImporter.nodeSetManager)
+        if materialWall is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+            wallPart.SetMaterialID(matIDWall)
         self.dynaImporter.partManager.CreatePartfromKooPart(wallPart)
         
         return wallPart, materialWall, sectionWall, wallElemMan
@@ -5765,13 +5843,15 @@ class KooDynaAdvancedModification:
             rhoImpactor = 7.800E-9
         
         if matIDImpactor != 0:
-            materialImpactor = self.dynaImporter.matManager.materials[matIDImpactor]
+            materialImpactor = self._DwiDeckMaterial(matIDImpactor, "MaterialIDImpactor")
         else:
             materialImpactor = self.dynaImporter.matManager.CreateElasticMaterial("ImpactorMaterial", rhoImpactor, EImpactor, nuImpactor)
         sectionImpactor : KooSectionSolid = self.dynaImporter.sectionManager.CreateSolidSection("ImpactorSection", 1)
         impactElemMan : ElementManager = ElementManager(self.dynaImporter.nodeManager)
 
         impactorPart = KooPart(self.dynaImporter.nodeManager, impactElemMan, materialImpactor, sectionImpactor, self.dynaImporter.nodeSetManager)
+        if materialImpactor is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+            impactorPart.SetMaterialID(matIDImpactor)
         self.dynaImporter.partManager.CreatePartfromKooPart(impactorPart)
         
         return impactorPart, materialImpactor, sectionImpactor, impactElemMan
@@ -5812,12 +5892,12 @@ class KooDynaAdvancedModification:
             rhoImpactorFront = 7.800E-9
         
         if matIDImpactor != 0:
-            materialImpactor = self.dynaImporter.matManager.materials[matIDImpactor]
+            materialImpactor = self._DwiDeckMaterial(matIDImpactor, "MaterialIDImpactor")
         else:
             materialImpactor = self.dynaImporter.matManager.CreateElasticMaterial("ImpactorMaterial", rhoImpactor, EImpactor, nuImpactor)
 
         if matIDImpactorFront != 0:
-            materialImpactorFront = self.dynaImporter.matManager.materials[matIDImpactorFront]
+            materialImpactorFront = self._DwiDeckMaterial(matIDImpactorFront, "MaterialIDImpactorFront")
         else:
             materialImpactorFront = self.dynaImporter.matManager.CreateElasticMaterial("ImpactorMaterialFront", rhoImpactorFront, EImpactorFront, nuImpactorFront)
 
@@ -5826,11 +5906,15 @@ class KooDynaAdvancedModification:
         impactElemMan : ElementManager = ElementManager(self.dynaImporter.nodeManager)
 
         impactorPart = KooPart(self.dynaImporter.nodeManager, impactElemMan, materialImpactor, sectionImpactor, self.dynaImporter.nodeSetManager)
+        if materialImpactor is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+            impactorPart.SetMaterialID(matIDImpactor)
         self.dynaImporter.partManager.CreatePartfromKooPart(impactorPart)
     
         sectionImpactorFront : KooSectionSolid = self.dynaImporter.sectionManager.CreateSolidSection("ImpactorFrontSection", 1)
         impactFrontElemMan : ElementManager = ElementManager(self.dynaImporter.nodeManager)
         impactorPartFront = KooPart(self.dynaImporter.nodeManager, impactFrontElemMan, materialImpactorFront, sectionImpactorFront, self.dynaImporter.nodeSetManager)
+        if materialImpactorFront is None:   # 원문 덱 재질 — 파트는 번호만 든다(덱 파트와 같다)
+            impactorPartFront.SetMaterialID(matIDImpactorFront)
         self.dynaImporter.partManager.CreatePartfromKooPart(impactorPartFront)
         return impactorPart, materialImpactor, sectionImpactor, impactElemMan, impactorPartFront, materialImpactorFront, sectionImpactorFront, impactFrontElemMan
 
