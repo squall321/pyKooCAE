@@ -38,6 +38,34 @@
 17. **U6** B1 빔 빈 줄은 다른 요소 리더처럼 알리고 건너뛴다. B2 단면은 GenerateDynaKeyword 글로 쓰고, 해석한 재료도 그때 글을 만든다(파트 덱에 재료가 빠지던 것 — 새로 찾음). B3 속도 키는 다른 충격 모드처럼 0. B4 있는데 못 읽는 인클루드는 rc 1(환경 문제). A15 없는 인클루드는 rc 0 + 🔴, 주 출력·MERGE_K 출력에 덱에 쓴 글 그대로의 *INCLUDE 줄(파일 이름만 바꾸지 않는다 — 복사할 파일이 없다), 다른 모드 출력(낙하 덱 등)에는 없다(통과 인클루드와 같은 길). B5 3단 원통 byPart 는 원래 미지원(NotImplementedError 문구) — 남은 한계. B6 *NumberofElements 를 안 쓰면 원래 뜻대로 100(파서가 0 을 넣어 죽었다), 구속 줄 없으면 구속 없이, 표본·통계 둘 다 없거나 요소 수 1·없는 구속 파트·뽑을 수 없는 통계는 🔴 rc 1(모델을 바꾸기 전에 확인).
 18. **U9 KCR** C1 칸 수를 DOE 수로 줄인다(표 켬과 같다). C2 jobs.json 의 sequential_slot 이 있는 DOE 는 칸 스크립트로 다시 내지 않는다 — DOE 하나짜리 스크립트(순차 제출도 만든다)가 있으면 그것으로, 없으면 `rerun --sequential` 알림. C3 겹친 --does 는 한 번. C4 jobs.json 없으면 기본 스크립트로 내고 새로 쓴다. sbatch 실패: submit(기본·--sequential)·rerun(기본·--sequential) 모두 덜 냈으면 끝에 🔴 + 종료 코드 1(낸 잡은 그대로, 첫 잡 실패는 예전처럼 바로 멈춤). batch_koomeshmodifier 갈래는 그대로(자기 집계가 있다).
 
+19. **A9** 재질 기록기의 실수 칸 108곳(>10.3e 91곳·합친 format 문자열 17곳, {:10.3f} 는 MAT_RIGID N·COUPLE·M·ALIAS)을 단면 기록기와 같은 규칙으로 바꿨다 — '>10.3e' 가 값을 그대로 담으면 그 글(바이트 동일), 아니면 _real10. 괄호를 세는 변환기로 바꾸고(사람 손 108곳 아님) 남은 10.3e·10.3f 가 0 인지 확인했다. 재질 클래스의 `__main__` 갈래에도 _real10 import.
+20. **A10** Fast DOE 의 base_state 에 contactManager.maxid·initialManager.maxid 를 넣고 _RestoreBaseState 가 되돌린다 — 각도마다 바닥 접촉 CID 가 같다(단일 실행과 같은 번호).
+21. **A11** MAT_RIGID 판정 = 파트 재질 객체가 KooMaterialRigid. R→D 목록에서 늘 빼고, D→R 목록에는 D2RLrb 로 대표 강체에 합칠 때(그 파트가 대표가 아닐 때)만 남긴다. 덱에 MAT_RIGID 파트가 없으면 예전과 같다. 알림 한 줄.
+22. **A12** 침식 원문 칸 비교에서 꼬리 카드(카드 6~)는 빈 칸 ≡ 0, 끝의 0 은 뗀다(0 만 적은 카드 = 빈 카드). 가운데 빈 카드는 자리라 남긴다. 카드 3 의 0 도 기본값(R16 Getting Started "if zero is specified, the field is left blank, or the card is not defined"). 다른 값·다른 자리는 여전히 rc 3.
+23. **A13** 가져온 덱에서 SSTYP·MSTYP 7(가지, *SET_PART_TREE)인 접촉은 옮기지 않고 🔴 카드 소실(rc 3) — 가지 번호는 밀 수 없고 *SET_PART_TREE 도 옮기지 않는다.
+24. **A14** TRANSFORM 은 절점·*DEFINE_COORDINATE_SYSTEM 점만 옮긴다 — 덱에 *DEFINE_BOX·*DEFINE_VECTOR·*DEFINE_COORDINATE_VECTOR·*DEFINE_SD_ORIENTATION·*RIGIDWALL_*·*INITIAL_VELOCITY_GENERATION·*DATABASE_CROSS_SECTION_PLANE·*PART_INERTIA·*CONSTRAINED_NODAL_RIGID_BODY_(SPC_)INERTIA 가 있으면 ⚠️ 한 줄(rc 0). 옮기지는 않았다(값싸고 확실한 일부만 옮기는 안은 접었다 — 반만 옮기면 더 헷갈린다).
+25. **B7** _pm_card_groups 가 카드 3 이 오는 조건이면 다음 줄을 묶음에 넣고, 카드 1 줄 목록(_PMRow)에 card3 원문을 붙여 관리자 → 객체(card3·card3s) → 기록기(카드 1 바로 뒤) 로 옮긴다. 카드 3 이 와야 하는데 줄이 없으면 🔴 rc 1. ~~NODE1·NODE2 는 원문 그대로라 … IMPORT_MERGE_K 가져온 덱 — 처방 운동은 원래 옮기지 않는다~~ — 틀렸다: `_merge_boundaries` 는 처방 운동도 옮긴다(적대 리뷰 F2). 카드 3 은 칸으로 읽게 바꿨다(결정 34).
+
+26. **(라) 하이픈 키워드 이름**(새로 찾음 🔴) — 리더가 키워드 이름을 [A-Za-z0-9_] 에서 끊어 *MAT_MOONEY-RIVLIN_RUBBER(_TITLE)·*ALE_MULTI-MATERIAL_GROUP·*MAT_3-PARAMETER_BARLAT(_TITLE)·*SET_MULTI-MATERIAL_GROUP_LIST 가 *MAT_MOONEY·*ALE_MULTI·*MAT_3·*SET_MULTI 로 잘린 채 원문으로 나갔다(rc 0, LS-DYNA 가 모르는 키워드 — 실제 덱 145개, 무니 TITLE 119개). 이름 규칙을 하이픈으로 이은 묶음까지로(끝의 '-' 표준 형식 표시는 이름 아님). 무니-리블린 해석 길은 리더 클래스·가져오기 이름이 서로 어긋나(밑줄·하이픈, TITLE 오타) 원래 죽어 있었다 — 이름을 고쳐도 해석되지 않고 원문 그대로(이름 온전) 지나간다. 해석을 살리는 일은 하지 않았다(한 번도 돈 적 없는 기록기).
+27. **(라) gmsh 없음** — KooMeshManagerGMSH·KooPart 의 sys.exit() 13곳이 rc 0 으로 끝나 메시 생성 모드가 아무것도 안 만들고 '성공' 이었다 → 🔴 + 종료 코드 1.
+28. **(라) 820** DWI(DampingSpring·OutsideRigid*) 에서 MaterialIDImpactor 로 덱 재질을 쓰면 앞·가운데 단의 빈 재질 키(E·ρ·ν)가 그 재질 값을 물려받는다 — E·ρ 가 둘 다 양수일 때만(값을 해석하지 않는 재질은 0.0 을 돌려준다, 리뷰 F3)(예전엔 단위계 표 값). 키를 주면 그 값.
+29. **(라) 834** 절점이 모두 지워진 절점 셋을 지울 때(RemoveNodesExceptNodes — SolidwithSlack 등) ⚠️ 알림. 셋을 남기지는 않는다(빈 셋 카드를 LS-DYNA 가 받는지 확인 못 함).
+30. **(라) 43 ⑤** DROP_ATTITUDE 는 원문 *PART_INERTIA·*CONSTRAINED_NODAL_RIGID_BODY(_SPC)_INERTIA 의 무게중심·관성 텐서·초기 속도를 원점 이동·자세 회전에 맞춰 옮기지 않는다 → ⚠️ 알림만. 옮기기(각도마다 원문 블록 바꿔 쓰기 — Fast DOE 캐시 판 포함, 텐서 R·I·Rᵀ)는 다음 판 — LS-DYNA 로 확인할 수 없어 이번에 넣지 않았다. → 전제(모델을 자세마다 돌린다)가 틀렸다 — 결정 40 에서 무게중심 이동으로 고쳤다.
+31. **(라) 43 ⑥** VIBRATION_LOAD 의 부피·질량이 TETRA10·HEXA20 에서 None → 그 요소를 건너뛰어 0 이었고, 겹친 절점 사면체(hex 8칸)는 0 이었다 → 꼭짓점(앞 4·앞 8, 겹치지 않은 꼭짓점)으로 잰다. 요소별 두께·질량 요소는 여전히 빼고 잰다(남은 한계).
+32. **(라) 고치지 않은 것** — IGA 자동 보존의 '*PARAMETER_LOCAL' 대문자 비교: 대소문자를 가리지 않게 바꾸면 소문자 *parameter_local 인클루드도 passthrough 로 가 본 파일 셸 소실(rc 3, 874)을 새로 겪는다 — 그대로 두고 보고.
+
+33. **마무리 접붙이기 감사**(실제 덱 3450개 → 키워드 34종 블록 모양별 대표, gen_final 로 TRANSFORM 0 왕복, graft_report_final.txt) — 도구가 센 「문제」 9개 모양(블록 23개)은 모두 실제 손실이 아니다. ① 값이 0 뿐인 끝 카드·끝 칸을 쓰지 않은 것(결정 7·22 의 설계: D3PLOT 카드 2 「0」·「0 0.0 0.0 0.0 0 0」, EXTENT_BINARY 카드 3·4 의 0, CONTROL_SOLID 카드 3 끝 0) ② 도구 한계 — CONTROL_SOLID 카드 2(PM1~10)는 8칸 폭이라 10칸으로 자르면 「0       0」 이 칸 소실로 보인다(값은 모두 0 → 카드 3 앞 빈 카드 2) ③ 줄마다 빈 줄이 끼어 있는 예제 파일(importantKeyword.k) — 빈 줄은 LS-DYNA 처럼 카드로 읽어 줄 번호가 어긋난다. DAMPING_GLOBAL 은 첫 빈 줄이 카드 1(VALDMP 0)이라 「0 50.0」 줄은 LS-DYNA 도 카드로 읽지 않는다. 옛 보고(graft_report.txt)의 INTFOR 값 바뀜·CONTACT·SOLID·SHELL·EXTENT_BINARY 카드 소실은 모두 사라졌다.
+
+### 적대 리뷰 반영(2026-11-22, review/adversarial_review.md F1~F7)
+34. **F1·F2 처방 운동 카드 3** — 카드 3 은 카드 1 바로 다음 줄이다(빈 줄도 카드 3 — 모든 칸 기본값 0). ID·카드 1 을 찾을 때만 빈 줄을 건너뛴다. 카드 3 은 `_PMCard3` 로 칸을 읽는다 — LRB 는 `_PartRef`(IMPORT_MERGE_K 가 TYPEID 처럼 민다), NODE1·NODE2 는 절점 객체(번호를 바꾸는 모드를 따라간다), OFFSET1·OFFSET2(DOF 9: y·z, 10: z·x, 11: x·y)는 TRANSFORM 평행 이동·배율과 DROP 원점 맞춤 이동을 따라간다. 바뀐 것이 없으면 덱 글 그대로. 회전·거울·벡터 회전(TRANSFORM)은 축이 전역 축에 평행해야 해 옮길 수 없다 → 🔴 rc 3. 파트만 옮기는 모드(PART_TRANSLATE·TRANSLATION_DOE·PART_LOCATION_DOE)는 옮기는 파트에 걸린 조건이 있으면 🔴 rc 3(DOE 는 절점 밖 글을 한 번 만들어 다시 쓴다).
+35. **F3 확장** — 충격 장치의 덱 재질 재사용 13곳(DWI·PartialRigid·CreateWallPart·Sphere·Cylinder: Impactor·Front·Mid·Damper·Wall)이 `materials[ID]` 로 바로 찾아, KMM 이 해석하지 않는 재질(*MAT_001 같은 번호 꼴 등)이나 덱에 없는 번호면 KeyError 로 죽었다. 해석한 재질이면 그 객체, 원문 재질이면 파트에 번호만(덱 파트와 같다), 없는 번호면 🔴 rc 1.
+36. **F4·F5 나누기** — *LOAD_SEGMENT_SET_ID 는 (ID 카드 + 카드 i) 개체들로 나눈다(쓰는 ID 는 같다 — 덱 ID 겹침은 U3 규칙대로 덮지 않는다). 고정 크기 개체는 첫 줄만 비지 않으면 되고 그 뒤 카드는 빈 줄도 카드다(*MAT_RIGID 카드 2·3 등). 마지막 개체의 빈 카드는 끝 빈 줄을 떼기 전 줄로 센다.
+37. **F6** CPINLSDNR 이름은 대소문자를 가리지 않고, 여럿이면 마지막 것(R16 Remark 2) — 중복 규칙(DFLAG)을 타지 않는다. 앞쪽 카드는 그때의 구분자로 치환된다(KMM 은 읽는 차례로 치환한다).
+38. **F7** 읽지 못한 인클루드가 있으면 강체 질량특성(RIGID_DROP_ENDTIME·RigidAngularVelocity 회전 중심)은 🔴 MISSING_INCLUDE 로 멈춘다 — 예전엔 「질량 영향 없음」으로 알렸다.
+39. **A8 알림** — 식 값을 R16 규칙(정수끼리 나눗셈 버림, 단항 −가 ** 보다 먼저)으로 센 값이 모두 실수로 센 값과 다르면 ⚠️ 한 줄. 값은 R16 그대로 쓴다.
+40. **43⑤ 다시** — DROP_ATTITUDE 는 모델을 돌리지 않는다(바닥판 법선·속도 벡터를 돌린다). 그래서 원문 *_INERTIA 는 무게중심(XC·YC·ZC, NODEID 0 일 때)만 원점 맞춤 이동을 따라가면 된다 → 옮긴다(원문 줄의 칸만 고쳐 쓴다, KooRigidBodyProperties 는 여전히 읽기만). 관성 텐서는 그대로 맞다. 결정 30 의 「자세 회전·텐서 R·I·Rᵀ」 는 틀린 전제였다. 초기 속도 칸(VTX…VRZ)은 낙하 속도로 바꾸지 않는다 — KMM 의 *INITIAL_VELOCITY 는 IRIGID 0 이고, 0 일 때 관성 카드 속도를 덮는지는 문서마다 다르다(Ansys 사용자 안내서 「덮거나 자동 설정」, Altair 도움말 「덮지 않음」). LS-DYNA 로 확인할 수 없어 ⚠️ 알림만.
+41. **ELASTIC_TO_RIGID** — 원문 재질 파트가 하나라도 있으면 제외 여부와 상관없이 AttributeError 로 죽었고(UpdateMaterial), 밀도·영률을 읽지 못한 재질(일반 KooMaterial 등)은 RO 0 강체가 됐다. 제외하지 않은 그런 파트가 있으면 🔴 rc 1(PIDExcept 에 넣으라고 알린다), 제외 파트는 그대로 둔다.
+
 ## 기록이 낡은 것(다시 고치지 않는다)
 *MAT_RIGID 카드 2 빈 줄, NUL 채움, 자기 자신 인클루드, *ELEMENT_SOLID 끝 빈 줄, 데이터 없는 키워드, PART_EXCHANGE TSHELL 단면, 셸 요소 두께 소실, IMPORT_MERGE_K PART.secid, BPM DEATH·BIRTH 표기, 요소 소실 rc 0(이미 rc 3) — 지금 소스에서 재현되지 않는다. 메모리·문서의 「미수정」 표기를 정리한다.
 
