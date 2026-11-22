@@ -16,29 +16,29 @@
 - [x] A5 한 키워드 아래 여러 개체 — 평범한 꼴 나누기, _ID·_TITLE·나머지는 🔴 rc 3, NODAL_FORCE_GROUP 매니저(새로 찾음). tests/test_remaining_multi_entity.py(옛 31건 실패)
 - [x] A6 *RIGIDWALL_PLANAR 두 벽·3줄 오독
 - [x] A7 *LOAD_SEGMENT(_ID)·_SET(_ID) + 하중 ID 겹침 덮어쓰기(새로 찾음). tests/test_remaining_load_segment.py(옛 4건 실패)
-- [ ] A8 *PARAMETER_EXPRESSION 의미
+- [x] A8 *PARAMETER_EXPRESSION 의미 — 정수·실수, R16 함수, 단항 마이너스, 이어지는 줄, -&·^ 치환. tests/test_remaining_parameter.py(옛 18건 실패), 실제 덱 26개 중 값 바뀜 5개 = 예전 평가 실패(aint)
 - [ ] A9 재질 기록기 유효숫자
 - [ ] A10 Fast DROP 접촉 번호 누적
 - [ ] A11 D2R·R2D 목록의 MAT_RIGID 파트
 - [ ] A12 IMPORT_MERGE_K 침식 빈 칸 대 0
 - [ ] A13 IMPORT_MERGE_K SSTYP 7 가지 접촉
 - [ ] A14 TRANSFORM 좌표 카드 알림
-- [ ] A15 없는 인클루드
+- [x] A15 없는 인클루드 — 🔴 + 주 출력·MERGE_K 에 *INCLUDE 줄 원문(rc 0)
 
 ## 나. 올바른 입력에서 죽음
-- [ ] B1 *ELEMENT_BEAM 끝 빈 줄
-- [ ] B2 PART_VALIDATION_SPLIT
-- [ ] B3 DROP_ATTITUDE 속도 키
-- [ ] B4 읽기 권한 없는 인클루드
-- [ ] B5 파트 지정 DWI 원통 충격체
-- [ ] B6 ConvertSolidtoSolidwithSlack
+- [x] B1 *ELEMENT_BEAM 끝 빈 줄
+- [x] B2 PART_VALIDATION_SPLIT + 파트 덱에 파트 재료가 빠지던 것(새로 찾음)
+- [x] B3 DROP_ATTITUDE 속도 키(없으면 0)
+- [x] B4 읽기 권한 없는 인클루드(🔴 + rc 1)
+- [x] B5 파트 지정 DWI 원통 충격체(2단·4값. 3단은 원래 미지원 — 원인 문구)
+- [x] B6 ConvertSolidtoSolidwithSlack — 표본 수·빠진 줄. tests/test_remaining_crashes.py(옛 13건 실패)
 - [ ] B7 처방 운동 카드 3
 
 ## 다. KooChainRun
-- [ ] C1 `--sequential --nodes` > DOE 수
-- [ ] C2 `--sequential` 뒤 rerun 중복 제출
-- [ ] C3 `rerun --does` 중복
-- [ ] C4 jobs.json 없는 rerun
+- [x] C1 `--sequential --nodes` > DOE 수
+- [x] C2 `--sequential` 뒤 rerun 중복 제출
+- [x] C3 `rerun --does` 중복
+- [x] C4 jobs.json 없는 rerun + sbatch 실패 종료 코드 1(조사 「확인 필요」 줄). tests/test_remaining_kcr.py(옛 6건 실패) — 7b3f5cc
 
 ## 라. 탐침 뒤 정하는 것
 - [ ] 남은 탐침·코드 확인 → 표에 올리거나 분류해 context-notes 에 적기

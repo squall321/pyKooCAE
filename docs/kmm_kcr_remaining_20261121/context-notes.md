@@ -34,6 +34,10 @@
 14. **말뭉치 25개(U1+U2)** — 바뀐 줄 전부 설명: KMM 이 쓴 DROP 덱의 INTFOR DT·NPLTC·IOOPT 복구(00·01·11·13·15·17), D3THDT DT 99999 자릿수(02~07), CONTACT 카드 4 복구(10·12·14·16, KMM 이 쓴 4장짜리), 6~7장짜리 빈 PTSCL 1.0(12·14·16), SOLID 빈 카드 2 + 카드 3 TET13V(10·12·14·16), 옛 LS-DYNA 꼴 SHELL 카드 2 의 6·7칸(NFAIL1·NFAIL4 자리) 되살림(12·14·16), EXTENT_BINARY 카드 3(12~24). rc 바뀜 0, 나누기 영향 0.
 15. KooDynaControl·KooDynaDatabase·KooLoad·KooMaterial 등 KooCAEManager 의 많은 파일이 CRLF 다 — 고칠 때 바이트로 바꾼다(text 모드로 열면 LF 로 바뀐다).
 
+16. **A8** R16 Remark 2·3 그대로 — 정수 리터럴·I 파라미터는 정수로 세고(2/5 = 0, 정수 나눗셈은 0 쪽으로 버림), 실수와 섞이면 실수. I 결과는 예전처럼 NINT(덱 규약). sign·atan2·min·max·mod 는 두 인수, mod 는 정수(실수는 NINT)·부호는 첫 인수(Fortran MOD). 단항 ±가 ** 보다 먼저(괄호 없이 붙은 '-a**b' 만 (-a)**b, '-(3**2)' 는 그대로). 정수 거듭제곱은 63비트를 넘으면 평가 실패(멈춤 없음), 음수 지수는 Fortran 정수 결과. 유한하지 않은 값은 평가 실패. 이어지는 줄(앞 10칸 공백)은 다음 식 줄·키워드·파일 끝에서 정의한다. '-&이름' 은 수 값일 때만 부호를 바꾼다(고정폭·쉼표 데이터 줄, 주석·키워드 줄은 아님). '&이름^' 은 길이를 바꾸는 치환(값 + '_' 또는 CPINLSDNR). 그대로 둔 것(시끄럽게 실패): Fortran d 지수·0 으로 시작하는 정수가 든 식, 쉼표 줄 안의 <식>.
+17. **U6** B1 빔 빈 줄은 다른 요소 리더처럼 알리고 건너뛴다. B2 단면은 GenerateDynaKeyword 글로 쓰고, 해석한 재료도 그때 글을 만든다(파트 덱에 재료가 빠지던 것 — 새로 찾음). B3 속도 키는 다른 충격 모드처럼 0. B4 있는데 못 읽는 인클루드는 rc 1(환경 문제). A15 없는 인클루드는 rc 0 + 🔴, 주 출력·MERGE_K 출력에 덱에 쓴 글 그대로의 *INCLUDE 줄(파일 이름만 바꾸지 않는다 — 복사할 파일이 없다), 다른 모드 출력(낙하 덱 등)에는 없다(통과 인클루드와 같은 길). B5 3단 원통 byPart 는 원래 미지원(NotImplementedError 문구) — 남은 한계. B6 *NumberofElements 를 안 쓰면 원래 뜻대로 100(파서가 0 을 넣어 죽었다), 구속 줄 없으면 구속 없이, 표본·통계 둘 다 없거나 요소 수 1·없는 구속 파트·뽑을 수 없는 통계는 🔴 rc 1(모델을 바꾸기 전에 확인).
+18. **U9 KCR** C1 칸 수를 DOE 수로 줄인다(표 켬과 같다). C2 jobs.json 의 sequential_slot 이 있는 DOE 는 칸 스크립트로 다시 내지 않는다 — DOE 하나짜리 스크립트(순차 제출도 만든다)가 있으면 그것으로, 없으면 `rerun --sequential` 알림. C3 겹친 --does 는 한 번. C4 jobs.json 없으면 기본 스크립트로 내고 새로 쓴다. sbatch 실패: submit(기본·--sequential)·rerun(기본·--sequential) 모두 덜 냈으면 끝에 🔴 + 종료 코드 1(낸 잡은 그대로, 첫 잡 실패는 예전처럼 바로 멈춤). batch_koomeshmodifier 갈래는 그대로(자기 집계가 있다).
+
 ## 기록이 낡은 것(다시 고치지 않는다)
 *MAT_RIGID 카드 2 빈 줄, NUL 채움, 자기 자신 인클루드, *ELEMENT_SOLID 끝 빈 줄, 데이터 없는 키워드, PART_EXCHANGE TSHELL 단면, 셸 요소 두께 소실, IMPORT_MERGE_K PART.secid, BPM DEATH·BIRTH 표기, 요소 소실 rc 0(이미 rc 3) — 지금 소스에서 재현되지 않는다. 메모리·문서의 「미수정」 표기를 정리한다.
 
