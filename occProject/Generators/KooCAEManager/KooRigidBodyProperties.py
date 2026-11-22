@@ -421,6 +421,9 @@ def _passthrough_includes(imp):
     질량 키워드 = 질량이 있는 *ELEMENT_*·*IGA_*·*PART_…INERTIA…·*CONSTRAINED_NODAL_RIGID_BODY_…INERTIA…"""
     out = []
     for entry in getattr(imp.dynaManager, "_include_passthrough_data", None) or []:
+        if entry.get("missing"):   # 읽지 못한 파일 — 내용을 모른다(None). 요소 0 으로 보면 「질량 영향 없음」이 된다(적대 리뷰 F7)
+            out.append((str(entry.get("file", "?")), None))
+            continue
         kws = {}
         for line in str(entry.get("content", "")).splitlines():
             m = re.match(r"\*([A-Za-z0-9_]+)", line)
@@ -683,6 +686,10 @@ def compute_rigid_body(dyna_importer, exclude_pids=(), units=None, log=print):
         raise ValueError(f"{_TAG} unknown units '{units}' — {', '.join(UNIT_SYSTEMS)} 가운데 하나")
     dk = _Deck(imp)
     hidden = _passthrough_includes(imp)
+    lost = [f for f, kws in hidden if kws is None]
+    if lost:   # 그 파일의 요소 질량·관성이 빠진 채로 표를 만들면 각도별 종료 시간·회전 중심이 조용히 틀린다(적대 리뷰 F7)
+        raise ValueError(f"{_TAG} MISSING_INCLUDE: 읽지 못한 *INCLUDE {lost} — 그 파일의 요소 질량·관성을 알 수 없다. 파일을 "
+                         f"덱 옆에 두거나 경로를 고칠 것 (missing include)")
     carry = [(f, kws) for f, kws in hidden if kws]
     if carry:   # 그 요소의 질량·형상이 빠진 채로 표를 만들면 각도별 종료 시간이 조용히 틀린다
         raise ValueError(f"{_TAG} PASSTHROUGH_INCLUDE_PARTS: KMM 이 읽지 않고 *INCLUDE 로 남긴 파일에 요소가 있다 — "
