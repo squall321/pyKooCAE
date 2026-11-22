@@ -403,7 +403,12 @@ class JobManager:
             doe_indices: 재제출할 DOE ��덱스 목록
             exclude_nodes: 제외��� 노드 목록 (sbatch --exclude에 전달)
         """
-        jobs_data = self.load_jobs()
+        try:
+            jobs_data = self.load_jobs()
+        except FileNotFoundError as e:   # jobs.json 없이(KooChainRun 으로 내지 않은 덱) — 예전엔 여기서 죽었다. 기본 스크립트로 낸다
+            print(f"  경고: {e} — 기본 경로 slurm_scripts/run_doe_NNN.sh 로 내고 jobs.json 을 새로 쓴다")
+            jobs_data = {"jobs": {}}
+        jobs_data.setdefault("jobs", {})
         runner_config = self.load_runner_config()
         output_dir = runner_config["project"]["output_dir"]
 
@@ -414,12 +419,20 @@ class JobManager:
             job_info = jobs_data.get("jobs", {}).get(doe_key, {})
             script_path = job_info.get("script_path")
 
+            if job_info.get("sequential_slot") is not None:
+                # --sequential 칸 스크립트(run_seq_NNN.sh)는 칸의 DOE 를 모두 돈다 — DOE 마다 다시 내면 같은 칸이 DOE 수만큼 겹쳐
+                # 돌았다. DOE 하나짜리 기본 스크립트가 있을 때만 그것으로 낸다
+                script_path = None
             if not script_path or not os.path.exists(script_path):
                 # slurm script가 없으면 기본 경로 시도
                 script_path = os.path.join(output_dir, "slurm_scripts", f"run_doe_{doe_idx:03d}.sh")
 
             if not os.path.exists(script_path):
-                print(f"  DOE {doe_idx:3d}: slurm script 없음 ({script_path})")
+                if job_info.get("sequential_slot") is not None:
+                    print(f"  DOE {doe_idx:3d}: --sequential 칸 {job_info['sequential_slot']} 으로 낸 DOE 다 — "
+                          f"`KooChainRun rerun --sequential` 로 다시 낼 것(DOE 하나짜리 스크립트 없음)")
+                else:
+                    print(f"  DOE {doe_idx:3d}: slurm script 없음 ({script_path})")
                 continue
 
             # sbatch 재제출 (실패 노드 제외)

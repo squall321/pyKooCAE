@@ -2316,6 +2316,7 @@ def _submit_cumulative(args, config_path):
         json.dump(jobs_data, jf, indent=2, ensure_ascii=False)
 
     submitted_jobs = []
+    expected_jobs = None   # 내야 할 잡 수 — 덜 냈으면 끝에서 🔴 + 종료 코드 1(예전엔 FAILED 줄만 찍고 rc 0)
 
     # ====================================================================
     # DOE sbatch 스크립트 사전 생성 (batch/일반 공통)
@@ -2662,6 +2663,9 @@ exit $EXIT_CODE
             scratch_enabled = False
 
         num_nodes = args.nodes if _sched is None else _sched["knee"]   # v134 — 표가 있으면 상한 안 무릎 칸 수
+        if _sched is None and num_nodes > doe_count:   # 빈 칸이 생겨 doe_list[0] 에서 IndexError 로 죽었다(표 켬은 상한이 DOE 수)
+            print(f"  --nodes {num_nodes} 이 DOE 수 {doe_count} 보다 크다 — 칸을 {doe_count} 개로 줄인다")
+            num_nodes = doe_count
         print("-" * 60)
         print(f"Slurm Job 제출 (sequential mode: {num_nodes} nodes)")
         print("-" * 60)
@@ -2740,6 +2744,7 @@ exit $EXIT_CODE
         print()
 
         # 각 노드 슬롯에 대해 sequential 스크립트 생성 + 제출
+        expected_jobs = sum(1 for v in node_doe_map.values() if v)
         for node_idx in range(num_nodes):
             doe_list = node_doe_map[node_idx]
             if not doe_list:
@@ -2866,6 +2871,7 @@ echo "========================================"
         print("Slurm Job 제출")
         print("-" * 60)
 
+        expected_jobs = len(_doe_order)
         for doe_idx in _doe_order:   # v134 — 표가 있으면 긴 것부터, 없으면 DOE 번호 순서
             if not _sbatch_doe(doe_idx, doe_scripts[doe_idx]):
                 if doe_idx == _doe_order[0]:
@@ -2895,6 +2901,10 @@ echo "========================================"
     print(f"  Rerun failed:    KooChainRun rerun {config_path.parent}")
     print(f"  Diagnose:        KooChainRun diagnose {config_path.parent}")
     print(f"  Collect results: KooChainRun collect {config_path}")
+    if expected_jobs is not None and len(submitted_jobs) < expected_jobs:
+        print(f"🔴 sbatch 제출 실패 — 잡 {expected_jobs}개 가운데 {expected_jobs - len(submitted_jobs)}개를 내지 못했다(위 FAILED 줄). "
+              f"낸 잡은 그대로 돈다 — 원인을 고친 뒤 `KooChainRun rerun {config_path.parent}` 로 나머지를 낼 것 (종료 코드 1)")
+        sys.exit(1)
 
 
 def cmd_run(args):
@@ -3394,6 +3404,10 @@ echo "========================================"
     print(f"\n재제출 완료: {submitted_jobs}개 슬롯 / {len(target_does)} DOEs")
     if exclude_list:
         print(f"제외 노드: {exclude_list}")
+    _want = sum(1 for v in node_doe_map.values() if v)
+    if submitted_jobs < _want:
+        print(f"🔴 재제출 실패 — 칸 {_want}개 가운데 {_want - submitted_jobs}개를 내지 못했다(위 FAILED 줄) (종료 코드 1)")
+        sys.exit(1)
 
 
 def cmd_rerun(args):
@@ -3435,7 +3449,10 @@ def cmd_rerun(args):
 
     # 재실행 대상 결정 (json_corrupted DOE는 제외)
     if args.does:
-        target_does = [int(d.strip()) for d in args.does.split(",")]
+        target_does = [int(d.strip()) for d in args.does.split(",") if d.strip()]
+        if len(set(target_does)) < len(target_does):   # 같은 DOE 를 두 번 주면 두 번 냈다(표 켬은 표 안 DOE 를 한 번)
+            print(f"  --does 의 겹친 DOE 를 한 번만 낸다: {sorted(d for d in set(target_does) if target_does.count(d) > 1)}")
+            target_does = list(dict.fromkeys(target_does))
     else:
         target_does = [
             doe_idx for doe_idx, info in status_map.items()
@@ -3581,6 +3598,9 @@ def cmd_rerun(args):
         print(f"재제출 완료: {len(results)}개")
         if exclude_list:
             print(f"제외 노드: {exclude_list}")
+        if len(results) < len(_order):
+            print(f"🔴 재제출 실패 — DOE {len(_order)}개 가운데 {len(_order) - len(results)}개를 내지 못했다(위 줄) (종료 코드 1)")
+            sys.exit(1)
 
 
 def cmd_postprocess(args):
