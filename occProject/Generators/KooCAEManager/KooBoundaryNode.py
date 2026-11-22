@@ -107,6 +107,54 @@ class _PartRef:
         self.id = pid
 
 
+class _PMCard3:
+    """처방 운동 카드 3(R16: OFFSET1 OFFSET2 LRB NODE1 NODE2 — |DOF| 9·10·11 또는 VAD 4 일 때). 번호는 객체로 든다 — LRB 는 _PartRef
+    (IMPORT_MERGE_K 가 TYPEID 처럼 민다), NODE1·NODE2 는 절점 객체(번호를 바꾸는 모드를 따라간다). OFFSET1·OFFSET2 는 DOF 9·10·11
+    회전축(전역 x·y·z 에 평행)이 지나는 점의 좌표(9: y·z, 10: z·x, 11: x·y)라 평행 이동·배율을 따라간다. 바뀐 것이 없으면 덱 글을
+    그대로 쓴다. 예전엔 원문 글을 그대로 옮겨 번호·좌표가 모드를 따라가지 않았다(rc 0, 적대 리뷰 F2)."""
+    _AXIS = {9: (1, 2), 10: (2, 0), 11: (0, 1)}   # OFFSET1·OFFSET2 가 가리키는 좌표 성분(x=0, y=1, z=2)
+
+    def __init__(self, text, dof, nodes):
+        self.text = text
+        self.dof = dof
+        f = text.split(",") if "," in text else [text[i:i + 10] for i in range(0, 50, 10)]
+        f = [x.strip() for x in f] + [""] * 5
+        self.offset1, self.offset2 = KooDynaFloat(f[0], 0.0), KooDynaFloat(f[1], 0.0)
+        lrb, n1, n2 = KooDynaInt(f[2], 0), KooDynaInt(f[3], 0), KooDynaInt(f[4], 0)
+        self.lrb = _PartRef(lrb) if lrb else None
+        self.node1 = (nodes.get(n1) or _PartRef(n1)) if n1 else None   # 덱에 없는 절점이면 번호만(따라가지 않는다)
+        self.node2 = (nodes.get(n2) or _PartRef(n2)) if n2 else None
+        self._deck = self._values()
+
+    def _values(self):
+        return (self.offset1, self.offset2, self.lrb.id if self.lrb else 0,
+                self.node1.id if self.node1 else 0, self.node2.id if self.node2 else 0)
+
+    def Translate(self, d):
+        a = self._AXIS.get(abs(self.dof))
+        if a:
+            self.offset1 += d[a[0]]
+            self.offset2 += d[a[1]]
+
+    def Scale(self, s):
+        a = self._AXIS.get(abs(self.dof))
+        if a:
+            self.offset1 *= s[a[0]]
+            self.offset2 *= s[a[1]]
+
+    def render(self):
+        v = self._values()
+        if v == self._deck:
+            return self.text
+        return _real10(v[0]) + _real10(v[1]) + "".join(format(x, ">10") for x in v[2:])
+
+
+def _pm_card3(line, dof, nodeManager):
+    """리더가 카드 1 줄에 붙인 카드 3 원문 → _PMCard3(없으면 None)."""
+    text = getattr(line, "card3", None)
+    return _PMCard3(text, dof, nodeManager.nodes) if text is not None else None
+
+
 class KooBoundaryNode:
     def __init__(self, bid, name):
         self.bid = bid
@@ -198,8 +246,8 @@ class KooBoundaryPrescribedMotionRigid(KooBoundaryNode):
         deathstr = _e10t(self.death)
         birthstr = _e10t(self.birth)
         stream.write(nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n")
-        if getattr(self, "card3", None):   # R16 카드 3(|DOF| 9·10·11, VAD 4) — 덱 원문 그대로(남은 결함 B7)
-            stream.write(self.card3 + "\n")
+        if getattr(self, "card3", None) is not None:   # R16 카드 3(|DOF| 9·10·11, VAD 4) — 빈 카드도 쓴다(남은 결함 B7, 리뷰 F1·F2)
+            stream.write(self.card3.render() + "\n")
          
 class KooBoundaryPrescribedMotionNode(KooBoundaryNode):
     def __init__(self, bid, name="", node=None, dof=None, vad=0, lcid=None, sf=1.0, vid=0, death=1.0E28, birth=0.0):
@@ -280,8 +328,8 @@ class KooBoundaryPrescribedMotionNode(KooBoundaryNode):
         deathstr = _e10t(self.death)
         birthstr = _e10t(self.birth)
         stream.write(nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n")
-        if getattr(self, "card3", None):   # R16 카드 3(|DOF| 9·10·11, VAD 4) — 덱 원문 그대로(남은 결함 B7)
-            stream.write(self.card3 + "\n")
+        if getattr(self, "card3", None) is not None:   # R16 카드 3(|DOF| 9·10·11, VAD 4) — 빈 카드도 쓴다(남은 결함 B7, 리뷰 F1·F2)
+            stream.write(self.card3.render() + "\n")
 
 class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
     def __init__(self, bid, name="", node=[], dof=[], vad=[], lcid=[], sf=[], vid=[], death=[], birth=[]):
@@ -358,8 +406,8 @@ class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
             deathstr = _e10t(self.deaths[i])
             birthstr = _e10t(self.births[i])
             stream.write(nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n")
-            if getattr(self, "card3s", {}).get(i):   # R16 카드 3 — 덱 원문 그대로(남은 결함 B7)
-                stream.write(self.card3s[i] + "\n")
+            if getattr(self, "card3s", {}).get(i) is not None:   # R16 카드 3 — 빈 카드도 쓴다(남은 결함 B7, 리뷰 F1·F2)
+                stream.write(self.card3s[i].render() + "\n")
 
 class KooBoundaryPZEPOT(KooBoundaryNode):
     def __init__(self, bid, nsid, lcid=0, sf=1.0):
@@ -1035,10 +1083,10 @@ class KooBoundaryNodeManager:
                 boundary.AddVID(vid)
                 boundary.AddDeath(death)
                 boundary.AddBirth(birth)
-                if getattr(firstLine, "card3", None):
+                if getattr(firstLine, "card3", None) is not None:   # 빈 줄도 카드 3(리뷰 F1)
                     if not hasattr(boundary, "card3s"):
                         boundary.card3s = {}
-                    boundary.card3s[len(boundary.nodes) - 1] = firstLine.card3
+                    boundary.card3s[len(boundary.nodes) - 1] = _PMCard3(firstLine.card3, dof, nodeManager.nodes)
 
         elif header == "*BOUNDARY_PRESCRIBED_MOTION_NODE_ID":
             if len(dynaBoundaryNode) < 3:
@@ -1065,7 +1113,7 @@ class KooBoundaryNodeManager:
             if node is None:
                 return
             b = self.CreateBoundaryPrescribedMotionNodewithID(bid,name,node,dof,vad,lcid,sf,vid,death,birth)
-            b.card3 = getattr(secondLine, "card3", None)   # R16 카드 3(남은 결함 B7)
+            b.card3 = _pm_card3(secondLine, dof, nodeManager)   # R16 카드 3(남은 결함 B7, 리뷰 F2)
 
         elif header == "*BOUNDARY_PRESCRIBED_MOTION_RIGID":
             if len(dynaBoundaryNode) < 2:
@@ -1086,7 +1134,7 @@ class KooBoundaryNodeManager:
             node = _PartRef(typeid)   # TYPEID 는 강체 PID 다 — 예전엔 같은 번호 절점을 찾아, 없으면 조건을 버리고 절점 번호가 바뀌면 다른 PID 를 썼다(v131)
             name = "PrescribedMotionNode" + str(typeid)
             b = self.CreateBoundaryPrescribedMotionRigid(node,dof,vad,lcid,sf,vid,death,birth,name)
-            b.card3 = getattr(firstLine, "card3", None)   # R16 카드 3(남은 결함 B7)
+            b.card3 = _pm_card3(firstLine, dof, nodeManager)   # R16 카드 3(남은 결함 B7, 리뷰 F2)
 
         elif header == "*BOUNDARY_PRESCRIBED_MOTION_RIGID_ID":
             if len(dynaBoundaryNode) < 3:
@@ -1111,7 +1159,7 @@ class KooBoundaryNodeManager:
             birth = _kf(secondLine, 7, 0.0)
             node = _PartRef(typeid)   # TYPEID 는 강체 PID 다 — 예전엔 같은 번호 절점을 찾아, 없으면 조건을 버리고 절점 번호가 바뀌면 다른 PID 를 썼다(v131)
             b = self.CreateBoundaryPrescribedMotionRigidwithID(bid,name,node,dof,vad,lcid,sf,vid,death,birth)
-            b.card3 = getattr(secondLine, "card3", None)   # R16 카드 3(남은 결함 B7)
+            b.card3 = _pm_card3(secondLine, dof, nodeManager)   # R16 카드 3(남은 결함 B7, 리뷰 F2)
                 
     
     def WritetoNastranKeyword(self, startID):

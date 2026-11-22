@@ -158,33 +158,38 @@ def _pm_row(fields, card3=None):
 
 
 def _pm_card_groups(block, keyword, with_id):
-    """처방 운동 블록 → 조건마다 줄 묶음([ID 카드,] 카드 1[, 카드 3]). 빈 줄·주석은 건너뛴다(ID·카드 1 모두 기본값 없는 칸이 있다).
-    R16: 카드 1 의 |DOF| 가 9·10·11 이거나 VAD 가 4 면 카드 3(OFFSET1 OFFSET2 LRB NODE1 NODE2)이 뒤따른다 — 그 줄을 묶음에 넣어
-    기록기가 카드 1 뒤에 그대로 쓴다. 예전엔 KMM 이 그 카드를 옮기지 못해 멈췄고(남은 결함 B7), 그 전에는 카드 3 을 다음 조건으로
-    읽어 가짜 조건이 생기거나 _ID 쌍이 밀렸다(v131 리뷰 R4). 카드 3 이 와야 하는데 줄이 없으면 원인을 밝혀 멈춘다.
-    짝이 없는 마지막 줄은 알리고 버린다."""
-    lines = [str(l) for l in block if str(l).strip() and not str(l).lstrip().startswith("$")]
+    """처방 운동 블록 → 조건마다 줄 묶음([ID 카드,] 카드 1[, 카드 3]). ID·카드 1 을 찾을 때는 빈 줄·주석을 건너뛴다(둘 다 기본값
+    없는 칸이 있다). R16: 카드 1 의 |DOF| 가 9·10·11 이거나 VAD 가 4 면 카드 3(OFFSET1 OFFSET2 LRB NODE1 NODE2)이 바로 뒤따른다 —
+    그 줄을 묶음에 넣어 기록기가 카드 1 뒤에 쓴다. 카드 3 은 모든 칸 기본값이 0 이라 빈 줄도 올바른 카드 3 이다(주석만 건너뛴다) —
+    빈 줄을 버린 뒤 고르면 다음 조건의 카드를 카드 3 으로 먹어 조건 하나가 rc 0 으로 사라졌다(적대 리뷰 F1). 예전엔 KMM 이 카드 3 을
+    옮기지 못해 멈췄고(남은 결함 B7), 그 전에는 카드 3 을 다음 조건으로 읽었다(v131 리뷰 R4). 카드 3 자리에 줄이 없으면(블록 끝)
+    원인을 밝혀 멈춘다. 짝이 없는 마지막 줄은 알리고 버린다."""
+    lines = [str(l) for l in block if not str(l).lstrip().startswith("$")]
     n = 2 if with_id else 1
     groups, k = [], 0
-    while k + n <= len(lines):
-        card = lines[k + n - 1].replace("\n", "")
+    while True:
+        g = []
+        while len(g) < n and k < len(lines):   # ID 카드·카드 1 — 빈 줄은 건너뛴다
+            if lines[k].strip():
+                g.append(lines[k])
+            k += 1
+        if len(g) < n:
+            if g:
+                print(f"  Warning: *{keyword} 블록의 마지막 줄 '{g[0].strip()[:40]}' 은 짝(카드 1)이 없어 읽지 않는다(덱 확인)")
+            return groups
+        card = g[-1].replace("\n", "")
         v = card.split(",") if "," in card else [card[i:i + 10] for i in range(0, 30, 10)]
         v += [""] * 3
         dof, vad = _dyna_int(v[1], 0), _dyna_int(v[2], 0)
         if abs(dof) in (9, 10, 11) or vad == 4:
-            if k + n >= len(lines):
+            if k >= len(lines):
                 msg = (f"🔴 *{keyword}: DOF {dof}·VAD {vad} 조건 뒤에 R16 카드 3(OFFSET1 OFFSET2 LRB NODE1 NODE2)이 없다 — "
                        f"덱 확인: {card.strip()[:60]}")
                 print(msg)
                 raise ValueError(msg)
-            groups.append(lines[k:k + n + 1])
-            k += n + 1
-            continue
-        groups.append(lines[k:k + n])
-        k += n
-    if k < len(lines):
-        print(f"  Warning: *{keyword} 블록의 마지막 줄 '{lines[k].strip()[:40]}' 은 짝(카드 1)이 없어 읽지 않는다(덱 확인)")
-    return groups
+            g.append(lines[k])   # 빈 줄이어도 카드 3(모든 칸 0)
+            k += 1
+        groups.append(g)
 
 
 def _join_card(fields, w=10, strict=True):

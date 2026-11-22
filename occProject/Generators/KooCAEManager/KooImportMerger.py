@@ -511,6 +511,11 @@ def _merge_boundaries(target, new, off):
             b.nsid += off.get('nsid', 0)
         if isinstance(b, KooBoundaryPrescribedMotionRigid) and isinstance(b.node, _PartRef):
             b.node.id += off.get('pid', 0)
+        # 처방 운동 카드 3 의 LRB(강체 PID)도 민다 — NODE1·NODE2 는 절점 객체라 따라간다(적대 리뷰 F2: 예전엔 글 그대로라 기준 덱의
+        # 파트·절점을 가리켰다)
+        for c3 in [getattr(b, "card3", None)] + list((getattr(b, "card3s", None) or {}).values()):
+            if c3 is not None and c3.lrb is not None:
+                c3.lrb.id += off.get('pid', 0)
         target.maxid += 1
         b.bid = target.maxid
         target.boundaries[b.bid] = b

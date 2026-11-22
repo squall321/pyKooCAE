@@ -2503,6 +2503,8 @@ class KooDynaAdvancedModification:
 
         _shift = (-boundingBox[0]-xLength/2.0, -boundingBox[1]-yLength/2.0, -boundingBox[2]-zLength/2.0)
         self.dynaImporter.nodeManager.MoveNodes(*_shift)
+        for _c3 in self._PMAxisCards():   # DOF 9·10·11 처방 운동 회전축 점(카드 3)도 같이 — 모델은 돌리지 않는다(바닥판·속도를 돌린다)
+            _c3.Translate(_shift)
         # 덱 강체벽도 모델과 같이 옮긴다 — 예전엔 절점만 옮겨 고정 벽 같은 사용자 벽이 모델과 어긋났다(누적 체인 둘째 낙하에서 쌓인다,
         # 누적 체인 묶음 W3, 2026-11-08). 점(XT·YT·ZT, XH·YH·ZH)만 옮기고 방향 벡터(기하 벽의 모서리 XHEV…)는 그대로다
         for _rw in self.dynaImporter.additionalManager.rigidwalls.values():
@@ -3799,6 +3801,47 @@ class KooDynaAdvancedModification:
                          "INITIAL_VELOCITY_GENERATION", "DATABASE_CROSS_SECTION_PLANE", "PART_INERTIA",
                          "CONSTRAINED_NODAL_RIGID_BODY_INERTIA", "CONSTRAINED_NODAL_RIGID_BODY_SPC_INERTIA")
 
+    def _PMAxisCards(self):
+        """카드 3 이 있는 DOF 9·10·11 처방 운동(회전축이 OFFSET1·OFFSET2 점을 지나는 전역 축)의 카드 3 객체들."""
+        out = []
+        for b in self.dynaImporter.boundaryNodeManager.boundaries.values():
+            if getattr(b, "card3", None) is not None:
+                out.append(b.card3)
+            out.extend((getattr(b, "card3s", None) or {}).values())
+        return [c for c in out if abs(c.dof) in (9, 10, 11)]
+
+    def _PMAxisLoud(self, what):
+        """회전·거울은 DOF 9·10·11 회전축을 옮길 수 없다(축이 전역 축에 평행해야 한다) → 🔴 종료 코드 3(적대 리뷰 F2)."""
+        n = len(self._PMAxisCards())
+        if n:
+            from KooCAEManager.KooElement import note_content_loss
+            print(f"🔴 TRANSFORM {what}: DOF 9·10·11 처방 운동 {n}개의 회전축(카드 3 OFFSET1·OFFSET2, 전역 축에 평행)은 {what} 을 "
+                  f"따라갈 수 없다 — 카드 3 은 그대로 썼다(덱 확인, 종료 코드 3)")
+            note_content_loss("처방 운동 회전축(카드 3)을 회전·거울로 옮길 수 없음", n)
+
+    def _PMAxisLoudParts(self, pids, what):
+        """파트만 옮기는 모드 — 옮기는 파트의 절점(강체 조건은 그 파트)에 걸린 DOF 9·10·11 처방 운동의 회전축 점(카드 3)은 따라가지
+        않는다(절점 밖 글을 한 번 만들어 다시 쓰는 DOE 도 있다) → 🔴 종료 코드 3(적대 리뷰 F2)."""
+        parts = self.dynaImporter.partManager.parts
+        pids = set(pids)
+        nids = set()
+        for pid in pids:
+            if pid in parts:
+                nids.update(parts[pid].elementManager.GetElementNodes())
+        n = 0
+        for b in self.dynaImporter.boundaryNodeManager.boundaries.values():
+            c3 = getattr(b, "card3", None)
+            if c3 is not None and abs(c3.dof) in (9, 10, 11):
+                tid = getattr(getattr(b, "node", None), "id", None)
+                n += (tid in pids) if "Rigid" in type(b).__name__ else (tid in nids)
+            for i, c in (getattr(b, "card3s", None) or {}).items():
+                n += abs(c.dof) in (9, 10, 11) and b.nodes[i].id in nids
+        if n:
+            from KooCAEManager.KooElement import note_content_loss
+            print(f"🔴 {what}: 옮기는 파트에 걸린 DOF 9·10·11 처방 운동 {n}개의 회전축 점(카드 3 OFFSET1·OFFSET2)은 파트 이동을 "
+                  f"따라가지 않는다 — 카드 3 은 그대로 썼다(덱 확인, 종료 코드 3)")
+            note_content_loss("처방 운동 회전축(카드 3)을 파트 이동으로 옮길 수 없음", n)
+
     def Transform(self, option):
         nodeMan : NodeManager = self.dynaImporter.nodeManager
         defMan = self.dynaImporter.defineManager
@@ -3825,6 +3868,8 @@ class KooDynaAdvancedModification:
                 tz = curOption[3]
                 nodeMan.MoveNodes(tx, ty, tz)
                 defMan.TransformCoordinateSystemPoints(lambda x, y, z: (x + tx, y + ty, z + tz))
+                for c3 in self._PMAxisCards():   # 처방 운동 회전축 점(카드 3)도 같이(적대 리뷰 F2)
+                    c3.Translate((tx, ty, tz))
             elif curOptionMode.lower() == "rotation":
                 angleX = curOption[1]
                 angleY = curOption[2]
@@ -3842,12 +3887,16 @@ class KooDynaAdvancedModification:
                 combinedTrsf = combinedTrsf.Multiplied(trsfZ)
                 nodeMan.Transform(combinedTrsf)
                 cs_trsf(combinedTrsf)
+                if angleX or angleY or angleZ:
+                    self._PMAxisLoud("Rotation")
             elif curOptionMode.lower() == "scale":
                 sx = curOption[1]
                 sy = curOption[2]
                 sz = curOption[3]
                 nodeMan.Scaling(sx, sy, sz)
                 defMan.TransformCoordinateSystemPoints(lambda x, y, z: (x * sx, y * sy, z * sz))   # 절점처럼 원점 기준
+                for c3 in self._PMAxisCards():   # 처방 운동 회전축 점(카드 3)도 원점 기준으로(적대 리뷰 F2)
+                    c3.Scale((sx, sy, sz))
             elif curOptionMode.lower() == "mirror":
                 mode = curOption[1]
                 
@@ -3878,6 +3927,7 @@ class KooDynaAdvancedModification:
                 if mode.lower() in ("xy", "yz", "xz"):
                     self.dynaImporter.MirrorRawElementRows(mode.lower())   # 원문 TSHELL 줄도 뒤집는다(v131 M6)
                     cs_trsf(trsf)
+                    self._PMAxisLoud("Mirror")
             elif curOptionMode.lower() == "vectorrotation":
                 x = curOption[1]
                 y = curOption[2]
@@ -3900,6 +3950,7 @@ class KooDynaAdvancedModification:
                 trsf.SetRotation(ax, angleBetweenXR)
                 nodeMan.Transform(trsf)
                 cs_trsf(trsf)
+                self._PMAxisLoud("VectorRotation")
             elif curOptionMode.lower() == "vectortovectorrotation":
                 x1 = curOption[1]
                 y1 = curOption[2]
@@ -3925,6 +3976,7 @@ class KooDynaAdvancedModification:
                 trsf.SetRotation(ax, angleBetweenVector1Vector2)
                 nodeMan.Transform(trsf)
                 cs_trsf(trsf)
+                self._PMAxisLoud("VectorToVectorRotation")
                 
     # 낙하추 충격(DWI) 재질 폴백 감시 — 세 DWI 함수 공용
     # 🔴 폴백값이 SI(E=2.07e11 Pa, rho=7800 kg/m^3)인데 이 프로젝트의 모델은
@@ -5829,6 +5881,7 @@ class KooDynaAdvancedModification:
         pidList = option["PIDs"]
         maskPID = option["MaskPID"]
         obsPidList = option["ObstaclePIDs"]
+        self._PMAxisLoudParts(pidList, "PART_LOCATION_DOE")
         dx = option["DX"]
         dy = option["DY"]
         dz = option["DZ"]
@@ -7573,6 +7626,7 @@ class KooDynaAdvancedModification:
         jsonFile = open(jsonFileName, "w")
         jsonDict = {}
 
+        self._PMAxisLoudParts(translationDict, "TRANSLATION_DOE")
         # === FastDOE 초기화 (CacheExceptNodes) ===
         use_fast_mode = numofSamples > 1
         cached_pre = None
@@ -7651,6 +7705,7 @@ class KooDynaAdvancedModification:
                     f"PartTranslate: PID {pid} 가 모델에 없습니다. "
                     f"사용 가능한 PID 수: {len(parts)}")
 
+        self._PMAxisLoudParts(translationDict, "PART_TRANSLATE")
         for pid in translationDict:
             transX = float(translationDict[pid].get("X", 0.0))
             transY = float(translationDict[pid].get("Y", 0.0))
