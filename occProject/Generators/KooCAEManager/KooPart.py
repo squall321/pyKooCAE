@@ -3278,7 +3278,7 @@ class KooPartManager():
         for part in self.parts.values():
             if type(part) == KooPartComposite:
                 part : KooPartComposite = part
-            else:
+            elif part.material is not None:   # 원문 재질 파트는 번호만 든다 — 예전엔 AttributeError(ELASTIC_TO_RIGID)
                 mid = part.material.id 
                 if mid in materialMan.materials:
                     newMat = materialMan.materials[mid]

@@ -2980,6 +2980,25 @@ class KooMeshModifier(KooSimulationGenerator):
             if part.mid != 0:
                 curMIDExcept.append(part.mid)
             
+        # 강체로 바꿀 수 없는 파트 — 재질이 KMM 이 해석하지 않은 원문 재질(파트에 재질 객체가 없다)이거나 밀도·영률을 읽지 못한 재질
+        # (일반 KooMaterial 등 — 강체 사본이 RO 0·E 0 이 된다). 예전엔 원문 재질 파트가 하나라도 있으면 제외 여부와 상관없이
+        # AttributeError 로 죽었고, 밀도를 모르는 재질은 RO 0 강체가 됐다 → 원인을 밝혀 멈춘다. 제외 파트는 그대로라 괜찮다
+        bad = []
+        for pid, part in self.dynaImporter.partManager.parts.items():
+            if pid in curPIDExcept or type(part).__name__ == "KooPartComposite" or not getattr(part, "mid", 0):
+                continue
+            m = getattr(part, "material", None)
+            try:
+                ok = m is not None and float(m.GetRho()) > 0.0 and float(m.GetE()) > 0.0
+            except Exception:
+                ok = False
+            if not ok:
+                bad.append((pid, part.mid))
+        if bad:
+            print(f"🔴 ELASTIC_TO_RIGID: (파트, 재질) {bad[:10]}{' …' if len(bad) > 10 else ''} 은 강체 재질로 바꿀 수 없다 — KMM 이 해석하지 "
+                  f"않은 원문 재질이거나 밀도·영률을 읽지 못한 재질이다(강체 사본이 RO 0 이 된다). 그 파트를 PIDExcept 에 넣거나 재질을 "
+                  f"*MAT_ELASTIC·*MAT_PIECEWISE_LINEAR_PLASTICITY 처럼 해석되는 꼴로 바꿀 것 (종료 코드 1)")
+            sys.exit(1)
         # 제외 파트와 MID 를 같이 쓰는 강체화 대상 파트 — 그 MID 는 제외 파트용으로 그대로 둬야 하므로,
         # 대상 파트에는 강체 재질을 새 MID 로 따로 만들어 준다(예전에는 강체화도 보존도 안 돼 재질이 사라졌다).
         shared = {}
