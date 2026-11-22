@@ -2086,6 +2086,9 @@ class NodeSetManager:
 
         for nsid in delnsidList:
             del self.nodeSets[nsid]
+        if delnsidList:   # 예전엔 조용히 지웠다 — 이 셋을 가리키는 카드가 있으면 출력 덱이 없는 셋을 가리킨다(남은 결함 834)
+            print(f"  ⚠️ 절점이 모두 지워진 절점 셋 {sorted(delnsidList)[:10]}{' …' if len(delnsidList) > 10 else ''} 을 출력에서 "
+                  f"뺐다 — 이 셋을 가리키는 카드가 있으면 덱 확인")
         return delnsidList
     
     def SetMaxID(self, maxID):
