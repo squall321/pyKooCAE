@@ -6,10 +6,11 @@
       평범한 꼴(MAT_ELASTIC·MAT_RIGID·EOS_LINEAR_POLYNOMIAL·BOUNDARY_SPC_SET·CONSTRAINED_*·DAMPING_PART_*·DEFINE_COORDINATE_SYSTEM·
       INITIAL_VELOCITY_GENERATION·LOAD_SEGMENT_SET·DATABASE_NODAL_FORCE_GROUP). 예전엔 첫 개체만 읽고 나머지는 rc 0 으로 빠졌다.
       MAT_ELASTIC 은 E < 0 이면 카드 1.1 이 붙고, DAMPING_PART_MASS 는 FLAG = 1 이면 카드 2 가 붙는다(개체마다 크기가 다르다).
-  [2] A5 알림: 나눌 수 없는 블록(_ID·_TITLE 꼴의 여러 개체, 개체 크기로 떨어지지 않는 줄 수, 가운데 빈 줄)은 예전처럼 첫 개체만
+  [2] A5 알림: 나눌 수 없는 블록(_ID·_TITLE 꼴의 여러 개체, 개체 크기로 떨어지지 않는 줄 수, 개체 첫 줄 자리의 빈 줄)은 예전처럼 첫 개체만
       읽되 🔴 카드 소실 + 종료 코드 3
   [3] 한 개체 블록·끝 빈 줄은 예전 그대로(rc 0, 알림 없음)
   [5] A6 *RIGIDWALL_PLANAR: 한 블록 두 벽(네 줄), 끝 빈 줄 때문에 세 줄이 된 한 벽, 옛 KMM 꼴(ID + 카드 둘)
+  [6] R16 이 밝힌 꼴은 나눈다(적대 리뷰 F4·F5): *LOAD_SEGMENT_SET_ID 의 ID 카드 하나 + 카드 여럿, *MAT_RIGID 의 빈 카드 3
 
 실행: venv312/bin/python tests/test_remaining_multi_entity.py (KMM 약 60회, 3~6분)
 수정 전 코드로 볼 때: KMM_GEN=<옛 occProject/Generators> … / 컴파일본: KMM_BIN=<KooMeshModifier 실행 파일> …
@@ -81,7 +82,6 @@ LOUD = {
     "NODE_SET_ID": ("*CONSTRAINED_NODE_SET_ID", [f10(5), f10(11, 7)], [f10(6), f10(13, 7)]),
     "JOINT_SPH_ID": ("*CONSTRAINED_JOINT_SPHERICAL_ID", [f10(5), f10(9, 17)], [f10(6), f10(10, 18)]),
     "CNRB_TITLE": ("*CONSTRAINED_NODAL_RIGID_BODY_TITLE", ["first\n", f10(101, 0, 11)], ["second\n", f10(102, 0, 13)]),
-    "LOAD_SEGMENT_SET_ID": ("*LOAD_SEGMENT_SET_ID", [f10(5), f10(31, 10, 1.0)], [f10(6), f10(32, 10, 1.0)]),
     "MAT_ELASTIC_TITLE": ("*MAT_ELASTIC_TITLE", ["steel\n", f10(7, "7.85E-09", 210000.0, 0.3)], ["alu\n", f10(8, "2.70E-09", 70000.0, 0.33)]),
     "MAT_RIGID_TITLE": ("*MAT_RIGID_TITLE", ["r1\n", f10(7, "7.85E-09", 210000.0, 0.3), f10(0, 0, 0), f10(0.0)],
                         ["r2\n", f10(8, "2.70E-09", 70000.0, 0.33), f10(0, 0, 0), f10(0.0)]),
@@ -117,12 +117,31 @@ def t2():
     cases = dict(LOUD)
     e = SPLIT["MAT_RIGID"][1]
     cases["MAT_RIGID 3+1줄"] = ("*MAT_RIGID", e, [f10(8, "2.70E-09", 70000.0, 0.33)])
-    cases["MAT_RIGID 가운데 빈 줄"] = ("*MAT_RIGID", [e[0], e[1], "\n"], [SPLIT["MAT_RIGID"][2][0], f10(0, 0, 0), "\n"])
+    cases["MAT_RIGID 개체 사이 빈 줄"] = ("*MAT_RIGID", e + ["\n"], SPLIT["MAT_RIGID"][2])   # 개체 첫 줄 자리의 빈 줄 — 경계 불명
     for name, (kw, e1, e2) in cases.items():
         a = kw + "\n" + "".join(e1) + "".join(e2)
         d, rc, log = R.run("me_loud_" + "".join(c if c.isalnum() else "_" for c in name), {"model.k": deck_m(a)})
         check(f"[2] {name}: 종료 코드 3·🔴 카드 소실 알림(키워드 이름)", rc == 3 and "🔴" in log and kw[1:] in log and R.no_tb(log),
               f"rc={rc} " + log[-400:])
+
+
+def t6():
+    print("[6] R16 이 밝힌 꼴은 나눈다(적대 리뷰 F4·F5) — 한 블록 출력 = 키워드 둘 출력")
+    e = SPLIT["MAT_RIGID"][1]
+    cases = {
+        # *LOAD_SEGMENT_SET_ID: ID 카드 하나 + 카드 여럿("as many segment set cards as necessary") — 쓰는 ID 는 같다
+        "LOAD_SEGMENT_SET_ID 카드 둘": ("*LOAD_SEGMENT_SET_ID", [f10(5), f10(31, 10, 1.0)], [f10(5), f10(32, 10, 2.0)], 1),
+        # *MAT_RIGID 카드 2·3 은 비워도 된다 — 가운데·끝 개체의 빈 카드 3
+        "MAT_RIGID 빈 카드 3": ("*MAT_RIGID", [e[0], e[1], "\n"], [SPLIT["MAT_RIGID"][2][0], f10(0, 0, 0), "\n"], 0),
+    }
+    for name, (kw, e1, e2, id_rows) in cases.items():
+        a = kw + "\n" + "".join(e1) + "".join(e2[id_rows:])   # ID 꼴은 ID 카드를 한 번만
+        b = kw + "\n" + "".join(e1) + kw + "\n" + "".join(e2)
+        da, rca, la = R.run("me_r16a_" + "".join(c if c.isalnum() else "_" for c in name), {"model.k": deck_m(a)})
+        db, rcb, lb = R.run("me_r16b_" + "".join(c if c.isalnum() else "_" for c in name), {"model.k": deck_m(b)})
+        A, B = body_lines(R.read(da, "model_trans.k")), body_lines(R.read(db, "model_trans.k"))
+        check(f"[6] {name}: rc 0·0, 🔴 없음, 한 블록 출력 = 키워드 둘 출력", rca == 0 and rcb == 0 and "🔴" not in la and A == B and A,
+              f"rc={rca}/{rcb} A에없음={list((B - A).elements())[:4]} A에만={list((A - B).elements())[:4]} " + la[-300:])
 
 
 def t3():
@@ -166,7 +185,7 @@ def t5():
 
 
 if __name__ == "__main__":
-    for f in (t1, t2, t3, t5):
+    for f in (t1, t2, t3, t5, t6):
         f()
     print(f"\n판정 {'모두 통과' if not FAILS else str(len(FAILS)) + '건 실패'}")
     for x in FAILS:

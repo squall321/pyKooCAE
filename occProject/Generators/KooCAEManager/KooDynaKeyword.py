@@ -38,7 +38,8 @@ _ENTITY_CARDS = {
     "RIGIDWALL_PLANAR": 2,   # 꼭 세 줄이면 예전처럼 (ID + 카드 둘)로 읽는다 — KMM 옛 기록기가 그렇게 썼다
 }
 # _ID·_TITLE 꼴 — (ID·제목 카드 + 카드) 짝이 되풀이되는지 ID 하나 아래 카드가 여럿인지 매뉴얼이 밝히지 않는다 → 나누지 않고
-# 한 개체보다 길면 알린다. 함수면 제목 다음 줄(카드 1)로 정한다
+# 한 개체보다 길면 알린다. 함수면 제목 다음 줄(카드 1)로 정한다. *LOAD_SEGMENT_SET_ID 는 매뉴얼이 밝힌다(ID 카드 하나 + 카드
+# 여럿, "as many segment set cards as necessary") — _entity_pieces 가 (ID 카드 + 카드 i) 로 나눈다(적대 리뷰 F4)
 _ENTITY_CARDS_LOUD = {
     "BOUNDARY_SPC_NODE_ID": 2, "BOUNDARY_SPC_SET_ID": 2, "CONSTRAINED_NODE_SET_ID": 2, "CONSTRAINED_JOINT_SPHERICAL_ID": 2,
     "CONSTRAINED_NODAL_RIGID_BODY_TITLE": 2, "LOAD_SEGMENT_SET_ID": 2, "DEFINE_COORDINATE_SYSTEM_TITLE": 3,
@@ -47,7 +48,11 @@ _ENTITY_CARDS_LOUD = {
 
 
 def _entity_pieces(kw, lines):
-    """블록 줄 → (개체별 줄 목록 또는 None, 나누지 못한 까닭). 끝 빈 줄은 떼고 본다. 개체 하나면 [줄]."""
+    """블록 줄 → (개체별 줄 목록 또는 None, 나누지 못한 까닭). 개체 하나면 [줄]. 개체의 첫 줄(번호가 있는 카드)은 비지 않아야
+    하고, 그 뒤 카드는 빈 줄도 카드다 — *MAT_RIGID 카드 2·3, EOS·*INITIAL_VELOCITY_GENERATION·좌표계 카드 2 는 비워 둘 수 있다
+    (R16 기본값 카드). 예전엔 끝 빈 줄을 먼저 떼고 가운데 빈 줄을 경계 불명으로 봐, 마지막 개체가 빈 카드로 끝나거나 가운데 개체에
+    빈 카드가 있는 올바른 블록이 첫 개체만 읽혔다(rc 3, 적대 리뷰 F5). 마지막 개체 뒤에 남는 빈 줄은 뗀다."""
+    full = list(lines)
     body = list(lines)
     while body and not body[-1].strip():
         body.pop()
@@ -55,6 +60,12 @@ def _entity_pieces(kw, lines):
         return [body], ""
     if kw == "RIGIDWALL_PLANAR" and len(body) == 1:
         return None, "카드 2(XT~WVEL)가 없어"
+    if kw == "LOAD_SEGMENT_SET_ID":   # ID 카드 하나 + 카드 여럿 → (ID 카드 + 카드 i) 개체들, 쓰는 ID 는 같다(적대 리뷰 F4)
+        if len(body) <= 2:
+            return [body], ""
+        if any(not l.strip() for l in body[1:]):
+            return None, "가운데 빈 줄(SSID 없는 카드)이 있어"
+        return [[body[0], c] for c in body[1:]], ""
     loud = kw in _ENTITY_CARDS_LOUD
     size = _ENTITY_CARDS_LOUD[kw] if loud else _ENTITY_CARDS[kw]
     first = (body[1] if loud and len(body) > 1 else body[0]) if body else ""
@@ -63,14 +74,14 @@ def _entity_pieces(kw, lines):
         return [body], ""
     if loud:
         return None, "ID·제목 카드가 개체마다 되풀이되는지 알 수 없어"
-    if any(not l.strip() for l in body):
-        return None, "가운데 빈 줄이 있어 개체 경계를 알 수 없어"
     out, i = [], 0
     while i < len(body):
+        if not body[i].strip():
+            return None, "개체 첫 줄 자리에 빈 줄이 있어 개체 경계를 알 수 없어"
         n = size(body[i]) if callable(size) else size
-        if i + n > len(body):
+        if i + n > len(full):   # 끝 빈 줄을 떼기 전 줄로 센다 — 마지막 개체의 빈 카드
             return None, f"줄 수가 개체 크기({n}줄)로 나누어떨어지지 않아"
-        out.append(body[i:i + n])
+        out.append(full[i:i + n])
         i += n
     return out, ""
 
