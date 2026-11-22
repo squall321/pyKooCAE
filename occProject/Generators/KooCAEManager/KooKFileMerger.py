@@ -45,6 +45,10 @@ def merge_k_file(dynaImporter, cur_dir, input_filename, option):
         file_path = entry.get('file', '')
         base = os.path.basename(file_path)
 
+        if entry.get('missing'):   # 없는 인클루드 — 펼칠 내용이 없다. *INCLUDE 줄을 원문대로 남긴다(남은 결함 A15)
+            preserved_entries.append(entry)
+            continue
+
         # 안전 검사: PARAMETER_LOCAL이 있으면 무조건 보존
         has_param_local = '*PARAMETER_LOCAL' in content
         if has_param_local:
@@ -92,7 +96,7 @@ def merge_k_file(dynaImporter, cur_dir, input_filename, option):
         for entry in preserved_entries:
             base = os.path.basename(entry['file'])
             f.write("*INCLUDE\n")
-            f.write(f" {base}\n")
+            f.write(f" {entry['line'] if entry.get('missing') else base}\n")
             src = entry['file']
             dst = os.path.join(cur_dir, base)
             if os.path.abspath(src) != os.path.abspath(dst) and os.path.exists(src):

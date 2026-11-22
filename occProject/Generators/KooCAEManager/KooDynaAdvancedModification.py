@@ -1059,6 +1059,22 @@ class KooDynaAdvancedModification:
         print("Direction Vector: ", dirVector)
         print("Tolerance Angle: ", toleranceAngle)
         print("PID: ", part.id)
+        # 옵션 확인 — 모델을 바꾸기 전에. 예전엔 표본·통계·구속 줄이 빠지면 KeyError, *NumberofElements 를 안 쓰면(파서가 0 을
+        # 넣는다) IndexError, 1 이면 cKDTree ValueError 로 죽었다(남은 결함 B6). *NumberofElements 를 안 쓰면 원래 뜻대로 100
+        dlr = option.get("DesiredLengthRatio") or {}
+        nstat = int(dlr.get("NumberofSamples") or 0)
+        if not dlr.get("Samples") and nstat <= 0:
+            print("🔴 SolidwithSlack: *DesiredLengthRatioSamples 도 *DesiredLengthRatioStatistics 도 없다 — 만들 길이 비가 없다 (종료 코드 1)")
+            sys.exit(1)
+        numPoints = int(option.get("NumberofElements") or 100)
+        if numPoints < 2:
+            print(f"🔴 SolidwithSlack: *NumberofElements 가 {numPoints} — 꺾은선 요소 수는 2 이상이어야 한다 (종료 코드 1)")
+            sys.exit(1)
+        constraintPIDs = list((option.get("Constraints") or {}).get("PIDs") or [])
+        missingPIDs = [p for p in constraintPIDs if KooDynaInt(str(p)) not in self.dynaImporter.partManager.parts]
+        if missingPIDs:
+            print(f"🔴 SolidwithSlack: *ConstraintPIDs 의 파트 {missingPIDs} 가 덱에 없다 (종료 코드 1)")
+            sys.exit(1)
            
         nodeMan : NodeManager = part.nodeManager
         elemMan : ElementManager = part.elementManager
@@ -1177,33 +1193,32 @@ class KooDynaAdvancedModification:
                        
         newNodes = {}
             
-        desiredLengthRatioOption = option["DesiredLengthRatio"]
+        desiredLengthRatioOption = dlr
         
-        lengthRatioList = [] 
-        dlrSamplesOption = desiredLengthRatioOption["Samples"]
-        for i in range(len(dlrSamplesOption)):
-            lengthRatioList.append(dlrSamplesOption[i])
+        lengthRatioList = list(desiredLengthRatioOption.get("Samples") or [])
         
-        numofSamples = desiredLengthRatioOption["NumberofSamples"]
-        avgLengthRatio = desiredLengthRatioOption["Average"]
-        stdLengthRatio = desiredLengthRatioOption["StandardDeviation"]
-        minLengthRatio = desiredLengthRatioOption["Minimum"]
-        maxLengthRatio = desiredLengthRatioOption["Maximum"]
-        
-        for i in range(numofSamples):
+        numofSamples = nstat
+        if numofSamples > 0:
+            avgLengthRatio = desiredLengthRatioOption["Average"]
+            stdLengthRatio = desiredLengthRatioOption["StandardDeviation"]
+            minLengthRatio = desiredLengthRatioOption["Minimum"]
+            maxLengthRatio = desiredLengthRatioOption["Maximum"]
+        # 통계 표본은 [최소, 최대] 안에서 앞 값과 겹치지 않는 것만 받는다. 예전엔 for 안에서 i 를 줄여도 다시 뽑지 않아 걸러진 만큼
+        # 표본이 조용히 모자랐다(통계 3개 중 1개만 등, 남은 결함 B6). 시도 상한을 둬 범위가 좁아도 끝나고, 모자라면 멈춘다
+        need, tries = numofSamples, 0
+        while need > 0 and tries < max(10000, 1000 * numofSamples):
+            tries += 1
             randomLengthRatio = np.random.normal(avgLengthRatio, stdLengthRatio)
-            if randomLengthRatio < minLengthRatio:
-                i = i - 1
+            if randomLengthRatio < minLengthRatio or randomLengthRatio > maxLengthRatio:
                 continue
-            if randomLengthRatio > maxLengthRatio:
-                i = i - 1
-                continue             
-            found = any(math.isclose(val, randomLengthRatio, rel_tol=1e-9) for val in lengthRatioList)
-            if found:
-                i = i - 1
-                continue            
-            
+            if any(math.isclose(val, randomLengthRatio, rel_tol=1e-9) for val in lengthRatioList):
+                continue
             lengthRatioList.append(randomLengthRatio)
+            need -= 1
+        if need > 0:
+            print(f"🔴 SolidwithSlack: 통계 표본 {numofSamples}개 가운데 {need}개를 [{minLengthRatio}, {maxLengthRatio}] 안에서 겹치지 "
+                  f"않게 뽑지 못했다(시도 {tries}번, 평균 {avgLengthRatio}·표준편차 {stdLengthRatio}) (종료 코드 1)")
+            sys.exit(1)
             
 
         fnTopminX = 1.0e99
@@ -1236,9 +1251,6 @@ class KooDynaAdvancedModification:
         lendir = (yDirVector[0]**2+yDirVector[1]**2+yDirVector[2]**2)**0.5
         yDirVector = (yDirVector[0]/lendir, yDirVector[1]/lendir, yDirVector[2]/lendir)
         moduleManager : ModuleManager = ModuleManager()
-        numPoints = 100        
-        if "NumberofElements" in option:
-            numPoints = option["NumberofElements"]            
         connector : ConnectorFlexible  = moduleManager.CreateConnectorFlexible3DModule("ConnectorModule", pntStart3D, pntEnd3D,xDirVector, yDirVector, zDirVector,numPoints,directLength)
         
         
@@ -1259,8 +1271,7 @@ class KooDynaAdvancedModification:
         for i in range(numPoints):
             pntList.append((pntStart3D[0] + i*(pntEnd3D[0]-pntStart3D[0])/(numPoints-1), pntStart3D[1] + i*(pntEnd3D[1]-pntStart3D[1])/(numPoints-1), 0.0))      
             
-        constraints = option["Constraints"]
-        pids = constraints["PIDs"]  
+        pids = constraintPIDs
         
         parts = self.dynaImporter.partManager.parts
         constraintParts = []
@@ -2412,16 +2423,18 @@ class KooDynaAdvancedModification:
         RyList = option["EulerPitching"]
         RzList = option["EulerYawing"]
         heightList = option["Height"]
-        VxList = option["InitialVelocityX"]
-        VyList = option["InitialVelocityY"]
-        VzList = option["InitialVelocityZ"]
+        # 처음 속도·각속도 키는 없으면 각도마다 0(정지 낙하) — 다른 충격 모드와 같다. 예전엔 KeyError 로 죽었다(남은 결함 B3)
+        _zeros = lambda key: option[key] if option.get(key) is not None else [0.0] * len(RxList)
+        VxList = _zeros("InitialVelocityX")
+        VyList = _zeros("InitialVelocityY")
+        VzList = _zeros("InitialVelocityZ")
         # RigidAngularVelocity — 기기 강체 회전(*INITIAL_VELOCITY_GENERATION). 키가 없으면 None 이고 예전 그대로다. 있으면 그 목록이
         # InitialAngularVelocity 자리에 들어가 같은 RotMat 으로 덱 좌표가 되고, 각도마다 *INITIAL_VELOCITY 대신 GENERATION 을 쓴다
         rigidOmega = self._ResolveRigidAngularVelocity(option, len(RxList))
         if rigidOmega is None:
-            wxList = option["InitialAngularVelocityX"]
-            wyList = option["InitialAngularVelocityY"]
-            wzList = option["InitialAngularVelocityZ"]
+            wxList = _zeros("InitialAngularVelocityX")
+            wyList = _zeros("InitialAngularVelocityY")
+            wzList = _zeros("InitialAngularVelocityZ")
         else:
             wxList, wyList, wzList = rigidOmega
         runids = option["runid"]
@@ -5725,14 +5738,15 @@ class KooDynaAdvancedModification:
             materialImpactorFront = self.dynaImporter.matManager.CreateElasticMaterial("ImpactorMaterialFront", rhoImpactorFront, EImpactorFront, nuImpactorFront)
 
         sectionImpactor : KooSectionSolid = self.dynaImporter.sectionManager.CreateSolidSection("ImpactorSection", 1)
-        impactElemMan : ElementManager = ElementManager(nodeMan)
+        # 절점 관리자는 덱 것(구 임팩터와 같다) — 예전엔 정의 안 된 nodeMan 을 써 파트 지정 원통 DWI 가 NameError 로 죽었다(남은 결함 B5)
+        impactElemMan : ElementManager = ElementManager(self.dynaImporter.nodeManager)
 
-        impactorPart = KooPart(nodeMan, impactElemMan, materialImpactor, sectionImpactor, self.dynaImporter.nodeSetManager)
+        impactorPart = KooPart(self.dynaImporter.nodeManager, impactElemMan, materialImpactor, sectionImpactor, self.dynaImporter.nodeSetManager)
         self.dynaImporter.partManager.CreatePartfromKooPart(impactorPart)
     
         sectionImpactorFront : KooSectionSolid = self.dynaImporter.sectionManager.CreateSolidSection("ImpactorFrontSection", 1)
-        impactFrontElemMan : ElementManager = ElementManager(nodeMan)
-        impactorPartFront = KooPart(nodeMan, impactFrontElemMan, materialImpactorFront, sectionImpactorFront, self.dynaImporter.nodeSetManager)
+        impactFrontElemMan : ElementManager = ElementManager(self.dynaImporter.nodeManager)
+        impactorPartFront = KooPart(self.dynaImporter.nodeManager, impactFrontElemMan, materialImpactorFront, sectionImpactorFront, self.dynaImporter.nodeSetManager)
         self.dynaImporter.partManager.CreatePartfromKooPart(impactorPartFront)
         return impactorPart, materialImpactor, sectionImpactor, impactElemMan, impactorPartFront, materialImpactorFront, sectionImpactorFront, impactFrontElemMan
 

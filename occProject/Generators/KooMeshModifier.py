@@ -3450,7 +3450,8 @@ class KooMeshModifier(KooSimulationGenerator):
                 for entry in passthrough_data:
                     inc_file = entry.get("file", "")
                     f.write("*INCLUDE\n")
-                    f.write(f" {os.path.basename(inc_file)}\n")
+                    # 없는 인클루드는 덱에 쓴 글 그대로(경로 포함) — 복사할 파일이 없다(남은 결함 A15)
+                    f.write(f" {entry['line'] if entry.get('missing') else os.path.basename(inc_file)}\n")
 
             # 미인터프리트 키워드 raw 보존은 공유 writer(WriteStreamDynaKeyword)가 이미 한다.
             # 여기서 또 부르면 같은 카드가 두 번 나가고, 누적 해석은 스텝마다 왕복하므로

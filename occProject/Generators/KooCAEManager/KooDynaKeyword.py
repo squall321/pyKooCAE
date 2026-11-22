@@ -5903,13 +5903,18 @@ class ElementBeam(DynaKeyword):
                 continue
             spaceVector = []
             parameterList = []
-            for j in range(len(elementBeamKeywords[i])):
+            # 빈 줄은 요소 카드가 아니다(R16 Appendix V — EID·PID·N 은 기본값이 없다). 예전엔 int('') 로 죽었다(남은 결함 B1)
+            rows = [l for l in elementBeamKeywords[i] if str(l).strip()]
+            if len(rows) != len(elementBeamKeywords[i]):
+                print(f"  Warning: ELEMENT_BEAM 블록의 빈 줄 {len(elementBeamKeywords[i]) - len(rows)}개를 건너뛰었다 — "
+                      f"LS-DYNA 는 빈 줄을 EID 없는 카드로 읽는다(덱 확인)")
+            for j in range(len(rows)):
                 if j == 0:
-                    curStrVector = str(elementBeamKeywords[i][j])
+                    curStrVector = str(rows[j])
                     length = len(curStrVector)/8
                     # R16 카드는 EID PID N1~N3 RT1 RR1 RT2 RR2 LOCAL 10칸 — 짧은 줄(EID PID N1 N2)은 칸이 모자라 임포터가 죽었다(v131 B1)
                     spaceVector = [8] * max(10, int(length))
-                parameters = self.parse_whole(elementBeamKeywords[i][j], spaceVector)
+                parameters = self.parse_whole(rows[j], spaceVector)
                 parameterList.append(parameters)
             self.parameters.append(parameterList)
 
@@ -12892,8 +12897,12 @@ class DynaManager():
                     print(f"  Include preserved (not inlined): {os.path.basename(include_path)}")
                 else:
                     # 인라인 모드: 사용자 지정 보존 패턴 또는 IGA 자동 보존 확인
-                    with open(include_path, 'r', errors='replace') as inc_f:
-                        inc_content = inc_f.read()
+                    try:
+                        with open(include_path, 'r', errors='replace') as inc_f:
+                            inc_content = inc_f.read()
+                    except OSError as e:   # 있는데 읽을 수 없다(권한·폴더) — 예전엔 트레이스백으로 죽었다(남은 결함 B4)
+                        print(f"🔴 *INCLUDE 파일을 읽을 수 없다: {include_path} ({e.strerror or e}) — 권한·경로를 확인할 것 (종료 코드 1)")
+                        raise SystemExit(1)
 
                     reason = self._include_passthrough_reason(include_path, inc_content)
                     if reason:
@@ -12915,7 +12924,14 @@ class DynaManager():
                         self.ReadKeywordsfromFile(include_path, lines_with_asterisk, keyword_dict,
                                                   default_fmt=inc_fmt if inc_fmt in ('long', 'std') else None)
             else:
-                print(f"Warning: Include file not found: {include_path}")
+                # 없는 인클루드 — 그 카드는 읽지 못했다. 예전엔 경고 한 줄 뒤 *INCLUDE 줄까지 출력에서 사라졌다(남은 결함 A15).
+                # 주 출력에는 *INCLUDE 줄을 원문대로 남긴다(LS-DYNA 가 그 자리에서 찾는다)
+                print(f"🔴 *INCLUDE 파일이 없다: {include_path} — 그 안의 카드는 읽지 못했다(모드가 보지 못한다). 주 출력에는 "
+                      f"*INCLUDE 줄을 원문대로 남기고, 다른 모드의 출력(낙하 덱 등)에는 없다 — 해석 전에 파일을 함께 둘 것")
+                entry = {"file": include_path, "content": "", "missing": True, "line": curFile.strip()}
+                keyword_dict.setdefault("_INCLUDE_PASSTHROUGH", []).append(entry)
+                self._include_passthrough_data.append(entry)
+                lines_with_asterisk.append("_INCLUDE_PASSTHROUGH")
 
         for keyword in empty_Keywords:
             lines_with_asterisk.remove(keyword)
@@ -16344,7 +16360,7 @@ class DynaManager():
                 for entry in keyword_dict["_INCLUDE_PASSTHROUGH"]:
                     inc_file = entry["file"]
                     file.write("*INCLUDE\n")
-                    file.write(f" {os.path.basename(inc_file)}\n")
+                    file.write(f" {entry['line'] if entry.get('missing') else os.path.basename(inc_file)}\n")
                 while "_INCLUDE_PASSTHROUGH" in lines_with_asterisk:
                     lines_with_asterisk.remove("_INCLUDE_PASSTHROUGH")
 

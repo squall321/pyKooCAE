@@ -316,13 +316,19 @@ def _write_single_part_model(
     stream.write(f"*DATABASE_RCFORC\n{dt_output:>10.4E}\n")
     stream.write(f"*DATABASE_BINARY_D3PLOT\n{dt_output:>10.4E}\n")
 
-    # 재료 + 섹션 출력
+    # 재료 + 섹션 출력 — 해석한 재료는 글을 그때 만든다(재료 관리자 기록기와 같다). 예전엔 아직 빈 글이라 파트의 재료가
+    # 파트 덱에서 빠졌다(LS-DYNA 는 정의 안 된 재료로 멈춘다 — 남은 결함 B2 를 고치며 찾음)
+    if type(mat).__name__ != "KooMaterial":
+        mat.GenerateDynaKeyword()
     if mat.dynaKeywordString:
         stream.write(mat.dynaKeywordString)
         if not mat.dynaKeywordString.endswith('\n'):
             stream.write('\n')
     if hasattr(part, 'section') and part.section is not None:
-        part.section.WriteStreamDynaKeyword(stream)
+        # 단면은 GenerateDynaKeyword 로 글을 만든다(단면 관리자 기록기와 같다) — 예전엔 단면 클래스에 없는
+        # WriteStreamDynaKeyword 를 불러 솔리드 파트가 있으면 AttributeError 로 죽었다(남은 결함 B2)
+        part.section.GenerateDynaKeyword()
+        stream.write(part.section.dynaKeywordString)
 
     # 바닥판 재료 + 섹션
     # 바닥판 ID: 원본과 충돌 방지 — 고유하게 생성
