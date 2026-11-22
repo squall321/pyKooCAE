@@ -12969,6 +12969,7 @@ class DynaManager():
         try:
             for i, line in enumerate(lines):
                 if line.startswith('*'):
+                    res.EndBlock()   # 이어지는 줄을 기다리던 *PARAMETER_EXPRESSION 식을 정의한다
                     name = keyword_line_name(line)
                     if '&' in line:
                         self._param_sub(path, lines, i, plan, late, False)

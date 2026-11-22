@@ -26,39 +26,128 @@ import ast
 import math
 from collections import ChainMap
 
-# 표현식 평가용 화이트리스트 함수 (LS-DYNA *PARAMETER_EXPRESSION 서브셋). 소문자 키.
-_EXPR_FUNCS = {
-    "sin": math.sin, "cos": math.cos, "tan": math.tan,
-    "asin": math.asin, "acos": math.acos, "atan": math.atan,
-    "atan2": math.atan2, "sqrt": math.sqrt, "exp": math.exp,
-    "log": math.log, "log10": math.log10, "abs": abs,
-    "min": min, "max": max, "int": int, "float": float,
-    "mod": math.fmod, "sign": lambda x: math.copysign(1.0, x),
-}
+# 표현식 평가 — R16 *PARAMETER_EXPRESSION Remark 2·3. 정수·실수 성질을 지킨다("2/5 becomes 0, but 2.0/5 becomes 0.4"),
+# sign·atan2·min·max·mod 는 두 인수(mod 는 정수 — 실수는 반올림), 단항 마이너스가 거듭제곱보다 먼저("-3**2 = 9").
+# 예전엔 모든 수를 실수로 셌고(2/5 = 0.4), sign 은 한 인수, mod 는 실수 나머지, -3**2 = -9, csc·sec·ctn·sinh 무리·aint·nint·anint
+# 가 없어 평가 실패였다 — 덱의 &참조가 LS-DYNA 와 다른 값으로 조용히 바뀌었다(남은 결함 A8).
+def _fnint(x):
+    """Fortran NINT (반은 0 에서 먼 쪽)."""
+    return int(math.floor(x + 0.5)) if x >= 0 else int(math.ceil(x - 0.5))
+
+
+_REAL1 = {"sin": math.sin, "cos": math.cos, "tan": math.tan, "csc": lambda x: 1.0 / math.sin(x),
+          "sec": lambda x: 1.0 / math.cos(x), "ctn": lambda x: 1.0 / math.tan(x), "asin": math.asin, "acos": math.acos,
+          "atan": math.atan, "sinh": math.sinh, "cosh": math.cosh, "tanh": math.tanh, "asinh": math.asinh,
+          "acosh": math.acosh, "atanh": math.atanh, "sqrt": math.sqrt, "exp": math.exp, "log": math.log,
+          "log10": math.log10}
+
+
+def _need(fname, args, n):
+    if len(args) != n:
+        raise ValueError(f"{fname} 는 인수 {n}개(받은 것 {len(args)}개)")
+
+
+def _call(fname, args):
+    """R16 함수 하나. 정수는 정수, 실수는 실수로 돌려준다. 모르는 함수 → ValueError."""
+    if fname in _REAL1:
+        _need(fname, args, 1)
+        return float(_REAL1[fname](float(args[0])))
+    if fname == "atan2":
+        _need(fname, args, 2)
+        return math.atan2(float(args[0]), float(args[1]))
+    if fname in ("abs", "int", "aint", "nint", "anint", "float"):
+        _need(fname, args, 1)
+        x = args[0]
+        if fname == "abs":
+            return abs(x)
+        if fname == "int":
+            return x if isinstance(x, int) else int(math.trunc(x))
+        if fname == "aint":
+            return float(math.trunc(x))
+        if fname == "nint":
+            return x if isinstance(x, int) else _fnint(x)
+        if fname == "anint":
+            return float(x if isinstance(x, int) else _fnint(x))
+        return float(x)
+    if fname == "sign":
+        _need(fname, args, 2)
+        return abs(args[0]) if args[1] >= 0 else -abs(args[0])
+    if fname in ("min", "max"):
+        if len(args) < 2:
+            raise ValueError(f"{fname} 는 인수 둘 이상")
+        r = (min if fname == "min" else max)(args)
+        return float(r) if any(isinstance(a, float) for a in args) else r
+    if fname == "mod":
+        _need(fname, args, 2)
+        a, b = (x if isinstance(x, int) else _fnint(x) for x in args)
+        if b == 0:
+            raise ValueError("mod 의 둘째 인수가 0")
+        r = abs(a) % abs(b)
+        return r if a >= 0 else -r          # Fortran MOD — 부호는 첫 인수를 따른다
+    raise ValueError(f"비허용 함수: {fname}")
+
+
+def _idiv(a, b):
+    """정수 나눗셈 — 0 쪽으로 버린다(Fortran)."""
+    q = abs(a) // abs(b)
+    return q if (a >= 0) == (b > 0) else -q
+
+
+def _pow(a, b):
+    if isinstance(a, int) and isinstance(b, int):
+        if b < 0:   # Fortran 정수 거듭제곱: 1/(a**|b|) 를 정수로
+            if a == 0:
+                raise ValueError("0 의 음수 거듭제곱")
+            return 1 if a == 1 else ((1 if b % 2 == 0 else -1) if a == -1 else 0)
+        if abs(a) > 1 and b * math.log2(abs(a)) > 63:
+            raise ValueError("정수 거듭제곱이 너무 크다")
+        return a ** b
+    r = float(a) ** float(b)
+    if isinstance(r, complex):
+        raise ValueError("음수의 실수 거듭제곱")
+    return r
+
+
 # 상수 (파라미터가 같은 이름을 정의하면 파라미터가 우선). 소문자 키.
 _EXPR_CONSTS = {"pi": math.pi, "e": math.e}
 
-# AST 화이트리스트 — dunder/속성접근/임의호출 불가, 숫자는 전부 float 취급(int bigint 거듭제곱 hang 차단)
+# AST 화이트리스트 — dunder/속성접근/임의호출 불가. 정수 거듭제곱은 크기를 막아 hang 이 없다
 _AST_BINOPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b,
-               ast.Mult: lambda a, b: a * b, ast.Div: lambda a, b: a / b,
+               ast.Mult: lambda a, b: a * b,
+               ast.Div: lambda a, b: _idiv(a, b) if isinstance(a, int) and isinstance(b, int) else float(a) / float(b),
                ast.Mod: lambda a, b: math.fmod(a, b), ast.FloorDiv: lambda a, b: float(a // b),
-               ast.Pow: lambda a, b: a ** b}
+               ast.Pow: _pow}
 _AST_UNARY = {ast.UAdd: lambda a: +a, ast.USub: lambda a: -a}
 
 _TYPE_CHARS = ("R", "I", "C", "r", "i", "c")
 
 
-def _eval_ast_node(node, resolved):
-    """제한 AST 평가. resolved={name_lower: float}. 비허용/미지 → ValueError.
+def _unary_pow_first(node, src):
+    """단항 ±가 거듭제곱보다 먼저(R16 Remark 2d) — 파이썬은 -3**2 를 -(3**2) 로 읽는다. 괄호 없이 바로 붙은 '-a**b' 를
+    '(-a)**b' 로 바꾼다. '-(3**2)' 처럼 괄호가 있으면 그대로. 자식부터 바꾼다('- -3**2' = 9, '2**-3**2' = 2**9)."""
+    for field, value in ast.iter_fields(node):
+        if isinstance(value, ast.AST):
+            setattr(node, field, _unary_pow_first(value, src))
+        elif isinstance(value, list):
+            setattr(node, field, [_unary_pow_first(v, src) if isinstance(v, ast.AST) else v for v in value])
+    if (isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)) and isinstance(node.operand, ast.BinOp)
+            and isinstance(node.operand.op, ast.Pow)):
+        b = src.encode("utf-8")
+        between = b[node.col_offset + 1:node.operand.col_offset].decode("utf-8", "ignore")
+        if "(" not in between:
+            new = ast.BinOp(left=ast.UnaryOp(op=node.op, operand=node.operand.left), op=ast.Pow(), right=node.operand.right)
+            ast.copy_location(new.left, node)
+            return ast.copy_location(new, node)
+    return node
 
-    숫자 리터럴은 float 로 취급하므로 9**9**9 같은 정수 bigint 거듭제곱은
-    OverflowError(float)로 즉시 종료돼 hang 이 불가능하다. 속성접근·subscript·
-    비화이트리스트 호출은 노드 자체가 불허라 __builtins__ 우회 탈출도 원천 차단.
-    """
+
+def _eval_ast_node(node, resolved):
+    """제한 AST 평가. resolved={name_lower: int|float}. 비허용/미지 → ValueError.
+    정수 리터럴·정수 파라미터는 정수로 센다(R16). 속성접근·subscript·비화이트리스트 호출은 노드 자체가 불허."""
     if isinstance(node, ast.Constant):
         if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
             raise ValueError(f"비수치 상수: {node.value!r}")
-        return float(node.value)
+        return node.value
     if isinstance(node, ast.BinOp) and type(node.op) in _AST_BINOPS:
         return _AST_BINOPS[type(node.op)](_eval_ast_node(node.left, resolved),
                                           _eval_ast_node(node.right, resolved))
@@ -74,11 +163,22 @@ def _eval_ast_node(node, resolved):
     if isinstance(node, ast.Call):
         if node.keywords or not isinstance(node.func, ast.Name):
             raise ValueError("비허용 호출")
-        fname = node.func.id.lower()
-        if fname not in _EXPR_FUNCS:
-            raise ValueError(f"비허용 함수: {node.func.id}")
-        return float(_EXPR_FUNCS[fname](*[_eval_ast_node(a, resolved) for a in node.args]))
+        return _call(node.func.id.lower(), [_eval_ast_node(a, resolved) for a in node.args])
     raise ValueError(f"비허용 식 노드: {type(node).__name__}")
+
+
+def _num_text(text, ptype):
+    """파라미터 값 글 → 정수(I) 또는 실수. E 없는 Fortran 지수(1.0-3)·d 지수도 읽는다."""
+    t = str(text).strip()
+    if ptype == 'I':
+        try:
+            return int(t)
+        except ValueError:
+            return _fnint(_num_text(t, 'R'))
+    m = re.match(r'^([+-]?(?:\d+\.?\d*|\.\d+))([+-]\d+)$', t)
+    if m:
+        t = m.group(1) + 'e' + m.group(2)
+    return float(t.replace('d', 'e').replace('D', 'e'))
 
 
 def _expr_param_deps(tree):
@@ -112,6 +212,7 @@ class ParameterResolver:
         """덱마다 새로 시작하는 상태 — 중복 규칙(R16 *PARAMETER_DUPLICATION·MUTABLE), LOCAL 범위, 아직 못 센 식.
         전역 값 표(params)는 그대로 둔다(같은 매니저가 이어 읽는 덱 — 예전 동작)."""
         self.dflag = None          # *PARAMETER_DUPLICATION DFLAG(없으면 1)
+        self._expr_buf = None      # 이어지는 줄을 기다리는 식 [(형, 이름, 식), LOCAL, MUTABLE]
         self._defined = {}         # 전역 이름 → 받아들인 정의 글(값이 나온 정의만, 이 덱에서 처음 본 것부터)
         self._mutable = set()      # 첫 정의가 MUTABLE 인 전역 이름(문자형은 빼고 — R16 Remark 6)
         self.BeginDeck()
@@ -161,9 +262,17 @@ class ParameterResolver:
         self._scopes.append({'vals': {}, 'types': {}, 'text': {}, 'mutable': set()})
         self._visible = None
 
+    def EndBlock(self):
+        """*PARAMETER_EXPRESSION 블록이 끝났다(다음 키워드·파일 끝) — 이어지는 줄을 기다리던 식을 정의한다."""
+        buf, self._expr_buf = getattr(self, '_expr_buf', None), None
+        if buf is not None:
+            (ptype, name, expr), local, mutable = buf
+            self._define(name, ptype, expr, local, mutable, is_expr=True)
+
     def EndFile(self):
         """파일 끝 — 그 파일의 LOCAL 은 사라진다("disappear when the input parser finishes reading the file in which
         they appear"). 그 파일에서 못 센 식은 남겨 둔다 — 덱 끝까지 참조가 정의되면 그 파일의 앞 참조 줄을 채울 때 쓴다."""
+        self.EndBlock()
         if self._scopes:
             self._scopes.pop()
         self._visible = None
@@ -222,10 +331,23 @@ class ParameterResolver:
             return 'end'
         local, mutable = 'LOCAL' in opts, 'MUTABLE' in opts
         if kind == 'expr':
+            # R16: "The expression can be continued on multiple lines simply by leaving the first 10 characters of the
+            # continuation line blank" — 예전엔 이어지는 줄을 새 정의로 읽어 앞 식이 잘렸다. 식은 블록이 끝나거나 다음 식
+            # 줄이 올 때 정의한다(EndBlock)
+            if line[:10].strip() == '':
+                if self._expr_buf is None:
+                    print(f"  Warning: PARAMETER_EXPRESSION 이어지는 줄 '{s}' 앞에 식이 없다 — 무시했다")
+                    return None
+                (ptype, name, expr), lo, mu = self._expr_buf
+                more = re.sub(r'&(?=[A-Za-z_])', '', s) if ptype != 'C' else s
+                self._expr_buf = ((ptype, name, expr + ' ' + more), lo, mu)
+                return None
+            self.EndBlock()
             got = self._split_expression_line(line)
             if got:
-                self._define(got[1], got[0], got[2], local, mutable, is_expr=True)
+                self._expr_buf = (got, local, mutable)
         else:
+            self.EndBlock()
             for ptype, name, val in self._split_parameter_line(line):
                 self._define(name, ptype, val, local, mutable, is_expr=False)
         return None
@@ -236,11 +358,13 @@ class ParameterResolver:
         hdr = None
         for line in raw_lines:
             if line.startswith('*'):
+                self.EndBlock()
                 m = re.match(r'\*([A-Za-z0-9_]+)', line)
                 hdr = self.ParseHeader(m.group(1)) if m else None
                 continue
             if hdr is not None and self.DefineLine(hdr, line) == 'end':
                 hdr = None
+        self.EndBlock()
 
     def _define(self, name, ptype, text, local, mutable, is_expr):
         """이름 하나의 정의를 R16 규칙으로 받는다.
@@ -316,7 +440,7 @@ class ParameterResolver:
         if ptype == 'C':   # R16: 'For type "C" parameters, the expression is not evaluated in any sense, just stored as a string'
             return str(expr).strip()
         try:
-            tree = ast.parse(expr, mode='eval').body
+            tree = _unary_pow_first(ast.parse(expr, mode='eval').body, expr)
         except SyntaxError as e:
             print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 구문 오류 ({e}) — 미치환 유지")
             return _FAILED
@@ -325,8 +449,13 @@ class ParameterResolver:
         if not all(d in vis or d in _EXPR_CONSTS for d in deps):
             return _PENDING
         try:
-            value = _eval_ast_node(tree, {d: float(vis[d]) for d in deps if d in vis})
-            return str(self._nint(value)) if ptype == 'I' else repr(float(value))
+            types = ChainMap(*[sc['types'] for sc in reversed(chain)], self.param_types)
+            value = _eval_ast_node(tree, {d: _num_text(vis[d], (types.get(d) or 'R').upper()) for d in deps if d in vis})
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError(f"유한하지 않은 값 {value}")
+            if ptype == 'I':
+                return str(value if isinstance(value, int) else self._nint(value))
+            return repr(float(value))
         except Exception as e:
             print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 평가 실패 ({e}) — 미치환 유지")
             return _FAILED
@@ -364,6 +493,11 @@ class ParameterResolver:
         떨어져 있어도 된다(R16 "RSHLTHK", "R␣␣␣SHLTHK" 는 같다). LOCAL 도 같은 문법이다 — 예전 LOCAL 파서는 붙여 쓴
         형식의 첫 쌍만 읽어 'R thk 1.0' 줄을 통째로 버렸다(리뷰 J). R16 Card 1 그대로(값 10칸 오른쪽 맞춤 뒤에 다음 PRMR)
         쓰면 '1.0Rw' 처럼 붙으니 숫자 뒤의 형 글자에서 가른다 — 예전엔 thk='1.0R' 로 받아 조용히 0 이었다(리뷰 K)."""
+        head = line.rstrip('\r\n')
+        if ',' not in head and re.match(r'\s*[Cc]\s*CPINLSDNR\s*$', head[:10]):
+            # R16 Remark 2: 'CCPINLSDNR      ^^//CINCDIR               PARAM' — 구분자 값은 10칸 경계에서 다음 이름에 붙는다
+            rest = self._split_parameter_line(head[20:]) if len(head) > 20 else []
+            return [('C', 'cpinlsdnr', head[10:20].strip())] + rest
         toks = []
         for t in re.split(r'[,\s]+', line.strip()):
             if not t:
@@ -429,13 +563,57 @@ class ParameterResolver:
         eol = '\n' if line.endswith('\n') else ''
         return self._sub_token(line[:-1] if eol else line, params) + eol
 
-    def _sub_token(self, body, params=None):
-        """토큰 단위 치환 (필드폭 없는 라인: 코멘트/free-format). 길이 가변 허용."""
+    @staticmethod
+    def _delim(params):
+        """문자 파라미터를 긴 글에 넣을 때의 (구분자, 바꿀 글) — 기본 ('^', '_'), CPINLSDNR 가 있으면 '구분자/바꿀 글'
+        ('/' 가 없으면 구분자를 지운다). R16 *PARAMETER Remark 2."""
+        v = params.get('cpinlsdnr') if params else None
+        if v is None:
+            return '^', '_'
+        v = str(v).strip()
+        if '/' in v:
+            d, r = v.split('/', 1)
+            return (d, r) if d else ('^', '_')
+        return (v, '') if v else ('^', '_')
+
+    def _sub_delimited(self, body, params):
+        """'&이름^' → 값 + 바꿀 글(길이가 바뀐다 — 긴 글 안의 문자 파라미터). 예전엔 '^' 가 그대로 남았다."""
+        d, r = self._delim(params)
+        if d not in body:
+            return body
+        pat = re.compile(r'&([A-Za-z_][A-Za-z0-9_]*)' + re.escape(d))
+        return pat.sub(lambda m: str(params[m.group(1).lower()]).strip() + r if m.group(1).lower() in params else m.group(0),
+                       body)
+
+    @staticmethod
+    def _negate(val):
+        """'-&이름' — 수 값의 부호를 바꾼다(R16 *PARAMETER Remark 1). 수가 아니면 None."""
+        try:
+            _num_text(val, 'R')
+        except ValueError:
+            return None
+        if val.startswith('-'):
+            return val[1:]
+        return '-' + (val[1:] if val.startswith('+') else val)
+
+    _SIGNED_REF_RE = re.compile(r'(-?)&([A-Za-z_][A-Za-z0-9_]*)')
+
+    def _sub_token(self, body, params=None, numeric=False):
+        """토큰 단위 치환 (필드폭 없는 라인: 코멘트/free-format). 길이 가변 허용. numeric(쉼표 데이터 줄)이면 '-&이름' 은
+        부호를 바꾼 값이다 — 예전엔 음수 값에서 '--5' 가 됐다."""
         params = self.params if params is None else params
+        body = self._sub_delimited(body, params)
         def repl(m):
-            name = m.group(1).lower()
-            return str(params[name]).strip() if name in params else m.group(0)
-        return self._REF_RE.sub(repl, body)
+            name = m.group(2).lower()
+            if name not in params:
+                return m.group(0)
+            val = str(params[name]).strip()
+            if m.group(1) and numeric:
+                neg = self._negate(val)
+                if neg is not None:
+                    return neg
+            return m.group(1) + val
+        return self._SIGNED_REF_RE.sub(repl, body)
 
     def SubstituteLine(self, line, params=None):
         """라인 내 &name 참조를 파라미터 값으로 치환 (필드폭 비가정). params 를 주면 그 표(예: Visible())로, 없으면 전역 표로.
@@ -459,7 +637,8 @@ class ParameterResolver:
             body, eol = body[:-1], '\n'
         lstrip = body.lstrip()
         if lstrip[:1] in ('$', '*') or ',' in body:
-            return self._sub_token(body, params) + eol
+            return self._sub_token(body, params, numeric=lstrip[:1] not in ('$', '*')) + eol
+        body = self._sub_delimited(body, params)
         result = body
         # 오른쪽→왼쪽 처리: 각 치환은 span 길이 == 값 길이(길이 보존)라 좌측 인덱스 안정
         for m in reversed(list(self._REF_RE.finditer(body))):
@@ -467,8 +646,12 @@ class ParameterResolver:
             if name not in params:
                 continue
             start, end = m.span()
-            tok = end - start
             val = str(params[name]).strip()
+            if start > 0 and result[start - 1] == '-':   # '-&이름' — 부호를 바꾼 값(R16 Remark 1). 예전엔 음수에서 '--5'
+                neg = self._negate(val)
+                if neg is not None:
+                    start, val = start - 1, neg
+            tok = end - start
             if len(val) <= tok:
                 result = result[:start] + val.rjust(tok) + result[end:]
                 continue
@@ -486,6 +669,9 @@ class ParameterResolver:
                 except (TypeError, ValueError):
                     v = val
             extra = len(v) - tok
+            if extra <= 0:   # %g 로 줄여 토큰 폭 안에 들었다 — 예전엔 음수 extra 로 앞 칸을 잘랐다
+                result = result[:start] + v.rjust(tok) + result[end:]
+                continue
             if extra > lead + trail:
                 print(f"  Warning: &{m.group(1)} 값 '{val}' 이 필드 공백({tok + lead + trail})을 초과 — 미치환")
                 continue
