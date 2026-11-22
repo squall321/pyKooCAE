@@ -1,5 +1,6 @@
 from __future__ import annotations
 from KooCAEManager.KooOperator import KooDynaFloat, KooDynaInt, KooDynaString
+from KooCAEManager.KooDeckEcho import write as _echo_write   # 덱에만 있는 끝 칸·끝 카드를 되살려 쓴다(남은 결함 A1)
 
 class KooDatabase:
     def __init__(self):
@@ -718,7 +719,7 @@ class KooDatabaseBinaryIntfor(KooDatabaseBinary):
             stream.write("*DATABASE_BINARY_INTFOR\n")
         else:
             stream.write("*DATABASE_BINARY_INTFOR_FILE\n")
-            stream.write(format(self.name, ">80"))
+            stream.write(str(self.name).strip())   # FNAME(A80) 은 왼쪽부터
             stream.write("\n")
         super().WriteStreamDynaKeyword(stream)
         stream.write(format(self.IOOPT, ">10"))
@@ -1094,11 +1095,14 @@ class KooDatabaseManager:
                     name = ""
                 self.SetDatabaseBinaryIntfor(DTCYCL, LCDT, BEAM, NPLTC, PSETID, CID, IOOPT, name)
             elif databaseKeyword[0] == "*DATABASE_BINARY_INTFOR_FILE":
-                name = databaseKeyword[1]
-                keyword = databaseKeyword[3]
-                if len(keyword[0].strip()) == 0:
-                    keyword[0] = "0"
-                IOOPT = KooDynaInt(keyword[0])
+                # 이름 카드는 리더가 [글] 목록으로 준다 — 예전엔 목록을 그대로 넘겨 쓸 때 TypeError 로 죽었다. 카드 2c(IOOPT)는 선택 카드
+                name = databaseKeyword[1][0].strip() if isinstance(databaseKeyword[1], list) else str(databaseKeyword[1]).strip()
+                IOOPT = 0
+                if len(databaseKeyword) > 3:
+                    keyword = databaseKeyword[3]
+                    if len(keyword[0].strip()) == 0:
+                        keyword[0] = "0"
+                    IOOPT = KooDynaInt(keyword[0])
                 self.SetDatabaseBinaryIntfor(DTCYCL, LCDT, BEAM, NPLTC, PSETID, CID, IOOPT, name)
                 
         elif databaseKeyword[0] == "*DATABASE_HISTORY_NODE" or databaseKeyword[0] == "*DATABASE_HISTORY_BEAM" or databaseKeyword[0] == "*DATABASE_HISTORY_BEAM_SET" or databaseKeyword[0] == "*DATABASE_HISTORY_SHELL" or databaseKeyword[0] == "*DATABASE_HISTORY_SHELL_SET" or databaseKeyword[0] == "*DATABASE_HISTORY_SOLID" or databaseKeyword[0] == "*DATABASE_HISTORY_SOLID_SET":            
@@ -1141,4 +1145,4 @@ class KooDatabaseManager:
 
     def WriteStreamDynaKeyword(self, stream):
         for key in self.database:
-            self.database[key].WriteStreamDynaKeyword(stream)
+            _echo_write(self.database[key], stream)

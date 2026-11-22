@@ -3172,7 +3172,8 @@ class ControlContact(DynaKeyword):
         parameter = []
         parameter.append("*CONTROL_CONTACT")
         parameter.append(self.parameters[0])
-        parameter.append(self.parameters[1])
+        if len(self.parameters) > 1:   # 카드 2 가 없는 한 장짜리 블록 — 예전엔 IndexError 로 죽었다(남은 결함 A3)
+            parameter.append(self.parameters[1])
         if len(self.parameters) > 2:
             parameter.append(self.parameters[2])
         if len(self.parameters) > 3:
@@ -5024,9 +5025,10 @@ class DatabaseBinaryIntfor(DynaKeyword):
     def parse(self, lines):
         #parameters = lines[0][0].parse_whole([10, 10])
         parameters = self.parse_whole(lines[0][0], [10, 10, 10, 10, 10, 10])
+        self.parameters.append(parameters)
+        # 카드 2c(IOOPT)는 따로 담는다 — 예전엔 카드 1 을 덮어써 DT 가 IOOPT 값(1 → 1.0, 없으면 0)으로 바뀌었다(남은 결함 A2)
         if len(lines[0]) > 1:
-            parameters = self.parse_whole(lines[0][1], [10])
-        self.parameters.append(parameters)    
+            self.parameters.append(self.parse_whole(lines[0][1], [10]))
 
     def getDatabaseBinaryIntfor(self):
         parameters = []
@@ -5058,15 +5060,16 @@ class DatabaseBinaryIntforFile(DynaKeyword):
         self.parameters.append(parameters)
         parameters = self.parse_whole(lines[0][1], [10, 10, 10, 10, 10, 10])
         self.parameters.append(parameters)
-        parameters = self.parse_whole(lines[0][2], [10])
-        self.parameters.append(parameters)        
+        if len(lines[0]) > 2:   # 카드 2c(IOOPT)는 선택 카드 — 없으면 IndexError 로 죽었다
+            self.parameters.append(self.parse_whole(lines[0][2], [10]))
 
     def getDatabaseBinaryIntforFile(self):
         parameters = []
         parameters.append("*DATABASE_BINARY_INTFOR_FILE")
         parameters.append(self.parameters[0])
         parameters.append(self.parameters[1])
-        parameters.append(self.parameters[2])
+        if len(self.parameters) > 2:
+            parameters.append(self.parameters[2])
         return parameters
     
     def write(self, stream):
@@ -5087,7 +5090,8 @@ class DatabaseExtentBinary(DynaKeyword):
         parameters = self.parse_whole(lines[0][0], [10, 10, 10, 10, 10, 10, 10, 10])
         self.parameters.append(parameters)
         #parameters = lines[0][1].parse_whole([10, 10, 10, 10, 10, 10, 10, 10])
-        parameters = self.parse_whole(lines[0][1], [10, 10, 10, 10, 10, 10, 10, 10])
+        # 카드 2 가 없는 한 장짜리 블록 — 빈 칸으로 둔다(매니저가 기본값을 채운다). 예전엔 IndexError 로 죽었다
+        parameters = self.parse_whole(lines[0][1], [10, 10, 10, 10, 10, 10, 10, 10]) if len(lines[0]) > 1 else [""] * 8
         self.parameters.append(parameters)
     
     def getDatabaseExtentBinary(self):

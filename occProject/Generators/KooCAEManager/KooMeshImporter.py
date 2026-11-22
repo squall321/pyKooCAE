@@ -23,6 +23,7 @@ from KooCAEManager.KooSegment import *
 from KooCAEManager.KooDynaResult import *
 from KooCAEManager.KooDynaControl import *
 from KooCAEManager.KooDynaDatabase import *
+from KooCAEManager.KooDeckEcho import attach as _echo_attach
 from KooCAEManager.KooInitial import *
 from KooCAEManager.KooDynaAdditional import *
 from KooCAEManager.KooDamping import *
@@ -1869,6 +1870,27 @@ class KooDynaImporter():
             controlSolidKeyword : ControlSolid = dynaKeyword["CONTROL_SOLID"]
             control = controlSolidKeyword.getControlSolid()
             self.controlManager.SetControlfromDyna(control)
+        # 덱 원문을 객체에 붙인다 — 기록기에 없는 끝 칸·끝 카드(TIMESTEP 카드 3·EMSCL, ACCURACY 의 EXACC·SRTFLG …)를
+        # 쓸 때 되살린다(남은 결함 A1, KooDeckEcho). DR 카드 2 는 IDRFLG 에 달렸다
+        cm = self.controlManager
+        self._attach_deck_text([
+            ("CONTROL_TERMINATION", cm.controlTermination), ("CONTROL_TIMESTEP", cm.controlTimeStep),
+            ("CONTROL_HOURGLASS", cm.controlHourglass), ("CONTROL_ACCURACY", cm.controlAccuracy),
+            ("CONTROL_DYNAMIC_RELAXATION", cm.controlDynamicRelaxation, None, ("IDRFLG",)),
+            ("CONTROL_ENERGY", cm.controlenergy), ("CONTROL_CONTACT", cm.controlContact),
+            ("CONTROL_MPP_IO_NODUMP", cm.controlMppIONodump), ("CONTROL_BULK_VISCOSITY", cm.controlBulkViscosity),
+            ("CONTROL_OUTPUT", cm.controlOutput), ("CONTROL_SHELL", cm.controlShell),
+            ("CONTROL_SOLID", cm.controlSolid, {1: [8] * 10}),   # 카드 2 PM1~PM10 은 8칸
+        ])
+
+    def _attach_deck_text(self, rows):
+        """덱에서 가져온 한 벌짜리 제어·DB 객체에 덱 원문 블록(리더가 읽은 첫 블록)을 붙인다. 덱에 없는 키워드는 건너뛴다."""
+        dynaKeyword = self.dynaManager.dynaKeywordMan.keywords
+        raw = getattr(self.dynaManager, "_raw_keyword_dict", None) or {}
+        fmts = getattr(self.dynaManager, "_block_formats", None) or {}
+        for kw, obj, *opt in rows:
+            if kw in dynaKeyword and raw.get(kw):
+                _echo_attach(obj, kw, raw[kw][0], (fmts.get(kw) or [None])[0], *opt)
 
     def importContact(self):
         dynaKeyword = self.dynaManager.dynaKeywordMan.keywords
@@ -2230,6 +2252,18 @@ class KooDynaImporter():
             databaseNodalForceGroupKeyword : DatabaseNodalForceGroup = dynaKeyword["DATABASE_NODAL_FORCE_GROUP"]
             database = databaseNodalForceGroupKeyword.getDatabaseNodalForceGroup()
             self.databaseManager.SetDatabasefromDyna(database)
+        # 덱 원문을 객체에 붙인다(importControl 끝과 같다) — EXTENT_BINARY 카드 3·4, D3PLOT·D3DUMP 카드 2 … HISTORY_*·NODAL_FORCE_GROUP 은 뺀다
+        db = self.databaseManager.database
+        self._attach_deck_text([
+            ("DATABASE_BNDOUT", db.get("BNDOUT")), ("DATABASE_ELOUT", db.get("ELOUT")), ("DATABASE_SPCFORC", db.get("SPCFORC")),
+            ("DATABASE_RBDOUT", db.get("RBOUT")), ("DATABASE_RCFORC", db.get("RCFORC")), ("DATABASE_RWFORC", db.get("RWFORC")),
+            ("DATABASE_NODFOR", db.get("NODFOR")), ("DATABASE_NODOUT", db.get("NODOUT")), ("DATABASE_GLSTAT", db.get("GLSTAT")),
+            ("DATABASE_MATSUM", db.get("MATSUM")), ("DATABASE_SLEOUT", db.get("SLEOUT")),
+            ("DATABASE_BINARY_D3PLOT", db.get("BINARY_D3PLOT")), ("DATABASE_BINARY_D3THDT", db.get("BINARY_D3THDT")),
+            ("DATABASE_BINARY_D3DUMP", db.get("BINARY_D3DUMP")), ("DATABASE_BINARY_INTFOR", db.get("BINARY_INTFOR")),
+            ("DATABASE_BINARY_INTFOR_FILE", db.get("BINARY_INTFOR"), {0: "text"}),   # INTFOR 뒤에 가져와 같은 객체를 덮는다
+            ("DATABASE_EXTENT_BINARY", db.get("EXTENT_BINARY")), ("DATABASE_EXTENT_INTFOR", db.get("EXTENT_INTFOR")),
+        ])
     
     def importInitial(self):
         dynaKeyword = self.dynaManager.dynaKeywordMan.keywords

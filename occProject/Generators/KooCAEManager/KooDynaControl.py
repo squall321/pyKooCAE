@@ -4,10 +4,12 @@ if __name__ == "__main__":
     from KooDynaKeyword import *
     from KooOperator import KooDynaFloat, KooDynaInt, KooDynaString
     from KooDefine import _real10
+    from KooDeckEcho import write as _echo_write
 else:
     from KooCAEManager.KooDynaKeyword import *
     from KooCAEManager.KooOperator import KooDynaFloat, KooDynaInt, KooDynaString
     from KooCAEManager.KooDefine import _real10   # DRFCTR 0.9995 를 >10.3f 로 쓰면 1.000(감쇠 없음), DRTOL 1E-4 → 0.000(기본값)
+    from KooCAEManager.KooDeckEcho import write as _echo_write   # 덱에만 있는 끝 칸·끝 카드를 되살려 쓴다(남은 결함 A1)
 
 class KooControlMppIONodump:
     def __init__(self):
@@ -432,6 +434,8 @@ class KooControlSolid:
             stream.write(format(self.PM8, ">8"))
             stream.write(format(self.PM9, ">8"))
             stream.write(format(self.PM10, ">8"))
+            stream.write("\n")
+        elif self._has_tet13v_data():   # 카드 3 은 세 번째 줄이어야 한다 — 카드 2 자료가 없으면 빈 카드 2(기본값) 줄을 먼저 쓴다
             stream.write("\n")
         if self._has_tet13v_data():
             stream.write("$$  TET13V     RINRT\n")
@@ -1146,22 +1150,23 @@ class KooControlManager:
             self.controlSolid.T10JTOL = KooDynaFloat(Line1[5],0.0)
             self.controlSolid.ICOH = KooDynaInt(Line1[6],0)
             self.controlSolid.TET13K = KooDynaInt(Line1[7],0)
+            # 카드 2·3 값은 관리자(self)가 아니라 객체에 담는다 — 예전엔 관리자에 담겨 기록기가 보지 못해 조용히 빠졌다(남은 결함 A4)
             if len(controlKeyword) > 2:
                 Line2 = controlKeyword[2] 
-                self.PM1 = KooDynaInt(Line2[0],"")
-                self.PM2 = KooDynaInt(Line2[1],"")
-                self.PM3 = KooDynaInt(Line2[2],"")
-                self.PM4 = KooDynaInt(Line2[3],"")
-                self.PM5 = KooDynaInt(Line2[4],"")
-                self.PM6 = KooDynaInt(Line2[5],"")
-                self.PM7 = KooDynaInt(Line2[6],"")
-                self.PM8 = KooDynaInt(Line2[7],"")
-                self.PM9 = KooDynaInt(Line2[8],"")
-                self.PM10 = KooDynaInt(Line2[9],"")
+                self.controlSolid.PM1 = KooDynaInt(Line2[0],"")
+                self.controlSolid.PM2 = KooDynaInt(Line2[1],"")
+                self.controlSolid.PM3 = KooDynaInt(Line2[2],"")
+                self.controlSolid.PM4 = KooDynaInt(Line2[3],"")
+                self.controlSolid.PM5 = KooDynaInt(Line2[4],"")
+                self.controlSolid.PM6 = KooDynaInt(Line2[5],"")
+                self.controlSolid.PM7 = KooDynaInt(Line2[6],"")
+                self.controlSolid.PM8 = KooDynaInt(Line2[7],"")
+                self.controlSolid.PM9 = KooDynaInt(Line2[8],"")
+                self.controlSolid.PM10 = KooDynaInt(Line2[9],"")
             if len(controlKeyword) > 3:
                 Line3 = controlKeyword[3]
-                self.TET13V = KooDynaInt(Line3[0],0)
-                self.RINRT = KooDynaInt(Line3[1],0)
+                self.controlSolid.TET13V = KooDynaInt(Line3[0],0)
+                self.controlSolid.RINRT = KooDynaInt(Line3[1],0)
               
         elif controlKeyword[0] == "*CONTROL_OUTPUT":
             Line1 = controlKeyword[1]
@@ -1358,7 +1363,8 @@ class KooControlManager:
             THKCHG = KooDynaInt(parameter[5])
             ORIEN = KooDynaInt(parameter[6])
             ENMASS = KooDynaInt(parameter[7])
-            parameter = controlKeyword[2]
+            # 카드 2 가 없는 한 장짜리 블록은 빈 칸(두 장짜리의 빈 칸과 같은 읽기) — 예전엔 IndexError 로 죽었다(남은 결함 A3)
+            parameter = controlKeyword[2] if len(controlKeyword) > 2 else [""] * 8
             USRSTR = KooDynaInt(parameter[0])
             USRFRC = KooDynaInt(parameter[1])
             NSBCS = KooDynaInt(parameter[2])
@@ -1376,7 +1382,7 @@ class KooControlManager:
                 TH = KooDynaFloat(parameter[4])
                 TH_SF = KooDynaFloat(parameter[5])
                 PEN_SF = KooDynaFloat(parameter[6])
-                PTSCL = KooDynaFloat(parameter[7])                
+                PTSCL = KooDynaFloat(parameter[7], 1.0)   # 빈칸 = R16 기본값 1.0(0 이 아니다) — 카드 3~5 장짜리가 예전에 쓰던 값
                 self.SetControlContact(SLSFAC, RWPNAL, ISLCHK, SHLTHK, PENOPT, THKCHG, ORIEN, ENMASS, USRSTR, USRFRC, NSBCS, INTERM, XPENE, SSTHK, ECDT, TIEDPRJ, SFRIC, DFRIC, EDC, VFC, TH, TH_SF, PEN_SF, PTSCL)
             if len(controlKeyword)>4:   
                 parameter = controlKeyword[4]
@@ -1395,7 +1401,7 @@ class KooControlManager:
                 NSEROD = KooDynaInt(parameter[1])
                 RWGAPS = KooDynaInt(parameter[2])
                 RWGDTH = KooDynaFloat(parameter[3])
-                RWKSF = KooDynaFloat(parameter[4])
+                RWKSF = KooDynaFloat(parameter[4], 1.0)   # 빈칸 = R16 기본값 1.0
                 ICOV = KooDynaInt(parameter[5])
                 SWRADF = KooDynaFloat(parameter[6])
                 ITHOFF = KooDynaInt(parameter[7])
@@ -1412,7 +1418,9 @@ class KooControlManager:
                 IGACTC = KooDynaInt(parameter[7])
                 
                 self.SetControlContact(SLSFAC, RWPNAL, ISLCHK, SHLTHK, PENOPT, THKCHG, ORIEN, ENMASS, USRSTR, USRFRC, NSBCS, INTERM, XPENE, SSTHK, ECDT, TIEDPRJ, SFRIC, DFRIC, EDC, VFC, TH, TH_SF, PEN_SF, PTSCL, IGNORE, FRCENG, SKIPRWG, OUTSEG, SPOTSTP, SPOTDEL, SPOTHIN, ISYM, NSEROD, RWGAPS, RWGDTH, RWKSF, ICOV, SWRADF, ITHOFF, SHLEDG, PSTIFF, ITHCNT, TDCNOF, FTALL, "", SHLTRW, IGACTC)
-            else:
+            # 예전엔 이 갈래가 바로 위 `if` 에만 걸린 `else` 라 카드 3~5 장짜리 블록을 카드 1·2 만으로 다시 만들어
+            # 카드 3~5 값이 기본값으로 조용히 되돌아갔다(남은 결함 A3)
+            elif len(controlKeyword) <= 3:
                 self.SetControlContact(SLSFAC, RWPNAL, ISLCHK, SHLTHK, PENOPT, THKCHG, ORIEN, ENMASS, USRSTR, USRFRC, NSBCS, INTERM, XPENE, SSTHK, ECDT, TIEDPRJ)
         elif controlKeyword[0] == "*CONTROL_MPP_IO_NODUMP":   # 리더는 '*' 붙은 이름을 넘긴다(다른 분기와 같다)
             self.SetControlMPPIoNodump()
@@ -1420,35 +1428,35 @@ class KooControlManager:
     
     def WriteStreamDynaKeyword(self, stream):
         if self.controlSolution != None:
-            self.controlSolution.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlSolution, stream)
         if self.controlThermalSolver != None:
-            self.controlThermalSolver.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlThermalSolver, stream)
         if self.controlThermalTimestep != None:
-            self.controlThermalTimestep.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlThermalTimestep, stream)
         if self.controlOutput != None:
-            self.controlOutput.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlOutput, stream)
         if self.controlBulkViscosity != None:
-            self.controlBulkViscosity.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlBulkViscosity, stream)
         if self.controlTermination != None:
-            self.controlTermination.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlTermination, stream)
         if self.controlTimeStep != None:
-            self.controlTimeStep.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlTimeStep, stream)
         if self.controlHourglass != None:
-            self.controlHourglass.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlHourglass, stream)
         if self.controlenergy != None:
-            self.controlenergy.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlenergy, stream)
         if self.controlContact != None:
-            self.controlContact.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlContact, stream)
         if self.controlMppIONodump != None:
-            self.controlMppIONodump.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlMppIONodump, stream)
         if self.controlDynamicRelaxation != None:
-            self.controlDynamicRelaxation.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlDynamicRelaxation, stream)
         if self.controlAccuracy != None:
-            self.controlAccuracy.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlAccuracy, stream)
         if self.controlShell is not None:
-            self.controlShell.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlShell, stream)
         if self.controlSolid is not None:
-            self.controlSolid.WriteStreamDynaKeyword(stream)
+            _echo_write(self.controlSolid, stream)
 
     def GenerateDynaKeyword(self):
         keyword = ""
