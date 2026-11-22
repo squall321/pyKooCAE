@@ -729,8 +729,11 @@ def r4():
     for kw, body in (("RIGID", f10(4, 3, 4, 10, 1.0) + f10(5.0, 0.0, 5, 0, 0) + f10(5, 1, 0, 10, 2.0)),
                      ("RIGID_ID", f"{71:10d}a\n" + f10(4, 9, 2, 10, 1.0) + f10(5.0, 0.0, 0, 0, 0) + f"{72:10d}b\n" + f10(5, 1, 0, 10, 2.0))):
         d, rc, log = run("pm_card3", {"model.k": rig + f"*BOUNDARY_PRESCRIBED_MOTION_{kw}\n" + body + "*END\n"})
-        check(f"R4 *BOUNDARY_PRESCRIBED_MOTION_{kw} 카드 3 이 오는 조건(VAD 4·DOF 9): 가짜 조건 없이 원인을 밝혀 멈춘다(rc 1)",
-              rc == 1 and "카드 3" in log, f"rc={rc} " + log[-300:])
+        t = read(d, "model_trans.k")
+        # 남은 결함 B7(2026-11-22) — 예전엔 멈췄다(rc 1). 이제 카드 3 을 그 조건의 카드 1 뒤에 그대로 옮기고 가짜 조건은 없다
+        card3 = body.splitlines()[1 if kw == "RIGID" else 2].rstrip()
+        check(f"R4 *BOUNDARY_PRESCRIBED_MOTION_{kw} 카드 3 이 오는 조건(VAD 4·DOF 9): 가짜 조건 없이 카드 3 을 옮긴다(rc 0)",
+              rc == 0 and card3 in t.splitlines(), f"rc={rc} " + log[-300:])
 
     # ── 가져온 *ELEMENT_MASS_NODE_SET 의 절점 셋 번호 ─────────────────────────────────────────────────────────
     nm = lambda m: "*SET_NODE_LIST\n" + f10(1) + f10(1, 2, 3, 4) + "*ELEMENT_MASS_NODE_SET\n" + f"{60:8d}{1:8d}{m:16.6f}\n"

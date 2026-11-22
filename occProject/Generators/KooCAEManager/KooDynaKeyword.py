@@ -146,10 +146,22 @@ class DynaKeyword():
         stream.write("\n")
         self.writeParameters(stream)
 
+class _PMRow(list):
+    """처방 운동 카드 1 칸 + 그 뒤에 온 카드 3 원문(card3 — R16 |DOF| 9·10·11 또는 VAD 4 일 때, 아니면 None)."""
+    card3 = None
+
+
+def _pm_row(fields, card3=None):
+    r = _PMRow(fields)
+    r.card3 = card3.rstrip("\r\n") if card3 is not None else None
+    return r
+
+
 def _pm_card_groups(block, keyword, with_id):
-    """처방 운동 블록 → 조건마다 줄 묶음([ID 카드,] 카드 1). 빈 줄·주석은 건너뛴다(ID·카드 1 모두 기본값 없는 칸이 있다).
-    R16: 카드 1 의 |DOF| 가 9·10·11 이거나 VAD 가 4 면 카드 3(OFFSET1 OFFSET2 LRB NODE1 NODE2)이 뒤따른다 — KMM 기록기는 그
-    카드를 쓰지 못해 원인을 밝혀 멈춘다. 예전엔 카드 3 을 다음 조건으로 읽어 가짜 조건이 생기거나 _ID 쌍이 밀렸다(v131 리뷰 R4).
+    """처방 운동 블록 → 조건마다 줄 묶음([ID 카드,] 카드 1[, 카드 3]). 빈 줄·주석은 건너뛴다(ID·카드 1 모두 기본값 없는 칸이 있다).
+    R16: 카드 1 의 |DOF| 가 9·10·11 이거나 VAD 가 4 면 카드 3(OFFSET1 OFFSET2 LRB NODE1 NODE2)이 뒤따른다 — 그 줄을 묶음에 넣어
+    기록기가 카드 1 뒤에 그대로 쓴다. 예전엔 KMM 이 그 카드를 옮기지 못해 멈췄고(남은 결함 B7), 그 전에는 카드 3 을 다음 조건으로
+    읽어 가짜 조건이 생기거나 _ID 쌍이 밀렸다(v131 리뷰 R4). 카드 3 이 와야 하는데 줄이 없으면 원인을 밝혀 멈춘다.
     짝이 없는 마지막 줄은 알리고 버린다."""
     lines = [str(l) for l in block if str(l).strip() and not str(l).lstrip().startswith("$")]
     n = 2 if with_id else 1
@@ -160,10 +172,14 @@ def _pm_card_groups(block, keyword, with_id):
         v += [""] * 3
         dof, vad = _dyna_int(v[1], 0), _dyna_int(v[2], 0)
         if abs(dof) in (9, 10, 11) or vad == 4:
-            msg = (f"🔴 *{keyword}: DOF {dof}·VAD {vad} 조건 뒤에는 R16 카드 3(OFFSET1 OFFSET2 LRB NODE1 NODE2)이 오는데 "
-                   f"KMM 은 그 카드를 옮기지 못한다 — 이 조건을 덱에서 빼고 KMM 뒤에 직접 넣을 것: {card.strip()[:60]}")
-            print(msg)
-            raise ValueError(msg)
+            if k + n >= len(lines):
+                msg = (f"🔴 *{keyword}: DOF {dof}·VAD {vad} 조건 뒤에 R16 카드 3(OFFSET1 OFFSET2 LRB NODE1 NODE2)이 없다 — "
+                       f"덱 확인: {card.strip()[:60]}")
+                print(msg)
+                raise ValueError(msg)
+            groups.append(lines[k:k + n + 1])
+            k += n + 1
+            continue
         groups.append(lines[k:k + n])
         k += n
     if k < len(lines):
@@ -205,8 +221,8 @@ class BoundaryPrescribedMotionNode(DynaKeyword):
         super(BoundaryPrescribedMotionNode,self).__init__("BOUNDARY_PRESCRIBED_MOTION_NODE")
     
     def parse(self, boundaryPrescribedMotionNodeKeywords):
-        for block in boundaryPrescribedMotionNodeKeywords:   # 카드 3 이 오는 조건은 멈춘다(_pm_card_groups — v131 리뷰 R4)
-            self.parameters.append([self.parse_whole(g[0], [10, 10, 10, 10, 10, 10, 10, 10])
+        for block in boundaryPrescribedMotionNodeKeywords:   # 카드 3 은 카드 1 줄에 붙여 넘긴다(_pm_card_groups — 남은 결함 B7)
+            self.parameters.append([_pm_row(self.parse_whole(g[0], [10, 10, 10, 10, 10, 10, 10, 10]), g[1] if len(g) > 1 else None)
                                     for g in _pm_card_groups(block, "BOUNDARY_PRESCRIBED_MOTION_NODE", False)])
     
     def AddBoundaryPrescribedMotionNode(self, nid, dof, vad, lcid, sf, vid, death, birth):
@@ -243,9 +259,9 @@ class BoundaryPrescribedMotionNodeID(DynaKeyword):
     def parse(self, boundaryPrescribedMotionNodeKeywords):
         # R16: 운동마다 ID 카드 + 카드 1 — 한 블록에 쌍을 되풀이할 수 있다. 예전엔 첫 쌍만 읽어 뒤 조건이 사라졌다(v131 리뷰 R1)
         for block in boundaryPrescribedMotionNodeKeywords:
-            for idc, card in _pm_card_groups(block, "BOUNDARY_PRESCRIBED_MOTION_NODE_ID", True):
-                self.parameters.append([self.parse_whole(idc, [10, 70]),
-                                        self.parse_whole(card, [10, 10, 10, 10, 10, 10, 10, 10])])
+            for g in _pm_card_groups(block, "BOUNDARY_PRESCRIBED_MOTION_NODE_ID", True):   # 카드 3 은 카드 1 줄에 붙인다(B7)
+                self.parameters.append([self.parse_whole(g[0], [10, 70]),
+                                        _pm_row(self.parse_whole(g[1], [10, 10, 10, 10, 10, 10, 10, 10]), g[2] if len(g) > 2 else None)])
     
     def AddBoundaryPrescribedMotionNodeID(self, bid, title, nid, dof, vad, lcid, sf, vid, death, birth):
         parameterList = []
@@ -282,8 +298,8 @@ class BoundaryPrescribedMotionRigid(DynaKeyword):
         super(BoundaryPrescribedMotionRigid,self).__init__("BOUNDARY_PRESCRIBED_MOTION_RIGID")
 
     def parse(self, boundaryPrescribedMotionRigidKeywords):
-        for block in boundaryPrescribedMotionRigidKeywords:   # 카드 3 이 오는 조건은 멈춘다(_pm_card_groups — v131 리뷰 R4)
-            self.parameters.append([self.parse_whole(g[0], [10, 10, 10, 10, 10, 10, 10, 10])
+        for block in boundaryPrescribedMotionRigidKeywords:   # 카드 3 은 카드 1 줄에 붙여 넘긴다(_pm_card_groups — 남은 결함 B7)
+            self.parameters.append([_pm_row(self.parse_whole(g[0], [10, 10, 10, 10, 10, 10, 10, 10]), g[1] if len(g) > 1 else None)
                                     for g in _pm_card_groups(block, "BOUNDARY_PRESCRIBED_MOTION_RIGID", False)])
             
     def AddBoundaryPrescribedMotionRigid(self, typeid, dof, vad, lcid, sf, vid, death, birth):
@@ -318,9 +334,9 @@ class BoundaryPrescribedMotionRigidID(DynaKeyword):
     def parse(self, boundaryPrescribedMotionRigidKeywords):
         # R16: 운동마다 ID 카드 + 카드 1 — 한 블록에 쌍을 되풀이할 수 있다. 예전엔 첫 쌍만 읽었다(v131 리뷰 R1)
         for block in boundaryPrescribedMotionRigidKeywords:
-            for idc, card in _pm_card_groups(block, "BOUNDARY_PRESCRIBED_MOTION_RIGID_ID", True):
-                self.parameters.append([self.parse_whole(idc, [10, 70]),
-                                        self.parse_whole(card, [10, 10, 10, 10, 10, 10, 10, 10])])
+            for g in _pm_card_groups(block, "BOUNDARY_PRESCRIBED_MOTION_RIGID_ID", True):   # 카드 3 은 카드 1 줄에 붙인다(B7)
+                self.parameters.append([self.parse_whole(g[0], [10, 70]),
+                                        _pm_row(self.parse_whole(g[1], [10, 10, 10, 10, 10, 10, 10, 10]), g[2] if len(g) > 2 else None)])
         
     def AddBoundaryPrescribedMotionRigidID(self, id, title, typeid, dof, vad, lcid, sf, vid, death, birth):
         parameterList = []

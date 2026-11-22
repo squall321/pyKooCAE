@@ -197,7 +197,9 @@ class KooBoundaryPrescribedMotionRigid(KooBoundaryNode):
         vidstr = format(self.vid, ">10")
         deathstr = _e10t(self.death)
         birthstr = _e10t(self.birth)
-        stream.write(nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n")   
+        stream.write(nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n")
+        if getattr(self, "card3", None):   # R16 카드 3(|DOF| 9·10·11, VAD 4) — 덱 원문 그대로(남은 결함 B7)
+            stream.write(self.card3 + "\n")
          
 class KooBoundaryPrescribedMotionNode(KooBoundaryNode):
     def __init__(self, bid, name="", node=None, dof=None, vad=0, lcid=None, sf=1.0, vid=0, death=1.0E28, birth=0.0):
@@ -278,6 +280,8 @@ class KooBoundaryPrescribedMotionNode(KooBoundaryNode):
         deathstr = _e10t(self.death)
         birthstr = _e10t(self.birth)
         stream.write(nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n")
+        if getattr(self, "card3", None):   # R16 카드 3(|DOF| 9·10·11, VAD 4) — 덱 원문 그대로(남은 결함 B7)
+            stream.write(self.card3 + "\n")
 
 class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
     def __init__(self, bid, name="", node=[], dof=[], vad=[], lcid=[], sf=[], vid=[], death=[], birth=[]):
@@ -354,6 +358,8 @@ class KooBoundaryPrescribedMotionNodes(KooBoundaryNode):
             deathstr = _e10t(self.deaths[i])
             birthstr = _e10t(self.births[i])
             stream.write(nidstr + dofstr + vadstr + lcidstr + sfstr + vidstr + deathstr + birthstr + "\n")
+            if getattr(self, "card3s", {}).get(i):   # R16 카드 3 — 덱 원문 그대로(남은 결함 B7)
+                stream.write(self.card3s[i] + "\n")
 
 class KooBoundaryPZEPOT(KooBoundaryNode):
     def __init__(self, bid, nsid, lcid=0, sf=1.0):
@@ -1029,6 +1035,10 @@ class KooBoundaryNodeManager:
                 boundary.AddVID(vid)
                 boundary.AddDeath(death)
                 boundary.AddBirth(birth)
+                if getattr(firstLine, "card3", None):
+                    if not hasattr(boundary, "card3s"):
+                        boundary.card3s = {}
+                    boundary.card3s[len(boundary.nodes) - 1] = firstLine.card3
 
         elif header == "*BOUNDARY_PRESCRIBED_MOTION_NODE_ID":
             if len(dynaBoundaryNode) < 3:
@@ -1054,7 +1064,8 @@ class KooBoundaryNodeManager:
             node = _get_node_or_none(typeid)
             if node is None:
                 return
-            self.CreateBoundaryPrescribedMotionNodewithID(bid,name,node,dof,vad,lcid,sf,vid,death,birth)
+            b = self.CreateBoundaryPrescribedMotionNodewithID(bid,name,node,dof,vad,lcid,sf,vid,death,birth)
+            b.card3 = getattr(secondLine, "card3", None)   # R16 카드 3(남은 결함 B7)
 
         elif header == "*BOUNDARY_PRESCRIBED_MOTION_RIGID":
             if len(dynaBoundaryNode) < 2:
@@ -1074,7 +1085,8 @@ class KooBoundaryNodeManager:
             birth = _kf(firstLine, 7, 0.0)
             node = _PartRef(typeid)   # TYPEID 는 강체 PID 다 — 예전엔 같은 번호 절점을 찾아, 없으면 조건을 버리고 절점 번호가 바뀌면 다른 PID 를 썼다(v131)
             name = "PrescribedMotionNode" + str(typeid)
-            self.CreateBoundaryPrescribedMotionRigid(node,dof,vad,lcid,sf,vid,death,birth,name)
+            b = self.CreateBoundaryPrescribedMotionRigid(node,dof,vad,lcid,sf,vid,death,birth,name)
+            b.card3 = getattr(firstLine, "card3", None)   # R16 카드 3(남은 결함 B7)
 
         elif header == "*BOUNDARY_PRESCRIBED_MOTION_RIGID_ID":
             if len(dynaBoundaryNode) < 3:
@@ -1098,7 +1110,8 @@ class KooBoundaryNodeManager:
             death = _kf(secondLine, 6, 1.0E28)
             birth = _kf(secondLine, 7, 0.0)
             node = _PartRef(typeid)   # TYPEID 는 강체 PID 다 — 예전엔 같은 번호 절점을 찾아, 없으면 조건을 버리고 절점 번호가 바뀌면 다른 PID 를 썼다(v131)
-            self.CreateBoundaryPrescribedMotionRigidwithID(bid,name,node,dof,vad,lcid,sf,vid,death,birth)
+            b = self.CreateBoundaryPrescribedMotionRigidwithID(bid,name,node,dof,vad,lcid,sf,vid,death,birth)
+            b.card3 = getattr(secondLine, "card3", None)   # R16 카드 3(남은 결함 B7)
                 
     
     def WritetoNastranKeyword(self, startID):
