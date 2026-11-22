@@ -855,9 +855,9 @@ class KooDatabaseManager:
         databaseHistorySolidSet = KooDatabaseHistorySolidSet(solidsets)
         self.database["HISTORY_SOLID_SET"] = databaseHistorySolidSet
     
-    def SetDatabaseNodalForceGroup(self, nsid, cid):
+    def SetDatabaseNodalForceGroup(self, nsid, cid, key="NODAL_FORCE_GROUP"):
         databaseNodalForceGroup = KooDatabaseNodalForceGroup(nsid, cid)
-        self.database["NODAL_FORCE_GROUP"] = databaseNodalForceGroup
+        self.database[key] = databaseNodalForceGroup
             
     def SetDatabasefromDyna(self, databaseKeyword):
         # 실수·정수 칸은 KooDynaFloat·KooDynaInt — E 없는 Fortran 지수('1.0000-06')·정수값 실수('1.0')에서 float()·int() 로 죽었다
@@ -1127,14 +1127,15 @@ class KooDatabaseManager:
                 self.SetDatabaseHistorySolidSet(nodes)
                     
         elif databaseKeyword[0] == "*DATABASE_NODAL_FORCE_GROUP":
-            keyword = databaseKeyword[1]
-            if len(keyword[0].strip()) == 0:
-                keyword[0] = "0"
-            if len(keyword[1].strip()) == 0:
-                keyword[1] = "0"
-            NSID = KooDynaInt(keyword[0])
-            CID = KooDynaInt(keyword[1])
-            self.SetDatabaseNodalForceGroup(NSID, CID)
+            # 그룹마다 따로 담는다 — 예전엔 첫 그룹만 읽고 한 자리("NODAL_FORCE_GROUP")에 담아 나머지가 rc 0 으로 빠졌다(남은 결함 A5)
+            for k, keyword in enumerate(databaseKeyword[1:]):
+                if len(keyword[0].strip()) == 0:
+                    keyword[0] = "0"
+                if len(keyword[1].strip()) == 0:
+                    keyword[1] = "0"
+                NSID = KooDynaInt(keyword[0])
+                CID = KooDynaInt(keyword[1])
+                self.SetDatabaseNodalForceGroup(NSID, CID, "NODAL_FORCE_GROUP" if k == 0 else f"NODAL_FORCE_GROUP_{k + 1}")
             
         
     def GenerateDynaKeyword(self):

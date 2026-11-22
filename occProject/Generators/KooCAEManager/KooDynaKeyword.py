@@ -11,6 +11,70 @@ def process_entry(entry):
     except ValueError:
         return [0] * len(entry)
     
+def _card_num(line, j):
+    """카드 줄의 j 번째 10칸 칸 값(콤마 자유형식이면 콤마로). 숫자가 아니면 0 — 개체 크기를 정하는 칸(E·FLAG)만 읽는다."""
+    if "," in line:
+        v = line.split(",")
+        t = v[j].strip() if j < len(v) else ""
+    else:
+        t = line[10 * j:10 * j + 10].strip()
+    try:
+        return float(t)
+    except ValueError:
+        return 0.0
+
+
+# 한 키워드 블록에 개체가 여럿일 때 개체 하나의 카드 수(R16 매뉴얼) — 평범한 꼴만 나눈다(남은 결함 A5). 함수면 개체 첫 줄로 정한다
+_ENTITY_CARDS = {
+    "MAT_ELASTIC": lambda c: 2 if _card_num(c, 2) < 0 else 1,   # E < 0 이면 카드 1.1
+    "MAT_RIGID": 3, "EOS_LINEAR_POLYNOMIAL": 2, "MAT_ADD_PZELECTRIC": 7,
+    "BOUNDARY_SPC_SET": 1, "CONSTRAINED_EXTRA_NODES_NODE": 1, "CONSTRAINED_EXTRA_NODES_SET": 1,
+    "CONSTRAINED_NODE_SET": 1, "CONSTRAINED_JOINT_SPHERICAL": 1, "CONSTRAINED_NODAL_RIGID_BODY": 1,
+    "DAMPING_PART_MASS": lambda c: 2 if _card_num(c, 3) == 1 else 1,   # FLAG = 1 이면 카드 2
+    "DAMPING_PART_MASS_SET": lambda c: 2 if _card_num(c, 3) == 1 else 1,
+    "DAMPING_PART_STIFFNESS": 1, "DAMPING_PART_STIFFNESS_SET": 1,
+    "DEFINE_COORDINATE_SYSTEM": 2, "INITIAL_VELOCITY_GENERATION": 2,
+    "LOAD_SEGMENT_SET": 1, "DATABASE_NODAL_FORCE_GROUP": 1,
+    "RIGIDWALL_PLANAR": 2,   # 꼭 세 줄이면 예전처럼 (ID + 카드 둘)로 읽는다 — KMM 옛 기록기가 그렇게 썼다
+}
+# _ID·_TITLE 꼴 — (ID·제목 카드 + 카드) 짝이 되풀이되는지 ID 하나 아래 카드가 여럿인지 매뉴얼이 밝히지 않는다 → 나누지 않고
+# 한 개체보다 길면 알린다. 함수면 제목 다음 줄(카드 1)로 정한다
+_ENTITY_CARDS_LOUD = {
+    "BOUNDARY_SPC_NODE_ID": 2, "BOUNDARY_SPC_SET_ID": 2, "CONSTRAINED_NODE_SET_ID": 2, "CONSTRAINED_JOINT_SPHERICAL_ID": 2,
+    "CONSTRAINED_NODAL_RIGID_BODY_TITLE": 2, "LOAD_SEGMENT_SET_ID": 2, "DEFINE_COORDINATE_SYSTEM_TITLE": 3,
+    "MAT_ELASTIC_TITLE": lambda c: 3 if _card_num(c, 2) < 0 else 2, "MAT_RIGID_TITLE": 4, "RIGIDWALL_PLANAR_ID": 3,
+}
+
+
+def _entity_pieces(kw, lines):
+    """블록 줄 → (개체별 줄 목록 또는 None, 나누지 못한 까닭). 끝 빈 줄은 떼고 본다. 개체 하나면 [줄]."""
+    body = list(lines)
+    while body and not body[-1].strip():
+        body.pop()
+    if kw == "RIGIDWALL_PLANAR" and len(body) == 3:
+        return [body], ""
+    if kw == "RIGIDWALL_PLANAR" and len(body) == 1:
+        return None, "카드 2(XT~WVEL)가 없어"
+    loud = kw in _ENTITY_CARDS_LOUD
+    size = _ENTITY_CARDS_LOUD[kw] if loud else _ENTITY_CARDS[kw]
+    first = (body[1] if loud and len(body) > 1 else body[0]) if body else ""
+    n0 = size(first) if callable(size) else size
+    if len(body) <= n0:
+        return [body], ""
+    if loud:
+        return None, "ID·제목 카드가 개체마다 되풀이되는지 알 수 없어"
+    if any(not l.strip() for l in body):
+        return None, "가운데 빈 줄이 있어 개체 경계를 알 수 없어"
+    out, i = [], 0
+    while i < len(body):
+        n = size(body[i]) if callable(size) else size
+        if i + n > len(body):
+            return None, f"줄 수가 개체 크기({n}줄)로 나누어떨어지지 않아"
+        out.append(body[i:i + n])
+        i += n
+    return out, ""
+
+
 class DynaKeyword():
 
     def __init__(self, name):
@@ -4621,13 +4685,16 @@ class DatabaseNodalForceGroup(DynaKeyword):
         super(DatabaseNodalForceGroup,self).__init__("DATABASE_NODAL_FORCE_GROUP")
         
     def parse(self, lines):
-        parameters = self.parse_whole(lines[0][0], [10, 10])
-        self.parameters.append(parameters)       
+        # 블록마다·줄마다 한 그룹(NSID CID) — 예전엔 첫 블록의 첫 줄만 읽어 나머지 그룹이 rc 0 으로 빠졌다(남은 결함 A5)
+        for blk in lines:
+            for ln in blk:
+                if ln.strip():
+                    self.parameters.append(self.parse_whole(ln, [10, 10]))
     
     def getDatabaseNodalForceGroup(self):
         parameters = []
         parameters.append("*DATABASE_NODAL_FORCE_GROUP")
-        parameters.append(self.parameters[0])
+        parameters.extend(self.parameters)
         return parameters
     
     def write(self, stream):
@@ -14140,6 +14207,44 @@ class DynaManager():
             file.write("*END\n")
 
 
+    def _split_multi_entity_blocks(self, keyword_dict):
+        """한 키워드 블록에 개체가 여럿이면 개체마다 블록으로 나눈다 — 클래스는 블록마다 첫 개체만 읽어 나머지가 rc 0 으로
+        빠졌다(남은 결함 A5. KooRemapper 가 *MAT_ELASTIC 두 개체를 한 블록에 쓴다). *RIGIDWALL_PLANAR 는 끝 빈 줄 때문에 세 줄이
+        되면 (ID + 카드 둘)로 잘못 읽었다(A6). 나눌 수 없으면 예전처럼 첫 개체만 읽고 🔴 카드 소실(종료 코드 3)로 알린다.
+        블록별 포맷·10칸 절점·출처 목록도 같이 늘린다(블록과 1:1)."""
+        lists = [getattr(self, "_block_formats", {}), getattr(self, "_block_tennodes", {}), getattr(self, "_include_sources", {})]
+        for kw in list(keyword_dict):
+            if kw not in _ENTITY_CARDS and kw not in _ENTITY_CARDS_LOUD:
+                continue
+            blocks = keyword_dict[kw]
+            metas = [m.get(kw) if isinstance(m.get(kw), list) and len(m.get(kw)) == len(blocks) else None for m in lists]
+            out, out_meta = [], [[] for _ in lists]
+            for bi, block in enumerate(blocks):
+                pieces, why = _entity_pieces(kw, block)
+                if pieces is None:
+                    body = [l for l in block if l.strip()]
+                    print(f"🔴 *{kw} 블록 하나에 카드 {len(body)}줄 — {why} 첫 개체만 읽었다(나머지 카드는 출력에서 빠진다). "
+                          f"개체마다 *{kw} 키워드 줄을 따로 쓰면 모두 읽는다")
+                    from KooCAEManager.KooElement import note_content_loss
+                    note_content_loss(f"*{kw} 한 블록의 여러 개체(첫 개체만 읽음)", 1)
+                    pieces = [block]
+                elif len(pieces) == 1 and kw != "RIGIDWALL_PLANAR":
+                    pieces = [block]          # 한 개체 — 블록 그대로(끝 빈 줄 포함, 예전과 같다)
+                for piece in pieces:
+                    card1 = piece[1] if kw.endswith("_TITLE") and len(piece) > 1 else (piece[0] if piece else "")
+                    if kw in ("MAT_ELASTIC", "MAT_ELASTIC_TITLE") and _card_num(card1, 2) < 0:
+                        print(f"🔴 *{kw}: E < 0(곡선 영률)의 카드 1.1(EFUNC·CNVT·ITERLM)은 KMM 이 옮기지 않는다 — 출력에서 빠진다")
+                        from KooCAEManager.KooElement import note_content_loss
+                        note_content_loss(f"*{kw} 카드 1.1(E < 0)", 1)
+                    out.append(piece)
+                    for k, meta in enumerate(metas):
+                        if meta is not None:
+                            out_meta[k].append(meta[bi])
+            keyword_dict[kw] = out
+            for k, meta in enumerate(metas):
+                if meta is not None:
+                    lists[k][kw] = out_meta[k]
+
     def ReadInputFile(self, outputFileName,writelog = True):
         os.chdir(self.currentDirectory)
         path = os.path.join(self.currentDirectory, self.inputFile)
@@ -14159,6 +14264,7 @@ class DynaManager():
         if getattr(self, '_param_resolver', None) is not None:
             self._param_resolver.ResetDuplicateState()   # 중복 규칙은 덱마다 — 값 표는 예전처럼 이어 둔다
         lines_with_asterisk, keyword_dict = self.ReadKeywordsfromFile(path,lines_with_asterisk, keyword_dict)
+        self._split_multi_entity_blocks(keyword_dict)   # 한 키워드 아래 여러 개체(남은 결함 A5·A6)
         # 다운스트림 (DECOMPOSE_K, MERGE_K, fallback writer 등)에서 raw 키워드 데이터 접근용
         self._raw_keyword_dict = keyword_dict
         self._raw_keywords_seen = list(dict.fromkeys(lines_with_asterisk))
