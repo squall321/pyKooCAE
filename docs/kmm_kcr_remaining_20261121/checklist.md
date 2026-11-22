@@ -59,6 +59,7 @@
 ## 마무리
 - [x] tests/ 전체 회귀 — 1차 70/70(runs/final_suite), 리뷰 반영 뒤 2차 70/71(runs/final_suite2) + 기대값을 R16 에 맞춘 test_remaining_multi_entity 따로 통과
 - [x] 말뭉치 25개 덱 옛 소스 대조(runs/corpus_final — 다른 곳은 모두 설명된 종류: INTFOR·D3THDT·CONTROL_SOLID·CONTACT·SHELL·EXTENT_BINARY 카드 3 덱 원문, 키워드 이름 *MAT_SIMPLIFIED_RUBBER/FOAM·*ALE_MULTI-MATERIAL_GROUP. 08·09 는 옛·새 모두 rc 1)
+  - 리뷰 반영 뒤 2차(runs/corpus_final2, 1348ccc): 1차 출력과 25개 덱 모두 바이트 같음, 개체 대조 빠짐 없음
 - [x] 접붙이기 감사 다시(문제 0) — 실제 손실 0. 도구가 센 9개 모양은 0 뿐인 끝 카드(설계)·8칸 폭 카드·빈 줄 낀 예제(context-notes 33)
 - [x] 전 덱 입력·출력 개체 대조(entity_audit — 출력 있는 23개 모두 빠짐 없음)
 - [x] 적대 리뷰(7건 F1~F7 — 바. 절에서 모두 반영)
