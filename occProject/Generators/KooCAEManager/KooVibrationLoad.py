@@ -200,10 +200,19 @@ def _compute_part_mass_volume(dynaImporter, pid):
 
 
 def _solid_volume(elem):
-    """Solid 요소 부피 (hex8 / tet4)."""
+    """Solid 요소 부피 (hex8 / tet4) — 꼭짓점으로 잰다. TETRA10 은 앞 4, HEXA20 은 앞 8 절점(꼭짓점, 곧은 모서리 가정)이고,
+    겹친 절점으로 쓴 사면체(hex 8칸의 N1 N2 N3 N3 N4 …)는 겹치지 않은 꼭짓점으로. 예전엔 10·20 절점 요소가 None 을 돌려 그
+    요소를 건너뛰어 부피·질량이 0 이었고, 겹친 사면체는 0 이었다(남은 결함, 43 ⑥)."""
     nodes = [n for n in getattr(elem, 'nodes', []) if n is not None]
     if len(nodes) == 0:
         return 0.0
+    if len(nodes) == 10:
+        nodes = nodes[:4]
+    elif len(nodes) == 20:
+        nodes = nodes[:8]
+    uniq = list({id(n): n for n in nodes}.values())
+    if len(uniq) == 4 and len(nodes) != 4:
+        nodes = uniq
     coords = np.array([[n.x, n.y, n.z] for n in nodes])
     unique_count = len(set(id(n) for n in nodes))
     if unique_count == 4 or len(coords) == 4:
