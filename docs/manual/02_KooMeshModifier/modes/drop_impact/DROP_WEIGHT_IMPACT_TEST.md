@@ -186,6 +186,7 @@ OffsetDistance,0.00001
 - `LocationX/Y`, `Height`, `InitialVelocityX/Y/Z` 는 인덱스 매칭 리스트이므로 길이가 일치해야 함(파서가 길이 검증은 하지 않음 — `KooMeshModifier.py:1164-1205`).
 - `OffsetDistance` 기본값이 파서(`1e-9`)와 소비측 fallback(`1e-11`)에서 다름 — 명시 지정 권장 (`KooMeshModifier.py:1052` vs `AdvMod:3751`).
 - 접미사 없는 물성 키(`YoungModulus`,`Density` 등)의 실제 매핑은 부분일치 의존이라 **확인 필요**(2절 참고).
+- **(2026-11-22) 덱 재질 재사용**(`MaterialIDImpactor`·`…Front`·`…Mid`·`MaterialIDDamper`·`MaterialIDWall`): KMM 이 해석한 재질이면 그 객체, 해석하지 않는 재질(`*MAT_001` 같은 번호 꼴 등)이면 원문 그대로 두고 파트가 번호만 가리킨다. 덱에 없는 번호면 🔴 + 종료 코드 1(예전엔 KeyError). 앞·가운데 단의 빈 재질 키는 재사용한 재질의 E·ρ(·ν)를 물려받는다 — E·ρ 가 둘 다 양수일 때만(아니면 단위계 폴백).
 - scenario.json → `.k` 변환(KooChainRun/Designer)은 본 모드 코드 밖이며, 키 매핑 세부는 별도 확인 필요.
 
 ## 6. 개발 현황

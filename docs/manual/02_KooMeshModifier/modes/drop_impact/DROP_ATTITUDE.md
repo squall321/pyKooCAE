@@ -37,8 +37,8 @@ LS-DYNA 입력 데크를 만드는 모드다.
 | `EulerPitching` | float 리스트 | (필수) | Y축 회전각(pitch, deg) | 1374-1380 / 2038 |
 | `EulerYawing` | float 리스트 | (필수) | Z축 회전각(yaw, deg) | 1381-1387 / 2039 |
 | `Height` | float 리스트 | (필수) | 낙하 높이. `>100`이면 mm 단위(g=9810), `<=100`이면 m 단위(g=9.81)로 자유낙하 속도 계산 | 1388-1394 / 2231-2235 |
-| `InitialVelocityX/Y/Z` | float 리스트 | (필수) | 초기 병진속도. 회전 후 자유낙하 속도와 합산 | 1395-1415 / 2228-2238 |
-| `InitialAngularVelocityX/Y/Z` | float 리스트 | (필수) | 초기 각속도. 회전 적용됨 | 1416-1436 / 2240 |
+| `InitialVelocityX/Y/Z` | float 리스트 | 각도마다 0 | 초기 병진속도. 회전 후 자유낙하 속도와 합산. 없으면 0(정지 낙하 — 2026-11-22, 예전엔 KeyError) | 1395-1415 / 2228-2238 |
+| `InitialAngularVelocityX/Y/Z` | float 리스트 | 각도마다 0 | 초기 각속도. 회전 적용됨. 없으면 0(2026-11-22) | 1416-1436 / 2240 |
 | `runid` | int 리스트 | `[]` | RunDirectoryMode에서 방향별 Run 폴더 ID 지정(미지정 시 자동 생성) | 1363-1366 / 2978-2981 |
 | `OffsetDistance` | float | `1e-9` | 충돌점과 바닥판 사이 초기 간격 | 1437-1443 / 2048,2251 |
 | `Density` | float | (필수, 바닥판) | 바닥판 탄성재료 밀도. RigidWall이면 미사용 | 1444-1447 / 2049,2077 |
@@ -240,6 +240,10 @@ InitialVelocityZ,0,0,0,0
   (`:2659-2660`, `:2800`, `:2952`).
 - **출력 파일명 차이**: RunDirectoryMode 여부에 따라 출력 구조(`Run_<id>/DropSet.k` vs 접미사 인코딩 .k)가 완전히 다르다.
 - `tFinal`/`dt` 둘 다 0이면 CONTROL/DATABASE 카드를 추가하지 않으므로 솔버 종료시간이 설정되지 않는다 (`:2058`).
+- **원문 관성 몸체(2026-11-22)**: 이 모드는 모델을 돌리지 않고(바닥판 법선·속도 벡터를 돌린다) 원점 맞춤으로 옮기기만 한다. 덱의 `*PART_INERTIA`·
+  `*CONSTRAINED_NODAL_RIGID_BODY(_SPC)_INERTIA` 무게중심(XC·YC·ZC, NODEID 0 일 때)은 같은 이동만큼 옮겨 쓴다(NODEID 로 준 것은 그 절점이 따라간다).
+  관성 텐서는 그대로 맞다. 초기 속도 칸(VTX…VRZ)은 낙하 속도로 바꾸지 않는다 — KMM 의 `*INITIAL_VELOCITY` 는 IRIGID 0 이고, 0 일 때 LS-DYNA 가
+  관성 카드 속도를 덮는지는 문서마다 달라 실행 로그에 ⚠️ 줄이 나온다(덱·LS-DYNA 로 확인). 처방 운동 카드 3 의 회전축 점도 원점 맞춤 이동을 따라간다.
 
 ---
 

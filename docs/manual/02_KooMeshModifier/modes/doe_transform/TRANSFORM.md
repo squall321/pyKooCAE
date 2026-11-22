@@ -91,6 +91,7 @@ scenario.json / CLI 예제: TRANSFORM 모드를 직접 트리거하는 scenario.
 - **각도 단위**: `rotation`은 도(degree) 입력 → 내부에서 `math.radians` 변환 (`:3097,3100,3103`). `vectorrotation`/`vectortovectorrotation`은 벡터 사잇각을 그대로 사용(`gp_Vec.Angle`은 라디안 반환)하므로 각도 인자가 아닌 벡터 인자입니다.
 - **vectorrotation 예외 처리**: 길이 0 벡터, 또는 입력 벡터가 정확히 X축(1,0,0)인 경우 메시지 출력 후 해당 명령을 건너뜁니다 (`:3144-3149`). `vectortovectorrotation`은 두 벡터 중 하나가 0이거나 두 벡터가 동일하면 건너뜁니다 (`:3167-3175`).
 - **mirror는 좌표 + 요소 connectivity를 함께 반전**하여 요소 jacobian 부호를 보존합니다. 단, 미러 처리는 헤더에서 지원하는 평면이 `xy`/`yz`/`xz` 3종뿐이며 그 외 문자열은 무시됩니다 (`:3115-3138`).
+- **(2026-11-22) 처방 운동 카드 3**: `*BOUNDARY_PRESCRIBED_MOTION` 의 카드 3(|DOF| 9·10·11 또는 VAD 4) 가운데 회전축 점 OFFSET1·OFFSET2 는 `translation`·`scale` 을 따라간다(DOF 9: y·z, 10: z·x, 11: x·y). 축이 전역 축에 평행해야 해 `rotation`·`mirror`·`vectorrotation`·`vectortovectorrotation` 은 옮길 수 없다 → 🔴 + 종료 코드 3(카드는 그대로 쓴다). LRB·NODE1·NODE2(번호)는 객체로 들어 번호를 따라간다.
 - **키워드 부분 문자열 매칭**: 라인 키워드는 부분 문자열로 검사되므로 오타·혼동에 주의해야 합니다(2장 매칭 순서 참조).
 - **예제·테스트 부재**: 본 모드에 대한 Examples/scenario.json 예제가 없어 실사용 입력 포맷의 세부(콤마 공백 허용 여부 등)는 코드 근거 외 검증되지 않았습니다("확인 필요").
 

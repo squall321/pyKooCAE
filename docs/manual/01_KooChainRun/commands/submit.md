@@ -166,6 +166,8 @@
    - **일반 모드**: 1~doe_count 전부 즉시 `sbatch`(v134: ENDTIM 표가 있으면 비용이 큰 DOE 부터 — 4-5). 첫 DOE에서 `sbatch` 자체가 실패하면 중단 (`KooChainRun:1903-1916`).
 10. 각 제출 시 `jobs.json`의 해당 DOE에 `job_id/job_name/status="submitted"/submitted_at/script_path` 기록 (`_sbatch_doe`, `KooChainRun:1625-1651` / sequential은 `KooChainRun:1887-1897`).
 11. 요약 출력 + Next steps 안내(status/logs/stop/rerun/diagnose/collect) (`KooChainRun:1918-1938`).
+12. (2026-11-22) 내야 할 잡(일반 모드 = DOE 수, sequential = DOE 가 든 칸 수) 가운데 하나라도 `sbatch` 가 실패하면 요약 뒤에 🔴 줄과 **종료 코드 1**. 이미 낸 잡은 그대로 돈다 — 원인을 고친 뒤 `rerun` 으로 나머지를 낸다. 예전엔 첫 잡 실패만 멈추고 나머지 실패는 `FAILED` 줄만 찍고 종료 코드 0 이었다. batch 모드는 자체 집계 그대로.
+13. (2026-11-22) 표가 없거나 일정이 꺼진 `--sequential` 에서 `--nodes` 가 DOE 수보다 크면 칸을 DOE 수로 줄인다(예전엔 빈 칸에서 IndexError).
 
 ### 4-5. 실행 순서·칸 수 (v134, `environment.schedule`)
 사전 해석 ENDTIM 표(`scenario.doe_endtim`)가 있고 `environment.schedule` 이 꺼지지 않았으면(없음·`true`·`null` 은 켬) `Runner/DoeSchedule.py` 로 DOE 마다 예상 시간을 셈하고 다음을 한다. DOE 번호·스크립트 이름·`jobs.json` 형식은 그대로다(`jobs.json` 키 순서만 제출 순서).

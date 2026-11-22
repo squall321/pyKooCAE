@@ -138,7 +138,7 @@ KooChainRun - DOE 상태 확인
    - `json_corrupted` 플래그가 있는 DOE 는 `json_corrupted` 라벨로 표시되고 `corrupted_does` 에 수집됨.
 
 4. **재실행 대상 결정** — `KooChainRun:2397-2419`
-   - `--does` 지정 시: 콤마 분리 정수 리스트를 그대로 대상으로 사용 — `KooChainRun:2398-2399`.
+   - `--does` 지정 시: 콤마 분리 정수 리스트를 대상으로 사용 — 겹친 DOE 는 한 번만 낸다(2026-11-22, 예전엔 `3,3` 이면 두 번) — `KooChainRun:2398-2399`.
    - 미지정 시: 상태가 `failed`/`killed`/`not_started`/`license_error` 이면서 `json_corrupted` 가 아닌 DOE 를 자동 선정 — `KooChainRun:2401-2405`.
    - 손상(`json_corrupted`) DOE 는 재실행 대상에서 제외되고 경고 출력 — `KooChainRun:2404`, `2411-2413`.
    - 대상이 없으면 `재실행 대상 DOE가 없습니다.` 출력 후 `return` — `KooChainRun:2415-2417`.
@@ -178,6 +178,9 @@ KooChainRun - DOE 상태 확인
 
 ## 5. 주의사항 · 한계
 
+- **(2026-11-22) 기본 rerun 과 `--sequential` 로 낸 DOE**: `jobs.json` 에 `sequential_slot` 이 있는 DOE 는 칸 스크립트(`run_seq_NNN.sh`)를 DOE 마다 다시 내지 않는다(예전엔 같은 칸이 DOE 수만큼 겹쳐 돌았다). DOE 하나짜리 스크립트(`run_doe_NNN.sh`)가 있으면 그것으로 내고, 없으면 `rerun --sequential` 을 쓰라고 알린다.
+- **(2026-11-22) `jobs.json` 이 없을 때**: 기본 경로 `slurm_scripts/run_doe_NNN.sh` 로 내고 `jobs.json` 을 새로 쓴다(예전엔 FileNotFoundError).
+- **(2026-11-22) 종료 코드**: 기본·`--sequential` 모두 내지 못한 DOE·칸이 있으면 🔴 + 종료 코드 1.
 - **상태 파일 의존**: 상태 판정은 `jobs.json` + `simulation_index.json` + Slurm 조회 결과에 의존합니다. `runner_config.json` 이 없으면 `get_doe_status` 단계에서 `FileNotFoundError` 로 종료(exit 1) — `JobManager.py:71-72`, `KooChainRun:2375-2377`. (단 `jobs.json` 자체는 손상/없을 때 경고 후 빈 상태로 진행 — `JobManager.py:294-297`.)
 - **JSON 손상 DOE 는 자동 재실행 안 됨**: `json_corrupted` DOE 는 자동 대상에서 빠지고 경고만 출력됩니다. 단, `--does` 로 명시하면 해당 DOE 도 대상이 될 수 있습니다 (`--does` 분기는 손상 여부를 검사하지 않음 — `KooChainRun:2398-2399`).
 - **Slurm 조회 실패 시 `UNKNOWN`**: `sacct`/`squeue` 가 실패하면 Slurm 상태가 `"UNKNOWN"` 으로 잡히며, step 도 완료가 아니면 `not_started` 로 분류되어 재실행 대상에 포함될 수 있습니다 — `JobManager.py:103`, `382-383`.

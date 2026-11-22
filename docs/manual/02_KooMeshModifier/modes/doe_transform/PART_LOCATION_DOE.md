@@ -112,6 +112,8 @@ PART_LOCATION_DOE,1
 
 ## 5. 주의사항 · 한계
 
+- **(2026-11-22) 처방 운동 카드 3**: 옮기는 파트에 걸린 `*BOUNDARY_PRESCRIBED_MOTION`(|DOF| 9·10·11)의 회전축 점(카드 3 OFFSET1·OFFSET2)은 파트 이동을 따라가지 않는다 — 🔴 + 종료 코드 3(카드는 그대로 쓴다).
+
 - **세 축 동시 샘플링 불가**: `dx,dy,dz`가 모두 0이 아니면 `"x-y-z sampling is not supported"` 출력 후 아무것도 하지 않고 종료. 반드시 한 축은 0이어야 한다(평면 DOE 전용). (KooDynaAdvancedModification.py:4936-4937, 4976-4978)
 - **샘플링 방법 제한**: 코드 분기는 `samplingMethod == "LatinHypercube"`만 처리한다. 다른 값이면 어떤 파일도 export되지 않는다(else 분기 없음). (KooDynaAdvancedModification.py:4992)
 - **PID 존재 가정**: 대상 PID는 `self.dynaImporter.partManager.parts[pid]`로 직접 접근하므로, 미존재 PID는 예외를 유발할 수 있다(가드 없음). (KooDynaAdvancedModification.py:4957)

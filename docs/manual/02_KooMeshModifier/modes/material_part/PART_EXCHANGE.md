@@ -52,10 +52,10 @@
 | `*mid<name>` (다음 줄들) | 카드 본문 | 재료 카드. 헤더 다음 줄부터 `*` 전까지 10폭×8 필드로 파싱. `curOptions["MIDs"][name]` | line 2060-2083 |
 | `*eos<name>` (다음 줄들) | 카드 본문 | EOS 카드. 동일 방식. `curOptions["EOSs"][name]` | line 2060-2085 |
 | `*hgid<name>` (다음 줄들) | 카드 본문 | HourGlass 카드. 동일 방식. `curOptions["HGIDs"][name]` | line 2060-2087 |
-| `*numberofelements,<N>` | 정수 1개 | `curOptions["NumberofElements"]` | line 2033-2035 |
+| `*numberofelements,<N>` | 정수 1개 | `curOptions["NumberofElements"]` — SolidwithSlack 꺾은선 요소 수. 안 쓰면 100, 1 이하면 🔴 종료 코드 1(2026-11-22, 예전엔 0 이 들어가 IndexError) | line 2033-2035 |
 | `*desiredlengthratiosamples,<r1>,...` | 실수 다수 | 목표 길이비 샘플. `curOptions["DesiredLengthRatio"]["Samples"]` | line 1994-1999 |
 | `*desiredlengthratiostatistics,<n>,<avg>,<std>,<min>,<max>` | 5개 | 목표 길이비 통계. 필드 수 < 6 이면 종료(exit) | line 2001-2016 |
-| `*constraintpids,<PID1>,...` | 다수 | 구속 대상 파트. `curOptions["Constraints"]["PIDs"]` | line 2018-2024 |
+| `*constraintpids,<PID1>,...` | 다수 | 구속 대상 파트. `curOptions["Constraints"]["PIDs"]` — 없으면 구속 없이, 덱에 없는 파트면 🔴 종료 코드 1(2026-11-22). 표본(`*desiredlengthratiosamples`)·통계 줄이 둘 다 없거나 통계 표본을 [최소, 최대] 안에서 겹치지 않게 뽑지 못하면 🔴 종료 코드 1 | line 2018-2024 |
 | `*inplanerotation,<angle>,<location>` | 2개 | 면내 회전 항목 누적. `curOptions["InplaneRotation"]` | line 2026-2031 |
 | 그 외 `*<keyword>` (다음 줄들) | 카드 본문 | 위에 안 걸린 `*` 카드는 일반 키워드로 통째 파싱(`*part_composite` 등 포함). 헤더에 `title`/`_id` 포함 시 분해 규칙 분기 | line 2091-2119 |
 | `$` 로 시작하는 줄 | 주석 | 카드 본문 읽기 중 건너뜀 | line 2074-2075 등 |
