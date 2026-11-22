@@ -212,19 +212,23 @@ class _Deck:
         self.raw = getattr(mgr, "_raw_keyword_dict", None) or {}
         self.fmts = getattr(mgr, "_block_formats", None) or {}
 
-    def blocks(self, kw, keep_blank=False):
-        """키워드의 (블록 줄 목록, 형식). 빈 줄은 뺀다 — keep_blank 면 제목 줄 자리를 지키려 끝의 빈 줄만 뺀다."""
+    def blocks(self, kw, keep_blank=False, where=False):
+        """키워드의 (블록 줄 목록, 형식). 빈 줄은 뺀다 — keep_blank 면 제목 줄 자리를 지키려 끝의 빈 줄만 뺀다.
+        where 면 (줄 목록, 형식, 원문 블록, 줄마다 원문 블록 안 자리)를 준다 — 원문 줄을 고쳐 쓰는 DROP 쪽
+        (KooDynaAdvancedModification._shift_inertia_centres)이 쓴다. 이 모듈은 여전히 읽기만 한다."""
         f = self.fmts.get(kw) or []
         for bi, block in enumerate(self.raw.get(kw) or []):
             if not isinstance(block, list):
                 continue
-            lines = [str(ln) for ln in block]
+            pos = list(range(len(block)))
             if keep_blank:
-                while lines and not lines[-1].strip():
-                    lines.pop()
+                while pos and not str(block[pos[-1]]).strip():
+                    pos.pop()
             else:
-                lines = [ln for ln in lines if ln.strip()]
-            yield lines, (f[bi] if bi < len(f) else None)
+                pos = [i for i in pos if str(block[i]).strip()]
+            lines = [str(block[i]) for i in pos]
+            fmt = f[bi] if bi < len(f) else None
+            yield (lines, fmt, block, pos) if where else (lines, fmt)
 
     def fields(self, line, fmt, n=8, widths=None):
         """카드 칸 — 기본은 리더 규칙(10칸·long 20칸·콤마), widths 를 주면 고정폭 그 너비(콤마·long 은 리더 규칙)."""

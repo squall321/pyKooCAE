@@ -69,6 +69,71 @@ _DYNAIN_RAW_KINDS = frozenset({"INITIAL_STRESS_SHELL", "INITIAL_STRESS_TSHELL", 
                                "INITIAL_STRAIN_SHELL", "INITIAL_STRAIN_SOLID", "INITIAL_STRAIN_TSHELL"})
 
 
+def _put_lead_fields(line, fmt, values):
+    """카드 줄의 앞 칸들을 values 로 바꿔 쓴다(리더 칸 규칙 — 콤마·long 20칸·10칸). 나머지 칸·줄 끝은 그대로."""
+    from KooCAEManager.KooDefine import _real10
+    eol = "\n" if line.endswith("\n") else ""
+    s = line[:-1] if eol else line
+    if "," in s:
+        parts = s.split(",")
+        parts += [""] * (len(values) - len(parts))
+        for i, v in enumerate(values):
+            parts[i] = format(float(v), ".10g")
+        return ",".join(parts) + eol
+    w = 20 if fmt == "long" else 10
+    s = s.ljust(len(values) * w)
+    for i, v in enumerate(values):
+        txt = _real10(v) if w == 10 else format(format(float(v), ".14g"), ">20")
+        s = s[:i * w] + txt + s[(i + 1) * w:]
+    return s + eol
+
+
+def _shift_inertia_centres(imp, d):
+    """원문 *PART_INERTIA·*CONSTRAINED_NODAL_RIGID_BODY_…INERTIA… 의 무게중심(XC·YC·ZC)을 d(절점과 같은 평행 이동)만큼 옮겨 원문
+    블록 줄을 고쳐 쓴다 → 옮긴 몸체 수. NODEID 로 중심 절점을 준 몸체는 그 절점이 따라가므로 그대로 둔다(R16: NODEID 가 있으면 그
+    절점 좌표가 중심이다). 카드 자리는 KooRigidBodyProperties._part_inertia·_cnrb_inertia 와 같다 — 하나를 바꾸면 같이 바꾼다.
+    DROP_ATTITUDE 는 모델을 돌리지 않고(바닥판 법선·속도를 돌린다) 원점 맞춤으로 옮기기만 하므로 관성 텐서는 그대로 맞다. 예전엔 중심이
+    옛 자리에 남아 그 몸체의 질량이 옮긴 기기와 어긋났다(남은 결함 43⑤, 리뷰 M3)."""
+    from KooCAEManager.KooRigidBodyProperties import _Deck
+    dk, n = _Deck(imp), 0
+
+    def move(block, pos, lines, j, fmt):
+        nonlocal n
+        c = dk.fields(lines[j], fmt, 6)
+        if dk.int(c[5], 0) != 0:
+            return
+        xyz = [dk.num(c[i], 0.0) + d[i] for i in range(3)]
+        block[pos[j]] = _put_lead_fields(block[pos[j]], fmt, xyz)
+        n += 1
+
+    for kw in list(dk.raw):
+        tok = kw.split("_")
+        if tok[0] == "PART" and "INERTIA" in tok[1:]:
+            extra = sum(o in tok for o in ("REPOSITION", "CONTACT", "PRINT", "ATTACHMENT", "FIELD"))
+            for lines, fmt, block, pos in dk.blocks(kw, keep_blank=True, where=True):
+                k = 0
+                while k + 5 <= len(lines):
+                    c2, c3 = dk.fields(lines[k + 1], fmt, 8), dk.fields(lines[k + 2], fmt, 6)
+                    if dk.int(c2[0], 0) > 0:
+                        move(block, pos, lines, k + 2, fmt)
+                    k += 5 + (dk.int(c3[4], 0) == 1) + extra
+        head = "CONSTRAINED_NODAL_RIGID_BODY"
+        ctok = kw[len(head):].split("_") if kw.startswith(head) else []
+        if "INERTIA" in ctok:
+            title, spc = "TITLE" in ctok, "SPC" in ctok
+            for lines, fmt, block, pos in dk.blocks(kw, keep_blank=title, where=True):
+                k = 0
+                while k + title + spc + 4 <= len(lines):
+                    j = k + title + 1 + spc
+                    ircs = dk.int(dk.fields(lines[j], fmt, 6)[4], 0)
+                    move(block, pos, lines, j, fmt)
+                    size = title + 1 + spc + 3 + (ircs == 1) + ("THERMAL" in ctok)
+                    if "OVERRIDE" in ctok and len(lines) % size and not len(lines) % (size + 1):
+                        size += 1
+                    k += size
+    return n
+
+
 class KooDynaAdvancedModification:
     def __init__(self, dynaImporter : KooDynaImporter):
         self.dynaImporter : KooDynaImporter = dynaImporter    
@@ -2425,6 +2490,17 @@ class KooDynaAdvancedModification:
     def DropAttitude(self, option, filePath):
         # 이전 열 스텝에서 이월된 열하중 처리 (THERM→DROP 방향). 열하중이 없으면 무동작
         self._ApplyThermalCarryPolicy(option, "DROP_ATTITUDE")
+        # 원문 *_INERTIA 몸체 — 무게중심은 아래 원점 이동 때 같이 옮긴다(_shift_inertia_centres). 모델은 돌리지 않으므로(바닥판 법선·
+        # 속도를 돌린다) 관성 텐서는 그대로 맞다. 초기 속도 칸(VTX…VRZ)은 낙하 속도로 바꾸지 않는다 — KMM 의 *INITIAL_VELOCITY 는
+        # IRIGID 0 이고, 0 일 때 관성 카드 속도를 덮는지는 문서마다 달라(Ansys 사용자 안내서 「덮거나 자동 설정」, Altair 「덮지 않음」)
+        # 알리기만 한다(남은 결함 43⑤ — 예전 알림은 자세 회전을 따라가지 않는다고 잘못 적었다)
+        _raw = getattr(self.dynaImporter.dynaManager, "_raw_keyword_dict", None) or {}
+        _inert = sorted(k for k in _raw if (k.startswith("PART_") and "INERTIA" in k.split("_"))
+                        or (k.startswith("CONSTRAINED_NODAL_RIGID_BODY") and "INERTIA" in k.split("_")))
+        if _inert:
+            print(f"  ⚠️ DROP_ATTITUDE: {', '.join('*' + k for k in _inert)} 의 초기 속도 칸(VTX…VRZ)은 낙하 속도로 바꾸지 않는다 — "
+                  f"KMM 의 *INITIAL_VELOCITY 는 IRIGID 0 이고, 그때 LS-DYNA 가 관성 카드 속도를 덮는지는 문서마다 달라 그 몸체가 "
+                  f"덱에 적힌 속도로 시작할 수 있다(덱·LS-DYNA 로 확인). 무게중심(XC·YC·ZC)은 원점 이동만큼 옮긴다")
         fileName = os.path.basename(filePath)
         fall_g = self._ResolveFallGravity(option, "DROP_ATTITUDE")
         RxList = option["EulerRolling"]
@@ -2505,6 +2581,9 @@ class KooDynaAdvancedModification:
         self.dynaImporter.nodeManager.MoveNodes(*_shift)
         for _c3 in self._PMAxisCards():   # DOF 9·10·11 처방 운동 회전축 점(카드 3)도 같이 — 모델은 돌리지 않는다(바닥판·속도를 돌린다)
             _c3.Translate(_shift)
+        _ni = _shift_inertia_centres(self.dynaImporter, _shift)   # 원문 *_INERTIA 무게중심(NODEID 없는 것)도 같이(남은 결함 43⑤)
+        if _ni:
+            print(f"  DROP_ATTITUDE: 원문 *_INERTIA 무게중심 {_ni}개를 원점 이동({_shift[0]:.6g}, {_shift[1]:.6g}, {_shift[2]:.6g})만큼 옮겼다")
         # 덱 강체벽도 모델과 같이 옮긴다 — 예전엔 절점만 옮겨 고정 벽 같은 사용자 벽이 모델과 어긋났다(누적 체인 둘째 낙하에서 쌓인다,
         # 누적 체인 묶음 W3, 2026-11-08). 점(XT·YT·ZT, XH·YH·ZH)만 옮기고 방향 벡터(기하 벽의 모서리 XHEV…)는 그대로다
         for _rw in self.dynaImporter.additionalManager.rigidwalls.values():
