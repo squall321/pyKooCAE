@@ -141,6 +141,14 @@ def _unary_pow_first(node, src):
     return node
 
 
+class _FloatConstants(ast.NodeTransformer):
+    """정수 리터럴을 실수로 — R16 의미와 견줄 「모두 실수로 센 값」을 만들 때만 쓴다."""
+    def visit_Constant(self, node):
+        if isinstance(node.value, int) and not isinstance(node.value, bool):
+            return ast.copy_location(ast.Constant(float(node.value)), node)
+        return node
+
+
 def _eval_ast_node(node, resolved):
     """제한 AST 평가. resolved={name_lower: int|float}. 비허용/미지 → ValueError.
     정수 리터럴·정수 파라미터는 정수로 센다(R16). 속성접근·subscript·비화이트리스트 호출은 노드 자체가 불허."""
@@ -387,7 +395,9 @@ class ParameterResolver:
                 return
             target = chain[-1]
         else:
-            if name in self._defined and not self._redefine_ok(name, text, self._defined[name], name in self._mutable, dflag):
+            # CPINLSDNR 는 여럿이면 마지막 것을 쓴다(R16 Remark 2) — 예전엔 DFLAG 1 로 첫 정의가 남았다(적대 리뷰 F6)
+            if (name in self._defined and name != 'cpinlsdnr'
+                    and not self._redefine_ok(name, text, self._defined[name], name in self._mutable, dflag)):
                 return
             target = None
         # 같은 자리에 미뤄 둔 같은 이름의 식은 이 정의에 밀린다
@@ -453,12 +463,28 @@ class ParameterResolver:
             value = _eval_ast_node(tree, {d: _num_text(vis[d], (types.get(d) or 'R').upper()) for d in deps if d in vis})
             if isinstance(value, float) and not math.isfinite(value):
                 raise ValueError(f"유한하지 않은 값 {value}")
-            if ptype == 'I':
-                return str(value if isinstance(value, int) else self._nint(value))
-            return repr(float(value))
+            out = str(value if isinstance(value, int) else self._nint(value)) if ptype == 'I' else repr(float(value))
+            self._note_r16_meaning(name, ptype, expr, out, vis, types, deps)
+            return out
         except Exception as e:
             print(f"  Warning: PARAMETER_EXPRESSION '{name}={expr}' 평가 실패 ({e}) — 미치환 유지")
             return _FAILED
+
+    def _note_r16_meaning(self, name, ptype, expr, out, vis, types, deps):
+        """R16 규칙(정수끼리 나눗셈은 0 쪽으로 버림, 단항 ±가 ** 보다 먼저 — Remark 2a·2d)으로 센 값이 모두 실수로 센 값과 다르면
+        알린다. 값은 R16 그대로 쓰지만 'exp(-t**2)' 가 exp(t²) 가 되고 '1/2' 가 0 이 되는 것을 덱 작성자가 모를 수 있다(적대 리뷰 참고)."""
+        try:
+            plain_tree = _FloatConstants().visit(ast.parse(expr, mode='eval').body)
+            plain = _eval_ast_node(plain_tree, {d: float(_num_text(vis[d], (types.get(d) or 'R').upper())) for d in deps if d in vis})
+            if not math.isfinite(plain):
+                return
+            alt = str(self._nint(plain)) if ptype == 'I' else repr(float(plain))
+        except Exception:
+            return
+        a, b = float(out), float(alt)
+        if abs(a - b) > 1e-12 * max(1.0, abs(a), abs(b)):
+            print(f"  ⚠️ PARAMETER_EXPRESSION '{name}={str(expr).strip()}' = {out} — R16 규칙(정수끼리 나눗셈은 버림, 단항 −가 ** 보다 "
+                  f"먼저)으로 셌다. 모두 실수로 세면 {alt} 다(덱의 뜻이 그쪽이면 1.0 처럼 실수로 쓰거나 괄호를 친다)")
 
     def _retry_pending(self):
         """미뤄 둔 식 가운데 이제 참조가 다 정의된 것을 그 정의 자리의 범위 사슬로 센다(다른 파일의 LOCAL 은 보지 않는다 —
@@ -494,8 +520,9 @@ class ParameterResolver:
         형식의 첫 쌍만 읽어 'R thk 1.0' 줄을 통째로 버렸다(리뷰 J). R16 Card 1 그대로(값 10칸 오른쪽 맞춤 뒤에 다음 PRMR)
         쓰면 '1.0Rw' 처럼 붙으니 숫자 뒤의 형 글자에서 가른다 — 예전엔 thk='1.0R' 로 받아 조용히 0 이었다(리뷰 K)."""
         head = line.rstrip('\r\n')
-        if ',' not in head and re.match(r'\s*[Cc]\s*CPINLSDNR\s*$', head[:10]):
-            # R16 Remark 2: 'CCPINLSDNR      ^^//CINCDIR               PARAM' — 구분자 값은 10칸 경계에서 다음 이름에 붙는다
+        if ',' not in head and re.match(r'\s*C\s*CPINLSDNR\s*$', head[:10], re.I):
+            # R16 Remark 2: 'CCPINLSDNR      ^^//CINCDIR               PARAM' — 구분자 값은 10칸 경계에서 다음 이름에 붙는다.
+            # 이름은 대소문자를 가리지 않는다 — 예전엔 대문자만 알아봐 소문자 줄의 값에 다음 이름이 붙었다(적대 리뷰 F6)
             rest = self._split_parameter_line(head[20:]) if len(head) > 20 else []
             return [('C', 'cpinlsdnr', head[10:20].strip())] + rest
         toks = []
