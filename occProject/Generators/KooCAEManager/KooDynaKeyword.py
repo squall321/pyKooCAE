@@ -12575,12 +12575,19 @@ class PreScript():
     def write(self, stream):
         stream.write(self.script)
 
+# 키워드 이름 = '*' 다음 [A-Za-z0-9_] 묶음을 하이픈·빗금으로 이은 최장 프리픽스(*MAT_MOONEY-RIVLIN_RUBBER·*ALE_MULTI-MATERIAL_GROUP·
+# *MAT_3-PARAMETER_BARLAT·*MAT_SIMPLIFIED_RUBBER/FOAM_TITLE). 예전엔 하이픈·빗금에서 끊어 이름이 *MAT_MOONEY·*MAT_SIMPLIFIED_RUBBER
+# 처럼 잘린 채 원문으로 나가 LS-DYNA 가 모르는(또는 _TITLE 이 빠져 제목 줄을 카드로 읽는) 키워드가 됐다(rc 0, 실제 덱 하이픈 145개·
+# 빗금 110개). 끝의 '-'(표준 형식 표시)는 이름이 아니다
+_KW_NAME = r'\*([A-Za-z0-9_]+(?:[-/][A-Za-z0-9_]+)*)'
+
+
 def keyword_line_name(line):
     """'*' 줄의 키워드 이름 — ReadKeywordsfromFile 루프와 같은 규칙이다(이 함수를 루프 대신 쓰는 곳: PARAMETER 의 *END 판정,
-    KooKFileMerger 의 *END 판정). '*' 다음 [A-Za-z0-9_] 최장 프리픽스를 대문자로 쓰고, 그 뒤가 쉼표로 시작하는 쉼표형은
+    KooKFileMerger 의 *END 판정). '*' 다음 이름(_KW_NAME — 하이픈·빗금으로 이은 최장 프리픽스)을 대문자로 쓰고, 그 뒤가 쉼표로 시작하는 쉼표형은
     첫 공백 앞을 그대로 쓴다(그래서 '*END ,' 는 END, '*END,' 는 아니다)."""
     raw = line.rstrip()
-    m = re.match(r'\*([A-Za-z0-9_]+)', raw)
+    m = re.match(_KW_NAME, raw)
     if m is not None and not raw[m.end():].lstrip().startswith(','):
         return m.group(1).upper()
     return line.split(' ')[0].strip().rstrip('%+-')[1:].strip()
@@ -12817,7 +12824,7 @@ class DynaManager():
                     # ('(ten nodes format)', '%', '#', 탭, '$주석') 은 전부 무시 — 접미어 때문에
                     # 블록이 통째로 미해석(무언 손실)되던 문제 방지. LS-DYNA 는 대소문자 무관.
                     # 콤마형(*NODE, NSET= 등 비-LS-DYNA 표기) 은 기존 동작 보존.
-                    _kwm = re.match(r'\*([A-Za-z0-9_]+)', raw_kwline)
+                    _kwm = re.match(_KW_NAME, raw_kwline)
                     if _kwm is not None and not raw_kwline[_kwm.end():].lstrip().startswith(','):
                         line = '*' + _kwm.group(1).upper()
                     else:
