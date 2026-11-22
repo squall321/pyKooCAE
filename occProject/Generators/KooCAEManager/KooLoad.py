@@ -4,6 +4,16 @@ import numpy as np
 
 from KooCAEManager.KooOperator import KooDynaFloat, KooDynaInt, KooDynaString
 from KooCAEManager.KooDefine import _real10   # SF 1.0E-4 를 >10.3f 로 쓰면 0.000 → LS-DYNA 기본값 1(하중 10⁴ 배)
+
+
+def _e10(v):
+    """하중 실수 칸(SF·AT) — '>10.3e' 가 값을 그대로 담으면 예전 출력 그대로(바이트 동일), 아니면 _real10(10칸 최대 정밀도).
+    유효숫자 4자리를 넘는 SF(1.23456 → 1.235e+00)가 깎이던 것(남은 결함 A9)."""
+    s = format(v, ">10.3e")
+    try:
+        return s if float(s) == float(v) else _real10(float(v))
+    except (TypeError, ValueError, OverflowError):
+        return s
     
 class KooLoadBody:
     def __init__(self, lcid, sf =1.0, lciddr = "", xc = 0.0, yc = 0.0, zc = 0.0, cid = 0):
@@ -683,39 +693,22 @@ class KooLoadSegment(KooLoad):
         return keyword
     
     def WriteStreamDynaKeyword(self, stream, startID):
+        # *LOAD_SEGMENT_ID = ID 카드(ID·HEADING) + 카드 1(LCID SF AT N1~N5) + N5 ≠ 0 이면 카드 2(N6~N8). 예전 기록기는 ID 를 LCID 줄에
+        # 붙여 칸이 밀렸고, 절점 객체·글자 SF 를 포맷하다 죽었다(남은 결함 A7)
+        nid = lambda n: 0 if n is None else getattr(n, "id", n)
         stream.write("*LOAD_SEGMENT_ID\n")
-        idStr = format(self.lid + startID, ">10")
-        lcidStr = format(self.lcid, ">10")
-        sfStr = format(self.sf, ">10.3e")
-        atStr = format(self.at, ">10.3e")
-        keyword = idStr + lcidStr + sfStr + atStr
-        if self.n1 is not None:            
-            n1Str = format(self.n1, ">10")
-            keyword += n1Str
-        if self.n2 is not None:
-            n2Str = format(self.n2, ">10")
-            keyword += n2Str
-        if self.n3 is not None:
-            n3Str = format(self.n3, ">10")
-            keyword += n3Str
-        if self.n4 is not None:
-            n4Str = format(self.n4, ">10")
-            keyword += n4Str
-        if self.n5 is not None:
-            n5Str = format(self.n5, ">10")
-            keyword += n5Str
-        if self.n6 is not None:
-            n6Str = format(self.n6, ">10")
-            keyword += "\n" + n6Str
-        if self.n7 is not None:
-            n7Str = format(self.n7, ">10")
-            keyword += n7Str
-        if self.n8 is not None:
-            n8Str = format(self.n8, ">10")
-            keyword += n8Str + "\n"
-        stream.write(keyword)
-            
-    
+        stream.write("$#      ID                                                                 HEADING\n")
+        stream.write(format(self.lid + startID, ">10") + str(self.name or "").strip()[:70] + "\n")
+        stream.write("$#    LCID        SF        AT        N1        N2        N3        N4        N5\n")
+        n5 = nid(self.n5)
+        stream.write(format(self.lcid, ">10") + _e10(self.sf) + _e10(self.at)
+                     + "".join(format(nid(n), ">10") for n in (self.n1, self.n2, self.n3, self.n4))
+                     + (format(n5, ">10") if n5 else "") + "\n")
+        if n5:
+            stream.write("$#      N6        N7        N8\n")
+            stream.write("".join(format(nid(n), ">10") for n in (self.n6, self.n7, self.n8)) + "\n")
+
+
 class _SegmentSetRef:
     """하중이 KMM 이 읽지 않는 세그먼트 셋(*SET_SEGMENT_GENERAL 등)을 가리킬 때 SSID 만 든 자리 표시.
     세트 원문은 미해석 원문 블록으로 그대로 나가므로 하중은 같은 SSID 로 쓰면 뜻이 같다(2026-11-03, 예전엔 KeyError)."""
@@ -796,8 +789,8 @@ class KooLoadSegmentSet(KooLoad):
         
         sidStr = format(self.segmentSet.sid, ">10")
         lcidStr = format(self.lcid, ">10")
-        sfStr = format(self.sf, ">10.3e")
-        atStr = format(self.at, ">10.3e")
+        sfStr = _e10(self.sf)
+        atStr = _e10(self.at)
         keyword += sidStr + lcidStr + sfStr + atStr + "\n"
         stream.write(keyword)
         
@@ -902,24 +895,44 @@ class KooLoadManager:
     def CreateLoadNodalPoint(self, name, lcid=None, cid = 0, fx = 0.0, fy = 0.0, fz = 0.0, nodeid = 0):
         self.maxid += 1
         load = KooLoadNodalPoint(self.maxid,name,lcid,cid,fx,fy,fz,nodeid)
+        load._auto_lid = True   # KMM 이 매긴 번호 — 덱 ID 하중과 겹치면 옮긴다(_StoreWithID)
         self.loads[self.maxid] = load
         return load
         
     def CreateLoadNodes(self, name, lcid=None, cid = 0, fx = 0.0, fy = 0.0, fz = 0.0, boundaries = [], nodeManager = None):
         self.maxid += 1
         load = KooLoadNodes(self.maxid, name, lcid, cid, fx, fy, fz, boundaries, nodeManager) 
+        load._auto_lid = True   # KMM 이 매긴 번호 — 덱 ID 하중과 겹치면 옮긴다(_StoreWithID)
         self.loads[self.maxid] = load
         return load        
     
     def CreateLoadSegment(self, name, lcid=None, SF=1.0, AT=0.0, N1=None, N2=None, N3=None, N4=None, N5=None, N6=None, N7=None, N8=None):
         self.maxid += 1
         load = KooLoadSegment(self.maxid, name, lcid, SF, AT, N1, N2, N3, N4, N5, N6, N7, N8)
+        load._auto_lid = True   # KMM 이 매긴 번호 — 덱 ID 하중과 겹치면 옮긴다(_StoreWithID)
         self.loads[self.maxid] = load
         return load
     
     def CreateLoadSegmentwithID(self, lid, name, lcid=None, SF=1.0, AT=0.0, N1=None, N2=None, N3=None, N4=None, N5=None, N6=None, N7=None, N8=None):
         load = KooLoadSegment(lid, name, lcid, SF, AT, N1, N2, N3, N4, N5, N6, N7, N8)
-        self.loads[lid] = load
+        return self._StoreWithID(lid, load)
+
+    def _StoreWithID(self, lid, load):
+        """덱 ID 하중을 담는다. 같은 열쇠에 하중이 있으면 덮지 않는다 — 예전엔 덮어 앞 하중이 rc 0 으로 빠졌다(*LOAD_NODE_POINT 가
+        번호 1 을 받은 뒤 *LOAD_SEGMENT_SET_ID 1 등). 앞 하중이 KMM 이 번호를 매긴 것이면 그쪽을 새 번호로 옮기고, 덱 ID 끼리
+        겹치면 새 하중을 새 열쇠에 둔다(쓰는 ID 는 덱 그대로)."""
+        if lid in self.loads:
+            key = max(self.maxid, max(self.loads)) + 1
+            old = self.loads[lid]
+            if getattr(old, "_auto_lid", False):
+                old.lid = key
+                self.loads[key] = old
+                self.loads[lid] = load
+            else:
+                self.loads[key] = load
+            self.maxid = max(self.maxid, key)
+        else:
+            self.loads[lid] = load
         if lid > self.maxid:
             self.maxid = lid
         return load
@@ -927,15 +940,13 @@ class KooLoadManager:
     def CreateLoadSegmentSet(self, name, sid, lcid=None, SF=1.0, AT=0.0):
         self.maxid += 1
         load = KooLoadSegmentSet(self.maxid, name, sid, lcid, SF, AT)
+        load._auto_lid = True   # KMM 이 매긴 번호 — 덱 ID 하중과 겹치면 옮긴다(_StoreWithID)
         self.loads[self.maxid] = load
         return load
 
     def CreateLoadSegmentSetwithID(self, lid, name, sid = 0, lcid= 0, SF = 0.0, AT = 0.0):
         load = KooLoadSegmentSet(lid, name, sid, lcid, SF, AT)
-        self.loads[lid] = load
-        if lid > self.maxid:
-            self.maxid = lid
-        return load
+        return self._StoreWithID(lid, load)
 
     def AddLoad(self, load):
         self.load[load.lid] = load
@@ -1034,161 +1045,42 @@ class KooLoadManager:
                 elif dof == 3:
                     load = self.CreateLoadNodalPoint("",lcid,cid,0.0,0.0,sf,nid)     
                        
-        if dynaLoad[0] == "*LOAD_SEGMENT":
-            parameters = dynaLoad[1]
-            for i in range(len(parameters)):
-                curParameters = parameters[i]
-                firstLine = curParameters
-                lcid = firstLine[0]
-                sf = firstLine[1]
-                at = firstLine[2]                
-                n1 = int(firstLine[3])
-                n2 = int(firstLine[4])
-                if len(firstLine[5])>0:
-                    n3 = int(firstLine[5])
+        if dynaLoad[0] == "*LOAD_SEGMENT" or dynaLoad[0] == "*LOAD_SEGMENT_ID":
+            # 개체 = (_ID 면 ID 카드) + 카드 1(LCID SF AT N1~N5) + N5 ≠ 0 일 때만 카드 2(N6~N8). 예전엔 루프 변수를 늘려도 카드 2 를
+            # 건너뛰지 못해 새 세그먼트로 읽었고, 빈 N 칸에서 int('') 로 죽었고, LCID·SF·AT 가 글자로 남아 쓸 때 죽었다(남은 결함 A7)
+            rows = [r for r in dynaLoad[1] if any(str(x).strip() for x in r)]
+            k, lid, name = 0, None, ""
+            if dynaLoad[0] == "*LOAD_SEGMENT_ID" and rows:
+                lid, name, k = KooDynaInt(rows[0][0]), str(rows[0][1]).strip() if len(rows[0]) > 1 else "", 1
+            while k < len(rows):
+                c1 = (list(rows[k]) + [""] * 8)[:8]
+                k += 1
+                ids = [KooDynaInt(x) for x in c1[3:8]]
+                if ids[4] != 0:
+                    c2 = (list(rows[k]) + [""] * 3)[:3] if k < len(rows) else ["", "", ""]
+                    k += 1
+                    ids += [KooDynaInt(x) for x in c2]
                 else:
-                    n3 = 0
-                if len(firstLine[6])>0:
-                    n4 = int(firstLine[6])
+                    ids += [0, 0, 0]
+                missing = [n for n in ids if n and n not in nodeManager.nodes]
+                if missing:
+                    print(f"🔴 {dynaLoad[0]}: 없는 절점 {missing[:4]} 을 가리켜 세그먼트 하중 하나를 옮기지 못했다")
+                    from KooCAEManager.KooElement import note_content_loss
+                    note_content_loss(f"{dynaLoad[0]} 없는 절점", 1)
                 else:
-                    n4 = 0
-                if len(firstLine[7])>0:
-                    n5 = int(firstLine[7])
-                    i = i + 1 
-                    curParameters = parameters[i]
-                    secondLine = curParameters
-                    if len(secondLine[0])>0:
-                        n6 = int(secondLine[0])
+                    N = [nodeManager.nodes[n] if n else None for n in ids]
+                    lcid, sf, at = KooDynaInt(c1[0]), KooDynaFloat(c1[1], 1.0), KooDynaFloat(c1[2], 0.0)
+                    if lid is None:
+                        load = self.CreateLoadSegment("", lcid, sf, at, *N)
                     else:
-                        n6 = 0
-                    if len(secondLine[1])>0:
-                        n7 = int(secondLine[1])
-                    else:
-                        n7 = 0
-                    if len(secondLine[2])>0:
-                        n8 = int(secondLine[2])
-                    else:
-                        n8 = 0                     
-                else:
-                    n5 = 0
-                    n6 = 0 
-                    n7 = 0 
-                    n8 = 0 
-                if n1 == 0:
-                    N1 = None
-                else:
-                    N1 = nodeManager.nodes[n1]
-                if n2 == 0:
-                    N2 = None
-                else:
-                    N2 = nodeManager.nodes[n2]
-                if n3 == 0:
-                    N3 = None
-                else:
-                    N3 = nodeManager.nodes[n3]
-                if n4 == 0:
-                    N4 = None
-                else:
-                    N4 = nodeManager.nodes[n4]
-                if n5 == 0:
-                    N5 = None
-                else:
-                    N5 = nodeManager.nodes[n5]
-                if n6 == 0:
-                    N6 = None
-                else:
-                    N6 = nodeManager.nodes[n6]                    
-                if n7 == 0:
-                    N7 = None
-                else:
-                    N7 = nodeManager.nodes[n7]
-                if n8 == 0:
-                    N8 = None
-                else:
-                    N8 = nodeManager.nodes[n8]
-                load = self.CreateLoadSegment("",lcid,sf,at,N1,N2,N3,N4,N5,N6,N7,N8)
-            pass
-        
-        if dynaLoad[0] == "*LOAD_SEGMENT_ID":
-            parameters = dynaLoad[1]
-            for i in range(len(parameters)):
-                curParameters = parameters[i]
-                nameIDLine = curParameters
-                lid = int(nameIDLine[0])
-                name = nameIDLine[1]
-                i = i + 1                        
-                curParameters = parameters[i]
-                firstLine = curParameters
-                lcid = firstLine[0]
-                sf = firstLine[1]
-                at = firstLine[2]                
-                n1 = int(firstLine[3])
-                n2 = int(firstLine[4])
-                if len(firstLine[5])>0:
-                    n3 = int(firstLine[5])
-                else:
-                    n3 = 0
-                if len(firstLine[6])>0:
-                    n4 = int(firstLine[6])
-                else:
-                    n4 = 0
-                if len(firstLine[7])>0:
-                    n5 = int(firstLine[7])
-                    i = i + 1 
-                    curParameters = parameters[i]
-                    secondLine = curParameters
-                    if len(secondLine[0])>0:
-                        n6 = int(secondLine[0])
-                    else:
-                        n6 = 0
-                    if len(secondLine[1])>0:
-                        n7 = int(secondLine[1])
-                    else:
-                        n7 = 0
-                    if len(secondLine[2])>0:
-                        n8 = int(secondLine[2])
-                    else:
-                        n8 = 0                     
-                else:
-                    n5 = 0
-                    n6 = 0 
-                    n7 = 0 
-                    n8 = 0 
-                if n1 == 0:
-                    N1 = None
-                else:
-                    N1 = nodeManager.nodes[n1]
-                if n2 == 0:
-                    N2 = None
-                else:
-                    N2 = nodeManager.nodes[n2]
-                if n3 == 0:
-                    N3 = None
-                else:
-                    N3 = nodeManager.nodes[n3]
-                if n4 == 0:
-                    N4 = None
-                else:
-                    N4 = nodeManager.nodes[n4]
-                if n5 == 0:
-                    N5 = None
-                else:
-                    N5 = nodeManager.nodes[n5]
-                if n6 == 0:
-                    N6 = None
-                else:
-                    N6 = nodeManager.nodes[n6]                    
-                if n7 == 0:
-                    N7 = None
-                else:
-                    N7 = nodeManager.nodes[n7]
-                if n8 == 0:
-                    N8 = None
-                else:
-                    N8 = nodeManager.nodes[n8]
-                load = self.CreateLoadSegmentwithID(lid,name,lcid,sf,at,N1,N2,N3,N4,N5,N6,N7,N8)
-            pass
-        
+                        load = self.CreateLoadSegmentwithID(lid, name, lcid, sf, at, *N)
+                if lid is not None and k < len(rows):   # _ID 한 블록의 여러 개체 — ID 카드가 되풀이되는지 알 수 없다(A5 와 같다)
+                    print(f"🔴 *LOAD_SEGMENT_ID 블록 하나에 카드 {len(rows)}줄 — ID 카드가 개체마다 되풀이되는지 알 수 없어 첫 개체만 "
+                          f"읽었다(나머지 카드는 출력에서 빠진다). 개체마다 *LOAD_SEGMENT_ID 키워드 줄을 따로 쓰면 모두 읽는다")
+                    from KooCAEManager.KooElement import note_content_loss
+                    note_content_loss("*LOAD_SEGMENT_ID 한 블록의 여러 개체(첫 개체만 읽음)", 1)
+                    break
+
         if dynaLoad[0] == "*LOAD_SEGMENT_SET":
             parameters = dynaLoad[1]
             curParameters = parameters[0]
