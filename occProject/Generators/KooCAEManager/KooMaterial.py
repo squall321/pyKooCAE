@@ -4,9 +4,31 @@ import math
 if __name__ == "__main__":  
     from KooDynaKeyword import *
     from KooOperator import *
+    from KooDefine import _real10
 else:
     from KooCAEManager.KooDynaKeyword import *
     from KooCAEManager.KooOperator import *
+    from KooCAEManager.KooDefine import _real10
+def _e10(v):
+    """재질 실수 칸 — '{:10.3e}' 가 값을 그대로 담으면 예전 출력 그대로(바이트 동일), 아니면 _real10(10칸 최대 정밀도).
+    10.3e 는 유효숫자 4자리라 E 210040.5 → 2.100e+05, 밀도 7.8512E-9 → 7.851e-09 처럼 덱 값을 깎았다(남은 결함 A9,
+    단면 기록기와 같은 규칙 — 사용자 결정 11-04 '덱 값 그대로')."""
+    s = "{:10.3e}".format(v)
+    try:
+        return s if float(s) == float(v) else _real10(float(v))
+    except (TypeError, ValueError, OverflowError):
+        return s
+
+
+def _f10_3(v):
+    """'{:10.3f}' 칸(MAT_RIGID N·COUPLE·M·ALIAS 등) — 소수 셋째 자리로 값을 잃으면 _real10."""
+    s = "{:10.3f}".format(v)
+    try:
+        return s if float(s) == float(v) else _real10(float(v))
+    except (TypeError, ValueError, OverflowError):
+        return s
+
+
 class KooEOS:
     def __init__(self, id):
         self.nastranKeywordString = ""
@@ -65,9 +87,9 @@ class KooEOSTabulated(KooEOS):
         keyword = ""
         keyword += "*EOS_TABULATED\n"
         keyword += format(self.id, ">10")
-        keyword += format(self.gama, ">10.3e")
-        keyword += format(self.e0, ">10.3e")
-        keyword += format(self.v0, ">10.3e")
+        keyword += _e10(self.gama)
+        keyword += _e10(self.e0)
+        keyword += _e10(self.v0)
         if len(self.lcc) > 0:
             keyword += format(self.lcc, ">10")
         else:
@@ -112,16 +134,16 @@ class KooEOSLinearPolynomial(KooEOS):
         keyword = ""
         keyword += "*EOS_LINEAR_POLYNOMIAL\n"
         keyword += format(self.id, ">10")
-        keyword += format(self.c0, ">10.3e")
-        keyword += format(self.c1, ">10.3e")
-        keyword += format(self.c2, ">10.3e")
-        keyword += format(self.c3, ">10.3e")
-        keyword += format(self.c4, ">10.3e")
-        keyword += format(self.c5, ">10.3e")
-        keyword += format(self.c6, ">10.3e")
+        keyword += _e10(self.c0)
+        keyword += _e10(self.c1)
+        keyword += _e10(self.c2)
+        keyword += _e10(self.c3)
+        keyword += _e10(self.c4)
+        keyword += _e10(self.c5)
+        keyword += _e10(self.c6)
         keyword += "\n"
-        keyword += format(self.e0, ">10.3e")
-        keyword += format(self.v0, ">10.3e")
+        keyword += _e10(self.e0)
+        keyword += _e10(self.v0)
         keyword += "\n"
         self.SetDynaKeyword(keyword)
         return keyword   
@@ -225,40 +247,40 @@ class KooMaterialAddErosion(KooMaterial):
         keywordString = "*MAT_ADD_EROSION\n"
         # 10 digit for each float
         keywordString += format(self.id, ">10")
-        keywordString += format(self.EXCL, ">10.3e")
-        keywordString += format(self.MXPRES, ">10.3e")
-        keywordString += format(self.MNEPS, ">10.3e")
-        keywordString += format(self.EFFEPS, ">10.3e")
-        keywordString += format(self.VOLEPS, ">10.3e")
-        keywordString += format(self.NUMFIP, ">10.3e")
-        keywordString += format(self.NCS, ">10.3e")
+        keywordString += _e10(self.EXCL)
+        keywordString += _e10(self.MXPRES)
+        keywordString += _e10(self.MNEPS)
+        keywordString += _e10(self.EFFEPS)
+        keywordString += _e10(self.VOLEPS)
+        keywordString += _e10(self.NUMFIP)
+        keywordString += _e10(self.NCS)
         keywordString += "\n"
-        keywordString += format(self.MNPRES, ">10.3e")
-        keywordString += format(self.SIGP1, ">10.3e")
-        keywordString += format(self.SIGVM, ">10.3e")
-        keywordString += format(self.MXEPS, ">10.3e")
-        keywordString += format(self.EPSSH, ">10.3e")
-        keywordString += format(self.SIGTH, ">10.3e")
-        keywordString += format(self.IMPULSE, ">10.3e")
-        keywordString += format(self.FAILTM, ">10.3e")
+        keywordString += _e10(self.MNPRES)
+        keywordString += _e10(self.SIGP1)
+        keywordString += _e10(self.SIGVM)
+        keywordString += _e10(self.MXEPS)
+        keywordString += _e10(self.EPSSH)
+        keywordString += _e10(self.SIGTH)
+        keywordString += _e10(self.IMPULSE)
+        keywordString += _e10(self.FAILTM)
         keywordString += "\n"        
-        keywordString += format(self.IDAM, ">10.3e")
+        keywordString += _e10(self.IDAM)
         keywordString += " " * 60   # R16 카드 3 의 2~7번째 칸은 비고 LCREGD 는 8번째 칸이다
-        keywordString += format(self.LCREGD, ">10.3e")
+        keywordString += _e10(self.LCREGD)
         keywordString += "\n"
-        keywordString += format(self.LCFLD, ">10.3e")
-        keywordString += format(self.NSFF, ">10.3e")
-        keywordString += format(self.EPSTHIN, ">10.3e")
-        keywordString += format(self.ENGCRT, ">10.3e")
-        keywordString += format(self.RADCRT, ">10.3e")        
+        keywordString += _e10(self.LCFLD)
+        keywordString += _e10(self.NSFF)
+        keywordString += _e10(self.EPSTHIN)
+        keywordString += _e10(self.ENGCRT)
+        keywordString += _e10(self.RADCRT)        
         keywordString += format(self.LCEPS12, ">10")
         keywordString += format(self.LCEPS13, ">10")
         keywordString += format(self.LCEPSMX, ">10")
         keywordString += "\n"
-        keywordString += format(self.DTEFLT, ">10.3e")
-        keywordString += format(self.VOLFRAC, ">10.3e")
-        keywordString += format(self.MXTMP, ">10.3e")
-        keywordString += format(self.DTMIN, ">10.3e")
+        keywordString += _e10(self.DTEFLT)
+        keywordString += _e10(self.VOLFRAC)
+        keywordString += _e10(self.MXTMP)
+        keywordString += _e10(self.DTMIN)
         keywordString += "\n"
         self.SetDynaKeyword(keywordString)
         return keywordString            
@@ -285,11 +307,11 @@ class KooMaterialAddThermalExpansion(KooMaterial):
         keywordString = "*MAT_ADD_THERMAL_EXPANSION\n"
         keywordString += format(int(self.pid), ">10")
         keywordString += format(int(self.lcid), ">10")
-        keywordString += format(float(self.mult), ">10.3e")
+        keywordString += _e10(float(self.mult))
         keywordString += format(int(self.lcidy), ">10")
-        keywordString += format(float(self.multy), ">10.3e")
+        keywordString += _e10(float(self.multy))
         keywordString += format(int(self.lcidz), ">10")
-        keywordString += format(float(self.multz), ">10.3e")
+        keywordString += _e10(float(self.multz))
         keywordString += "\n"
         self.SetDynaKeyword(keywordString)
         return keywordString
@@ -316,14 +338,14 @@ class KooMaterialThermalIsotropic(KooMaterial):
     def GenerateDynaKeyword(self):
         keywordString = "*MAT_THERMAL_ISOTROPIC\n"
         keywordString += format(int(self.tmid), ">10")
-        keywordString += format(float(self.tro), ">10.3e")
+        keywordString += _e10(float(self.tro))
         keywordString += format(int(self.tgrlc), ">10")
-        keywordString += format(float(self.tgmult), ">10.3e")
-        keywordString += format(float(self.tlat), ">10.3e")
-        keywordString += format(float(self.hlat), ">10.3e")
+        keywordString += _e10(float(self.tgmult))
+        keywordString += _e10(float(self.tlat))
+        keywordString += _e10(float(self.hlat))
         keywordString += "\n"
-        keywordString += format(float(self.hc), ">10.3e")
-        keywordString += format(float(self.tc), ">10.3e")
+        keywordString += _e10(float(self.hc))
+        keywordString += _e10(float(self.tc))
         keywordString += "\n"
         self.SetDynaKeyword(keywordString)
         return keywordString
@@ -357,52 +379,52 @@ class KooMaterialAddPZElectric(KooMaterial):
         keywordString += format(self.aopt, ">10")
         keywordString += "\n"   
         keywordString += "$$     DXX       DYY       DZZ       DXY       DXZ       DYZ\n"
-        keywordString += format(self.DMat[0][0], ">10.3e")
-        keywordString += format(self.DMat[1][1], ">10.3e")
-        keywordString += format(self.DMat[2][2], ">10.3e")
-        keywordString += format(self.DMat[0][1], ">10.3e")
-        keywordString += format(self.DMat[0][2], ">10.3e")
-        keywordString += format(self.DMat[1][2], ">10.3e")
+        keywordString += _e10(self.DMat[0][0])
+        keywordString += _e10(self.DMat[1][1])
+        keywordString += _e10(self.DMat[2][2])
+        keywordString += _e10(self.DMat[0][1])
+        keywordString += _e10(self.DMat[0][2])
+        keywordString += _e10(self.DMat[1][2])
         keywordString += "\n"
         keywordString += "$$    PX11      PX22      PX33      PX12      PX13      PX23      PY11      PY22\n"
-        keywordString += format(self.PXMat[0][0], ">10.3e")
-        keywordString += format(self.PXMat[1][1], ">10.3e")
-        keywordString += format(self.PXMat[2][2], ">10.3e")
-        keywordString += format(self.PXMat[0][1], ">10.3e")
-        keywordString += format(self.PXMat[0][2], ">10.3e")
-        keywordString += format(self.PXMat[1][2], ">10.3e")
-        keywordString += format(self.PYMat[0][0], ">10.3e")
-        keywordString += format(self.PYMat[1][1], ">10.3e")
+        keywordString += _e10(self.PXMat[0][0])
+        keywordString += _e10(self.PXMat[1][1])
+        keywordString += _e10(self.PXMat[2][2])
+        keywordString += _e10(self.PXMat[0][1])
+        keywordString += _e10(self.PXMat[0][2])
+        keywordString += _e10(self.PXMat[1][2])
+        keywordString += _e10(self.PYMat[0][0])
+        keywordString += _e10(self.PYMat[1][1])
         keywordString += "\n"
         keywordString += "$$    PY33      PY12      PY13      PY23      PZ11      PZ22      PZ33      PZ12\n"
-        keywordString += format(self.PYMat[2][2], ">10.3e")
-        keywordString += format(self.PYMat[0][1], ">10.3e")
-        keywordString += format(self.PYMat[0][2], ">10.3e")
-        keywordString += format(self.PYMat[1][2], ">10.3e")
-        keywordString += format(self.PZMat[0][0], ">10.3e")
-        keywordString += format(self.PZMat[1][1], ">10.3e")
-        keywordString += format(self.PZMat[2][2], ">10.3e")
-        keywordString += format(self.PZMat[0][1], ">10.3e")
+        keywordString += _e10(self.PYMat[2][2])
+        keywordString += _e10(self.PYMat[0][1])
+        keywordString += _e10(self.PYMat[0][2])
+        keywordString += _e10(self.PYMat[1][2])
+        keywordString += _e10(self.PZMat[0][0])
+        keywordString += _e10(self.PZMat[1][1])
+        keywordString += _e10(self.PZMat[2][2])
+        keywordString += _e10(self.PZMat[0][1])
         keywordString += "\n"
         keywordString += "$$    PZ13      PZ23\n"
-        keywordString += format(self.PZMat[0][2], ">10.3e")
-        keywordString += format(self.PZMat[1][2], ">10.3e")
+        keywordString += _e10(self.PZMat[0][2])
+        keywordString += _e10(self.PZMat[1][2])
         keywordString += "\n"   
         keywordString += "$$      XP        YP        ZP        A1        A2        A3\n"        
-        keywordString += format(self.Pnt[0], ">10.3e")
-        keywordString += format(self.Pnt[1], ">10.3e")  
-        keywordString += format(self.Pnt[2], ">10.3e")
-        keywordString += format(self.AVec[0], ">10.3e")
-        keywordString += format(self.AVec[1], ">10.3e")
-        keywordString += format(self.AVec[2], ">10.3e")
+        keywordString += _e10(self.Pnt[0])
+        keywordString += _e10(self.Pnt[1])  
+        keywordString += _e10(self.Pnt[2])
+        keywordString += _e10(self.AVec[0])
+        keywordString += _e10(self.AVec[1])
+        keywordString += _e10(self.AVec[2])
         keywordString += "\n"
         keywordString += "$$                                    D1        D2        D3\n"
         keywordString += format(" ", ">10")
         keywordString += format(" ", ">10")
         keywordString += format(" ", ">10")        
-        keywordString += format(self.DVec[0], ">10.3e")
-        keywordString += format(self.DVec[1], ">10.3e")
-        keywordString += format(self.DVec[2], ">10.3e")
+        keywordString += _e10(self.DVec[0])
+        keywordString += _e10(self.DVec[1])
+        keywordString += _e10(self.DVec[2])
         keywordString += "\n"
         
         
@@ -446,21 +468,21 @@ class KooMaterialRigid(KooMaterial):
         keywordString += "{0}\n".format(self.name)
         # 10 digit for each float
         if type(self.ALIASRE) == str:
-            formatted_string = "{:10d}{:10.3e}{:10.3e}{:10.3e}{:10.3f}{:10.3f}{:10.3f}{:10s}\n".format(self.id, self.rho, self.E, self.nu, self.N, self.COUPLE, self.M, self.ALIASRE)
+            formatted_string = "{:10d}{}{}{}{}{}{}{:10s}\n".format(self.id, _e10(self.rho), _e10(self.E), _e10(self.nu), _f10_3(self.N), _f10_3(self.COUPLE), _f10_3(self.M), self.ALIASRE)
         else:
-            formatted_string = "{:10d}{:10.3e}{:10.3e}{:10.3e}{:10.3f}{:10.3f}{:10.3f}{:10.3f}\n".format(self.id, self.rho, self.E, self.nu, self.N, self.COUPLE, self.M, self.ALIASRE)
+            formatted_string = "{:10d}{}{}{}{}{}{}{}\n".format(self.id, _e10(self.rho), _e10(self.E), _e10(self.nu), _f10_3(self.N), _f10_3(self.COUPLE), _f10_3(self.M), _f10_3(self.ALIASRE))
         keywordString += formatted_string
         
         if self.CMO == 0.0:
-            formatted_string = "{:10.3e}\n".format(self.CMO)
+            formatted_string = "{}\n".format(_e10(self.CMO))
             keywordString += formatted_string
         else:
-            CMO = format(self.CMO, ">10.3e")
+            CMO = _e10(self.CMO)
             CON1 = format(self.CON1, ">10")
             CON2 = format(self.CON2, ">10")
             keywordString += "{0}{1}{2}\n".format(CMO, CON1, CON2)
         
-        formatted_string = "{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}\n".format(self.LCOA1, self.A2, self.A3, self.V1, self.V2, self.V3)
+        formatted_string = "{}{}{}{}{}{}\n".format(_e10(self.LCOA1), _e10(self.A2), _e10(self.A3), _e10(self.V1), _e10(self.V2), _e10(self.V3))
         keywordString += formatted_string
         self.SetDynaKeyword(keywordString)
         return keywordString       
@@ -488,7 +510,7 @@ class KooMaterialElastic(KooMaterial):
         keywordString = "*MAT_ELASTIC_TITLE\n"
         keywordString += "{0}\n".format(self.name)
         # 10 digit for each float
-        formatted_string = "{:10d}{:10.3e}{:10.3e}{:10.3e}\n".format(self.id, self.rho, self.E, self.nu)
+        formatted_string = "{:10d}{}{}{}\n".format(self.id, _e10(self.rho), _e10(self.E), _e10(self.nu))
         
         keywordString += formatted_string
         self.SetDynaKeyword(keywordString)
@@ -571,17 +593,17 @@ class KooMaterialPlasticKinematic(KooMaterial):
         keywordString += "{0}\n".format(self.name)
         # 10 digit for each float
         keywordString += format(self.id, ">10")
-        keywordString += format(self.rho, ">10.3e")
-        keywordString += format(self.E, ">10.3e")
-        keywordString += format(self.nu, ">10.3e")
-        keywordString += format(self.sigy, ">10.3e")
-        keywordString += format(self.etan, ">10.3e")
-        keywordString += format(self.beta, ">10.3e")
+        keywordString += _e10(self.rho)
+        keywordString += _e10(self.E)
+        keywordString += _e10(self.nu)
+        keywordString += _e10(self.sigy)
+        keywordString += _e10(self.etan)
+        keywordString += _e10(self.beta)
         keywordString += "\n"
-        keywordString += format(self.src, ">10.3e")
-        keywordString += format(self.srp, ">10.3e")
-        keywordString += format(self.fs, ">10.3e")
-        keywordString += format(self.vp, ">10.3e")
+        keywordString += _e10(self.src)
+        keywordString += _e10(self.srp)
+        keywordString += _e10(self.fs)
+        keywordString += _e10(self.vp)
         keywordString += "\n"
         self.SetDynaKeyword(keywordString)
         return keywordString        
@@ -615,7 +637,7 @@ class KooMaterialViscoelastic(KooMaterial):
         keywordString = "*MAT_VISCOELASTIC_TITLE\n"
         keywordString += "{0}\n".format(self.name)
         # 10 digit for each float
-        formatted_string = "{:10d}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}\n".format(self.id, self.rho, self.K, self.G0, self.GI, self.BETA)
+        formatted_string = "{:10d}{}{}{}{}{}\n".format(self.id, _e10(self.rho), _e10(self.K), _e10(self.G0), _e10(self.GI), _e10(self.BETA))
 
         keywordString += formatted_string
         self.SetDynaKeyword(keywordString)
@@ -704,9 +726,9 @@ class KooMaterialOrientedCrack(KooMaterial):
     def GenerateDynaKeyword(self):
         keywordString = "*MAT_ORIENTED_CRACK\n"
         # 10 digit for each float
-        formatted_string = "{:10d}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}\n".format(self.id, self.RO, self.E, self.PR, self.SIGY, self.ETAN, self.FS, self.PRF)
+        formatted_string = "{:10d}{}{}{}{}{}{}{}\n".format(self.id, _e10(self.RO), _e10(self.E), _e10(self.PR), _e10(self.SIGY), _e10(self.ETAN), _e10(self.FS), _e10(self.PRF))
         keywordString += formatted_string
-        formatted_string = "{:10.3e}{:10.3e}\n".format(self.SOFT, self.CVELO)
+        formatted_string = "{}{}\n".format(_e10(self.SOFT), _e10(self.CVELO))
         keywordString += formatted_string
         self.SetDynaKeyword(keywordString)
         return keywordString
@@ -775,9 +797,9 @@ class KooMaterialCohesiveMixedMode(KooMaterial):
         keywordString += "$$   TITLE\n"
         keywordString += "{}\n".format(self.name)
         keywordString += "$$     MID        RO     ROFLG   INTFAIL        EN        ET       GIC      GIIC\n"
-        keywordString += "{:10d}{:10.3e}{:10d}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}\n".format(self.id, self.RO, self.ROFLG, self.INTFAIL, self.EN, self.ET, self.GIC, self.GIIC)
+        keywordString += "{:10d}{}{:10d}{}{}{}{}{}\n".format(self.id, _e10(self.RO), self.ROFLG, _e10(self.INTFAIL), _e10(self.EN), _e10(self.ET), _e10(self.GIC), _e10(self.GIIC))
         keywordString += "$$     XMU        T         S       UND       UTD     GAMMA\n"
-        keywordString += "{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}\n".format(self.XMU, self.T, self.S, self.UND, self.UTD, self.GAMMA)
+        keywordString += "{}{}{}{}{}{}\n".format(_e10(self.XMU), _e10(self.T), _e10(self.S), _e10(self.UND), _e10(self.UTD), _e10(self.GAMMA))
         self.SetDynaKeyword(keywordString)
         return keywordString
 
@@ -806,7 +828,7 @@ class KooMaterialElasticPeri(KooMaterial):
         keywordString += "{0}\n".format(self.name)
         # 10 digit for each float
         keywordString += "$$     MID        RO         E        GT        GS\n"
-        formatted_string = "{:10d}{:10.3e}{:10.3e}{:10.3e}{:10.3e}\n".format(self.id, self.R0, self.E, self.GT, self.GS)
+        formatted_string = "{:10d}{}{}{}{}\n".format(self.id, _e10(self.R0), _e10(self.E), _e10(self.GT), _e10(self.GS))
         keywordString += formatted_string
         self.SetDynaKeyword(keywordString)
         return keywordString    
@@ -845,16 +867,16 @@ class KooMaterialPiecewiseLinearPlasticity(KooMaterial):
         keywordString = "*MAT_PIECEWISE_LINEAR_PLASTICITY_TITLE\n"
         keywordString += "{0}\n".format(self.name)
         # 10 digit for each float
-        formatted_string = "{:10d}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}\n".format(self.id, self.rho, self.E, self.nu, self.sigy, self.etan, self.fail, self.tdel)
+        formatted_string = "{:10d}{}{}{}{}{}{}{}\n".format(self.id, _e10(self.rho), _e10(self.E), _e10(self.nu), _e10(self.sigy), _e10(self.etan), _e10(self.fail), _e10(self.tdel))
         keywordString += formatted_string
-        formatted_string = "{:10.3e}{:10.3e}{:10d}{:10d}{:10.3e}\n".format(self.c, self.p, self.lcss, self.lcsr, self.vp)
+        formatted_string = "{}{}{:10d}{:10d}{}\n".format(_e10(self.c), _e10(self.p), self.lcss, self.lcsr, _e10(self.vp))
         keywordString += formatted_string
         formatted_string = ""
         # print eps which has size of larger than 8
         for i in range(0, len(self.eps), 8):
             for j in range(i, i+8):
                 if j < len(self.eps):
-                    formatted_string += "{:10.3e}".format(self.eps[j])
+                    formatted_string += "{}".format(_e10(self.eps[j]))
             formatted_string += "\n"
         keywordString += formatted_string
         formatted_string = ""
@@ -862,7 +884,7 @@ class KooMaterialPiecewiseLinearPlasticity(KooMaterial):
         for i in range(0, len(self.es), 8):
             for j in range(i, i+8):
                 if j < len(self.es):
-                    formatted_string += "{:10.3e}".format(self.es[j])
+                    formatted_string += "{}".format(_e10(self.es[j]))
             formatted_string += "\n"
         keywordString += formatted_string
         self.SetDynaKeyword(keywordString)
@@ -903,10 +925,10 @@ class KooMaterialLowDensityFoam(KooMaterial):
         keywordString += "{0}\n".format(self.name)
         # 10 digit for each float
         keywordString += "$$     MID        RO         E      LCID        TC        HU      BETA      DAMP\n"
-        formatted_string = "{:10d}{:10.3e}{:10.3e}{:10d}{:10.3e}{:10.3e}{:10.3e}{:10.3e}\n".format(self.id, self.rho, self.E, self.LCID, self.TC, self.HU, self.BETA, self.DAMP)
+        formatted_string = "{:10d}{}{}{:10d}{}{}{}{}\n".format(self.id, _e10(self.rho), _e10(self.E), self.LCID, _e10(self.TC), _e10(self.HU), _e10(self.BETA), _e10(self.DAMP))
         keywordString += formatted_string
         keywordString += "$$   SHAPE      FAIL    BVFLAG        ED     BETA1      KCON       REF\n"
-        formatted_string = "{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}{:10.3e}\n".format(self.SHAPE, self.FAIL, self.BVFLAG, self.ED, self.BETA1, self.KCON, self.REF)
+        formatted_string = "{}{}{}{}{}{}{}\n".format(_e10(self.SHAPE), _e10(self.FAIL), _e10(self.BVFLAG), _e10(self.ED), _e10(self.BETA1), _e10(self.KCON), _e10(self.REF))
         keywordString += formatted_string
         self.SetDynaKeyword(keywordString)
         return keywordString
