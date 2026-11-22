@@ -2003,6 +2003,10 @@ class KooDynaAdvancedModification:
             # 에 바닥 벽이 하나도 없었다(제품이 바닥 없이 떨어짐, rc 0 — v131 리뷰 R7, v130 부터 있던 결함)
             "rigidwall_keys": set(self.dynaImporter.additionalManager.rigidwalls.keys()),
             "max_rwid": self.dynaImporter.additionalManager.maxRWID,
+            # 접촉·초기 조건 번호도 — 예전엔 되돌리지 않아 각도마다 바닥 접촉 CID 가 1·2·3 으로 밀렸다(D2R ENTNO 도 따라감,
+            # 단일 실행과 다른 번호 — 남은 결함 A10)
+            "max_cid": self.dynaImporter.contactManager.maxid,
+            "max_iid": getattr(self.dynaImporter.initialManager, "maxid", None),
         }
         return cached_base, base_state
 
@@ -2050,6 +2054,10 @@ class KooDynaAdvancedModification:
         # 7. Max ID 복원 (SyncronizeMaxID 불필요) — 파트 번호도: 예전엔 되돌리지 않아 각도마다 바닥판 PID 가 달랐다(v131 리뷰 R2)
         if "max_pid" in base_state:
             self.dynaImporter.partManager.maxID = base_state["max_pid"]
+        if "max_cid" in base_state:
+            self.dynaImporter.contactManager.maxid = base_state["max_cid"]
+        if base_state.get("max_iid") is not None:
+            self.dynaImporter.initialManager.maxid = base_state["max_iid"]
         self.dynaImporter.maxEID = base_state["max_eid"]
         for pid in self.dynaImporter.partManager.parts:
             self.dynaImporter.partManager.parts[pid].elementManager.SetMaxID(base_state["max_eid"])
@@ -3583,8 +3591,19 @@ class KooDynaAdvancedModification:
                 if _lrb and _lrb not in existingPartIDs:
                     print("🔴 DROP_ATTITUDE: D2RLrb={0} 는 모델 파트가 아니다 — 0(독립 강체)으로 둔다".format(_lrb))
                     _lrb = 0
-                d2r_pid_list = [(pid, (0 if pid == _lrb else _lrb)) for pid in existingPartIDs]
-                r2d_pid_list = list(existingPartIDs)
+                # *MAT_RIGID 파트는 처음부터 강체다 — R16 *DEFORMABLE_TO_RIGID "Parts that are defined as rigid (*MAT_RIGID) in the
+                # input are permanently rigid and cannot be changed to deformable". R→D 목록에서 빼고, D→R 목록에는 LRB 로 대표 강체에
+                # 합칠 때만 남긴다("When PID is merged to another rigid body by the LRB field, this part is allowed to be rigid before
+                # the switch"). 예전엔 두 목록 모두에 넣었다(남은 결함 A11). 덱에 MAT_RIGID 파트가 없으면 예전과 같다
+                _parts = self.dynaImporter.partManager.parts
+                _rigid = {pid for pid in existingPartIDs if type(getattr(_parts[pid], "material", None)).__name__ == "KooMaterialRigid"}
+                d2r_pid_list = [(pid, (0 if pid == _lrb else _lrb)) for pid in existingPartIDs
+                                if pid not in _rigid or (_lrb and pid != _lrb)]
+                r2d_pid_list = [pid for pid in existingPartIDs if pid not in _rigid]
+                if _rigid:
+                    _kept = sorted(p for p in _rigid if _lrb and p != _lrb)
+                    print(f"DROP_ATTITUDE: *MAT_RIGID 파트 {sorted(_rigid)} 는 처음부터 강체라 D2R R→D 목록에서 뺐다"
+                          + (f" — D→R 목록에는 대표 강체 {_lrb} 에 합치는 {_kept} 만 남겼다" if _kept else " (D→R 목록에서도 뺐다)"))
                 # 세부 필드는 옵션파일에서 지정 가능. 미지정이면 예전에 리터럴로 박혀 있던
                 # 값과 동일한 기본값이 들어가므로 기존 덱과 바이트 동일하다.
                 # swset/code/relsw/paired 는 쌍 스위치 메커니즘이라 고정이다.
@@ -3775,9 +3794,22 @@ class KooDynaAdvancedModification:
         if outPathListFile is not None:
             outPathListFile.close()
 
+    # TRANSFORM 이 옮기지 않는 좌표·벡터를 지닌 키워드(이름 앞부분) — 절점·*DEFINE_COORDINATE_SYSTEM 점만 옮긴다
+    _UNMOVED_COORD_KW = ("DEFINE_BOX", "DEFINE_VECTOR", "DEFINE_COORDINATE_VECTOR", "DEFINE_SD_ORIENTATION", "RIGIDWALL_",
+                         "INITIAL_VELOCITY_GENERATION", "DATABASE_CROSS_SECTION_PLANE", "PART_INERTIA",
+                         "CONSTRAINED_NODAL_RIGID_BODY_INERTIA", "CONSTRAINED_NODAL_RIGID_BODY_SPC_INERTIA")
+
     def Transform(self, option):
         nodeMan : NodeManager = self.dynaImporter.nodeManager
         defMan = self.dynaImporter.defineManager
+        # 옮기지 않는 좌표 카드를 알린다 — 예전엔 *DEFINE_BOX·강체벽·*INITIAL_VELOCITY_GENERATION 중심 등이 rc 0 으로 그대로 남아
+        # 옮긴 모델과 어긋났다(남은 결함 A14)
+        _seen = getattr(self.dynaImporter.dynaManager, "_raw_keywords_seen", None) or []
+        _raw = getattr(self.dynaImporter.dynaManager, "_raw_keyword_dict", None) or {}
+        _hit = [k for k in dict.fromkeys(_seen) if isinstance(k, str) and k.startswith(self._UNMOVED_COORD_KW)]
+        if _hit and option:
+            print("  ⚠️ TRANSFORM 은 절점과 *DEFINE_COORDINATE_SYSTEM 점만 옮긴다 — 다음 카드의 좌표·벡터는 그대로다(덱 확인): "
+                  + ", ".join(f"*{k}({len(_raw.get(k) or [])})" for k in _hit))
 
         def cs_trsf(trsf):   # 점으로 정의한 좌표계도 절점과 같은 변환으로 — 좌표계를 출력에 쓰기 시작해서(v131 리뷰 R3)
             def f(x, y, z):

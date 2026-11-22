@@ -323,6 +323,7 @@ def _merge_managers(target_importer, new_importer, off=None):
                    _raw_ids(target_importer, "DEFINE_COORDINATE_", all_lines=True))
     _merge_boundaries(target_importer.boundaryNodeManager, new_importer.boundaryNodeManager, off)
     _merge_hourglasses(target_importer.additionalManager, new_importer.additionalManager)
+    _drop_branch_contacts(new_importer)
     pairs = [
         ('nodeManager', 'OverwritefromNodeManager'),
         ('partManager', 'OverwritefromPartManager'),
@@ -414,8 +415,10 @@ def _mat_values(obj):
         # 속성에 안 담기는 원문 칸 — *MAT_ADD_EROSION 카드 3 의 2~7칸(DMGTYP…FADEXP)과 카드 6~ 은 IDAM≠0(옛 GISSMO·DIEM)일 때만
         # 뜻이 있다(R16, 리뷰 R6). 빈 칸은 기본값과 같다 — 빈 칸·빠진 카드를 기본값과 다르게 봐 같은 침식에 거짓 rc 3 이었다(리뷰 R6)
         c3 = (list(_norm_card(raw[2])) + [""] * 8)[1:7] if len(raw) > 2 else [""] * 6
-        c3 = tuple(d if x == "" else x for x, d in zip(c3, _ERO_C3_DEFAULTS))
-        tail = [_norm_card(l) for l in raw[5:]]
+        # 0 도 기본값이다 — R16 Getting Started "the default value set for a variable if zero is specified, the field is left
+        # blank, or the card is not defined"(예전엔 0 과 빈칸을 달리 봐 같은 침식에 거짓 rc 3 — 남은 결함 A12)
+        c3 = tuple(d if x == "" or x == 0.0 else x for x, d in zip(c3, _ERO_C3_DEFAULTS))
+        tail = [_zero_card(_norm_card(l)) for l in raw[5:]]
         while tail and not tail[-1]:   # 끝의 빈 카드(빈 줄)는 빠진 카드와 같다 — 카드 5 뒤 빈 줄 하나로 거짓 rc 3 이었다(리뷰 R7)
             tail.pop()
         v["_raw_uncaptured"] = (c3, tuple(tail))
@@ -423,6 +426,14 @@ def _mat_values(obj):
 
 
 _ERO_C3_DEFAULTS = (0.0, 0.0, 0.0, 1.0, 0.0, 1.0)   # *MAT_ADD_EROSION 카드 3: DMGTYP LCSDG ECRIT DMGEXP DCRIT FADEXP
+
+
+def _zero_card(card):
+    """꼬리 카드 칸 값 — 빈 칸 ≡ 0, 끝의 0 은 뗀다(0 을 적은 카드 = 빈 카드). 가운데 빈 카드는 자리라 () 로 남는다."""
+    c = [0.0 if x == "" else x for x in card]
+    while c and c[-1] == 0.0:
+        c.pop()
+    return tuple(c)
 
 
 def _norm_card(line):
@@ -503,6 +514,26 @@ def _merge_boundaries(target, new, off):
         target.maxid += 1
         b.bid = target.maxid
         target.boundaries[b.bid] = b
+
+
+def _drop_branch_contacts(new_importer):
+    """가지(*SET_PART_TREE — SSTYP·MSTYP 7)를 가리키는 가져온 접촉은 옮기지 않는다. 가지 번호는 밀 수 없고 *SET_PART_TREE 도
+    옮기지 않아, 옮기면 기준 덱의 같은 번호 가지를 조용히 가리켰다(남은 결함 A13) → 🔴 카드 소실(종료 코드 3)."""
+    from KooCAEManager.KooElement import note_content_loss
+    cm = new_importer.contactManager
+
+    def _t(c, a):
+        try:
+            return int(float(getattr(c, a, 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+    bad = [cid for cid, c in cm.contacts.items() if 7 in (_t(c, "SSTYP"), _t(c, "MSTYP"))]
+    if bad:
+        print(f"  🔴 [IMPORT_MERGE_K] 가져온 덱의 접촉 {bad} 은 가지(*SET_PART_TREE, SSTYP·MSTYP 7)를 가리켜 옮기지 않았다 — 가지 번호는 "
+              f"밀 수 없다. 병합 뒤 직접 넣을 것")
+        for cid in bad:
+            del cm.contacts[cid]
+        note_content_loss("IMPORT_MERGE_K — 가지를 가리키는 접촉", len(bad))
 
 
 def _report_unmerged(new_importer):
