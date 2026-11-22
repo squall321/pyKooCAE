@@ -232,8 +232,8 @@ class KooPart():
         found = shutil.which("gmsh")
         if found:
             return found
-        print("gmsh not found")
-        sys.exit()
+        print("🔴 gmsh 를 찾지 못했다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+        sys.exit(1)
 
     def SetPath(self, path):
         self.path = path
@@ -250,8 +250,8 @@ class KooPart():
                 if os.path.exists(c):
                     self.gmshPath = c
                     return
-            print("gmsh.exe not found")
-            sys.exit()
+            print("🔴 gmsh.exe 를 찾지 못했다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+            sys.exit(1)
         else:
             self.gmshPath = self._find_linux_gmsh(path)
 

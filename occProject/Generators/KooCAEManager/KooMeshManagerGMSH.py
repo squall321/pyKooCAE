@@ -381,8 +381,8 @@ class KooMeshManagerGMSH(KooMeshManager):
         found = shutil.which("gmsh")
         if found:
             return found
-        print("gmsh not found")
-        sys.exit()
+        print("🔴 gmsh 를 찾지 못했다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+        sys.exit(1)
 
     def SetPath(self, path):
         self.path = os.path.normpath(path)
@@ -402,8 +402,8 @@ class KooMeshManagerGMSH(KooMeshManager):
                 if os.path.exists(c):
                     self.gmshPath = c
                     return
-            print("gmsh.exe not found")
-            sys.exit()
+            print("🔴 gmsh.exe 를 찾지 못했다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+            sys.exit(1)
         else:
             self.gmshPath = self._find_linux_gmsh(self.path)
     
@@ -542,8 +542,8 @@ class KooMeshManagerGMSH(KooMeshManager):
             return self.shape
         
         else:
-            print("Be sure gmsh is in your PATH")
-            sys.exit()
+            print("🔴 gmsh 가 PATH 에 없다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+            sys.exit(1)
     def mesh_shape_quad_2D(self, shape, meshSize, maxNID = 0, maxEID = 0, thickness = 0.0, stype = "", algorithmoption = 8):
         meshSizeMin = meshSize*0.8
         meshSizeMax = meshSize*1.2
@@ -595,8 +595,8 @@ class KooMeshManagerGMSH(KooMeshManager):
             return self.shape
         
         else:
-            print("Be sure gmsh is in your PATH")
-            sys.exit()
+            print("🔴 gmsh 가 PATH 에 없다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+            sys.exit(1)
 
     def mesh_shape_extrude_2D(self, shape, meshSizeInPlane, numberofElementinThickness, direction = [0,0,1], maxNID = 0, maxEID = 0, stype = ""):
         meshSizeMin = meshSizeInPlane*0.5
@@ -649,8 +649,8 @@ class KooMeshManagerGMSH(KooMeshManager):
             return self.shape
         
         else:
-            print("Be sure gmsh is in your PATH")
-            sys.exit()
+            print("🔴 gmsh 가 PATH 에 없다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+            sys.exit(1)
 
     def mesh_shape_extrude_3D(self, shape, meshSizeInPlane,numberofElementinThickness, direction = [0,0,1], meshAlgo = 11, maxNID = 0, maxEID = 0, stype = ""):        
         meshSizeMin = meshSizeInPlane*0.5
@@ -707,8 +707,8 @@ class KooMeshManagerGMSH(KooMeshManager):
             return self.shape
         
         else:
-            print("Be sure gmsh is in your PATH")
-            sys.exit()
+            print("🔴 gmsh 가 PATH 에 없다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+            sys.exit(1)
 
     def mesh_shape_from_stl_without_surface_nodes(self, stl_file_path, boundaryNodes, part, meshSizeMin, meshSizeMax):
         inputFilePath = self.path
@@ -759,8 +759,8 @@ class KooMeshManagerGMSH(KooMeshManager):
           
             return self.shape
         else:
-            print("Be sure gmsh is in your PATH")
-            sys.exit() 
+            print("🔴 gmsh 가 PATH 에 없다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+            sys.exit(1) 
 
     def mesh_shape_from_stl(self, stl_file_path, meshSizeMin, meshSizeMax, meshAlgo = None, maxNID = 0, maxEID = 0, stype = ""):
         inputFilePath = self.path
@@ -820,8 +820,8 @@ class KooMeshManagerGMSH(KooMeshManager):
 
             return self.shape
         else:
-            print("Be sure gmsh is in your PATH")
-            sys.exit() 
+            print("🔴 gmsh 가 PATH 에 없다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+            sys.exit(1) 
 
     def mesh_shape(self, shape, meshSizeMin, meshSizeMax,dimension,meshAlgo = None, maxNID = 0, maxEID = 0, thickness = 0.0, stype = ""):
         #curdir = os.getcwd()
@@ -909,8 +909,8 @@ class KooMeshManagerGMSH(KooMeshManager):
 
             return self.shape
         else:
-            print("Be sure gmsh is in your PATH")
-            sys.exit()
+            print("🔴 gmsh 가 PATH 에 없다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+            sys.exit(1)
     
     def mesh_shape_refine(self, shape, meshSize, meshSizeRefine, centerRefine,characteristicLength, dimension,meshAlgo = None, maxNID = 0, maxEID = 0, thickness = 0.0, stype = ""):
         #curdir = os.getcwd()
@@ -1001,8 +1001,8 @@ class KooMeshManagerGMSH(KooMeshManager):
 
             return self.shape
         else:
-            print("Be sure gmsh is in your PATH")
-            sys.exit()
+            print("🔴 gmsh 가 PATH 에 없다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+            sys.exit(1)
 
 
     def mesh_shape_extrude_3D_polygon_refine(self, ptList,elemthickness,numelemThickness, meshSizeBig, meshSizeSmall, refineLocationX, refineLocationY, maxNID = 0, maxEID = 0, mode = "FEM"):
@@ -1116,8 +1116,8 @@ class KooMeshManagerGMSH(KooMeshManager):
             self.part.SetSectionID(self.sectionMan.maxid)
             return self.shape
         else:
-            print("Be sure gmsh is in your PATH")
-            sys.exit()
+            print("🔴 gmsh 가 PATH 에 없다 — 메시 생성 모드는 gmsh 가 있어야 한다 (종료 코드 1)")
+            sys.exit(1)
 
 
 
